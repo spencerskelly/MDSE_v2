@@ -247,7 +247,6 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the Classifier to the Signal this flow carries");
     u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
     if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as Classifier. It is written without a type.`]);
-    ownerDef.sourceLines.push(`- Flow: ${dir} item ${name}${typed ? ` : [[${typed.baseName}]]` : " (untyped)"}`);
   };
   for (const u of usageObjs) guard("usage", "t_object", u.o, () => {
     const e = u.o, kind = u.entry.native_kind ?? "SyncNode";
@@ -263,7 +262,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const sref: UsageRef = { kind: word, name: nm, typeDraft: null, objGuid: e.guid, typedBy: "" };
       owner.usages.push(sref); usageByObj.set(e.id, { owner, ref: sref });
       set(u.row, "native", word === "fork" ? "ForkNode" : "JoinNode"); u.row.target_stable_id = owner.id; u.row.target_file = owner.path;
-      owner.sourceLines.push(`- Control node: ${word} ${nm}`); return;
+      return;
     }
     const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name: "", typeDraft: null, objGuid: e.guid, typedBy: "" };
     let diag = "";
@@ -283,7 +282,6 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
     if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);
-    owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""}`);
   });
 
   for (const t of triggerObjs) guard("trigger", "t_object", t.o, () => {
@@ -297,7 +295,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   track.stage = "connectors";
   // ---- connectors ---------------------------------------------------------------------------------------------------
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
-  const addStmt = (d: Draft, text: string, line: string): void => { if (!d.members.includes(text)) d.members.push(text); if (!d.sourceLines.includes(line)) d.sourceLines.push(line); };
+  // IMP-096: what the SysML block says is not repeated in Source: EA. `line` is kept only where it carries something SysML does not (a guard or trigger text).
+  const addStmt = (d: Draft, text: string, line = ""): void => { if (!d.members.includes(text)) d.members.push(text); if (/^- (Succession|Transition) /.test(line) && !d.sourceLines.includes(line)) d.sourceLines.push(line); };
   const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
   const DERIVE = new Set(["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"]);
   const ALLOCATE = new Set(["Abstraction:allocate", "Usage:Responsibility"]);
@@ -323,7 +322,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         const info = src?.type === "Info" ? src : dst?.type === "Info" ? dst : null, other = info === src ? dst : src;
         if (info && other) {
           info.describes.push(other.baseName); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
-          info.sourceLines.push(`- Link describes [[${other.baseName}]]`); return;
+          return;
         }
         set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); return;
       }
@@ -336,7 +335,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "Generalization") {
       if (src && dst && src.keyword && src.keyword === dst.keyword && src !== dst) {
         src.specializes.push(dst); set(r, "native", "Specialization"); r.target_stable_id = src.id; r.target_file = src.path;
-        src.sourceLines.push(`- Specializes [[${dst.baseName}]]`); return;
+        return;
       }
       defer("GENERALIZATION_ENDPOINT_KIND"); return;
     }
@@ -348,13 +347,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const owned = whole.usages.find((u) => u.kind === "part" && u.typeDraft === part);
       if (owned) {                                                  // an EA Part usage already says this; the usage wins
         set(r, "alias_merged", "TypedOwnedUsage", "USAGE_WINS"); r.target_stable_id = whole.id; r.target_file = whole.path; r.evidence = `merged into usage ${owned.name}`;
-        whole.sourceLines.push(`- Aggregation to [[${part.baseName}]] merged into part usage ${owned.name} (the usage wins)`); return;
+        return;
       }
       const m = parseMultiplicity(card);
       const name = scopeOf(whole).take(usageIdent(part.title, `part${part.o.id}`));
       whole.usages.push({ kind: "part", name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid });
       set(r, "native", "TypedOwnedUsage", m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
-      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""}`); return;
+      return;
     }
     if (key === "Dependency:satisfy") {
       const req = [src, dst].find((d) => kw(d) === "requirement def"), by = req === src ? dst : src;
@@ -365,7 +364,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const ver = [src, dst].find((d) => kw(d) === "verification def"), req = [src, dst].find((d) => kw(d) === "requirement def");
       if (!ver || !req) { defer("VERIFY_ENDPOINT_KIND"); return; }
       if (!ver.verifies.includes(req.symbol)) ver.verifies.push(req.symbol);
-      ver.sourceLines.push(srcLine("Verifies", req)); done(ver, "VerifyRequirementUsage"); return;
+      done(ver, "VerifyRequirementUsage"); return;
     }
     if (ALLOCATE.has(key)) {
       if (!src || !dst || !src.keyword || !dst.keyword) { defer("ALLOCATE_ENDPOINT_KIND"); return; }
@@ -407,7 +406,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!a || !b || !okKinds.includes(a.ref.kind) || !okKinds.includes(b.ref.kind)) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
       if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
       const word = key === "ControlFlow" ? "succession" : "transition";
-      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name}${c.name ? ` (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : ""}`);
+      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, c.name ? `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name} (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : "");
       done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
     }
     if (key === "UseCase:include") {
@@ -434,12 +433,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   for (const d of drafts) guard("render", "t_object", d.o, () => {
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
     if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
-    src.push(`- EA type: ${e.type}`);
-    if (e.stereotype) src.push(`- EA stereotype: ${e.stereotype}`);
     if (e.alias) src.push(`- EA alias: ${e.alias}`);
-    if (e.author) src.push(`- EA author: ${e.author}`);
-    if (e.created) src.push(`- EA created: ${e.created}`);
-    if (d.pkgPath.length) src.push(`- EA package: ${d.pkgPath.join(" > ")}`);
     for (const [k, v] of g.tags.get(e.id) ?? []) {
       if (isPlaceholder(v)) continue;
       const disp = tagDisp.get(k);

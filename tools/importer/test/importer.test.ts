@@ -231,3 +231,12 @@ test("the disposition lists are well formed and cover the tags the fixtures use"
   assert.ok(td.every((t) => ["property", "body", "structure", "archive", "drop"].includes(t.disposition)));
   for (const k of ["Priority-Trace", "Responsible", "Special Characteristic", "Special Characteristic Comment", "Special Characteristic-Trace", "Supporting", "Target", "Target-Trace"]) assert.equal(td.find((t) => t.tag === k)?.disposition, "drop", k);
 });
+
+test("Source: EA does not repeat what SysML or the YAML already say (IMP-096)", async () => {
+  const res = await run();
+  const all = notes(res).filter((f) => !f.path.endsWith("Boundaries.md")).map((f) => (f.content.split("## Source: EA")[1] ?? "").split("## SysML v2")[0]!).join("\n");
+  assert.doesNotMatch(all, /^- (Usage|Flow|Control node|Aggregation|Specializes|Satisfies|Verifies|Allocated to|Realises|Performs|Derived from|Dependency|Connection|Includes|Extended by|Link describes|EA type|EA stereotype|EA author|EA created|EA package)\b/m);
+  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
+  assert.match(charger, /part modules\[3\]|part modules : [^;]*\[3\]/, "quantity is SysML multiplicity");
+  assert.match(charger, /^eaType: /m, "EA type and stereotype are in the YAML");
+});

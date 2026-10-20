@@ -249,3 +249,15 @@ Rules: none edited. Caveat: tested only against a fake Obsidian API in Chromium;
 
 Rules: IMP-093, IMP-094, IMP-095 added (Active). IMP-003 and IMP-005 are now implemented but stay Unreviewed until the owner reviews them.
 
+## D-0027 — SysML v2 defines structure and links; Source: EA is reduced to what is stored nowhere else
+
+2026-10-19 · Spencer · Accepted
+
+1. **Boundary.** Structure, linking, quantities and multiplicity are defined by the SysML v2 block. Relationships SysML v2 cannot express, and the identifying properties, stay in the YAML. Nothing is written twice.
+2. **Removed from `## Source: EA`:** the Usage, Flow, Control node, Aggregation, Specializes, Satisfies, Verifies, Allocated to, Realises, Performs, Derived from, Dependency, Connection, Includes, Extended by and Link-describes lines (all restate a SysML statement or a YAML link); EA type, stereotype, author, created and package (uid carries author and date, `eaType` carries type and stereotype, the folder follows the package).
+3. **Kept:** the EA GUID (re-import identity, D-0026), `Name` when the file name differs, alias, tags with a `body` disposition, trigger lines, succession and transition lines that carry a guard or trigger text, unresolved connector lines, attachments.
+4. **Consequence for re-import.** The merge is additive, so notes already imported keep their old lines; a fresh import writes the short form.
+5. **Open.** Guard and trigger text has no SysML form in the block today. SysML v2 has `accept` and `if`; moving them there is a separate change.
+
+Rules: IMP-096 added (Active).
+
