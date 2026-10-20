@@ -286,3 +286,15 @@ Rules: MOD-165 and MOD-166 added (Active).
 5. **Not yet.** StateMachine, ActivityPartition, ActionPin, ActivityParameter, InformationFlow and the t_xref / t_operation / t_attribute tables have no path yet; `governance/schemas/EA_TO_V2_PATHS.md` lists them.
 
 Rules: IMP-097, IMP-098.
+
+## D-0030 — Workbench Edit lens: add relationships, elements and requirement text
+
+2026-10-20 · Spencer · Accepted
+
+1. **Where.** A new Edit lens in the right panel (hidden when the host cannot write). Three tabs: Add relationship, Add element, Requirement text.
+2. **Relationships.** Drop-down of kinds eligible for the selected note's definition: has part/port/action/state/item (typed, with name and quantity), satisfies, verifies, allocated to, performs, derived from, refines, traces to, depends on, specializes, includes, extended by. The target is chosen in a browser with search, a type filter and folder groups; each entry shows id, type and, for requirements, the text. The statement is inserted in the source note's SysML block with the same forms the importer writes. Repeats and ineligible pairs are refused.
+3. **Elements.** Class and subtype drop-downs, name, text, folder (searchable list or a new path). The note gets uid, id, status Draft and a one-definition SysML block (requirement text becomes `doc`). Classes with no SysML form become plain notes.
+4. **Safety.** Preview diff, apply on click, stale-file check, all-or-nothing write, undo (WKB-009). Nothing is renamed or deleted by an edit except undoing a note the edit created.
+5. **Not yet.** Removing or changing a relationship, connections between ports, transitions and flows, renaming, moving a note, editing a usage's quantity. Eligibility follows the importer's endpoint rules, not a full SysML type check; the parser gate remains the conformance check.
+
+Rules: WKB-008, WKB-009, WKB-010.

@@ -10,7 +10,7 @@ const rd = (p) => fs.readFileSync(path.join(here, p), "utf8");
 const strip = (s) => s.replace(/\nif \(typeof module !== "undefined"\)[^\n]*\n?$/, "\n");
 const CORE = strip(rd("../core/src/mdse_core.js"));
 const CLASSES = JSON.stringify(JSON.parse(rd("../core/src/classes.json")));
-const ORDER = ["sysml_lang","sysml_scan", "index", "views", "canvas", "vault_files", "ui", "panel"];
+const ORDER = ["sysml_lang","sysml_scan", "index", "views", "canvas", "edit", "vault_files", "ui", "edit_ui", "panel"];
 const exportsOf = (code) => [...code.matchAll(/^export (?:async )?(?:function|const|class|interface|type)\s+(\w+)/gm)].map((m) => m[1]);
 function bundle(withPlugin) {
   const names = new Map(); const parts = [];
@@ -25,7 +25,7 @@ function bundle(withPlugin) {
       .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
     parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
   }
-  const api = "{ mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES }";
+  const api = "{ mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor }";
   return `const WB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 }
 const wb = bundle();

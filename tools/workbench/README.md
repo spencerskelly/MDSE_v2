@@ -2,7 +2,7 @@
 
 Viewer for an MDSE vault (read-only except two Review actions, D-0025). One TypeScript core, two shells: an offline HTML page and an Obsidian plugin.
 
-**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.6.0); read-only except two Review actions (D-0025).** D-0019 records the design.
+**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.7.0); edits: Review actions (D-0025) and the Edit lens (D-0030).** D-0019 records the design.
 
 ## Run it
 
@@ -19,6 +19,7 @@ There is no Workbench browser. Obsidian's file explorer picks the note; the Work
 - **Canvas in main window (temporary view):** Structure, Functional and Requirements trace and Tables each have a canvas profile. It is written to ONE scratch file, `99_System/22_Views/Workbench Preview.canvas`, and opened in the main area. Every preview overwrites that file, it is deleted when the plugin loads or unloads, and Git ignores the folder. Cards are the real notes; a reference whose note is not in the vault is a red text card. Also the command "Preview canvas from current note" and the file right-click menu.
 - **Saved view:** nothing is kept until you choose "Save canvas…" (panel button, or the command "Save preview canvas…"). The default folder `99_System/23_Saved_Views` (setting "Default folder for saved canvases") is offered first, then the last folder you used, then every other folder. The saved file is a copy of the preview as you left it and never overwrites (a counter is added).
 - **Canvas settings** (in the panel): connections away (hops), max notes, relationships followed, note types and statuses shown, folder, and a classifier that groups notes sharing a type, subtype, status, folder or EA type at the same distance into one card with merged edge counts. Notes hidden by a filter are not traversed through. Settings are per session; a canvas saved from non-default settings gets a short code in its suggested file name.
+- **Edit (D-0030):** Add relationship (kind drop-down limited to what the selected note's definition allows; searchable, folder-grouped target browser showing id, type and requirement text; preview diff; Apply; Undo), Add element (class and subtype drop-downs, folder search, name, text), Requirement text. Kinds: has part/port/action/state/item, satisfies, verifies, allocated to, performs, derived from, refines, traces to, depends on, specializes, includes, extended by.
 - **Review (updates issues):** flags, unresolved links, untyped usages, duplicate ids, parser status, and every Issue note not Retired. Two buttons write to a note, each on your click, each with an Undo: a status picker on an Issue note, and "Resolve" on a flag (removes that one flag callout from the user zone). Nothing else edits a note, and the Workbench never edits the `## SysML v2` block.
 - The index is shared by the panel and the tables and rebuilds a moment after a note is saved, created, renamed or deleted.
 
@@ -26,7 +27,7 @@ There is no Workbench browser. Obsidian's file explorer picks the note; the Work
 
 Agreed 2026-10-19 (D-0023). These are tool documentation; they are not registered in RULESET.md, whose WKB rules stay Unreviewed.
 
-1. **Read-only on the model, with two exceptions (D-0025).** The Workbench never creates, renames or deletes a model note and never touches the `## SysML v2` block. The only edits are in Review, each started by a click, each undoable: set an Issue note's `status`, and resolve (remove) one flag callout in the user zone.
+1. **Edits are few, previewed and undoable (D-0025, D-0030).** The Workbench never renames or deletes a model note. Review: set an Issue's `status`, resolve one flag. Edit lens: add a relationship (written into the source note's `## SysML v2` block), add an element (a new note with uid, id, status and its block), set a requirement's text. Each edit shows a diff first, is applied only on a click, is refused if the file changed since the preview, and has an Undo.
 2. **Disposable index.** It is rebuilt from the files on every load and holds no meaning of its own.
 3. **Relationships come from the SysML v2 text** (D-0003) plus MDSE-only YAML links. It never guesses a link; what it cannot resolve is shown as unresolved and listed in Review.
 4. **A missing end is never invented.** An `allocate` or `dependency` whose source note is absent is kept as an unresolved edge on the note that has it, never as a self-loop. Typed parts whose definition is absent are listed as "not in vault".

@@ -353,11 +353,11 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "functional" | "requirements" | "review";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure trace"], ["functional", "Functional trace"], ["requirements", "Requirements trace"], ["review", "Review"]];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", functional: "Functional trace", requirements: "Requirements trace", review: "Everything" };
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "functional" | "requirements" | "review" | "edit";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure trace"], ["functional", "Functional trace"], ["requirements", "Requirements trace"], ["review", "Review"], ["edit", "Edit"]];
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", functional: "Functional trace", requirements: "Requirements trace", review: "Everything", edit: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
-export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note";
+export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit";
 
 export interface Cell { text: string; path?: string | null; cls?: string }
 export type TableCell = Cell | Cell[] | string;

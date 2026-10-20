@@ -15,6 +15,7 @@ declare const WB: {
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
+  edAuthor: (yaml: string) => string;
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
 };
 const obsidian = require("obsidian");
@@ -102,6 +103,13 @@ function hostFor(plugin: any): any {
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
+    edit: {
+      files: () => plugin.files,
+      classes: () => CLASSES,
+      author: () => plugin.author,
+      folders: () => [...new Set<string>([...(plugin.ix?.notes?.values?.() ?? [])].map((n: any) => n.folder as string))].sort(),
+      applyPlan: (plan: any) => plugin.applyPlan(plan),
+    },
   };
 }
 
@@ -142,6 +150,7 @@ class TableView extends obsidian.ItemView {
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
   preview: { fileName: string } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
+  author = "";
   async saveSettings() { await this.saveData(this.settings); }
 
   /* ---- the one shared index ---- */
@@ -151,6 +160,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       this.building = (async () => {
         const say = (m: string) => this.apps.forEach((a: any) => a.setIndex(null, m));
         this.files = await readVault(this.app, (d, t) => say(`Reading notes… ${d}/${t}`));
+        try { this.author = WB.edAuthor(await this.app.vault.adapter.read(".vault.yaml")); } catch { this.author = ""; }
         await this.rebuild();
       })().finally(() => { this.building = null; });
     }
@@ -234,6 +244,46 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       this.files.set(path, before); this.laterRebuild(200); return "Undone.";
     };
     return { message: change.kind === "status" ? `Set status of "${note.title}" to ${change.value}.` : `Resolved flag "${change.title}" in "${note.title}".`, undo };
+  }
+
+  /* ---- Edit lens (D-0030): apply a previewed plan; every file is checked against what the preview was built from ---- */
+  async applyPlan(plan: { summary: string; writes: Array<{ path: string; before: string | null; after: string }>; problems: string[] }): Promise<{ message: string; undo: () => Promise<string> }> {
+    if (plan.problems.length || !plan.writes.length) throw new Error(plan.problems[0] ?? "Nothing to write.");
+    const done: Array<{ path: string; before: string | null; after: string }> = [];
+    const back = async (): Promise<void> => {
+      for (const w of done.reverse()) {
+        const f = this.app.vault.getAbstractFileByPath(w.path);
+        if (!f) continue;
+        if (w.before === null) await this.app.vault.delete(f); else await this.app.vault.process(f, () => w.before);
+        if (w.before === null) this.files.delete(w.path); else this.files.set(w.path, w.before);
+      }
+    };
+    try {
+      for (const w of plan.writes) {
+        if (w.before === null) {
+          if (this.app.vault.getAbstractFileByPath(w.path)) throw new Error(`${w.path} already exists. Preview again.`);
+          await ensureFolder(this.app, w.path.includes("/") ? w.path.slice(0, w.path.lastIndexOf("/")) : "");
+          await this.app.vault.create(w.path, w.after);
+        } else {
+          const f = this.app.vault.getAbstractFileByPath(w.path);
+          if (!f) throw new Error(`${w.path} is gone. Preview again.`);
+          await this.app.vault.process(f, (cur: string) => { if (cur !== w.before) throw new Error(`"${w.path}" changed since the preview. Preview again.`); return w.after; });
+        }
+        this.files.set(w.path, w.after); done.push(w);
+      }
+    } catch (e) { await back(); this.laterRebuild(200); throw e; }
+    this.laterRebuild(200);
+    const applied = [...done];
+    const undo = async (): Promise<string> => {
+      for (const w of applied) {
+        const f = this.app.vault.getAbstractFileByPath(w.path);
+        if (!f) continue;
+        const cur = await this.app.vault.read(f);
+        if (cur !== w.after) throw new Error(`"${w.path}" changed since; not undone.`);
+      }
+      done.length = 0; done.push(...applied); await back(); this.laterRebuild(200); return "Undone.";
+    };
+    return { message: plan.summary, undo };
   }
 
   /* ---- lifecycle ---- */

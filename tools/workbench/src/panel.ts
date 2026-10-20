@@ -6,6 +6,8 @@ import type { Child } from "./ui.ts";
 import type { ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
+import { editView, EDIT_STYLE } from "./edit_ui.ts";
+import type { EditHost } from "./edit_ui.ts";
 
 export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
 export interface PanelHost {
@@ -18,6 +20,8 @@ export interface PanelHost {
   /** Review actions. Resolves to a message and a way back. */
   updateNote?(path: string, change: NoteChange): Promise<{ message: string; undo: () => Promise<string> }>;
   hasPreview?(): boolean;
+  /** Editing (D-0030). Absent = the Edit lens is hidden. */
+  edit?: EditHost;
 }
 export interface PanelApp {
   setIndex(ix: ModelIndex | null, loading?: string): void;
@@ -40,7 +44,7 @@ const PANEL_STYLE = `
 
 export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens } = { mode: "panel" }): PanelApp {
   const compact = opt.mode === "panel";
-  const style = h("style"); style.textContent = STYLE + PANEL_STYLE;
+  const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE;
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
@@ -153,7 +157,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
-    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; draw(); } }, label)));
+    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; draw(); } }, label)));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
@@ -169,6 +173,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
+      else if (lens === "edit" && host.edit) body.append(editView({ ix, sel, host: host.edit, done: (m, u) => { msg = m; undo = u; draw(); }, open: (p) => host.openNote(p) }));
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
     wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);

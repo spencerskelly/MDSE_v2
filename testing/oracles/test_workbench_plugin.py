@@ -37,10 +37,11 @@ window.__app = {
     getAbstractFileByPath: (p) => exists(p) ? fileOf(p) : null,
     getAllLoadedFiles: () => [{ path: '/', children: [] }, ...Object.keys(window.__dirs).map((p) => ({ path: p, children: [] })), ...Object.keys(window.__files).map((p) => ({ path: p }))],
     createFolder: async (p) => { window.__dirs[p] = 1; },
-    create: async (p, t) => { if (p in window.__files) throw new Error('exists ' + p); window.__files[p] = t; return fileOf(p); },
+    create: async (p, t) => { if (p in window.__files || p in window.__notes) throw new Error('exists ' + p); if (p.endsWith('.md')) window.__notes[p] = t; else window.__files[p] = t; return fileOf(p); },
+    adapter: { read: async (p) => { if (p in window.__files) return window.__files[p]; throw new Error('missing ' + p); } },
     modify: async (f, t) => { window.__files[f.path] = t; },
     process: async (f, fn) => { const cur = read(f); const next = fn(cur); if (f.path in window.__notes) window.__notes[f.path] = next; else window.__files[f.path] = next; return next; },
-    delete: async (f) => { delete window.__files[f.path]; },
+    delete: async (f) => { delete window.__files[f.path]; delete window.__notes[f.path]; },
     on: (ev, fn) => { window.__ev['vault:' + ev] = fn; return {}; },
   },
   workspace: {
@@ -151,6 +152,58 @@ class WorkbenchPlugin(unittest.TestCase):
 
             pg.evaluate("window.__plugin.onunload()")
             pg.wait_for_function("p => !(p in window.__files)", arg=PREVIEW)
+            b.close()
+        self.assertEqual(errors, [])
+
+    def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
+            pg.wait_for_selector("header >> text=Charger")
+            pg.click("button[role=tab]:has-text('Edit')")
+
+            # relationship: dropdown of kinds, searchable target browser, preview diff, apply, undo
+            pg.select_option("select[aria-label=Relationship]", "allocate")
+            pg.fill("input[aria-label='Search targets']", "controller")
+            pg.click(".pick .it:has-text('Controller')")
+            pg.click("button:has-text('Preview')")
+            pg.wait_for_selector(".diff .add:has-text('allocate')")
+            before = pg.evaluate("p => window.__notes[p]", "10_Model/Charger.md")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /allocate .* to .*Controller/.test(window.__notes[p])", arg="10_Model/Charger.md")
+            pg.wait_for_selector("button:has-text('Undo')")
+            pg.click("button:has-text('Undo')")
+            pg.wait_for_function("([p, t]) => window.__notes[p] === t", arg=["10_Model/Charger.md", before])
+
+            # element: folder datalist, new note appears in the vault and opens
+            pg.click("button:has-text('Add element')")
+            pg.select_option("select[aria-label=Class]", "Requirement")
+            pg.select_option("select[aria-label=Subtype]", "functional")
+            pg.fill("input[placeholder=Name]", "Fan shall run")
+            pg.fill("textarea", "The fan shall run above 40 C.")
+            pg.fill("input[list=mded-folders]", "10_Model/New")
+            pg.click("button:has-text('Preview')")
+            pg.wait_for_selector(".diff .add:has-text('requirement def')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("() => 'author: skellyspencer' && Object.keys(window.__notes).some(k => k.startsWith('10_Model/New/Fan shall run'))")
+            made = pg.evaluate("() => Object.entries(window.__notes).find(([k]) => k.startsWith('10_Model/New/'))[1]")
+            self.assertIn("doc /* The fan shall run above 40 C. */", made)
+            self.assertRegex(made, r"uid: \d{17}skellyspencer")
+            pg.click("button:has-text('Undo')")
+            pg.wait_for_function("() => !Object.keys(window.__notes).some(k => k.startsWith('10_Model/New/'))")
             b.close()
         self.assertEqual(errors, [])
 
