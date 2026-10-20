@@ -274,3 +274,15 @@ Rules: IMP-096 added (Active).
 
 Rules: MOD-165 and MOD-166 added (Active).
 
+
+## D-0029 — Requirement text is the definition's `doc`; transition triggers, guards and effects follow SysML v2
+
+2026-10-20 · Spencer · Accepted
+
+1. **Requirement text.** A `requirement def` carries its wording as `doc /* … */`: the EA Note, plus any `text` / `SysML1.x::text` tag (the wording sits in the tag's Notes column when Value is `<memo>`; the reader now takes it). The text is no longer repeated in the note body. `*/` inside the text is written as `* /`.
+2. **Display.** Wherever the Workbench shows a requirement it shows name, subtype and text: Requirements trace and the traceability page (Requirement, Subtype, Text columns), canvas cards (name link, subtype, text), Note lens and panel.
+3. **Transitions.** EA connector PDATA1 / PDATA2 / PDATA3 are trigger, guard and effect (V1 decision). A StateFlow becomes `transition first a accept <trigger> if <guard> do <effect> then b;`; a ControlFlow becomes `succession first a if <guard> then b;`. Free text cannot be an expression, so each part is a small helper usage in the same definition (`item trigger…`, `constraint guard…`, `action effect…`) whose `doc` holds the wording. A connector with only a name uses it as the guard (ControlFlow) or the trigger (StateFlow).
+4. **Source: EA.** The `- Succession` / `- Transition` lines are gone; the Workbench reads the wording from the SysML block ("Triggers, guards and effects" table).
+5. **Not yet.** StateMachine, ActivityPartition, ActionPin, ActivityParameter, InformationFlow and the t_xref / t_operation / t_attribute tables have no path yet; `governance/schemas/EA_TO_V2_PATHS.md` lists them.
+
+Rules: IMP-097, IMP-098.

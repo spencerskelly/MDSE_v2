@@ -41,3 +41,18 @@ test("every keyword the SysML v2 grammar defines for a definition is a catalog k
     assert.ok(ids.has(`${k}-def`) && ids.has(`${k}-usage`), k);
   }
 });
+
+test("a requirement def's doc comment is captured as its text (IMP-097)", () => {
+  const r = scanSysml("package P {\n    requirement def R {\n        doc /* The charger shall stop at 80 %.\n           Second line. */\n    }\n}\n");
+  assert.equal(r.warnings.length, 0);
+  assert.equal(r.defs[0]!.doc, "The charger shall stop at 80 %.\nSecond line.");
+});
+
+test("transition trigger, guard and effect are read from SysML v2 syntax (IMP-098)", () => {
+  const r = scanSysml("package P {\n    state def S {\n        state a;\n        state b;\n        item trig { doc /* Start pressed */ }\n        constraint ok { doc /* voltage ok */ }\n        action fx { doc /* close it */ }\n        transition first a accept trig if ok do fx then b;\n        succession first a if ok then b;\n    }\n}\n");
+  assert.deepEqual(r.warnings, []);
+  const d = r.defs[0]!, t = d.stmts.find((s) => s.kind === "transition")!;
+  assert.deepEqual([t.trigger, t.guard, t.effect], ["trig", "ok", "fx"]);
+  assert.equal(d.notes["ok"], "voltage ok");
+  assert.equal(d.stmts.find((s) => s.kind === "succession")!.guard, "ok");
+});

@@ -51,9 +51,9 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   };
   const con = (type, src, dst, o = {}) => {
     const id = ++ck;
-    db.prepare(`INSERT INTO t_connector (Connector_ID,Name,Direction,Notes,Connector_Type,SourceCard,DestCard,SourceIsAggregate,DestIsAggregate,Start_Object_ID,End_Object_ID,Stereotype,ea_guid)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, o.name ?? null, o.direction ?? "Source -> Destination", o.notes ?? null, type, o.srcCard ?? null, o.dstCard ?? null,
-      o.srcAgg ?? 0, o.dstAgg ?? 0, src, dst, o.stereotype ?? null, guid("C", id));
+    db.prepare(`INSERT INTO t_connector (Connector_ID,Name,Direction,Notes,Connector_Type,SourceCard,DestCard,SourceIsAggregate,DestIsAggregate,Start_Object_ID,End_Object_ID,Stereotype,ea_guid,PDATA1,PDATA2,PDATA3)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, o.name ?? null, o.direction ?? "Source -> Destination", o.notes ?? null, type, o.srcCard ?? null, o.dstCard ?? null,
+      o.srcAgg ?? 0, o.dstAgg ?? 0, src, dst, o.stereotype ?? null, guid("C", id), o.p1 ?? null, o.p2 ?? null, o.p3 ?? null);
     return id;
   };
 
@@ -131,10 +131,10 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   con("Connector", portA, portB);                                                            // same owner -> connect
   con("Connector", portB, portC);                                                            // different owners -> review
   const a1 = obj("Action", "measure", fns, { parent: fn }), a2 = obj("Action", "adjust", fns, { parent: fn });
-  con("ControlFlow", a1, a2, { name: "if ready" });
+  con("ControlFlow", a1, a2, { name: "if ready", p2: "measurement ready */ and stable" });
   con("ControlFlow", a1, st);                                                                 // not usages -> review
   const s1 = obj("StateNode", "Idle", fns, { parent: st }), s2 = obj("StateNode", "Running", fns, { parent: st });
-  con("StateFlow", s1, s2, { name: "start" });
+  con("StateFlow", s1, s2, { name: "start", p1: "Start button pressed", p2: "supply voltage ok", p3: "close contactor" });
   const vt = obj("Activity", "Verify Enclosure", fns, { stereotype: "testCase" });
   con("Dependency", vt, r1, { stereotype: "verify" });
   con("Dependency", vt, r2, { stereotype: "verify" });

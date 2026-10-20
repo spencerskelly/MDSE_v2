@@ -89,6 +89,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const box = h("div", {});
     box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note")));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
+    if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges: ReturnType<typeof outgoing>, dir: "out" | "in"): HTMLElement => {
       const by = new Map<string, typeof edges>(); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind)!).push(e);
       if (!by.size) return h("div", { class: "mut" }, "None.");

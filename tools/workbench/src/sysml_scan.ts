@@ -3,8 +3,8 @@
  * pinned parser's job (the parser gate), not this file's. */
 
 export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string }
-export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; text: string }
-export interface Definition { keyword: string; pkg: string; name: string; symbol: string; specializes: string[]; usages: Usage[]; stmts: Stmt[]; raw: string[]; /** catalog ids of every construct seen inside (governance/language/catalog.json) */ langs: string[] }
+export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; text: string }
+export interface Definition { keyword: string; pkg: string; name: string; symbol: string; specializes: string[]; usages: Usage[]; stmts: Stmt[]; raw: string[]; /** text of the definition own doc comment (requirement wording) */ doc?: string; /** wording of helper usages by name (guard constraints, trigger items, effect actions) */ notes: Record<string, string>; /** catalog ids of every construct seen inside (governance/language/catalog.json) */ langs: string[] }
 export interface ScanResult { defs: Definition[]; warnings: string[]; /** catalog ids of every construct in the block */ langs: string[] }
 import { classify } from "./sysml_lang.ts";
 
@@ -53,8 +53,12 @@ function interpret(it: Item, d: Definition): void {
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
+let DOCS: string[] = [];
+const docText = (head: string): string => (DOCS[Number(/\d+$/.exec(head)![0])] ?? "").replace(/^\s*\*?\s?/gm, "").trim();
 function interpretOne(it: Item, d: Definition): boolean {
   const h = it.head;
+  if (/^doc ~D\d+$/.test(h)) { for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); return true; }
+  { const hm = /^(?:constraint|action|state|item|attribute)\s+([A-Za-z_]\w*)\b/.exec(h); const dc = hm && it.body?.find((c) => /^doc ~D\d+$/.test(c.head)); if (dc) d.notes[hm![1]!] = docText(dc.head); }
   for (const i of classify(h)) if (!d.langs.includes(i)) d.langs.push(i);
   let m: RegExpExecArray | null;
   const st = (s: Stmt): void => { d.stmts.push(s); };
@@ -67,8 +71,8 @@ function interpretOne(it: Item, d: Definition): boolean {
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1]!, b: m[2]!, tag: it.tag || "dependsOn", text: h }); return true; }
-  if ((m = /^succession\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1]!, b: m[2]!, text: h }); return true; }
-  if ((m = /^transition\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1]!, b: m[2]!, text: h }); return true; }
+  if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1]!, b: m[3]!, ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
+  if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1]!, b: m[5]!, ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
   if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1]!, b: m[2]!, tag: m[3] ?? "", text: h }); return true; }
@@ -78,7 +82,9 @@ function interpretOne(it: Item, d: Definition): boolean {
 export function scanSysml(block: string): ScanResult {
   const warnings: string[] = [];
   const defs: Definition[] = [];
-  const { items } = parseItems(stripComments(block), 0, false);
+  DOCS = [];
+  const pre = block.replace(/\bdoc\s*\/\*([\s\S]*?)\*\//g, (_m, t: string) => { DOCS.push(t); return `doc ~D${DOCS.length - 1};`; });
+  const { items } = parseItems(stripComments(pre), 0, false);
   const langs: string[] = [];
   const note = (ids: string[]): void => { for (const i of ids) if (!langs.includes(i)) langs.push(i); };
   const walkPkg = (pkg: string, kids: Item[]): void => {
@@ -90,14 +96,14 @@ export function scanSysml(block: string): ScanResult {
         const ids = classify(k.head);
         if (ids.length) {                                            // a valid construct the vault has no view for yet: classified, kept, not reported
           note(ids);
-          if (k.body) { const holder: Definition = { keyword: "", pkg, name: "", symbol: "", specializes: [], usages: [], stmts: [], raw: [], langs: [] }; for (const c of k.body) interpret(c, holder); note(holder.langs); for (const r of holder.raw) warnings.push(`not recognized: ${r.slice(0, 80)}`); }
+          if (k.body) { const holder: Definition = { keyword: "", pkg, name: "", symbol: "", specializes: [], usages: [], stmts: [], raw: [], notes: {}, langs: [] }; for (const c of k.body) interpret(c, holder); note(holder.langs); for (const r of holder.raw) warnings.push(`not recognized: ${r.slice(0, 80)}`); }
           continue;
         }
         if (k.head) warnings.push(`not recognized: ${k.head.slice(0, 80)}`);
         continue;
       }
-      const d: Definition = { keyword: `${m[1]} def`, pkg, name: m[2]!, symbol: pkg ? `${pkg}::${m[2]}` : m[2]!, specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [], langs: classify(k.head) };
-      for (const c of k.body ?? []) interpret(c, d);
+      const d: Definition = { keyword: `${m[1]} def`, pkg, name: m[2]!, symbol: pkg ? `${pkg}::${m[2]}` : m[2]!, specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [], notes: {}, langs: classify(k.head) };
+      for (const c of k.body ?? []) { if (/^doc ~D\d+$/.test(c.head) && d.doc === undefined) d.doc = docText(c.head); interpret(c, d); }
       for (const r of d.raw) warnings.push(`${d.symbol}: not recognized: ${r.slice(0, 80)}`);
       note(d.langs);
       defs.push(d);

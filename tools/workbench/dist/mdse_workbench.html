@@ -342,8 +342,8 @@ function relations(h        , add                      , isDef = false)       {
  * pinned parser's job (the parser gate), not this file's. */
 
                                                                                           
-                                                                                                  
-                                                                                                                                                                                                                                                               
+                                                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
                                                                                                                                    
 
                                                                  
@@ -391,8 +391,12 @@ function interpret(it      , d            )       {
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
+let DOCS           = [];
+const docText = (head        )         => (DOCS[Number(/\d+$/.exec(head) [0])] ?? "").replace(/^\s*\*?\s?/gm, "").trim();
 function interpretOne(it      , d            )          {
   const h = it.head;
+  if (/^doc ~D\d+$/.test(h)) { for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); return true; }
+  { const hm = /^(?:constraint|action|state|item|attribute)\s+([A-Za-z_]\w*)\b/.exec(h); const dc = hm && it.body?.find((c) => /^doc ~D\d+$/.test(c.head)); if (dc) d.notes[hm [1] ] = docText(dc.head); }
   for (const i of classify(h)) if (!d.langs.includes(i)) d.langs.push(i);
   let m                        ;
   const st = (s      )       => { d.stmts.push(s); };
@@ -405,8 +409,8 @@ function interpretOne(it      , d            )          {
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1] , b: m[2] , tag: it.tag || "dependsOn", text: h }); return true; }
-  if ((m = /^succession\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[2] , text: h }); return true; }
-  if ((m = /^transition\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[3] , ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
+  if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[5] , ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
   if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1] , b: m[2] , tag: m[3] ?? "", text: h }); return true; }
@@ -416,7 +420,9 @@ function interpretOne(it      , d            )          {
 function scanSysml(block        )             {
   const warnings           = [];
   const defs               = [];
-  const { items } = parseItems(stripComments(block), 0, false);
+  DOCS = [];
+  const pre = block.replace(/\bdoc\s*\/\*([\s\S]*?)\*\//g, (_m, t        ) => { DOCS.push(t); return `doc ~D${DOCS.length - 1};`; });
+  const { items } = parseItems(stripComments(pre), 0, false);
   const langs           = [];
   const note = (ids          )       => { for (const i of ids) if (!langs.includes(i)) langs.push(i); };
   const walkPkg = (pkg        , kids        )       => {
@@ -428,14 +434,14 @@ function scanSysml(block        )             {
         const ids = classify(k.head);
         if (ids.length) {                                            // a valid construct the vault has no view for yet: classified, kept, not reported
           note(ids);
-          if (k.body) { const holder             = { keyword: "", pkg, name: "", symbol: "", specializes: [], usages: [], stmts: [], raw: [], langs: [] }; for (const c of k.body) interpret(c, holder); note(holder.langs); for (const r of holder.raw) warnings.push(`not recognized: ${r.slice(0, 80)}`); }
+          if (k.body) { const holder             = { keyword: "", pkg, name: "", symbol: "", specializes: [], usages: [], stmts: [], raw: [], notes: {}, langs: [] }; for (const c of k.body) interpret(c, holder); note(holder.langs); for (const r of holder.raw) warnings.push(`not recognized: ${r.slice(0, 80)}`); }
           continue;
         }
         if (k.head) warnings.push(`not recognized: ${k.head.slice(0, 80)}`);
         continue;
       }
-      const d             = { keyword: `${m[1]} def`, pkg, name: m[2] , symbol: pkg ? `${pkg}::${m[2]}` : m[2] , specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [], langs: classify(k.head) };
-      for (const c of k.body ?? []) interpret(c, d);
+      const d             = { keyword: `${m[1]} def`, pkg, name: m[2] , symbol: pkg ? `${pkg}::${m[2]}` : m[2] , specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [], notes: {}, langs: classify(k.head) };
+      for (const c of k.body ?? []) { if (/^doc ~D\d+$/.test(c.head) && d.doc === undefined) d.doc = docText(c.head); interpret(c, d); }
       for (const r of d.raw) warnings.push(`${d.symbol}: not recognized: ${r.slice(0, 80)}`);
       note(d.langs);
       defs.push(d);
@@ -659,7 +665,9 @@ function whereUsed(ix            , target        , maxDepth = 8)                
 }
 
 /* ---- Requirements and traceability ----------------------------------------------------------------------------- */
-                                                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                                                                   
+/** The requirement's wording: the `doc` in its SysML block (IMP-097); older notes fall back to the first body paragraph. */
+function requirementText(n      )         { return (n.def?.doc ?? n.body.split(/\n\s*\n/)[0] ?? "").trim(); }
 function isRequirement(n      )          { return n.type === "Requirement" || n.def?.keyword === "requirement def"; }
 function traceMatrix(ix            )                                                                           {
   const rows             = [];
@@ -668,7 +676,7 @@ function traceMatrix(ix            )                                            
     const inn = incoming(ix, n.path), out = outgoing(ix, n.path);
     const from = (k        )           => inn.filter((e) => e.kind === k).map((e) => e.from);
     const to = (k        )           => out.filter((e) => e.kind === k && e.to).map((e) => e.to );
-    const r           = { path: n.path, id: n.id, title: n.title, subtype: n.subtype, status: n.status, satisfiedBy: from("satisfies"), verifiedBy: from("verifies"),
+    const r           = { path: n.path, id: n.id, title: n.title, subtype: n.subtype, text: requirementText(n), status: n.status, satisfiedBy: from("satisfies"), verifiedBy: from("verifies"),
       derivedFrom: to("derivedFrom"), derives: from("derivedFrom"), refines: to("refines"), refinedBy: from("refines"), allocatedTo: [...from("allocatedTo")].concat(to("allocatedTo")), gaps: [] };
     if (!r.satisfiedBy.length) r.gaps.push("no satisfier");
     if (!r.verifiedBy.length) r.gaps.push("no verification");
@@ -680,10 +688,10 @@ function traceMatrix(ix            )                                            
 
 /* ---- Behavior and states ---------------------------------------------------------------------------------------- */
                                                                                                    
-                                                                                                                                                                                   
+                                                                                                                                                                                                                                                                                                                                                                                            
 function behavior(ix            , path        )             {
   const n = ix.notes.get(path), d = n?.def;
-  if (!n || !d) return { kind: "none", nodes: [], edges: [], unresolved: [], triggers: [] };
+  if (!n || !d) return { kind: "none", nodes: [], edges: [], unresolved: [], triggers: [], guards: [] };
   const flowKinds = new Set(["action", "state", "fork", "join"]);
   const nodes             = d.usages.filter((u) => flowKinds.has(u.kind)).map((u) => ({ name: u.name, kind: u.kind, type: u.type ?? "", path: u.type ? ix.bySymbol.get(u.type) ?? null : null, layer: 0 }));
   const names = new Set(nodes.map((x) => x.name));
@@ -694,8 +702,11 @@ function behavior(ix            , path        )             {
   for (let pass = 0; pass < nodes.length; pass++) { let moved = false; for (const e of edges) { const v = (layer.get(e.from) ?? 0) + 1; if (v > (layer.get(e.to) ?? 0) && v <= nodes.length) { layer.set(e.to, v); moved = true; } } if (!moved) break; }
   for (const x of nodes) x.layer = layer.get(x.name) ?? 0;
   const triggers = n.sourceLines.filter((l) => l.startsWith("- Trigger:")).map((l) => l.replace(/ — EA GUID.*$/, "").slice(2));
+  const words = (nm         )         => (nm ? d.notes[nm] ?? nm : "");
+  const guards = d.stmts.filter((s) => (s.kind === "succession" || s.kind === "transition") && (s.trigger || s.guard || s.effect))
+    .map((s) => ({ from: s.a , to: s.b , kind: s.kind, trigger: words(s.trigger), guard: words(s.guard), effect: words(s.effect) }));
   const kind = nodes.some((x) => x.kind === "state") ? "states" : nodes.length ? "actions" : "none";
-  return { kind, nodes, edges, unresolved, triggers };
+  return { kind, nodes, edges, unresolved, triggers, guards };
 }
 
 /* ---- Interfaces ------------------------------------------------------------------------------------------------- */
@@ -966,8 +977,8 @@ function lensTables(ix            , lens      , sel        , o              = {}
       note: `${all.length} function(s) in the vault; ${all.filter((r) => r.gaps.length).length} with gaps.` });
   } else if (lens === "requirements") {
     const t = traceMatrix(ix), rows = scope === "selected" && has ? t.rows.filter((r) => traceRelated(r, sel)) : t.rows;
-    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n .title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
-      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path }        , sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } })                                        ), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
+    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n .title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sub", label: "Subtype" }, { key: "txt", label: "Text", wide: true }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path }        , sub: r.subtype, txt: r.text, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } })                                        ), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
       note: `${t.total} requirement(s): ${t.satisfied} satisfied, ${t.verified} verified.` });
   } else if (lens === "tables") {
     const which = o.table ?? "relationships";
@@ -1041,6 +1052,11 @@ function toCanvas(ix            , start        , profile         , spec         
     if (grp) {
       const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m) .title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
+    }
+    if (it.path && isRequirement(ix.notes.get(it.path) )) {                    // requirements show name, subtype and wording on the card (IMP-097)
+      const n = ix.notes.get(it.path) , txt = requirementText(n), color = TYPE_COLOR[n.type];
+      const clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
+      return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
     }
     if (it.path) { const color = TYPE_COLOR[ix.notes.get(it.path) .type]; return { ...base, type: "file", file: it.path, ...(color ? { color } : {}) }; }
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
@@ -1129,7 +1145,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, bom, whereUsed, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
                 
                                                                                           
                                     
@@ -1315,6 +1331,7 @@ function mountWorkbench(root             , host       = {})      {
       n.block ? h("span", { class: "pill " + (ix .parser === "passed" ? "ok" : ix .parser === "failed" ? "bad" : "warn") }, ix .parser === "passed" ? "SysML checked" : ix .parser === "failed" ? "SysML check failed" : "SysML unchecked") : null,
       host.openNote ? h("button", { onclick: () => host.openNote (n.path) }, "Open in editor") : null));
     for (const f of n.flags) pane.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail));
+    if (n.def?.doc) pane.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     if (n.body) pane.append(h("div", { style: "white-space:pre-wrap;margin:10px 0" }, n.body));
     pane.append(h("h3", {}, "Properties"), tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path));
     const o = V.relationshipRows(ix ).length ? null : null; void o;
@@ -1369,8 +1386,8 @@ function mountWorkbench(root             , host       = {})      {
     pane.append(h("div", { class: "row" }, h("span", { class: "pill" }, `${t.total} requirements`), h("span", { class: "pill " + (t.satisfied === t.total ? "ok" : "warn") }, `satisfied ${pct(t.satisfied)}`), h("span", { class: "pill " + (t.verified === t.total ? "ok" : "warn") }, `verified ${pct(t.verified)}`),
       h("button", { onclick: () => download("traceability.csv", ["id,title,status,satisfied by,verified by,derived from,derives,gaps", ...t.rows.map((r) => [r.id, r.title, r.status, r.satisfiedBy.map((p) => note(p)?.title).join("; "), r.verifiedBy.map((p) => note(p)?.title).join("; "), r.derivedFrom.map((p) => note(p)?.title).join("; "), r.derives.map((p) => note(p)?.title).join("; "), r.gaps.join("; ")].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
     const cell = (l          )       => h("span", {}, ...l.flatMap((p, i) => [i ? ", " : "", lnk(p)]));
-    pane.append(tableOf([["i", "ID"], ["t", "Requirement"], ["sat", "Satisfied by"], ["ver", "Verified by"], ["d", "Derived from"], ["dd", "Derives"], ["g", "Gaps"]],
-      t.rows.map((r) => [r.id, lnk(r.path, r.title), cell(r.satisfiedBy), cell(r.verifiedBy), cell(r.derivedFrom), cell(r.derives), h("span", { class: "gap" }, r.gaps.join(", "))])));
+    pane.append(tableOf([["i", "ID"], ["t", "Requirement"], ["s", "Subtype"], ["x", "Text"], ["sat", "Satisfied by"], ["ver", "Verified by"], ["d", "Derived from"], ["dd", "Derives"], ["g", "Gaps"]],
+      t.rows.map((r) => [r.id, lnk(r.path, r.title), r.subtype, r.text, cell(r.satisfiedBy), cell(r.verifiedBy), cell(r.derivedFrom), cell(r.derives), h("span", { class: "gap" }, r.gaps.join(", "))])));
     return pane;
   }
 
@@ -1398,8 +1415,7 @@ function mountWorkbench(root             , host       = {})      {
     pane.append(flowSvg(f));
     if (f.triggers.length) pane.append(h("h3", {}, "Triggers"), h("ul", {}, ...f.triggers.map((t) => h("li", {}, t))));
     if (f.unresolved.length) pane.append(h("h3", {}, "Not drawn"), h("ul", {}, ...f.unresolved.map((t) => h("li", { class: "gap" }, t))));
-    const srcFlows = note(sel) .sourceLines.filter((l) => /^- (Succession|Transition)/.test(l));
-    if (srcFlows.length) pane.append(h("h3", {}, "Guards and triggers (from EA)"), h("ul", {}, ...srcFlows.map((l) => h("li", {}, l.slice(2).replace(/ — EA GUID.*$/, "")))));
+    if (f.guards.length) pane.append(h("h3", {}, "Triggers, guards and effects"), tableOf([["a", "From"], ["b", "To"], ["t", "Trigger (accept)"], ["g", "Guard (if)"], ["e", "Effect (do)"]], f.guards.map((x) => [x.from, x.to, x.trigger, x.guard, x.effect])));
     return pane;
   }
 
@@ -1616,6 +1632,7 @@ function mountPanel(root             , host           , opt                     
     const box = h("div", {});
     box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note")));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
+    if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges                             , dir              )              => {
       const by = new Map                      (); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind) ).push(e);
       if (!by.size) return h("div", { class: "mut" }, "None.");

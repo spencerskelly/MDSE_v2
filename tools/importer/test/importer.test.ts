@@ -144,9 +144,12 @@ test("flows: flow items carry direction and type; missing direction is reported"
   assert.ok(!/noDirection/.test(port.split("## SysML v2")[1]!));
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "DIRECTION_EVIDENCE_MISSING"));
   const fn = res.files.find((f) => f.path.endsWith("Provide Charge Power.md"))!.content;
-  assert.match(fn, /succession first measure then adjust;/);
+  assert.match(fn, /succession first measure if guardMeasurementReady\w* then adjust;/);
+  assert.match(fn, /constraint guardMeasurementReady\w* \{ doc \/\* measurement ready \* \/ and stable \*\/ \}/, "guard wording is a doc, `*\/` escaped");
   const st = res.files.find((f) => f.path.endsWith("Charging.md"))!.content;
-  assert.match(st, /transition first idle then running;/);
+  assert.match(st, /transition first idle accept triggerStartButtonPressed if guardSupplyVoltageOk do effectCloseContactor then running;/);
+  assert.match(st, /item triggerStartButtonPressed \{ doc \/\* Start button pressed \*\/ \}/);
+  assert.doesNotMatch(st.split("## SysML v2")[0]!, /Transition idle|guard\/trigger/, "no EA-style guard line outside the SysML block (IMP-098)");
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "FLOW_ENDPOINT_NOT_USAGE"));
   assert.ok(!res.ledger.some((l) => l.diagnostic_code === "PORT_CONNECTION_NEEDS_COMMON_OWNER"), "ports on different parts are connected through the owning assembly");
   assert.match(res.files.find((f) => f.path === "02 Product/Charger.md")!.content, /connect controller\.ctrlOut to modules\.pmPort;/);
@@ -239,4 +242,12 @@ test("Source: EA does not repeat what SysML or the YAML already say (IMP-096)", 
   const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
   assert.match(charger, /part modules\[3\]|part modules : [^;]*\[3\]/, "quantity is SysML multiplicity");
   assert.match(charger, /^eaType: /m, "EA type and stereotype are in the YAML");
+});
+
+test("requirement wording is the definition's doc, not repeated in the body (IMP-097)", async () => {
+  const res = await run();
+  const req = res.files.find((f) => f.content.includes("outdoor use"))!.content;
+  const sysml = req.split("## SysML v2")[1]!;
+  assert.match(sysml, /requirement def [\s\S]*doc \/\*[\s\S]*outdoor use[\s\S]*\*\//, "text is a doc comment in the requirement def");
+  assert.equal(req.split("## SysML v2")[0]!.includes("outdoor use"), false, "not duplicated above the SysML block");
 });

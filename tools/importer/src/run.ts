@@ -406,7 +406,23 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!a || !b || !okKinds.includes(a.ref.kind) || !okKinds.includes(b.ref.kind)) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
       if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
       const word = key === "ControlFlow" ? "succession" : "transition";
-      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, c.name ? `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name} (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : "");
+      // Guard, trigger and effect follow SysML v2 (IMP-098): `transition first a accept t if g do e then b;` / `succession first a if g then b;`.
+      // Free text cannot be an expression, so each is a small named helper usage that carries the wording in `doc`.
+      const clean = (x: string): string => x.replace(/\s+/g, " ").trim();
+      let trig = isPlaceholder(c.pdata1) ? "" : clean(c.pdata1), grd = isPlaceholder(c.pdata2) ? "" : clean(c.pdata2), eff = isPlaceholder(c.pdata3) ? "" : clean(c.pdata3);
+      const label = clean(c.name);
+      if (label && !trig && !grd && !eff) { if (key === "ControlFlow") grd = label; else trig = label; }          // an unstructured label: guard on a control flow, trigger on a state flow
+      const helper = (kw: string, pre: string, text: string): string => {
+        const nm = scopeOf(a.owner).take(usageIdent(`${pre} ${text.slice(0, 40)}`, `${pre}${c.id}`));
+        const stmt = `${kw} ${nm} { doc /* ${text.replace(/\*\//g, "* /")} */ }`;
+        if (!a.owner.members.includes(stmt)) a.owner.members.push(stmt);
+        return nm;
+      };
+      const parts: string[] = [];
+      if (key === "StateFlow" && trig) { const nm = helper("item", "trigger", trig); parts.push(`accept ${nm}`); }
+      if (grd) { const nm = helper("constraint", "guard", grd); parts.push(`if ${nm}`); }
+      if (key === "StateFlow" && eff) { const nm = helper("action", "effect", eff); parts.push(`do ${nm}`); }
+      addStmt(a.owner, `${word} first ${a.ref.name}${parts.length ? " " + parts.join(" ") : ""} then ${b.ref.name};`);
       done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
     }
     if (key === "UseCase:include") {
@@ -434,8 +450,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
     if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
     if (e.alias) src.push(`- EA alias: ${e.alias}`);
+    const isReq = d.keyword === "requirement def";
+    let reqText = isReq ? e.note.trim() : "";
     for (const [k, v] of g.tags.get(e.id) ?? []) {
       if (isPlaceholder(v)) continue;
+      if (isReq && /^(SysML1\.\d::)?text$/i.test(k.trim())) { if (!reqText.includes(v.trim())) reqText = [reqText, v.trim()].filter(Boolean).join("\n\n"); continue; }     // requirement wording lives in `doc` (IMP-097)
       const disp = tagDisp.get(k);
       if (disp === undefined) { unlistedTags.set(k, (unlistedTags.get(k) ?? 0) + 1); }          // new to the list: kept in the body until someone decides (W-33)
       else if (disp !== "body") continue;
@@ -460,11 +479,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
       usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })),
-      members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
+      ...(reqText ? { doc: reqText } : {}), members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
     const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: d.describes.length ? [["describes", d.describes]] : [],
-      bodyText: [e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
+      bodyText: [isReq ? "" : e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
     const r = objRow.get(e.id)!;
     set(r, "native", d.keyword ? d.entry.native_kind! : `MdseNote:${d.type}`, d.evidence[0] ?? ""); r.target_stable_id = d.id; r.target_file = d.path; r.evidence = d.evidence.join(";");

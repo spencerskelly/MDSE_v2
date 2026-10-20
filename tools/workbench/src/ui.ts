@@ -191,6 +191,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       n.block ? h("span", { class: "pill " + (ix!.parser === "passed" ? "ok" : ix!.parser === "failed" ? "bad" : "warn") }, ix!.parser === "passed" ? "SysML checked" : ix!.parser === "failed" ? "SysML check failed" : "SysML unchecked") : null,
       host.openNote ? h("button", { onclick: () => host.openNote!(n.path) }, "Open in editor") : null));
     for (const f of n.flags) pane.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail));
+    if (n.def?.doc) pane.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     if (n.body) pane.append(h("div", { style: "white-space:pre-wrap;margin:10px 0" }, n.body));
     pane.append(h("h3", {}, "Properties"), tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path));
     const o = V.relationshipRows(ix!).length ? null : null; void o;
@@ -245,8 +246,8 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     pane.append(h("div", { class: "row" }, h("span", { class: "pill" }, `${t.total} requirements`), h("span", { class: "pill " + (t.satisfied === t.total ? "ok" : "warn") }, `satisfied ${pct(t.satisfied)}`), h("span", { class: "pill " + (t.verified === t.total ? "ok" : "warn") }, `verified ${pct(t.verified)}`),
       h("button", { onclick: () => download("traceability.csv", ["id,title,status,satisfied by,verified by,derived from,derives,gaps", ...t.rows.map((r) => [r.id, r.title, r.status, r.satisfiedBy.map((p) => note(p)?.title).join("; "), r.verifiedBy.map((p) => note(p)?.title).join("; "), r.derivedFrom.map((p) => note(p)?.title).join("; "), r.derives.map((p) => note(p)?.title).join("; "), r.gaps.join("; ")].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
     const cell = (l: string[]): Node => h("span", {}, ...l.flatMap((p, i) => [i ? ", " : "", lnk(p)]));
-    pane.append(tableOf([["i", "ID"], ["t", "Requirement"], ["sat", "Satisfied by"], ["ver", "Verified by"], ["d", "Derived from"], ["dd", "Derives"], ["g", "Gaps"]],
-      t.rows.map((r) => [r.id, lnk(r.path, r.title), cell(r.satisfiedBy), cell(r.verifiedBy), cell(r.derivedFrom), cell(r.derives), h("span", { class: "gap" }, r.gaps.join(", "))])));
+    pane.append(tableOf([["i", "ID"], ["t", "Requirement"], ["s", "Subtype"], ["x", "Text"], ["sat", "Satisfied by"], ["ver", "Verified by"], ["d", "Derived from"], ["dd", "Derives"], ["g", "Gaps"]],
+      t.rows.map((r) => [r.id, lnk(r.path, r.title), r.subtype, r.text, cell(r.satisfiedBy), cell(r.verifiedBy), cell(r.derivedFrom), cell(r.derives), h("span", { class: "gap" }, r.gaps.join(", "))])));
     return pane;
   }
 
@@ -274,8 +275,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     pane.append(flowSvg(f));
     if (f.triggers.length) pane.append(h("h3", {}, "Triggers"), h("ul", {}, ...f.triggers.map((t) => h("li", {}, t))));
     if (f.unresolved.length) pane.append(h("h3", {}, "Not drawn"), h("ul", {}, ...f.unresolved.map((t) => h("li", { class: "gap" }, t))));
-    const srcFlows = note(sel)!.sourceLines.filter((l) => /^- (Succession|Transition)/.test(l));
-    if (srcFlows.length) pane.append(h("h3", {}, "Guards and triggers (from EA)"), h("ul", {}, ...srcFlows.map((l) => h("li", {}, l.slice(2).replace(/ — EA GUID.*$/, "")))));
+    if (f.guards.length) pane.append(h("h3", {}, "Triggers, guards and effects"), tableOf([["a", "From"], ["b", "To"], ["t", "Trigger (accept)"], ["g", "Guard (if)"], ["e", "Effect (do)"]], f.guards.map((x) => [x.from, x.to, x.trigger, x.guard, x.effect])));
     return pane;
   }
 

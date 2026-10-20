@@ -4,7 +4,7 @@
 import type { Edge, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
 import type { Profile, ViewSpec } from "./views.ts";
-import { traverse, TYPE_COLOR, defaultSpec, specIsDefault } from "./views.ts";
+import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault } from "./views.ts";
 
 export interface CanvasNode { id: string; type: "file" | "text"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string }
 export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow"; label?: string; color?: string }
@@ -54,6 +54,11 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
     if (grp) {
       const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m)!.title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
+    }
+    if (it.path && isRequirement(ix.notes.get(it.path)!)) {                    // requirements show name, subtype and wording on the card (IMP-097)
+      const n = ix.notes.get(it.path)!, txt = requirementText(n), color = TYPE_COLOR[n.type];
+      const clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
+      return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
     }
     if (it.path) { const color = TYPE_COLOR[ix.notes.get(it.path)!.type]; return { ...base, type: "file", file: it.path, ...(color ? { color } : {}) }; }
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };

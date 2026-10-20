@@ -80,7 +80,9 @@ export function whereUsed(ix: ModelIndex, target: string, maxDepth = 8): WhereUs
 }
 
 /* ---- Requirements and traceability ----------------------------------------------------------------------------- */
-export interface TraceRow { path: string; id: string; title: string; subtype: string; status: string; satisfiedBy: string[]; verifiedBy: string[]; derivedFrom: string[]; derives: string[]; refines: string[]; refinedBy: string[]; allocatedTo: string[]; gaps: string[] }
+export interface TraceRow { path: string; id: string; title: string; subtype: string; text: string; status: string; satisfiedBy: string[]; verifiedBy: string[]; derivedFrom: string[]; derives: string[]; refines: string[]; refinedBy: string[]; allocatedTo: string[]; gaps: string[] }
+/** The requirement's wording: the `doc` in its SysML block (IMP-097); older notes fall back to the first body paragraph. */
+export function requirementText(n: Note): string { return (n.def?.doc ?? n.body.split(/\n\s*\n/)[0] ?? "").trim(); }
 export function isRequirement(n: Note): boolean { return n.type === "Requirement" || n.def?.keyword === "requirement def"; }
 export function traceMatrix(ix: ModelIndex): { rows: TraceRow[]; total: number; satisfied: number; verified: number } {
   const rows: TraceRow[] = [];
@@ -89,7 +91,7 @@ export function traceMatrix(ix: ModelIndex): { rows: TraceRow[]; total: number; 
     const inn = incoming(ix, n.path), out = outgoing(ix, n.path);
     const from = (k: string): string[] => inn.filter((e) => e.kind === k).map((e) => e.from);
     const to = (k: string): string[] => out.filter((e) => e.kind === k && e.to).map((e) => e.to!);
-    const r: TraceRow = { path: n.path, id: n.id, title: n.title, subtype: n.subtype, status: n.status, satisfiedBy: from("satisfies"), verifiedBy: from("verifies"),
+    const r: TraceRow = { path: n.path, id: n.id, title: n.title, subtype: n.subtype, text: requirementText(n), status: n.status, satisfiedBy: from("satisfies"), verifiedBy: from("verifies"),
       derivedFrom: to("derivedFrom"), derives: from("derivedFrom"), refines: to("refines"), refinedBy: from("refines"), allocatedTo: [...from("allocatedTo")].concat(to("allocatedTo")), gaps: [] };
     if (!r.satisfiedBy.length) r.gaps.push("no satisfier");
     if (!r.verifiedBy.length) r.gaps.push("no verification");
@@ -101,10 +103,10 @@ export function traceMatrix(ix: ModelIndex): { rows: TraceRow[]; total: number; 
 
 /* ---- Behavior and states ---------------------------------------------------------------------------------------- */
 export interface FlowNode { name: string; kind: string; type: string; path: string | null; layer: number }
-export interface FlowResult { kind: "actions" | "states" | "none"; nodes: FlowNode[]; edges: Array<{ from: string; to: string; kind: string }>; unresolved: string[]; triggers: string[] }
+export interface FlowResult { kind: "actions" | "states" | "none"; nodes: FlowNode[]; edges: Array<{ from: string; to: string; kind: string }>; unresolved: string[]; triggers: string[]; /** transitions and guarded successions with their SysML trigger, guard and effect wording */ guards: Array<{ from: string; to: string; kind: string; trigger: string; guard: string; effect: string }> }
 export function behavior(ix: ModelIndex, path: string): FlowResult {
   const n = ix.notes.get(path), d = n?.def;
-  if (!n || !d) return { kind: "none", nodes: [], edges: [], unresolved: [], triggers: [] };
+  if (!n || !d) return { kind: "none", nodes: [], edges: [], unresolved: [], triggers: [], guards: [] };
   const flowKinds = new Set(["action", "state", "fork", "join"]);
   const nodes: FlowNode[] = d.usages.filter((u) => flowKinds.has(u.kind)).map((u) => ({ name: u.name, kind: u.kind, type: u.type ?? "", path: u.type ? ix.bySymbol.get(u.type) ?? null : null, layer: 0 }));
   const names = new Set(nodes.map((x) => x.name));
@@ -115,8 +117,11 @@ export function behavior(ix: ModelIndex, path: string): FlowResult {
   for (let pass = 0; pass < nodes.length; pass++) { let moved = false; for (const e of edges) { const v = (layer.get(e.from) ?? 0) + 1; if (v > (layer.get(e.to) ?? 0) && v <= nodes.length) { layer.set(e.to, v); moved = true; } } if (!moved) break; }
   for (const x of nodes) x.layer = layer.get(x.name) ?? 0;
   const triggers = n.sourceLines.filter((l) => l.startsWith("- Trigger:")).map((l) => l.replace(/ — EA GUID.*$/, "").slice(2));
+  const words = (nm?: string): string => (nm ? d.notes[nm] ?? nm : "");
+  const guards = d.stmts.filter((s) => (s.kind === "succession" || s.kind === "transition") && (s.trigger || s.guard || s.effect))
+    .map((s) => ({ from: s.a!, to: s.b!, kind: s.kind, trigger: words(s.trigger), guard: words(s.guard), effect: words(s.effect) }));
   const kind = nodes.some((x) => x.kind === "state") ? "states" : nodes.length ? "actions" : "none";
-  return { kind, nodes, edges, unresolved, triggers };
+  return { kind, nodes, edges, unresolved, triggers, guards };
 }
 
 /* ---- Interfaces ------------------------------------------------------------------------------------------------- */
@@ -387,8 +392,8 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
       note: `${all.length} function(s) in the vault; ${all.filter((r) => r.gaps.length).length} with gaps.` });
   } else if (lens === "requirements") {
     const t = traceMatrix(ix), rows = scope === "selected" && has ? t.rows.filter((r) => traceRelated(r, sel)) : t.rows;
-    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n!.title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
-      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
+    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n!.title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sub", label: "Subtype" }, { key: "txt", label: "Text", wide: true }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, sub: r.subtype, txt: r.text, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
       note: `${t.total} requirement(s): ${t.satisfied} satisfied, ${t.verified} verified.` });
   } else if (lens === "tables") {
     const which = o.table ?? "relationships";
