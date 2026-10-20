@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MDSE Workbench</title>
+<style>html,body{margin:0;height:100%}body{display:flex;flex-direction:column;font:14px system-ui,sans-serif}#bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #8884}#root{flex:1;min-height:0}#msg{font-size:13px}#bar button,#bar label.btn{font:inherit;padding:5px 12px;border:1px solid #8886;border-radius:6px;cursor:pointer;background:transparent;color:inherit}#drop{outline:3px dashed #2557d6;outline-offset:-6px}.bad{color:#b3261e}@media (prefers-color-scheme:dark){html{background:#14171d;color:#e6e9ef}.bad{color:#ff8a80}}</style></head>
+<body><div id="bar"><b>MDSE Workbench</b><button id="pick">Open vault folder</button><label class="btn">Choose folder (any browser)<input id="dir" type="file" webkitdirectory multiple hidden></label><label class="btn">Open MDSE.zip<input id="zip" type="file" accept=".zip" hidden></label><span id="msg">Read-only. Nothing leaves this page. Drop a folder or an MDSE.zip anywhere.</span></div>
+<div id="root"></div>
+<script>
+/*@@CORE@@*/
+</script>
+<script>
+/*@@WB@@*/
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+const CLASSES = /*@@CLASSES@@*/;
+const app = WB.mountWorkbench($("root"), { classes: CLASSES });
+const say = (t, bad) => { $("msg").textContent = t; $("msg").className = bad ? "bad" : ""; };
+async function load(label, fn) {
+  try { say("Reading " + label + "…"); const files = await fn(); if (!files.size) throw new Error("No Markdown notes found."); say(`${label}: ${files.size} Markdown files`); await app.setFiles(files); }
+  catch (e) { say(String(e && e.message || e), true); console.error(e); }
+}
+$("pick").onclick = async () => {
+  if (!window.showDirectoryPicker) { say("This browser cannot open folders directly; use “Choose folder (any browser)”.", true); return; }
+  try { const h = await window.showDirectoryPicker({ mode: "read" }); await load(h.name, () => WB.readDirHandle(h)); } catch (e) { if (e.name !== "AbortError") say(e.message, true); }
+};
+$("dir").onchange = (e) => { const l = e.target.files; if (l.length) load("folder", () => WB.readFileList(l)); };
+$("zip").onchange = (e) => { const f = e.target.files[0]; if (f) load(f.name, async () => WB.readZip(await f.arrayBuffer())); };
+addEventListener("dragover", (e) => { e.preventDefault(); document.body.id = "drop"; });
+addEventListener("dragleave", () => { document.body.id = ""; });
+addEventListener("drop", async (e) => {
+  e.preventDefault(); document.body.id = "";
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  const h = item && item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
+  if (h && h.kind === "directory") return load(h.name, () => WB.readDirHandle(h));
+  const f = e.dataTransfer.files[0];
+  if (f && /\.zip$/i.test(f.name)) return load(f.name, async () => WB.readZip(await f.arrayBuffer()));
+  say("Drop a vault folder (Chrome or Edge) or an MDSE.zip.", true);
+});
+addEventListener("error", (e) => say("Page error: " + e.message, true));
+addEventListener("unhandledrejection", (e) => say("Page error: " + (e.reason && e.reason.message || e.reason), true));
+</script></body></html>

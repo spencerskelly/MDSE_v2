@@ -44,7 +44,7 @@ npm test                    # must be green before you push
 | 7 | Importer M3: SysML v2 writer; wire the parser job to run on generated output | 1 (OD-01, OD-03) | tools/importer, testing |
 | 8 | Base Vault build and release manifest | Folder skeleton and templates decided | tools/base-vault |
 | 9 | Bootstrap port | 8 | tools/bootstrap |
-| 10 | Read-only Workbench | OD-09, OD-02 | tools/workbench |
+| 10 | Read-only Workbench | OD-02 (OD-09 closed by D-0019) | tools/workbench |
 
 Tasks 3 and 4 can start immediately.
 

@@ -13,7 +13,6 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 | OD-05 | P1 | Repo | License for a public repository. Without one, the code is "all rights reserved" and others may not reuse it. Options: proprietary notice, MIT, Apache-2.0, or make the repo private. |
 | OD-06 | P1 | Repo | Repository visibility: public requires synthetic-only content (DAT-002). Private removes that constraint for fixtures but not for real data, which never goes in any repo. |
 | OD-08 | P1 | Model | `local-model.yaml` was not carried. Confirm Local Model is V1-only and replaced by SysML usages, then retire the MOD Local Model rules. |
-| OD-09 | P1 | Workbench | Which parts of the V1 Workbench (MDSE_Workbench repo: semantic cache, staged startup, runtime health) are ported to the V2 Workbench, and which are rebuilt. Needs read access to MDSE_Workbench. |
 
 ### OD-01 proposed split of relationships.yaml
 

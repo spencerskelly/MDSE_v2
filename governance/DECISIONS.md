@@ -174,3 +174,11 @@ Rules: none edited. Statement forms marked `UNVERIFIED_SYNTAX` await the parser 
 Added to the importer: attachments (Artifact note plus file in `Attachments/`, read from `t_document`, never overwritten), fork and join nodes, triggers (recorded on the owning state), `extend` as an optional use case, and port connections across parts through the owning assembly. Dependency-like relationships are listed as separate kinds in `tools/importer/TRANSLATION.md` (derivedFrom, refines, trace, dependsOn, uses, allocate, satisfy, verify, realises). `derivedFrom` is written in the new note and points at the informing note. Still not translated: diagrams, Sequence (interaction diagram content), Association (no proof of connectivity), unknown families.
 
 Rules: none edited.
+
+## D-0019 — Workbench v2: one core, page and plugin shells, read-only, built from SysML text
+
+2026-10-19 · Spencer · Accepted
+
+The V2 Workbench is a single TypeScript core (scanner, index, views, UI) with two shells, an offline HTML page and an Obsidian plugin, both produced by `tools/workbench/build.mjs`. It is read-only (Phase 1). Relationships are derived from the SysML block text plus MDSE-only YAML links such as `describes` (D-0003); the index is disposable. Views: dashboard, notes, note, structure with parts list, where used, traceability, behavior, interfaces, graph with profiles, relationships, review. From V1 it carries the view-profile idea, staged startup and where-used. It does not carry Local Model, editing, the semantic cache or runtime health. This closes OD-09.
+
+Rules: none edited. The plugin is not yet tested in real Obsidian; the base-vault plugin payload stays `NOT_BUNDLED` until it is.
