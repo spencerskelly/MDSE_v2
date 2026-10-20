@@ -28,6 +28,10 @@ export type { ExistingVault, OutFile, ChangeEntry } from "./merge.ts";
 
 export interface ClassTable { [type: string]: { prefix: string; subtype: string[]; prefixBySubtype?: Record<string, string> } }
 
+export interface TagTable { tags: Array<{ tag: string; disposition: string; decision?: string }> }
+/** Placeholders EA writes when a tag has no real value (W-29). */
+export const isPlaceholder = (v: string): boolean => { const t = v.trim().toLowerCase(); return t === "" || t === "unassigned" || t === "<memo>"; };
+
 export interface ImportOptions {
   sourceName: string;
   fingerprint: string;
@@ -39,6 +43,7 @@ export interface ImportOptions {
   releaseVersion: string;
   classes: ClassTable;
   mapping: FamilyMapping;
+  tags: TagTable;                                  // EA tag dispositions, ea-tag-dispositions.json (IMP-003, IMP-005)
   baseFiles: Record<string, string> | null;        // Base Vault payload; written only when the output holds no vault
   existing: ExistingVault | null;
   preApproved: string[];                           // fields whose change is approved for the whole run (IMP-081, IMP-082)
@@ -72,6 +77,8 @@ export interface ImportResult {
   changes: ChangeEntry[];
   summary: ImportSummary;
   problems: string[];
+  /** Things to look at that do not stop the write, such as an EA tag with no disposition yet. */
+  warnings: string[];
   errors: ErrorRecord[];
 }
 
@@ -84,7 +91,6 @@ interface Draft {
 }
 
 const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
-const DROPPED_TAGS = new Set(["Status", "Object Type", "Applicability Status", "Priority", "Abstraction Layer", "Domain", "Origin"]);   // IMP-029
 const RESERVED_NAME = /^(Template - |Rule - |README_|BASE_|CANVAS_)/;
 const SYSTEM_DIR = "99_System/11_Import";
 const MAX_ATTACH = 25 * 1024 * 1024;
@@ -241,7 +247,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the Classifier to the Signal this flow carries");
     u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
     if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as Classifier. It is written without a type.`]);
-    ownerDef.sourceLines.push(`- Flow: ${dir} item ${name}${typed ? ` : [[${typed.baseName}]]` : " (untyped)"} — EA GUID: ${e.guid}`);
+    ownerDef.sourceLines.push(`- Flow: ${dir} item ${name}${typed ? ` : [[${typed.baseName}]]` : " (untyped)"}`);
   };
   for (const u of usageObjs) guard("usage", "t_object", u.o, () => {
     const e = u.o, kind = u.entry.native_kind ?? "SyncNode";
@@ -257,10 +263,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const sref: UsageRef = { kind: word, name: nm, typeDraft: null, objGuid: e.guid, typedBy: "" };
       owner.usages.push(sref); usageByObj.set(e.id, { owner, ref: sref });
       set(u.row, "native", word === "fork" ? "ForkNode" : "JoinNode"); u.row.target_stable_id = owner.id; u.row.target_file = owner.path;
-      owner.sourceLines.push(`- Control node: ${word} ${nm} — EA GUID: ${e.guid}`); return;
+      owner.sourceLines.push(`- Control node: ${word} ${nm}`); return;
     }
-    const name = scopeOf(owner).take(usageIdent(e.name || e.alias, `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
-    const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
+    const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name: "", typeDraft: null, objGuid: e.guid, typedBy: "" };
     let diag = "";
     if (kind === "PartUsage" || kind === "PortUsage" || kind === "ActionUsage") {
       const want = kind === "PartUsage" ? Number(e.pdata1) || 0 : e.classifier;                      // IMP-011: the block comes from PDATA1
@@ -270,18 +275,21 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       else if (kind === "ActionUsage" && want === 0) { /* a plain step in an activity has no type; that is not a gap */ }
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
+    // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
+    const name = scopeOf(owner).take(usageIdent(e.name || e.alias || ref.typeDraft?.title || "", `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
+    ref.name = name;
     if (kind === "PartUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
     owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
     if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);
-    owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""} — EA GUID: ${e.guid}`);
+    owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""}`);
   });
 
   for (const t of triggerObjs) guard("trigger", "t_object", t.o, () => {
     const owner = byObj.get(t.o.parentId);
     if (owner?.keyword === "state def") {
-      owner.sourceLines.push(`- Trigger: ${t.o.name || "(unnamed)"} — EA GUID: ${t.o.guid}`);
+      owner.sourceLines.push(`- Trigger: ${t.o.name || "(unnamed)"}`);
       set(t.row, "evidence_only", "TriggerLine", "TRIGGER_RECORDED_ON_OWNER"); t.row.target_stable_id = owner.id; t.row.target_file = owner.path; return;
     }
     set(t.row, "deferred_review", "", "LEGAL_TRANSITION_CONTEXT", "Trigger is not inside a state definition");
@@ -301,7 +309,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       set(r, "deferred_review", "", code, action); deferredLinks.push({ c, code, family: key });
       if (src) {
         const to = dst ? `[[${dst.baseName}]]` : (g.objectsById.get(c.destId)?.name ?? `object ${c.destId}`);
-        src.sourceLines.push(`- Connector ${key} to ${to} (unresolved: ${code}) — EA GUID: ${c.guid}`);
+        src.sourceLines.push(`- Connector ${key} to ${to} (unresolved: ${code})`);
         flagLink(src, `Unresolved ${key} link to ${dst ? dst.title : (g.objectsById.get(c.destId)?.name ?? "?")}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
       }
     };
@@ -315,7 +323,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         const info = src?.type === "Info" ? src : dst?.type === "Info" ? dst : null, other = info === src ? dst : src;
         if (info && other) {
           info.describes.push(other.baseName); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
-          info.sourceLines.push(`- Link describes [[${other.baseName}]] — EA GUID: ${c.guid}`); return;
+          info.sourceLines.push(`- Link describes [[${other.baseName}]]`); return;
         }
         set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); return;
       }
@@ -324,11 +332,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "Nesting") { set(r, "evidence_only", "", "ORGANIZATIONAL_ONLY"); return; }
     if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
     const kw = (d?: Draft): string => d?.keyword ?? "";
-    const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]] — EA GUID: ${c.guid}`;
+    const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]]`;
     if (key === "Generalization") {
       if (src && dst && src.keyword && src.keyword === dst.keyword && src !== dst) {
         src.specializes.push(dst); set(r, "native", "Specialization"); r.target_stable_id = src.id; r.target_file = src.path;
-        src.sourceLines.push(`- Specializes [[${dst.baseName}]] — EA GUID: ${c.guid}`); return;
+        src.sourceLines.push(`- Specializes [[${dst.baseName}]]`); return;
       }
       defer("GENERALIZATION_ENDPOINT_KIND"); return;
     }
@@ -340,13 +348,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const owned = whole.usages.find((u) => u.kind === "part" && u.typeDraft === part);
       if (owned) {                                                  // an EA Part usage already says this; the usage wins
         set(r, "alias_merged", "TypedOwnedUsage", "USAGE_WINS"); r.target_stable_id = whole.id; r.target_file = whole.path; r.evidence = `merged into usage ${owned.name}`;
-        whole.sourceLines.push(`- Aggregation to [[${part.baseName}]] merged into part usage ${owned.name} (the usage wins) — EA GUID: ${c.guid}`); return;
+        whole.sourceLines.push(`- Aggregation to [[${part.baseName}]] merged into part usage ${owned.name} (the usage wins)`); return;
       }
       const m = parseMultiplicity(card);
       const name = scopeOf(whole).take(usageIdent(part.title, `part${part.o.id}`));
       whole.usages.push({ kind: "part", name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid });
       set(r, "native", "TypedOwnedUsage", m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
-      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""} — EA GUID: ${c.guid}`); return;
+      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""}`); return;
     }
     if (key === "Dependency:satisfy") {
       const req = [src, dst].find((d) => kw(d) === "requirement def"), by = req === src ? dst : src;
@@ -389,9 +397,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         if (!ctxs.length) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }
         const w = ctxs[0]!, ua = w.usages.filter((u) => u.kind === "part" && u.typeDraft === a.owner), ub = w.usages.filter((u) => u.kind === "part" && u.typeDraft === b.owner);
         if (ctxs.length > 1 || ua.length !== 1 || ub.length !== 1) { defer("PORT_CONNECTION_AMBIGUOUS_OWNER"); return; }
-        addStmt(w, `connect ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name};`, `- Connection ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name} — EA GUID: ${c.guid}`); done(w, "ConnectionUsage"); return;
+        addStmt(w, `connect ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name};`, `- Connection ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name}`); done(w, "ConnectionUsage"); return;
       }
-      addStmt(a.owner, `connect ${a.ref.name} to ${b.ref.name};`, `- Connection ${a.ref.name} to ${b.ref.name} — EA GUID: ${c.guid}`); done(a.owner, "ConnectionUsage"); return;
+      addStmt(a.owner, `connect ${a.ref.name} to ${b.ref.name};`, `- Connection ${a.ref.name} to ${b.ref.name}`); done(a.owner, "ConnectionUsage"); return;
     }
     if (key === "ControlFlow" || key === "StateFlow") {
       const okKinds = key === "ControlFlow" ? ["action", "fork", "join"] : ["state"];
@@ -399,7 +407,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!a || !b || !okKinds.includes(a.ref.kind) || !okKinds.includes(b.ref.kind)) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
       if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
       const word = key === "ControlFlow" ? "succession" : "transition";
-      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name}${c.name ? ` (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : ""} — EA GUID: ${c.guid}`);
+      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name}${c.name ? ` (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : ""}`);
       done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
     }
     if (key === "UseCase:include") {
@@ -419,6 +427,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   // ---- render notes -------------------------------------------------------------------------------------------------
   const outFiles: OutFile[] = [];
   let blocks = 0, flagCount = 0;
+  const tagDisp = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const)), unlistedTags = new Map<string, number>();
   const attachFiles: OutFile[] = [], attachTaken = new Set<string>(existing?.allPaths ? [...existing.allPaths].map((p) => p.toLowerCase()) : []);
   let attachRows = 0;
   const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
@@ -431,7 +440,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (e.author) src.push(`- EA author: ${e.author}`);
     if (e.created) src.push(`- EA created: ${e.created}`);
     if (d.pkgPath.length) src.push(`- EA package: ${d.pkgPath.join(" > ")}`);
-    for (const [k, v] of g.tags.get(e.id) ?? []) if (v.trim() && !DROPPED_TAGS.has(k)) src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
+    for (const [k, v] of g.tags.get(e.id) ?? []) {
+      if (isPlaceholder(v)) continue;
+      const disp = tagDisp.get(k);
+      if (disp === undefined) { unlistedTags.set(k, (unlistedTags.get(k) ?? 0) + 1); }          // new to the list: kept in the body until someone decides (W-33)
+      else if (disp !== "body") continue;
+      src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
+    }
     src.push(...d.sourceLines);
     let bodyExtra = "";
     if (d.entry.disposition === "attachment_link") {
@@ -465,7 +480,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   if (boundaries.length) {
     const guid = aggregate!.guid, known = idx?.byGuid.get(guid);
     const uid = known?.uid ?? uids.get("boundary")!.uid, id = known?.id ?? ids.get("boundary")!, path = known?.path ?? `${claim("Boundaries")}.md`;
-    const lines = [`- EA GUID: ${guid}`, `- EA type: Boundary`, ...boundaries.map((b) => `- Boundary: ${b.o.name || "(unnamed)"} — EA package: ${pkgPath(b.o.packageId).join(" > ") || "(root)"} — EA GUID: ${b.o.guid}`)];
+    const lines = [`- EA GUID: ${guid}`, `- EA type: Boundary`, ...boundaries.map((b) => `- Boundary: ${b.o.name || "(unnamed)"} — EA package: ${pkgPath(b.o.packageId).join(" > ") || "(root)"}`)];
     generated.set(path, { path, guid, draft: undefined as unknown as Draft, text: renderNote({ type: "modelCheck", subtype: "Boundary", id, uid, eaType: "Boundary", title: "Boundaries", relFields: [], bodyText: "Aggregate of every EA Boundary element (MOD-131). Descriptive evidence, not a native SysML relationship.", flags: [], sourceLines: lines, sysml: null }) });
     for (const b of boundaries) { set(b.row, "evidence_only", "MdseNote:modelCheck/Boundary", "BOUNDARY_GROUPED"); b.row.target_stable_id = id; b.row.target_file = path; }
   }
@@ -473,6 +488,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   track.stage = "reconcile";
   // ---- reconcile: every source row has exactly one disposition (IMP-059, IMP-064) ---------------------------------------
   const expect: Record<string, number> = { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector };
+  const warnings: string[] = [];
+  for (const [k, n] of [...unlistedTags].sort()) warnings.push(`tag not in ea-tag-dispositions.json: "${k}" (${n} rows); kept in the body until it is given a disposition`);
   for (const t of LEDGER_ORDER) { const n = ledger.filter((l) => l.source_table === t).length; if (n !== expect[t]) problems.push(`ledger rows for ${t}: ${n}, source rows: ${expect[t]}`); }
   for (const l of ledger) if (!l.disposition) { l.disposition = "error"; l.diagnostic_code = "NO_DISPOSITION"; problems.push(`no disposition: ${l.source_table} ${l.source_pk}`); }
   ledger.sort((a, b) => (LEDGER_ORDER.indexOf(a.source_table) - LEDGER_ORDER.indexOf(b.source_table)) || (a.ea_guid < b.ea_guid ? -1 : a.ea_guid > b.ea_guid ? 1 : 0) || (+a.source_pk - +b.source_pk));
@@ -501,7 +518,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       sys("Review - Deferred Elements.csv", elementsCsv), sys("Review - Deferred Links.csv", linksCsv),
       sys("Parser Check.md", `# Parser Check\n\nStatus: **NOT RUN**. ${blocks} SysML v2 block(s) were generated in this run and none has been checked by the pinned parser.\nThe parser gate runs in CI or on a maintainer's machine, not in the importer page (MOD-139). Workbench must show these blocks as unchecked.\n`));
     if (!existing) sysFiles.push(sys("Translation Table.md", renderTranslationDoc(o.mapping)));
-    if (!existing) sysFiles.push(sys(`Import Run ${runLabel}.md`, runNote(o, g, dispositions, blocks, flagCount, problems, generated.size)));
+    if (!existing) sysFiles.push(sys(`Import Run ${runLabel}.md`, runNote(o, g, dispositions, blocks, flagCount, problems, generated.size, warnings)));
     else sysFiles.push(sys(`Changelog ${runLabel}.md`, plan.changelog));
   }
   if (errors.length) {
@@ -522,12 +539,12 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const dup = outFiles.map((f) => f.path.toLowerCase()).filter((p, i, a) => a.indexOf(p) !== i);
   if (dup.length) problems.push(`duplicate output paths: ${dup.slice(0, 5).join(", ")}`);
   const status = problems.length ? "FAILED" : existing && !plan.changed && !errors.length && !attachFiles.length ? "NO_CHANGES" : "WRITE_READY";
-  return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems, errors,
+  return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems, warnings, errors,
     summary: { elements: g.counts.t_object, connectors: g.counts.t_connector, packages: g.counts.t_package, notes: generated.size, dispositions, flags: flagCount, sysmlBlocks: blocks, baseVaultIncluded: baseIncluded, created: plan.created, unchanged: plan.unchanged, updated: plan.updated, conflicts: plan.conflicts, errors: errors.length } };
 }
 
-function runNote(o: ImportOptions, g: SourceGraph, disp: Record<string, number>, blocks: number, flags: number, problems: string[], notes: number): string {
-  return `# Import Run ${labelOf(o.runDate)}\n\nSource \`${o.sourceName}\` (${o.lineage}), SHA-256 \`${o.fingerprint}\`.\n\n| | |\n|---|---|\n| Packages | ${g.counts.t_package} |\n| Elements | ${g.counts.t_object} |\n| Connectors | ${g.counts.t_connector} |\n| Notes written | ${notes} |\n| SysML v2 blocks (not parser-checked) | ${blocks} |\n| Flags | ${flags} |\n\n## Dispositions\n\n${Object.entries(disp).sort().map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n\n${problems.length ? `## Problems\n\n${problems.map((p) => `- ${p}`).join("\n")}\n\n` : ""}Ledger: \`Ledger.csv\`. Review tables: \`Review - Deferred Elements.csv\`, \`Review - Deferred Links.csv\`.\n`;
+function runNote(o: ImportOptions, g: SourceGraph, disp: Record<string, number>, blocks: number, flags: number, problems: string[], notes: number, warnings: string[]): string {
+  return `# Import Run ${labelOf(o.runDate)}\n\nSource \`${o.sourceName}\` (${o.lineage}), SHA-256 \`${o.fingerprint}\`.\n\n| | |\n|---|---|\n| Packages | ${g.counts.t_package} |\n| Elements | ${g.counts.t_object} |\n| Connectors | ${g.counts.t_connector} |\n| Notes written | ${notes} |\n| SysML v2 blocks (not parser-checked) | ${blocks} |\n| Flags | ${flags} |\n\n## Dispositions\n\n${Object.entries(disp).sort().map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n\n${problems.length ? `## Problems\n\n${problems.map((p) => `- ${p}`).join("\n")}\n\n` : ""}${warnings.length ? `## Warnings\n\n${warnings.map((p) => `- ${p}`).join("\n")}\n\n` : ""}Ledger: \`Ledger.csv\`. Review tables: \`Review - Deferred Elements.csv\`, \`Review - Deferred Links.csv\`.\n`;
 }
 
 function MDSE_INDEX(v: ExistingVault): { uids: Set<string>; byGuid: Map<string, { path: string; uid: string; id: string }>; highest: Map<string, number>; baseNames: Set<string> } {

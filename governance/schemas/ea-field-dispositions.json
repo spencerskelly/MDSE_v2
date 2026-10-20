@@ -1,0 +1,1360 @@
+{
+ "source": "Test_Vault_ 99_System/03_Schemas/ea-field-dispositions.yaml (V1)",
+ "tables": {
+  "tObject": [
+   {
+    "field": "Object_ID",
+    "disposition": "structure",
+    "decision": "W-46",
+    "note": "Structure (W-46). Connectors point at elements by this number (both ends resolve on 21,813 of 21,822); the handoff suggested archive. Not copied into notes (W-35).",
+    "nonblank": 34583
+   },
+   {
+    "field": "Object_Type",
+    "disposition": "property",
+    "decision": "W-47",
+    "note": "Property (W-47). Feeds the eaType property (W-31) when the element has no stereotype.",
+    "nonblank": 34583
+   },
+   {
+    "field": "Stereotype",
+    "disposition": "property",
+    "decision": "W-47",
+    "note": "Property (W-47). Feeds the eaType property (W-31); the stereotype wins when populated (20,529 rows).",
+    "nonblank": 20529
+   },
+   {
+    "field": "Name",
+    "disposition": "structure",
+    "decision": "W-48",
+    "unnamedRule": "W-145: an element with no name is named by its lowercase EA object type and a counter across the vault, in EA creation order, for example note 1, object 1, text 1; Ports and pins follow W-134, Parts with no block W-138.",
+    "note": "Structure (W-48). Becomes the note title and file name. Where the file name differs from the source name (unsafe characters, trimmed spaces, line breaks, duplicate counter), the original is kept as - Name: <original> below the EA GUID. The replacement characters and the duplicate suffix are not decided here.",
+    "nonblank": 31162
+   },
+   {
+    "field": "Alias",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-42",
+    "note": "Decided W-42. Used for several concepts, often a manufacturer part number. Kept as a line below the EA GUID: - Alias: <value>.",
+    "nonblank": 103
+   },
+   {
+    "field": "Note",
+    "disposition": "body",
+    "placement": "main text",
+    "decision": "W-42",
+    "note": "Decided W-42. The element description; it is the main text at the top of the note body, above the Source: EA section.",
+    "nonblank": 14907
+   },
+   {
+    "field": "Package_ID",
+    "disposition": "structure",
+    "decision": "W-46",
+    "note": "Structure (W-46). All values resolve to a package; places each note in the folder structure that follows the EA model (W-04).",
+    "nonblank": 34583
+   },
+   {
+    "field": "ea_guid",
+    "disposition": "body",
+    "decision": "W-28",
+    "note": "The EA GUID line below the note (W-28).",
+    "nonblank": 34583
+   },
+   {
+    "field": "ParentID",
+    "disposition": "structure",
+    "decision": "W-46",
+    "note": "Structure (W-46). All 28,183 values resolve to an element. Used to find context, such as the assembly of a Part (W-43); containment does not automatically become a relationship. Changed by W-149: for elements other than Ports and Parts the owner is written as hasChild on the owner (childOf on the child), and as hasPart when both notes are Objects. W-151 adds the 252 independent Nesting connectors as the same link, with a REVIEW nesting direction line that holds the connector GUID (W-152). W-178: no placement link is written where the child is subtypeOf its owner (799: hasChild 781, hasPart 18).",
+    "nonblank": 28183
+   },
+   {
+    "field": "Classifier",
+    "disposition": "structure",
+    "otherTypesDecision": "Other element types, decided W-180: a temporary hasClassifier link (W-125) on UseCase 23 (to a Use Case), ActivityPartition 22 (to an Object), Action 18 (to a Function 16 or Verification 2) and Sequence 1 (to an Actor); all 64 resolve. Resolved in stage 2 (Post-Import Task 7).",
+    "partsDecision": "Part elements only, decided W-44: archive (it points to another Part, not the block). Port (920), Object (498) and other types use it as a real type link and are still to decide.",
+    "portsDecision": "Port elements only, decided W-125: written as a temporary hasClassifier/classifierOf link (441 surviving Ports plus 2 merged ones); the other 477 write nothing.",
+    "objectsDecision": "Object elements only, decided W-135: written as the temporary hasClassifier link to the blueprint note (498 resolve); the 47 whose blueprint is not in the export keep the value as a source-section line.",
+    "proposedByHandoff": "structure",
+    "handoffNote": "Use only where the exact EA construct requires classifier semantics.",
+    "nonblank": 1841,
+    "setAside": "W-96: waits for the element mapping (Port and Object rules); Parts are decided (W-44)",
+    "byType": "Port 920, Object 498, Part 359 (decided W-44), UseCase 23, ActivityPartition 22, Action 18, Sequence 1"
+   },
+   {
+    "field": "Classifier_guid",
+    "disposition": "archive",
+    "otherTypesDecision": "Other element types, decided W-180: repeats Classifier on all 64 where both are set, so nothing is written; on 14 with no Classifier the GUID is not in the export (ProxyConnector 5, Action 4, Sequence 2, ActivityPartition 1, UseCase 1, ActivityParameter 1) and is kept as a source-section line \"- Classifier_guid: {GUID}\", as W-135 does for Objects.",
+    "partsDecision": "Part elements only, decided W-44: archive (same reason as Classifier). Port (920), Object (545) and other types are still to decide.",
+    "objectsDecision": "Object elements only, decided W-135: the same blueprint as Classifier (545 non-blank, 498 resolve); not written separately.",
+    "proposedByHandoff": "archive",
+    "handoffNote": "Internal import evidence.",
+    "nonblank": 1903,
+    "setAside": "W-96: waits for the element mapping (Port and Object rules); Parts are decided (W-44)",
+    "byType": "Port 920, Object 545, Part 360 (decided W-44), UseCase 24, ActivityPartition 23, Action 22, ProxyConnector 5, Sequence 3"
+   },
+   {
+    "field": "Diagram_ID",
+    "disposition": "archive",
+    "decision": "W-41",
+    "note": "Archived (W-41). May be needed if diagrams are imported; revisit if diagram structure needs it.",
+    "nonblank": 4
+   },
+   {
+    "field": "Author",
+    "disposition": "structure",
+    "decision": "W-09",
+    "note": "Builds the author part of the uid (W-09, W-11).",
+    "nonblank": 33861
+   },
+   {
+    "field": "Version",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39). EA default, not an engineering revision.",
+    "nonblank": 34583
+   },
+   {
+    "field": "CreatedDate",
+    "disposition": "structure",
+    "decision": "W-09",
+    "note": "Builds the time part of the uid (W-09, W-13).",
+    "nonblank": 34583
+   },
+   {
+    "field": "ModifiedDate",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39). Git tracks changes from now on.",
+    "nonblank": 34583
+   },
+   {
+    "field": "Status",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39). Existing EA status values are not carried over; the vault starts with its own status.",
+    "nonblank": 32446
+   },
+   {
+    "field": "Complexity",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39). EA default.",
+    "nonblank": 34583
+   },
+   {
+    "field": "Effort",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39). Never used.",
+    "nonblank": 0
+   },
+   {
+    "field": "Phase",
+    "disposition": "drop",
+    "decision": "W-39",
+    "note": "Dropped (W-39).",
+    "nonblank": 32428
+   },
+   {
+    "field": "NType",
+    "disposition": "archive",
+    "decision": "W-45",
+    "note": "Archived (W-45). EA internal subtype code; 12 distinct numbers, no meaning of its own.",
+    "nonblank": 1392
+   },
+   {
+    "field": "Abstract",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Tagged",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "PDATA1",
+    "disposition": "archive",
+    "otherTypesDecision": "Other element types, decided W-180: Requirement 12,089, Issue 264 and Change 65 hold Proposed (the EA status, dropped as in W-39 and W-45); State 1,111 (0 or 1) and Boundary 44 (1) hold EA flags, archived; Activity 118: 105 hold the ID of the diagram the Activity owns (103 resolve, 2 not in the export), covered by the diagram rules (W-70, W-80), and 13 hold 0 or 1, archived; ActivityPartition 6 repeat the Classifier block, nothing written.",
+    "partsDecision": "Part elements only, decided W-44: holds the GUID of the block the Part represents; used by the translator (structure). Other element types are still to decide.",
+    "portsDecision": "Port elements only, decided W-120: the typing Class is written as subtypeOf between Port notes (the interface Classes become Port notes); the 99 links whose target is not a Port note (97 Hardware Component, 2 Physical Signal) are written as the temporary hasClassifier (W-127); the 5 whose GUID is not in the export are kept as a line in the source section (W-127). Other element types are still to decide.",
+    "objectsDecision": "Object elements only, decided W-135: repeats the Classifier blueprint on 160 of 166, so nothing is written there; the other 6 (3 that differ, 3 with no resolvable Classifier) keep a source-section line.",
+    "proposedByHandoff": "archive / structure",
+    "handoffNote": "EA overloaded internal storage; decode only by explicit rule.",
+    "nonblank": 19333,
+    "setAside": "W-96: waits for the element mapping (Port and Object rules); Parts are decided (W-44)",
+    "byType": "Requirement 12,089, Port 3,432, Part 2,896 (decided W-44), Issue 264, State 253, Object 166, Activity 118, others; the 1,386 Package rows are excluded from nonblank, which reconciles my 20,719 with 19,333"
+   },
+   {
+    "field": "PDATA2",
+    "disposition": "archive",
+    "decision": "W-45",
+    "note": "Archived (W-45). Requirements hold only the EA default 'Medium'. GUID references on Ports and Parts wait for the Port and Object mapping.",
+    "portsDecision": "Port elements only, decided W-122: written as subtypeOf to the Port it names; the 146 links that do not follow the block family are flagged.",
+    "nonblank": 14619
+   },
+   {
+    "field": "PDATA3",
+    "disposition": "archive",
+    "decision": "W-45",
+    "note": "Archived (W-45). Requirements hold only the EA default 'Medium'. GUID references on Ports and Parts wait for the Port and Object mapping.",
+    "nonblank": 15366
+   },
+   {
+    "field": "PDATA4",
+    "disposition": "archive",
+    "decision": "W-45",
+    "note": "Archived (W-45). 12 values, all on Note elements, such as idref1=36121;.",
+    "nonblank": 12
+   },
+   {
+    "field": "PDATA5",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Concurrency",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Visibility",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Persistence",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Cardinality",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "GenType",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 32365
+   },
+   {
+    "field": "GenFile",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Header1",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Header2",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Scope",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 33256
+   },
+   {
+    "field": "GenOption",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "GenLinks",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "RunState",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "TPos",
+    "disposition": "archive",
+    "decision": "W-41",
+    "note": "Archived (W-41). May be needed if diagrams are imported; revisit if diagram structure needs it.",
+    "nonblank": 118
+   },
+   {
+    "field": "IsRoot",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsLeaf",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsSpec",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsActive",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "StateFlags",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "PackageFlags",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Multiplicity",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-42",
+    "note": "Decided W-42, placement changed in W-43. Only on Part elements. Held on the note of the assembly the Part is nested under, one line per Part: quantity of <part name or block> is: <value>. See W-43.",
+    "nonblank": 73
+   },
+   {
+    "field": "Style",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 2336
+   },
+   {
+    "field": "StyleEx",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 1114
+   },
+   {
+    "field": "Backcolor",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 34583
+   },
+   {
+    "field": "BorderStyle",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 49
+   },
+   {
+    "field": "BorderWidth",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 34583
+   },
+   {
+    "field": "Fontcolor",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 34583
+   },
+   {
+    "field": "Bordercolor",
+    "disposition": "drop",
+    "decision": "W-41",
+    "note": "Dropped (W-41). Presentation, code-generation or display-style data; the export keeps it.",
+    "nonblank": 34583
+   },
+   {
+    "field": "ActionFlags",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "EventFlags",
+    "disposition": "drop",
+    "decision": "W-40",
+    "note": "Dropped (W-40). No row in the extract holds a value.",
+    "nonblank": 0
+   }
+  ],
+  "tConnector": [
+   {
+    "field": "Connector_ID",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). Joins 4,583 connector tag rows and 37,955 diagram-link rows, all of which resolve; the handoff suggested archive.",
+    "nonblank": 21822
+   },
+   {
+    "field": "ea_guid",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). Unique on all 21,822 connectors; keys each connector's ledger row (W-35) and identifies flagged connectors (W-55). The handoff suggested archive.",
+    "nonblank": 21822
+   },
+   {
+    "field": "Connector_Type",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). 15 types; picks the relationship rule.",
+    "nonblank": 21822
+   },
+   {
+    "field": "Stereotype",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). Filled on 10,542 rows, 12 values (allocate 2,795, satisfy 2,444, deriveReqt 1,417, refine 1,115, trace 775, itemFlow 123 and others); picks the relationship rule. Not a property, because a connector has no note.",
+    "nonblank": 10542
+   },
+   {
+    "field": "Name",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-56",
+    "note": "Body (W-56), source section. Real labels such as 5V_CAN and 2.4GHz. Written on both end notes for Connector and InformationFlow (W-55), on the owner-side note for other types.",
+    "nonblank": 449
+   },
+   {
+    "field": "Notes",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-56",
+    "note": "Body (W-56), source section. Real descriptions (5 rows); same placement as Name.",
+    "nonblank": 5
+   },
+   {
+    "field": "Direction",
+    "disposition": "structure",
+    "decision": "W-51",
+    "note": "Structure (W-51). Resolves which end is the source. 20,359 rows Source -> Destination, 1,426 Unspecified (Connector and Association), 10 Destination -> Source.",
+    "nonblank": 21795
+   },
+   {
+    "field": "Start_Object_ID",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). Resolves the start end; 21,813 of 21,822 resolve.",
+    "nonblank": 21813
+   },
+   {
+    "field": "End_Object_ID",
+    "disposition": "structure",
+    "decision": "W-57",
+    "note": "Structure (W-57). Resolves the end; 21,813 of 21,822 resolve.",
+    "nonblank": 21813
+   },
+   {
+    "field": "SourceRole",
+    "disposition": "archive",
+    "decision": "W-56",
+    "note": "Archived (W-56). Equals the Part name on 314 of 319 rows, which the block link already carries (W-43).",
+    "nonblank": 319
+   },
+   {
+    "field": "DestRole",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceRoleType",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestRoleType",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceRoleNote",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestRoleNote",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceCard",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-54",
+    "note": "Body (W-54), source section. Written as the quantity line on the assembly (quantity of <child> is: <value>, W-43), one line where a Part and a connector give the same pair. 52 of 53 rows are on Aggregation connectors; the one Association row stays in the export.",
+    "nonblank": 53
+   },
+   {
+    "field": "DestCard",
+    "disposition": "archive",
+    "decision": "W-54",
+    "note": "Archived (W-54). Cardinality at the assembly end: 1 on 6 Aggregations and 1..* on one Association; one assembly per child is implied.",
+    "nonblank": 7
+   },
+   {
+    "field": "SourceConstraint",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestConstraint",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceQualifier",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestQualifier",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceContainment",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (Unspecified) on every row.",
+    "nonblank": 21792
+   },
+   {
+    "field": "DestContainment",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (Unspecified) on every row.",
+    "nonblank": 21792
+   },
+   {
+    "field": "SourceIsAggregate",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestIsAggregate",
+    "disposition": "structure",
+    "decision": "W-51",
+    "note": "Structure (W-51). Only on Aggregation connectors: 2 on 1,688 rows and 1 on 600. By EA convention 2 is composite and 1 is shared; not confirmed in the data.",
+    "nonblank": 2288
+   },
+   {
+    "field": "SourceIsOrdered",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestIsOrdered",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceIsNavigable",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestIsNavigable",
+    "disposition": "archive",
+    "decision": "W-52",
+    "note": "Archived (W-52). 316 rows at 0 on normally navigable connectors are unexplained; reopen if the review finds they matter.",
+    "nonblank": 20896
+   },
+   {
+    "field": "SourceAccess",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (Public) on every row.",
+    "nonblank": 21795
+   },
+   {
+    "field": "DestAccess",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (Public) on every row.",
+    "nonblank": 21795
+   },
+   {
+    "field": "SubType",
+    "disposition": "archive",
+    "decision": "W-60",
+    "note": "Archived (W-60). Repeats decided fields: Extends and Includes match the extend and include stereotypes exactly, Strong matches DestIsAggregate 2 exactly. Weak (27 rows) is unexplained.",
+    "nonblank": 2973
+   },
+   {
+    "field": "DiagramID",
+    "disposition": "structure",
+    "decision": "W-61",
+    "note": "Structure (W-61). Links a Sequence message to its diagram (they are absent from t_diagramlinks); 10 other rows are context only.",
+    "nonblank": 209
+   },
+   {
+    "field": "SeqNo",
+    "disposition": "structure",
+    "decision": "W-61",
+    "note": "Structure (W-61). Message order within a diagram (199 Sequence connectors, 14 diagrams, no repeats); needed to order messages when sequence behaviour is mapped.",
+    "nonblank": 199
+   },
+   {
+    "field": "Top_Start_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "note": "Archived (W-53). Role name with a +; matches SourceRole on 30 of 37.",
+    "nonblank": 37
+   },
+   {
+    "field": "Top_Mid_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "note": "Archived (W-53). Repeats Name on 69 Connectors; on 79 InformationFlow connectors (no Name) it holds the conveyed signal. Revisit in the relationship mapping.",
+    "nonblank": 169
+   },
+   {
+    "field": "Top_End_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "changedBy": "W-174: on ControlFlow connectors the 18 values are guards and are written as a Guard line on the step before (body)",
+    "note": "Archived (W-53). ControlFlow guards such as True and No (18 rows).",
+    "nonblank": 18
+   },
+   {
+    "field": "Btm_Start_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "note": "Archived (W-53). Cardinality text; matches SourceCard on 13 of 15.",
+    "nonblank": 15
+   },
+   {
+    "field": "Btm_Mid_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "note": "Archived (W-53). Stereotype as displayed on the diagram; 10,763 rows.",
+    "nonblank": 10763
+   },
+   {
+    "field": "Btm_End_Label",
+    "disposition": "archive",
+    "decision": "W-53",
+    "note": "Archived (W-53). Cardinality text; matches DestCard on all 4.",
+    "nonblank": 4
+   },
+   {
+    "field": "Start_Edge",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2862
+   },
+   {
+    "field": "End_Edge",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2862
+   },
+   {
+    "field": "PtStartX",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2926
+   },
+   {
+    "field": "PtStartY",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2926
+   },
+   {
+    "field": "PtEndX",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2926
+   },
+   {
+    "field": "PtEndY",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 2926
+   },
+   {
+    "field": "HeadStyle",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "LineStyle",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "RouteStyle",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 21795
+   },
+   {
+    "field": "IsBold",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "LineColor",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 21822
+   },
+   {
+    "field": "VirtualInheritance",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "LinkAccess",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsRoot",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsLeaf",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsSpec",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceChangeable",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (none) on every row.",
+    "nonblank": 21795
+   },
+   {
+    "field": "DestChangeable",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (none) on every row.",
+    "nonblank": 21795
+   },
+   {
+    "field": "SourceTS",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (instance) on every row.",
+    "nonblank": 21792
+   },
+   {
+    "field": "DestTS",
+    "disposition": "drop",
+    "decision": "W-50",
+    "note": "Dropped (W-50). Holds the same value (instance) on every row.",
+    "nonblank": 21792
+   },
+   {
+    "field": "StateFlags",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 127
+   },
+   {
+    "field": "ActionFlags",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsSignal",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsStimulus",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DispatchAction",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Target2",
+    "disposition": "archive",
+    "decision": "W-59",
+    "note": "Archived (W-59). 118 numeric values on Generalizations that look like colours; not confirmed.",
+    "nonblank": 118
+   },
+   {
+    "field": "SourceStereotype",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestStereotype",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceStyle",
+    "disposition": "archive",
+    "decision": "W-52",
+    "note": "Archived (W-52). Only the Navigable setting varies, and it follows the connector type; the 10 swapped rows match the 10 reversed Directions.",
+    "nonblank": 21795
+   },
+   {
+    "field": "DestStyle",
+    "disposition": "archive",
+    "decision": "W-52",
+    "note": "Archived (W-52). Same as SourceStyle.",
+    "nonblank": 21795
+   },
+   {
+    "field": "EventFlags",
+    "disposition": "drop",
+    "decision": "W-49",
+    "note": "Dropped (W-49). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "SourceElement",
+    "disposition": "drop",
+    "decision": "W-60",
+    "note": "Dropped (W-60). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "DestElement",
+    "disposition": "drop",
+    "decision": "W-60",
+    "note": "Dropped (W-60). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "PDATA1",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-61",
+    "note": "Body (W-61), source section, real values only. StateFlow trigger (44 rows, 26 distinct) by EA convention; the Sequence default Synchronous (199) is not written.",
+    "nonblank": 243
+   },
+   {
+    "field": "PDATA2",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-61",
+    "note": "Body (W-61), source section, real values only. StateFlow guard (27 rows) and ControlFlow guard (6) by EA convention; the Sequence default retval=void; (199) is not written.",
+    "nonblank": 232
+   },
+   {
+    "field": "PDATA3",
+    "disposition": "body",
+    "placement": "source section",
+    "decision": "W-61",
+    "note": "Body (W-61), source section, real values only. StateFlow effect (2 rows) by EA convention; the Sequence default Call (199) is not written.",
+    "nonblank": 201
+   },
+   {
+    "field": "PDATA4",
+    "disposition": "drop",
+    "decision": "W-60",
+    "note": "Dropped (W-60). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "PDATA5",
+    "disposition": "drop",
+    "decision": "W-59",
+    "note": "Dropped (W-59). Layout or display data; per-diagram layout is in t_diagramlinks.",
+    "nonblank": 20478
+   },
+   {
+    "field": "StyleEx",
+    "disposition": "archive",
+    "decision": "W-59",
+    "note": "Archived (W-59). Classifier=<number>; on 24 Connectors; none of the numbers matches an element.",
+    "nonblank": 24
+   }
+  ],
+  "tPackage": [
+   {
+    "field": "Package_ID",
+    "disposition": "structure",
+    "decision": "W-65",
+    "note": "Structure (W-65). With Parent_ID gives the package hierarchy behind the folder tree (W-04).",
+    "nonblank": 1387
+   },
+   {
+    "field": "Name",
+    "disposition": "structure",
+    "decision": "W-65",
+    "note": "Structure (W-65). Names the folder. No blanks and no sibling shares a name; 64 names contain characters unsafe in folder names (replacement rule open, see W-48).",
+    "nonblank": 1387
+   },
+   {
+    "field": "Parent_ID",
+    "disposition": "structure",
+    "decision": "W-65",
+    "note": "Structure (W-65). All 1,386 values resolve; one root; at most 12 levels deep.",
+    "nonblank": 1386
+   },
+   {
+    "field": "Notes",
+    "disposition": "body",
+    "placement": "main text",
+    "decision": "W-66",
+    "note": "Body (W-66), main text. The package description (34 rows), the same content in t_package and t_object; line endings normalised. Whether it becomes a folder note is undecided.",
+    "nonblank": 34
+   },
+   {
+    "field": "ea_guid",
+    "disposition": "structure",
+    "decision": "W-65",
+    "note": "Structure (W-65). Keys the ledger row (W-35) and matches the package's element row in t_object (1,386 of 1,387).",
+    "nonblank": 1387
+   },
+   {
+    "field": "CreatedDate",
+    "disposition": "structure",
+    "decision": "W-66",
+    "note": "Structure (W-66). Builds the uid time if a package becomes a note (W-09), from the t_object row; the two tables differ by 1 to 2 seconds on 355 rows.",
+    "nonblank": 1387
+   },
+   {
+    "field": "ModifiedDate",
+    "disposition": "drop",
+    "decision": "W-64",
+    "note": "Dropped (W-64). Git tracks changes from now on (W-39). Still in the export.",
+    "nonblank": 1387
+   },
+   {
+    "field": "XMLPath",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "IsControlled",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "LastLoadDate",
+    "disposition": "drop",
+    "decision": "W-64",
+    "note": "Dropped (W-64). EA load timestamp (243 rows).",
+    "nonblank": 243
+   },
+   {
+    "field": "LastSaveDate",
+    "disposition": "drop",
+    "decision": "W-64",
+    "note": "Dropped (W-64). EA save timestamp (242 rows).",
+    "nonblank": 242
+   },
+   {
+    "field": "Version",
+    "disposition": "drop",
+    "decision": "W-64",
+    "note": "Dropped (W-64). EA default (1.0 on 1,344 rows, 1 on 43), not an engineering revision.",
+    "nonblank": 1387
+   },
+   {
+    "field": "Protected",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "PkgOwner",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "UMLVersion",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "UseDTD",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "LogXML",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "CodePath",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Namespace",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "TPos",
+    "disposition": "archive",
+    "decision": "W-66",
+    "note": "Archived (W-66). EA manual sibling order (48 rows, 14 parents); folders sort by name.",
+    "nonblank": 48
+   },
+   {
+    "field": "PackageFlags",
+    "disposition": "drop",
+    "decision": "W-64",
+    "note": "Dropped (W-64). Checksums such as CRC=a9b064fe; on 4 rows.",
+    "nonblank": 4
+   },
+   {
+    "field": "BatchSave",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "BatchLoad",
+    "disposition": "drop",
+    "decision": "W-63",
+    "note": "Dropped (W-63). No row in the extract holds a value.",
+    "nonblank": 0
+   }
+  ],
+  "tDiagram": [
+   {
+    "field": "Diagram_ID",
+    "disposition": "structure",
+    "decision": "W-70",
+    "note": "Structure (W-70). Joins a diagram to its objects and links; 2,790 diagrams have objects, 119 are empty.",
+    "nonblank": 2924
+   },
+   {
+    "field": "Package_ID",
+    "disposition": "structure",
+    "decision": "W-70",
+    "note": "Structure (W-70). All 2,924 resolve; 1,148 packages hold diagrams; places the diagram in the folder tree (W-04, W-65).",
+    "nonblank": 2924
+   },
+   {
+    "field": "ParentID",
+    "disposition": "structure",
+    "decision": "W-70",
+    "note": "Structure (W-70). 1,406 rows, all resolve: the element the diagram belongs to (Requirement 671, UseCase 213, Activity 198, Class 185, State 124, Object 11); the element is drawn on it in 1,317 of them.",
+    "nonblank": 1406
+   },
+   {
+    "field": "Diagram_Type",
+    "disposition": "structure",
+    "decision": "W-70",
+    "note": "Structure (W-70). 8 values (Custom 1,230, Logical 1,038, Use Case 267, CompositeStructure 151, Statechart 109, Activity 95, Sequence 24, Package 10); the diagrams-only run selects by it (W-62).",
+    "nonblank": 2924
+   },
+   {
+    "field": "Name",
+    "disposition": "structure",
+    "decision": "W-71",
+    "note": "Structure (W-71). Diagram title and file name; the original is kept as - Name: <original> below the GUID where the file name differs (W-48). 172 names are shared by 380 diagrams and 268 diagrams share a name within a package (126 groups), so a duplicate rule is needed; 144 names have unsafe characters.",
+    "nonblank": 2924
+   },
+   {
+    "field": "Version",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1.0 on all 2,924 rows.",
+    "nonblank": 2924
+   },
+   {
+    "field": "Author",
+    "disposition": "structure",
+    "decision": "W-71",
+    "note": "Structure (W-71). Builds the author part of the uid if a diagram gets one (W-09). All 10 authors are in the person notes' eaNames.",
+    "nonblank": 2924
+   },
+   {
+    "field": "ShowDetails",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). No row holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "Notes",
+    "disposition": "body",
+    "placement": "main text",
+    "decision": "W-71",
+    "note": "Body (W-71). Diagram description (8 rows, 4 with HTML markup); one holds an EA element link ($element://{GUID}) the ledger could resolve.",
+    "nonblank": 8
+   },
+   {
+    "field": "Stereotype",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). No row holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "AttPub",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on all 2,924 rows.",
+    "nonblank": 2924
+   },
+   {
+    "field": "AttPri",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on all 2,924 rows.",
+    "nonblank": 2924
+   },
+   {
+    "field": "AttPro",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on all 2,924 rows.",
+    "nonblank": 2924
+   },
+   {
+    "field": "Orientation",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Page orientation: P on 1,914 diagrams, L on 1,010. Revisit if the diagram output format needs it.",
+    "nonblank": 2924
+   },
+   {
+    "field": "cx",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Page width (6 distinct values). Revisit if the diagram output format needs it.",
+    "nonblank": 2924
+   },
+   {
+    "field": "cy",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Page height (5 distinct values). Revisit if the diagram output format needs it.",
+    "nonblank": 2924
+   },
+   {
+    "field": "Scale",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 100 on all 2,924 rows.",
+    "nonblank": 2924
+   },
+   {
+    "field": "CreatedDate",
+    "disposition": "structure",
+    "decision": "W-71",
+    "note": "Structure (W-71). Builds the time part of the uid if a diagram gets one (W-09, W-13). Creation time plus author repeats on 28 diagrams; the one-millisecond tie-break applies.",
+    "nonblank": 2924
+   },
+   {
+    "field": "ModifiedDate",
+    "disposition": "drop",
+    "decision": "W-71",
+    "note": "Dropped (W-71). Git tracks changes from now on (W-39, W-64). Still in the export.",
+    "nonblank": 2924
+   },
+   {
+    "field": "HTMLPath",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). No row holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "ShowForeign",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on 499 rows and nothing on the rest.",
+    "nonblank": 499
+   },
+   {
+    "field": "ShowBorder",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on 1,075 rows and nothing on the rest.",
+    "nonblank": 1075
+   },
+   {
+    "field": "ShowPackageContents",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). Holds 1 on 1,079 rows and nothing on the rest.",
+    "nonblank": 1079
+   },
+   {
+    "field": "PDATA",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Display-option string on 2,818 diagrams; few keys vary (ShowTags=1 on 153, PSize=9 on 66, HideParents=1 on 5). Revisit if the diagram output format needs it.",
+    "nonblank": 2818
+   },
+   {
+    "field": "Locked",
+    "disposition": "drop",
+    "decision": "W-68",
+    "note": "Dropped (W-68). No row holds a value.",
+    "nonblank": 0
+   },
+   {
+    "field": "ea_guid",
+    "disposition": "structure",
+    "decision": "W-70",
+    "note": "Structure (W-70). Unique on all 2,924 diagrams; keys the ledger row (W-35).",
+    "nonblank": 2924
+   },
+   {
+    "field": "TPos",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Manual diagram order in a package (26 rows). Revisit if the diagram output format needs it.",
+    "nonblank": 26
+   },
+   {
+    "field": "Swimlanes",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Swimlane appearance on 2,818 diagrams; no lane definitions or names. Revisit if the diagram output format needs it.",
+    "nonblank": 2818
+   },
+   {
+    "field": "StyleEx",
+    "disposition": "archive",
+    "decision": "W-69",
+    "note": "Archived (W-69). Document and display switches (ExcludeRTF, DocAll, MatrixActive, KanbanActive and others). Revisit if the diagram output format needs it.",
+    "nonblank": 2924
+   }
+  ]
+ }
+}

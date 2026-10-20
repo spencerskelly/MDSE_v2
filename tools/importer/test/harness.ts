@@ -23,7 +23,7 @@ export function defaultOptions(over: Partial<ImportOptions> = {}): ImportOptions
     sourceName: "synthetic.qeax", fingerprint: "0".repeat(64), runDate: "2026-10-19T12:00:00", lineage: "SYN-1",
     authors: { authorMap: {}, fallbackCode: "skellyspencer", unmappedNames: ["", "7.1.0-2"] },
     omitRootPackages: ["Model", "IPC !"], vaultName: "Test Vault", releaseVersion: "0.0.0-dev", classes,
-    mapping: json("governance/schemas/ea-family-mapping.json"),
+    mapping: json("governance/schemas/ea-family-mapping.json"), tags: json("governance/schemas/ea-tag-dispositions.json"),
     baseFiles: buildBaseVault({ root: ROOT, release: "0.0.0-dev", classes, plugins: [workbenchPayload(ROOT)] }),
     existing: null, preApproved: [], emitNative: true, ...over,
   };

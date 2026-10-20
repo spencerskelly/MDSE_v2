@@ -237,3 +237,15 @@ Rules: none edited. Open: whether a hand-edited template should block replacemen
 
 Rules: none edited. Caveat: tested only against a fake Obsidian API in Chromium; main-area placement of a view opened from a sidebar is not verified in real Obsidian.
 
+## D-0026 — The V1 EA tag and field dispositions are brought into v2; no GUIDs on Source: EA lines; unnamed usages take their type's name
+
+2026-10-19 · Spencer · Accepted
+
+1. **One list, already decided.** `governance/schemas/ea-tag-dispositions.json` (121 tags: 80 drop, 38 body, 3 structure) and `ea-field-dispositions.json` (element, connector, package and diagram fields) are the V1 files from Test_Vault_ (`99_System/03_Schemas`), converted to JSON without changing a disposition. The importer reads the tag list. The eight tags the owner named (Priority-Trace, Responsible, Special Characteristic, Special Characteristic Comment, Special Characteristic-Trace, Supporting, Target, Target-Trace) were already `drop` under W-29. v2 had only a seven-name subset hard-coded, so the rest leaked into notes as `unassigned` lines.
+2. **Placeholders** (`unassigned`, `<memo>`, empty) are never written. A tag missing from the list is kept and reported under Warnings in the Import Run note, so a new tag cannot pass unseen.
+3. **GUIDs.** `## Source: EA` keeps one `EA GUID` line, the note's own: re-import matches notes by it (uid can shift on a collision and the `primarySymbol` is not stable), so removing it would break merges and the "Missing from source" flag. All other lines name the target note instead. Flag callouts keep the connector GUID, the handle to the ledger row. Overturn this if you accept re-import by uid and path only.
+4. **Unnamed usages** take the typed element's name (IMP-095).
+5. **Not ported from V1 (the importer has no code for them):** State entry/do/exit actions (`t_operation`), `t_xref` links (Represents, Target pin, Entry/Do action), connector Name/Notes lines, `text`/`SysML1.4::text` as normal text under the Note, comment tags as normal text (W-104), discussion posts, `quantity of` lines (SysML multiplicity may replace), Class `Attribute:` lines, NoteLink bodies, the Import State transaction file, and the source-count check (IMP-046). Each needs a decision: port, replace by SysML, or drop. See the session notes.
+
+Rules: IMP-093, IMP-094, IMP-095 added (Active). IMP-003 and IMP-005 are now implemented but stay Unreviewed until the owner reviews them.
+

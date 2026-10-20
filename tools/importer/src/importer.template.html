@@ -54,6 +54,7 @@ code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);
 </script>
 <script>
 const MAPPING = /*@@MAPPING@@*/;
+const TAGS = /*@@TAGS@@*/;
 const BASEVAULT = /*@@BASEVAULT@@*/;
 const CLASSES = /*@@CLASSES@@*/;
 const BUILD = "/*@@BUILD@@*/";
@@ -149,7 +150,7 @@ async function generate(existing) {
   $("genStatus").textContent = "Translating…";
   const opts = { sourceName: source.file.name, fingerprint, runDate: localIso(), lineage: $("lineage").value.trim() || "EA", vaultName: $("vname").value.trim() || "MDSE Vault",
     authors: { authorMap: {}, fallbackCode: $("fallback").value.trim().padEnd(13, "-").slice(0, 13), unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"],
-    releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
+    releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, tags: TAGS, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
   const res = await runImport(source.reader, opts);
   const d = res.summary.dispositions;
   $("genOut").innerHTML = `<table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +

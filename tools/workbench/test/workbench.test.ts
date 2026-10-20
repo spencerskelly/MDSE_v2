@@ -34,7 +34,7 @@ test("structure tree and rolled-up parts list for the Charger", () => {
   const b = V.bom(ix, c);
   const pm = b.find((x) => x.title === "Power Module")!;
   assert.equal(pm.qty, 3);
-  assert.equal(b.find((x) => x.title === "Contactor")!.qty, 2);
+  assert.equal(b.find((x) => x.title === "Contactor")!.qty, 3, "2 named contactors plus one unnamed usage that took the type name (IMP-110)");
 });
 
 test("where-used climbs from a part to its assembly", () => {

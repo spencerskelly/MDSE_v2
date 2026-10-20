@@ -17,4 +17,6 @@ Machine-readable model contract. Tools read these files; they never copy their c
 
 ## Not carried
 
-`local-model.yaml` (V1 Local Model, replaced by SysML usages; OD-08) and the V1 EA mapping files (`ea-element-mapping.yaml`, `ea-connector-mapping.yaml`, `ea-field-dispositions.yaml`, `ea-tag-dispositions.yaml`, `ea-package-rules.yaml`) stay in the Test_Vault_ archive. The EA field and tag rules they implemented are in RULESET.md section IMP, "EA fields and tags", as Unreviewed. Bring a file across only when a reviewed rule needs it.
+`local-model.yaml` (V1 Local Model, replaced by SysML usages; OD-08) and the V1 EA mapping files (`ea-element-mapping.yaml`, `ea-connector-mapping.yaml`, `ea-package-rules.yaml`) stay in the Test_Vault_ archive. The EA field and tag rules they implemented are in RULESET.md section IMP, "EA fields and tags", as Unreviewed. Bring a file across only when a reviewed rule needs it.
+
+`ea-tag-dispositions.json` and `ea-field-dispositions.json` are the V1 disposition lists converted from YAML (D-0026). The importer reads the tag list; the field list is the record of what V1 decided for element, connector, package and diagram fields. Change a disposition here, never in code.

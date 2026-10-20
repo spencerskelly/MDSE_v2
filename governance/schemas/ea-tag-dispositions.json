@@ -1,0 +1,732 @@
+{
+ "source": "Test_Vault_ 99_System/03_Schemas/ea-tag-dispositions.yaml (V1, Workspace Decision Log W-29..W-106)",
+ "dispositions": "property|body|structure|archive|drop",
+ "tags": [
+  {
+   "tag": "ASIL",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "ASIL-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Abstraction Layer",
+   "disposition": "drop",
+   "decision": "W-90",
+   "note": "Dropped (W-90). Fixed by the element type on all 2,293 rows (16 types, no exceptions); adds nothing beyond eaType."
+  },
+  {
+   "tag": "Allocation",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Applicability Comment",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-91), below the EA GUID as a `- Applicability Comment: <text>` line (EA tag name, W-93), real values only. Written as is; the comment text is not edited."
+  },
+  {
+   "tag": "Applicability Status",
+   "disposition": "drop",
+   "decision": "W-89",
+   "note": "Dropped (W-89). Unreliable: Applicable 2,972, unassigned 371, n.a. 20, all on Regulatory Requirement."
+  },
+  {
+   "tag": "Application",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Application-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Brand",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Brand: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "CMF",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- CMF: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "Cable Compatibility",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- Cable Compatibility: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "Cable OD",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Cable Type",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Category",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Color",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Compatibility",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Cost",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Current Max",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- Current Max: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "CurrentOutMax",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- CurrentOutMax: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "Cybersecurity",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Cybersecurity-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "DataType",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Detection",
+   "disposition": "body",
+   "decision": "W-95",
+   "note": "Body (W-95), below the EA GUID as a `- Detection: <value>` line (EA tag name, W-93), real values only. May become a property later (FMEA scores, Failure Mode); decided with the element mapping."
+  },
+  {
+   "tag": "Difficulty",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Dimensions",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Domain",
+   "disposition": "drop",
+   "decision": "W-90",
+   "note": "Dropped (W-90). One value, Multi, on 169 Module rows; the other 297 are blank."
+  },
+  {
+   "tag": "Duration Time in ms",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Engineering Comment",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-104, changes W-91): written as normal text below the Note and any `text` wording, above the inline tag lines; real values only. Order among the four: User Story, Sales Comment, Product Management Comment, Engineering Comment. Each starts with a short bold label with the tag name (W-105)."
+  },
+  {
+   "tag": "External Reference",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Finish",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "HW time",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Identifier",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "In-Links",
+   "disposition": "drop",
+   "decision": "W-91",
+   "note": "Dropped (W-91). Paths into another EA model (16 rows: Regulatory Requirement 15, InformationItem 1); not usable in this vault. Confirmed as drop in W-109 after the values were reviewed."
+  },
+  {
+   "tag": "Length - Useable",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Length - in Grid",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Length - inConnector",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Length - inCoupler",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Length - inIC-CPD",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "MFG PN",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- MFG PN: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "Material",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Material: <value>` line (EA tag name, W-93), real values only. The placeholder unassigned writes nothing."
+  },
+  {
+   "tag": "Max Current",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Meter Cost",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Mfg PN",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Mgf PN",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Note",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Object Type",
+   "disposition": "drop",
+   "decision": "W-87",
+   "note": "Dropped (W-87). Requirement 3,362, Heading 1,478, Information 8 on 4,848 requirements; a new analysis is run after import. Confirmed as drop in W-109 after the values were reviewed."
+  },
+  {
+   "tag": "Observability",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Occurence",
+   "disposition": "body",
+   "decision": "W-95",
+   "note": "Body (W-95), below the EA GUID as a `- Occurence: <value>` line (EA tag name, W-93), real values only. May become a property later (FMEA scores, Failure Mode); decided with the element mapping."
+  },
+  {
+   "tag": "Origin",
+   "disposition": "drop",
+   "decision": "W-90",
+   "note": "Dropped (W-90). 118 real values on Requirement (Field Service 45, Customer/Market 41 and others) in inconsistent spelling; Spencer chose not to keep them. Confirmed as drop in W-109 after the values were reviewed."
+  },
+  {
+   "tag": "Out-Links",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "PN",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Part Number: <value>` line (EA tag name, W-93), real values only. PN and PartNumber share this one line; they never occur on the same element."
+  },
+  {
+   "tag": "PN Change Level",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- PN Change Level: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "PartNumber",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Part Number: <value>` line (EA tag name, W-93), real values only. PN and PartNumber share this one line; they never occur on the same element."
+  },
+  {
+   "tag": "Piece Cost",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Piece Cost: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "Positions",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Positions: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "PowerMax",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- PowerMax: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "Priority",
+   "disposition": "drop",
+   "decision": "W-89",
+   "note": "Dropped (W-89). unassigned on 7,027 of 7,029 rows; one Low and one blank."
+  },
+  {
+   "tag": "Priority-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Product Cost",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Product Management Comment",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-104, changes W-91): written as normal text below the Note and any `text` wording, above the inline tag lines; real values only. Order among the four: User Story, Sales Comment, Product Management Comment, Engineering Comment. Each starts with a short bold label with the tag name (W-105)."
+  },
+  {
+   "tag": "Quantity",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Quantity: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "Rationale",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Responsible",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "SC",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "SSDefaultToolbox",
+   "disposition": "drop",
+   "decision": "W-95",
+   "note": "Dropped (W-95). EA toolbox setting on 6 Packages (SysML1.4 requirements, activity and interaction toolboxes); tool state, not model content."
+  },
+  {
+   "tag": "SW time",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Sales Comment",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-104, changes W-91): written as normal text below the Note and any `text` wording, above the inline tag lines; real values only. Order among the four: User Story, Sales Comment, Product Management Comment, Engineering Comment. Each starts with a short bold label with the tag name (W-105)."
+  },
+  {
+   "tag": "Severity",
+   "disposition": "body",
+   "decision": "W-95",
+   "note": "Body (W-95), below the EA GUID as a `- Severity: <value>` line (EA tag name, W-93), real values only. May become a property later (FMEA scores, Failure Mode); decided with the element mapping."
+  },
+  {
+   "tag": "SignalType",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- SignalType: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "Special Characteristic",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Special Characteristic Comment",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Special Characteristic-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Stakeholder ID",
+   "disposition": "structure",
+   "decision": "W-26",
+   "note": "Holds clause numbers inside standards. Used to build the external id where the name has no clause number. Not repeated in the body."
+  },
+  {
+   "tag": "Status",
+   "disposition": "drop",
+   "decision": "W-87",
+   "note": "Dropped (W-87). Draft on 4,847 of 4,848 rows and Discontinued on 1; a new analysis is run after import."
+  },
+  {
+   "tag": "Style",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Style: <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "Supporting",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "SysML1.1::text",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "SysML1.4::id",
+   "disposition": "body",
+   "decision": "W-26/W-27",
+   "note": "Dropped on information items (2,254, sequence-style). Kept in the body as \"SysML1.4::id\" on requirements (137, values like CC115)."
+  },
+  {
+   "tag": "SysML1.4::propertyPath",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "SysML1.4::text",
+   "disposition": "body",
+   "decision": "W-102",
+   "note": "Body (W-102, reverses W-29). The wording is in the Notes column of t_objectproperties_raw.csv, not in Value (which shows <memo>). Written as normal text in the body directly below the element Note; when the Note is empty it is the main text. Real wording on 49 rows (testCase 38, InformationItem 6 not already in the Note; see W-102)."
+  },
+  {
+   "tag": "Target",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Target-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Type",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "User Story",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-104, changes W-91): written as normal text below the Note and any `text` wording, above the inline tag lines; real values only. Order among the four: User Story, Sales Comment, Product Management Comment, Engineering Comment. Each starts with a short bold label with the tag name (W-105)."
+  },
+  {
+   "tag": "Verdict",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Verification Comment",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Verification Criterion",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "VoltageInMax",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- VoltageInMax: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "VoltageInMin",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- VoltageInMin: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "VoltageOutMax",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- VoltageOutMax: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "VoltageOutMin",
+   "disposition": "body",
+   "decision": "W-94",
+   "note": "Body (W-94), below the EA GUID as a `- VoltageOutMin: <value>` line (EA tag name, W-93), real values only. May become a property later; not decided which."
+  },
+  {
+   "tag": "Volume",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Allocation",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Applicability Comment",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-91), below the EA GUID as a `- Webasto MBDV Profile::Applicability Comment: <text>` line (EA tag name, W-93), real values only. Written as is; the comment text is not edited."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Applicability Status",
+   "disposition": "drop",
+   "decision": "W-89",
+   "note": "Dropped (W-89). Unreliable: unassigned 3,049, n.a. 678, Applicable 6."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Application",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Category",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Cybersecurity-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::External Reference",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-91), below the EA GUID as a `- Webasto MBDV Profile::External Reference: <text>` line (EA tag name, W-93), real values only. Written as is; the comment text is not edited."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Identifier",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Note",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Object Type",
+   "disposition": "drop",
+   "decision": "W-87",
+   "note": "Dropped (W-87). Information 2,254, Requirement 123, Heading 13, information 1 on 2,391 rows; a new analysis is run after import. Confirmed as drop in W-109 after the values were reviewed."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Priority",
+   "disposition": "body",
+   "decision": "W-89",
+   "note": "Body (W-89), below the EA GUID as a `- Webasto MBDV Profile::Priority: <value>` line (EA tag name, W-93). Real values only (118 rows, all Requirement); unassigned (2,255) and blank (18) write nothing."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Priority-Trace",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Rationale",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Responsible",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Special Characteristic",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Only ever holds a placeholder (unassigned or <memo>)."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Special Characteristic Comment",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Stakeholder ID",
+   "disposition": "structure",
+   "decision": "W-26",
+   "note": "Same as Stakeholder ID."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Status",
+   "disposition": "drop",
+   "decision": "W-87",
+   "note": "Dropped (W-87). Draft on all 2,391 rows."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Supporting",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Verification Comment",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Webasto MBDV Profile::Verification Criterion",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "Weight (g)",
+   "disposition": "body",
+   "decision": "W-92",
+   "note": "Body (W-92), below the EA GUID as a `- Weight (g): <value>` line (EA tag name, W-93), real values only."
+  },
+  {
+   "tag": "direction",
+   "disposition": "structure",
+   "decision": "W-90",
+   "note": "Structure (W-90). FlowProperty only (763: inout 496, out 171, in 96). Not copied into notes; used by the translator when it maps flows."
+  },
+  {
+   "tag": "id",
+   "disposition": "body",
+   "decision": "W-26/W-27",
+   "note": "Dropped when the value is a sequence-style number (Regulatory and Webasto requirements, 4,840). Kept in the body as \"id\" on design constraints and requirements (172, values like DG_0307_001_02)."
+  },
+  {
+   "tag": "isEncapsulated",
+   "disposition": "drop",
+   "decision": "W-29",
+   "note": "Never has a value."
+  },
+  {
+   "tag": "risk",
+   "disposition": "drop",
+   "decision": "W-91",
+   "note": "Dropped (W-91). One row, Low, on one extendedRequirement."
+  },
+  {
+   "tag": "source",
+   "disposition": "body",
+   "decision": "W-91",
+   "note": "Body (W-91), below the EA GUID as a `- source: <text>` line (EA tag name, W-93), real values only. Written as is; the comment text is not edited."
+  },
+  {
+   "tag": "text",
+   "disposition": "body",
+   "decision": "W-102",
+   "note": "Body (W-102, reverses W-29). The wording is in the Notes column of t_objectproperties_raw.csv, not in Value (which shows <memo>). Written as normal text in the body directly below the element Note; when the Note is empty it is the main text. Real wording on 351 rows (including those already in the Note); 383 rows of text and SysML1.4::text together are not already in the element Note (261 with an empty Note, 122 with different wording)."
+  },
+  {
+   "tag": "verifyMethod",
+   "disposition": "body",
+   "decision": "W-95",
+   "note": "Body (W-95), below the EA GUID as a `- verifyMethod: <value>` line (EA tag name, W-93), real values only. May become a property later (FMEA scores, Failure Mode); decided with the element mapping."
+  }
+ ]
+}

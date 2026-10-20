@@ -68,7 +68,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const pm = obj("Class", "Power Module", power, { stereotype: "Hardware Component", note: "Synthetic 30 kW module." });
   const contactor = obj("Class", "Contactor", power, { stereotype: "Hardware Component" });
   const fw = obj("Class", "Charge Firmware", prod, { stereotype: "Software Component" });
-  const charger = obj("Class", "Charger", prod, { stereotype: "Physical Component", note: "Synthetic charger assembly." });
+  const charger = obj("Class", "Charger", prod, { stereotype: "Physical Component", note: "Synthetic charger assembly.", tags: { Responsible: "unassigned", "Target-Trace": "<memo>", Brand: "Acme", "Zzz New Tag": "kept until decided" } });
   const canIf = obj("Class", "CAN Interface", prod, { stereotype: "Data Interface" });
   const sigCmd = obj("Signal", "Charge Current Command", prod, { stereotype: "Logical Signal" });
   const weird = obj("Class", "Mystery Thing", prod, { stereotype: "Totally Unmapped Stereotype" });
@@ -76,6 +76,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   obj("Part", "controller", prod, { parent: charger, pdata1: String(controller), mult: "1" });
   obj("Part", "modules", prod, { parent: charger, pdata1: String(pm), mult: "3" });
   obj("Part", "contactors", prod, { parent: charger, pdata1: String(contactor), mult: "2" });
+  obj("Part", "", prod, { parent: charger, pdata1: String(contactor) });            // no name of its own: takes the type's name
   obj("Part", "mystery", prod, { parent: charger, pdata1: "999999" });            // unresolvable type
   obj("Port", "can", prod, { parent: controller, classifier: canIf });
   // Requirements

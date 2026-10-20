@@ -18,7 +18,7 @@ const bundleTs = () => TS_ORDER.map((n) => {
   return `/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" });
 }).join("\n");
 const classes = JSON.parse(rd("../core/src/classes.json"));
-const parts = { IMPORTER: bundleTs(), MAPPING: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-family-mapping.json"), "utf8"))),
+const parts = { IMPORTER: bundleTs(), TAGS: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-tag-dispositions.json"), "utf8"))), MAPPING: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-family-mapping.json"), "utf8"))),
   BASEVAULT: JSON.stringify(buildBaseVault({ root: path.join(here, "../.."), release: JSON.parse(fs.readFileSync(path.join(here, "../../package.json"), "utf8")).version ?? "0.0.0-dev", classes, plugins: [workbenchPayload(path.join(here, "../.."))] })),
    READER: strip(rd("src/qeax_reader.js")), CORE: strip(rd("../core/src/mdse_core.js")), CLASSES: JSON.stringify(JSON.parse(rd("../core/src/classes.json"))) };
 const version = crypto.createHash("sha256").update(Object.values(parts).join("\0") + rd("src/importer.template.html")).digest("hex").slice(0, 10);

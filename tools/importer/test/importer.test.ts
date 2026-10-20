@@ -198,3 +198,36 @@ test("extend becomes an optional use case; dependency kinds stay distinct", asyn
   assert.match(body("Charge Current Accuracy.md"), /dependency from REQ_\d{5}::ChargeCurrentAccuracy to STD_\d{5}::UL259451Enclosure; \/\/ derivedFrom/);
   assert.match(readFileSync(new URL("../TRANSLATION.md", import.meta.url), "utf8"), /## Dependency kinds/);
 });
+
+test("EA tags follow ea-tag-dispositions.json: placeholders and dropped tags are left out, listed body tags kept, new tags reported", async () => {
+  const res = await run();
+  const src = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## Source: EA")[1]!.split("## SysML v2")[0]!;
+  assert.doesNotMatch(src, /unassigned|<memo>|Responsible|Target-Trace/);
+  assert.match(src, /^- Brand: Acme$/m);
+  assert.match(src, /^- Zzz New Tag: kept until decided$/m);
+  assert.ok(res.warnings.some((p) => p.includes('"Zzz New Tag"')), "a tag with no disposition is reported");
+  assert.ok(!res.warnings.some((p) => p.includes('"Brand"')));
+  assert.deepEqual(res.problems, []);
+});
+
+test("no EA GUIDs in Source: EA except the note's own identity line (flag callouts keep the connector GUID: it is the handle to the ledger row)", async () => {
+  const res = await run();
+  for (const f of notes(res)) {
+    const lines = (f.content.split("## Source: EA")[1] ?? "").split("## SysML v2")[0]!.split("\n").filter((l) => /\{[0-9A-F]{8}-/i.test(l));
+    assert.ok(lines.length <= 1 && lines.every((l) => l.startsWith("- EA GUID: ")), `${f.path}: ${lines.join(" | ")}`);
+  }
+});
+
+test("a usage with no name takes the name of its typed element (IMP-110)", async () => {
+  const res = await run();
+  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## SysML v2")[1]!;
+  assert.match(charger, /part contactor : /);
+  assert.ok(!/part part\d+/.test(charger.split("mystery")[0]!), "no generated name where the type could name it");
+});
+
+test("the disposition lists are well formed and cover the tags the fixtures use", async () => {
+  const td = JSON.parse(readFileSync(new URL("../../../governance/schemas/ea-tag-dispositions.json", import.meta.url), "utf8")).tags as Array<{ tag: string; disposition: string }>;
+  assert.equal(new Set(td.map((t) => t.tag)).size, td.length, "one entry per tag");
+  assert.ok(td.every((t) => ["property", "body", "structure", "archive", "drop"].includes(t.disposition)));
+  for (const k of ["Priority-Trace", "Responsible", "Special Characteristic", "Special Characteristic Comment", "Special Characteristic-Trace", "Supporting", "Target", "Target-Trace"]) assert.equal(td.find((t) => t.tag === k)?.disposition, "drop", k);
+});
