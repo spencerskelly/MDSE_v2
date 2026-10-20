@@ -27,8 +27,8 @@ Editing after import, review decisions, plugin management, the note format itsel
 |---|---|---|
 | QEAX reader | Working | Rows identical to `sqlite3` on overflow pages, NULLs, Unicode, blobs, large integers; non-SQLite input rejected (`testing/oracles/test_qeax_reader.py`) |
 | Page shell, offline check, ZIP output | Working | Chromium smoke test (`testing/oracles/test_importer_browser.py`) |
-| QEAX to notes (M2) | **Not built** | — |
-| SysML v2 writer and parser report (M3) | **Not built** | — |
+| QEAX to notes (M2) | **Built on provisional rules (D-0016)**; synthetic data only | `tools/importer/test/importer.test.ts`: validates every note, ids/uids unique, re-import is a no-op, add-onto is additive |
+| SysML v2 writer (M3) | **Built, blocks not parser-checked** (parser gate runs in CI only; report says "NOT RUN") | same tests; assembled-reference check |
 | BOM reader | **Not built** (P2) | — |
 | Run on real QEAX | **Never run** from this repository | — |
 

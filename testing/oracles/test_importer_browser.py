@@ -67,7 +67,8 @@ class ImporterBrowser(unittest.TestCase):
                 self.assertIn("1 with issues", out)
                 self.assertIn("Broken.md", out); self.assertIn("ID_PREFIX", out)
                 self.assertNotIn("Charger.md\t", out)
-                self.assertTrue(pg.is_disabled("#genNew"))
+                self.assertFalse(pg.is_disabled("#genNew"))   # source chosen
+                self.assertTrue(pg.is_disabled("#genAdd"))   # needs a writable folder (read-only check does not count)
                 b.close()
             self.assertEqual(errors, [])
             self.assertEqual([r for r in requests if not r.startswith("file:")], [], "the page must make no network requests")

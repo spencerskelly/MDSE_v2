@@ -31,8 +31,10 @@ code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);
 <div id="vaultOut"></div></section>
 
 <section class="card" aria-labelledby="h-gen"><h2 id="h-gen">3 · Generate</h2>
-<div class="row"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Add to chosen vault</button></div>
-<p id="genStatus" class="warn" style="margin:8px 0 0">Translation from QEAX to notes is not implemented in this build (milestone M2). Steps 1 and 2 are working and tested.</p></section>
+<div class="row"><label>Vault name <input id="vname" value="MDSE Vault"></label><label>Source lineage <input id="lineage" value="EA8647"></label><label>Fallback author code <input id="fallback" value="skellyspencer" size="14" maxlength="13"></label></div>
+<div class="row"><button id="genNew" disabled>Build new vault (ZIP, includes base vault)</button><button id="genAdd" disabled>Write to chosen folder</button></div>
+<p class="mut" style="margin:8px 0 0">A chosen folder with no vault in it (no <code>.vault.yaml</code>, no <code>.obsidian</code>) receives the base vault together with the notes. A folder that already holds a vault is only added to; nothing is deleted.</p>
+<p id="genStatus" style="margin:8px 0 0"></p><div id="genOut"></div></section>
 
 <section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
 </main>
@@ -692,8 +694,1020 @@ const MDSE = (() => {
 
 </script>
 <script>
+/* sha256.ts */
+/* Incremental SHA-256 for fingerprinting a QEAX without loading it (IMP-054). WebCrypto digests need the whole
+ * buffer, which a browser tab cannot hold for a 200 MB file, so this reads bounded slices. Tested against node:crypto. */
+
+const K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+class Sha256 {
+          h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+          buf = new Uint8Array(64);
+          fill = 0;
+          total = 0;
+          w = new Uint32Array(64);
+
+          block(b            , o        )       {
+    const w = this.w, h = this.h;
+    for (let i = 0; i < 16; i++) w[i] = ((b[o + 4 * i]  << 24) | (b[o + 4 * i + 1]  << 16) | (b[o + 4 * i + 2]  << 8) | b[o + 4 * i + 3] ) >>> 0;
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15] , c = w[i - 2] ;
+      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+      const s1 = ((c >>> 17) | (c << 15)) ^ ((c >>> 19) | (c << 13)) ^ (c >>> 10);
+      w[i] = (w[i - 16]  + s0 + w[i - 7]  + s1) >>> 0;
+    }
+    let a = h[0] , b1 = h[1] , c1 = h[2] , d = h[3] , e = h[4] , f = h[5] , g = h[6] , hh = h[7] ;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + K[i]  + w[i] ) >>> 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b1) ^ (a & c1) ^ (b1 & c1);
+      const t2 = (S0 + maj) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c1; c1 = b1; b1 = a; a = (t1 + t2) >>> 0;
+    }
+    h[0] = (h[0]  + a) >>> 0; h[1] = (h[1]  + b1) >>> 0; h[2] = (h[2]  + c1) >>> 0; h[3] = (h[3]  + d) >>> 0;
+    h[4] = (h[4]  + e) >>> 0; h[5] = (h[5]  + f) >>> 0; h[6] = (h[6]  + g) >>> 0; h[7] = (h[7]  + hh) >>> 0;
+  }
+
+  update(data            )       {
+    this.total += data.length;
+    let i = 0;
+    if (this.fill) {
+      while (i < data.length && this.fill < 64) this.buf[this.fill++] = data[i++] ;
+      if (this.fill === 64) { this.block(this.buf, 0); this.fill = 0; }
+    }
+    for (; i + 64 <= data.length; i += 64) this.block(data, i);
+    while (i < data.length) this.buf[this.fill++] = data[i++] ;
+    return this;
+  }
+
+  hex()         {
+    const bits = this.total * 8, pad = new Uint8Array(((this.fill < 56 ? 56 : 120) - this.fill) + 8);
+    pad[0] = 0x80;
+    const hi = Math.floor(bits / 2 ** 32), lo = bits >>> 0, n = pad.length;
+    pad[n - 8] = hi >>> 24; pad[n - 7] = (hi >>> 16) & 255; pad[n - 6] = (hi >>> 8) & 255; pad[n - 5] = hi & 255;
+    pad[n - 4] = lo >>> 24; pad[n - 3] = (lo >>> 16) & 255; pad[n - 2] = (lo >>> 8) & 255; pad[n - 1] = lo & 255;
+    const keep = this.total;
+    this.update(pad);
+    this.total = keep;
+    return [...this.h].map((x) => x.toString(16).padStart(8, "0")).join("");
+  }
+}
+
+                                                                                                         
+
+/** SHA-256 of a file read in bounded slices. */
+async function fileSha256(file          , chunk = 4 * 1024 * 1024)                  {
+  const s = new Sha256();
+  for (let at = 0; at < file.size; at += chunk) s.update(new Uint8Array(await file.slice(at, Math.min(at + chunk, file.size)).arrayBuffer()));
+  return s.hex();
+}
+
+function sha256Text(text        )         {
+  return new Sha256().update(new TextEncoder().encode(text)).hex();
+}
+
+/* ea_source.ts */
+/* Reads the EA tables the importer needs into one typed source graph. Read-only. EA diagrams are never read (ADR-V2-05). */
+
+                                      
+
+                      
+                              
+                                              
+                    
+ 
+
+                                                                                                                
+                    
+                                                                                                                             
+                                                                                                                              
+ 
+                       
+                                                                                                             
+                                                                                                                             
+ 
+                       
+                                   
+                      
+                            
+                                             
+                                     
+                                                                                                   
+ 
+
+const str = (v         )         => (v === null || v === undefined ? "" : String(v));
+const num = (v         )         => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
+
+/** Tables the importer reads. t_diagram and every other table are never opened. */
+const REQUIRED_TABLES = ["t_object", "t_connector", "t_package"]         ;
+
+async function readSourceGraph(reader            )                       {
+  for (const t of REQUIRED_TABLES) if (!reader.has(t)) throw new Error(`MISSING_TABLE ${t}`);
+  const packages = new Map                   ();
+  for await (const r of reader.scan("t_package"))
+    packages.set(num(r.Package_ID), { id: num(r.Package_ID), parentId: num(r.Parent_ID), name: str(r.Name), notes: str(r.Notes), guid: str(r.ea_guid), created: str(r.CreatedDate) });
+  const objects             = [];
+  for await (const r of reader.scan("t_object"))
+    objects.push({
+      id: num(r.Object_ID), type: str(r.Object_Type), name: str(r.Name), alias: str(r.Alias), author: str(r.Author), note: str(r.Note),
+      packageId: num(r.Package_ID), stereotype: str(r.Stereotype), created: str(r.CreatedDate), guid: str(r.ea_guid), parentId: num(r.ParentID),
+      classifier: num(r.Classifier), pdata1: str(r.PDATA1), multiplicity: str(r.Multiplicity), abstract: str(r.Abstract),
+    });
+  const connectors                = [];
+  for await (const r of reader.scan("t_connector"))
+    connectors.push({
+      id: num(r.Connector_ID), type: str(r.Connector_Type), stereotype: str(r.Stereotype), name: str(r.Name), notes: str(r.Notes), direction: str(r.Direction),
+      guid: str(r.ea_guid), sourceId: num(r.Start_Object_ID), destId: num(r.End_Object_ID), sourceCard: str(r.SourceCard), destCard: str(r.DestCard),
+      sourceIsAggregate: num(r.SourceIsAggregate), destIsAggregate: num(r.DestIsAggregate),
+    });
+  const tags = new Map                                 ();
+  let tagRows = 0;
+  if (reader.has("t_objectproperties"))
+    for await (const r of reader.scan("t_objectproperties")) {
+      tagRows++;
+      const id = num(r.Object_ID), list = tags.get(id) ?? [];
+      list.push([str(r.Property), str(r.Value)]); tags.set(id, list);
+    }
+  const objectsById = new Map(objects.map((o) => [o.id, o]));
+  return { packages, objects, connectors, tags, objectsById, counts: { t_object: objects.length, t_connector: connectors.length, t_package: packages.size, t_objectproperties: tagRows } };
+}
+
+/* ea_mapping.ts */
+/* Family resolution (governance/schemas/ea-family-mapping.json) and the provisional MDSE class table.
+ *
+ * The family file decides the SysML construct and the disposition. It does NOT name the MDSE class, so classify()
+ * below carries that choice from the Unreviewed MOD rules (MOD-056 to MOD-067). Every defaulted subtype is reported
+ * as evidence on the ledger row so the owner's review can find it (GOV-003). */
+
+                                                                                                                                                      
+                                                                                                                                                             
+                                                                                                        
+
+                    
+                  
+                                                                                         
+                                                                                                   
+ 
+
+const familyKey = (type        , stereotype        )         => (stereotype ? `${type}:${stereotype}` : type);
+
+/** Exact match only. An unknown family is never mapped by fallback (IMP-092). */
+function buildResolver(m               )           {
+  const els = new Map(m.elements.map((e) => [e.family, e]));
+  const rels = new Map(m.relationships.map((e) => [e.family, e]));
+  return {
+    version: m.schema,
+    element(type, stereotype) { const key = familyKey(type, stereotype), entry = els.get(key); return entry ? { key, entry } : null; },
+    relationship(type, stereotype) { const key = familyKey(type, stereotype), entry = rels.get(key); return entry ? { key, entry } : null; },
+  };
+}
+
+                                                                              
+
+/** SysML definition kinds that become a note with a `## SysML v2` block. */
+const DEFINITION_KINDS                         = {
+  PartDefinition: "part def", InterfaceDefinition: "interface def", PortDefinition: "port def", ItemDefinition: "item def",
+  AttributeDefinition: "attribute def", ActionDefinition: "action def", StateDefinition: "state def", RequirementDefinition: "requirement def",
+  UseCaseDefinition: "use case def", VerificationCaseDefinition: "verification def", ConstraintDefinition: "constraint def", OccurrenceDefinition: "occurrence def",
+};
+const USAGE_KINDS = new Set(["PartUsage", "PortUsage", "ActionUsage", "StateUsage", "ItemUsage"]);
+
+const pathHas = (path          , re        )          => path.some((p) => re.test(p));
+
+/** MDSE class and subtype for an element whose family resolved to a note. Returns null when the family makes no note. */
+function classify(entry              , o          , pkgPath          )                        {
+  const ev           = [];
+  const kind = entry.native_kind;
+  if (entry.disposition === "native_candidate" && kind) {
+    switch (kind) {
+      case "RequirementDefinition": {
+        // MOD-057: subtype from the EA package path; first match wins. Provisional keywords; default engineering.
+        let sub = "engineering";
+        if (pathHas(pkgPath, /standard|regulat/i)) sub = "standard";
+        else if (pathHas(pkgPath, /stakeholder|customer/i)) sub = "stakeholder";
+        else if (pathHas(pkgPath, /functional/i)) sub = "functional";
+        else if (pathHas(pkgPath, /design/i)) sub = "design";
+        else ev.push("SUBTYPE_DEFAULTED_ENGINEERING");
+        return { type: "Requirement", subtype: sub, evidence: ev };
+      }
+      case "ActionDefinition": return { type: "Behavior", subtype: / Function$/i.test(o.stereotype) ? "function" : "activity", evidence: ev };
+      case "VerificationCaseDefinition": return { type: "Verification", subtype: "test", evidence: ev };
+      case "UseCaseDefinition": ev.push("SUBTYPE_DEFAULTED_WHAT"); return { type: "Use Case", subtype: "what", evidence: ev };
+      case "StateDefinition": return { type: "Condition", subtype: "state", evidence: ev };
+      case "PartDefinition":
+        if (o.type === "Actor") return { type: "Actor", subtype: "", evidence: ev };
+        if (/software/i.test(o.stereotype)) return { type: "Object", subtype: "software", evidence: ev };
+        ev.push("SUBTYPE_DEFAULTED_PART");
+        return { type: "Object", subtype: "part", evidence: ev };
+      case "InterfaceDefinition": case "PortDefinition": return { type: "Object", subtype: "interface", evidence: ev };
+      case "ItemDefinition": return { type: "Item Flow", subtype: /physical/i.test(o.stereotype) ? "material" : "information", evidence: ev };
+      case "AttributeDefinition": return { type: "Item Flow", subtype: "information", evidence: ev };
+      case "ConstraintDefinition": return { type: "Info", subtype: "", evidence: ev };
+      case "OccurrenceDefinition": return { type: "modelCheck", subtype: "Event", evidence: ev };
+      default: return null;                                    // usages and unknown kinds make no note
+    }
+  }
+  if (entry.disposition === "mdse_note") {
+    if (o.type === "Issue") return { type: "Issue", subtype: "engineering issue", evidence: ev };
+    if (o.type === "Change" || o.type === "Decision") return { type: "modelCheck", subtype: o.type, evidence: ev };
+    return { type: "Info", subtype: "", evidence: ev };       // InformationItem, Note, Text, Text:NavigationCell
+  }
+  return null;
+}
+
+const isUsageEntry = (e              )          => !!e.native_kind && USAGE_KINDS.has(e.native_kind);
+const connectorKey = (c             )         => familyKey(c.type, c.stereotype);
+
+/* identity.ts */
+/* Identity allocation: author codes (MOD-002/003/014), uid (MOD-004/018/019), ids (MOD-015/017/020).
+ * Deterministic: the same source and options always give the same identities. */
+
+                         
+                                                                                                 
+                                    
+                                                                                                     
+                       
+                                                                                          
+                          
+ 
+
+const pad13 = (s        )         => (s + "-------------").slice(0, 13);
+
+/** MOD-002: last name then first name, lowercase letters only, truncated to 13, padded right with hyphens. */
+function deriveAuthorCode(name        )         {
+  const clean = (s        )         => s.toLowerCase().replace(/[^a-z]/g, "");
+  let first = "", last = "";
+  if (name.includes(",")) { const [l, f] = name.split(","); last = clean(l ?? ""); first = clean(f ?? ""); }
+  else { const t = name.trim().split(/\s+/); first = clean(t[0] ?? ""); last = t.length > 1 ? clean(t[t.length - 1] ?? "") : ""; }
+  return pad13(last + first);
+}
+
+function authorCode(eaAuthor        , o               )                                                        {
+  const mapped = o.authorMap[eaAuthor] ?? Object.entries(o.authorMap).find(([k]) => k.toLowerCase() === eaAuthor.toLowerCase())?.[1];
+  if (mapped) return { code: mapped, how: "map" };
+  if (!eaAuthor.trim() || o.unmappedNames.includes(eaAuthor)) return { code: o.fallbackCode, how: "fallback" };
+  const d = deriveAuthorCode(eaAuthor);
+  return /^[a-z-]{13}$/.test(d) && d.replace(/-/g, "") ? { code: d, how: "derived" } : { code: o.fallbackCode, how: "fallback" };
+}
+
+const TIME = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?/;
+
+/** EA CreatedDate as written -> yyyyMMddHHmmssSSS (no time zone conversion; missing milliseconds = 000). */
+function eaTimeStamp(s        )                {
+  const m = TIME.exec(s.trim());
+  if (!m) return null;
+  const ms = (m[7] ?? "").padEnd(3, "0");
+  return `${m[1]}${m[2]}${m[3]}${m[4] ?? "00"}${m[5] ?? "00"}${m[6] ?? "00"}${ms}`;
+}
+
+/** Adds one millisecond to a yyyyMMddHHmmssSSS stamp (collision resolution, as the AI instructions do for hand notes). */
+function bumpMillisecond(stamp        )         {
+  const y = +stamp.slice(0, 4), mo = +stamp.slice(4, 6) - 1, d = +stamp.slice(6, 8), h = +stamp.slice(8, 10), mi = +stamp.slice(10, 12), s = +stamp.slice(12, 14), ms = +stamp.slice(14, 17);
+  const t = new Date(Date.UTC(y, mo, d, h, mi, s, ms + 1));
+  const p = (n        , w = 2)         => String(n).padStart(w, "0");
+  return `${p(t.getUTCFullYear(), 4)}${p(t.getUTCMonth() + 1)}${p(t.getUTCDate())}${p(t.getUTCHours())}${p(t.getUTCMinutes())}${p(t.getUTCSeconds())}${p(t.getUTCMilliseconds(), 3)}`;
+}
+
+                                                                                   
+                                                       
+
+/** Allocates a unique 30-character uid per request in (created, guid) order. `taken` holds uids already in the vault. */
+function allocateUids(reqs              , a               , taken             , fallbackStamp        )                         {
+  const out = new Map                   ();
+  const order = reqs.map((r) => ({ r, stamp: eaTimeStamp(r.created) })).sort((x, y) => {
+    const a1 = x.stamp ?? "99999999999999999", b1 = y.stamp ?? "99999999999999999";
+    return a1 < b1 ? -1 : a1 > b1 ? 1 : x.r.guid < y.r.guid ? -1 : x.r.guid > y.r.guid ? 1 : 0;
+  });
+  for (const { r, stamp } of order) {
+    const evidence           = [];
+    const who = authorCode(r.author, a);
+    if (who.how === "fallback") evidence.push("AUTHOR_FALLBACK");
+    if (who.how === "derived") evidence.push("AUTHOR_DERIVED");
+    let t = stamp;
+    if (!t) { t = fallbackStamp; evidence.push("UID_TIME_FALLBACK"); }
+    let shifted = false;
+    while (taken.has(t + who.code)) { t = bumpMillisecond(t); shifted = true; }
+    if (shifted) evidence.push("UID_COLLISION_SHIFTED");
+    const uid = t + who.code;
+    taken.add(uid);
+    out.set(r.key, { uid, evidence });
+  }
+  return out;
+}
+
+                                                                                  
+
+/** Ids numbered per prefix in EA creation order, ties by EA GUID, continuing after `highest` per prefix (MOD-015, MOD-017). */
+function allocateIds(reqs             , highest                     )                      {
+  const byPrefix = new Map                     ();
+  for (const r of reqs) (byPrefix.get(r.prefix) ?? byPrefix.set(r.prefix, []).get(r.prefix) ).push(r);
+  const out = new Map                ();
+  for (const [prefix, list] of [...byPrefix].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    list.sort((x, y) => {
+      const a1 = eaTimeStamp(x.created) ?? "99999999999999999", b1 = eaTimeStamp(y.created) ?? "99999999999999999";
+      return a1 < b1 ? -1 : a1 > b1 ? 1 : x.guid < y.guid ? -1 : x.guid > y.guid ? 1 : 0;
+    });
+    let n = highest.get(prefix) ?? 0;
+    for (const r of list) {
+      n++;
+      if (n >= 99000) throw new Error(`ID_RANGE_EXHAUSTED ${prefix}: 99000 to 99999 is reserved for fixtures`);
+      out.set(r.key, `${prefix}-${String(n).padStart(5, "0")}`);
+    }
+  }
+  return out;
+}
+
+/* naming.ts */
+/* File and folder names (MOD-097/098/102/110/111) and SysML identifiers. */
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const MAX_COMPONENT = 150;
+
+/** One path component safe on Windows and macOS. Replacement order follows MOD-097/098. */
+function safeName(raw        , fallback = "Unnamed")         {
+  let s = raw.replace(/\r?\n/g, " ")
+    .replace(/\//g, "-").replace(/:/g, " -").replace(/[?*]/g, "").replace(/"/g, "''")
+    .replace(/[<>|\\]/g, "-").replace(/\[/g, "(").replace(/\]/g, ")").replace(/#/g, "no.").replace(/\^/g, "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ").trim().replace(/[. ]+$/, "");
+  if (!s) s = fallback;
+  if (WINDOWS_RESERVED.test(s)) s += "_";
+  if (s.length > MAX_COMPONENT) s = s.slice(0, MAX_COMPONENT).trim() + "~a";   // forced alteration marker (MOD-102)
+  return s;
+}
+
+/** Case-insensitive uniqueness across the vault. A repeat takes ~2, ~3 (MOD-102, MOD-111). */
+class NameRegistry {
+          seen = new Set        ();
+  constructor(initial                   = []) { for (const p of initial) this.seen.add(p.toLowerCase()); }
+  claim(dir        , base        , ext        )         {
+    let n = 1, name = base;
+    for (;;) {
+      const path = (dir ? dir + "/" : "") + name + ext;
+      if (!this.seen.has(path.toLowerCase())) { this.seen.add(path.toLowerCase()); return path; }
+      n++; name = `${base}~${n}`;
+    }
+  }
+}
+
+const SYSML_KEYWORDS = new Set(["about", "abstract", "accept", "action", "actor", "after", "alias", "all", "allocate", "allocation", "analysis", "and", "as", "assert", "assign", "assume", "at", "attribute", "bind", "binding", "by", "calc", "case", "comment", "concern", "connect", "connection", "constant", "constraint", "crosses", "decide", "def", "default", "defined", "dependency", "derived", "do", "doc", "else", "end", "entry", "enum", "event", "exhibit", "exit", "expose", "false", "filter", "first", "flow", "for", "fork", "frame", "from", "hastype", "if", "implies", "import", "in", "include", "individual", "inout", "interface", "istype", "item", "join", "language", "loop", "merge", "message", "meta", "metadata", "nonunique", "not", "null", "objective", "occurrence", "of", "or", "ordered", "out", "package", "parallel", "part", "perform", "port", "private", "protected", "public", "redefines", "ref", "references", "render", "rendering", "rep", "require", "requirement", "return", "satisfy", "send", "snapshot", "specializes", "stakeholder", "standard", "state", "subject", "subsets", "succession", "then", "timeslice", "to", "transition", "true", "until", "use", "variant", "variation", "verification", "verify", "via", "view", "viewpoint", "when", "while", "xor"]);
+
+/** A plain SysML identifier (letters, digits, underscore). The engineering name stays in the note title. */
+function sysmlIdent(raw        , fallback = "Unnamed")         {
+  let s = raw.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, " ").trim()
+    .split(" ").filter(Boolean).map((w) => w[0] .toUpperCase() + w.slice(1)).join("");
+  if (!s) s = fallback;
+  if (/^[0-9]/.test(s)) s = "_" + s;
+  return SYSML_KEYWORDS.has(s) ? s + "_" : s;
+}
+
+const lowerFirst = (s        )         => (s ? s[0] .toLowerCase() + s.slice(1) : s);
+
+/** Identifier for a usage (part, port, action ...): camelCase, never a SysML keyword. */
+function usageIdent(raw        , fallback = "unnamed")         {
+  const s = lowerFirst(sysmlIdent(raw, fallback));
+  return SYSML_KEYWORDS.has(s) ? s + "_" : s;
+}
+
+/** Unique usage names inside one owner. */
+class IdentScope {
+          used = new Set        ();
+  take(want        )         {
+    let n = 1, name = want;
+    while (this.used.has(name)) { n++; name = `${want}_${n}`; }
+    this.used.add(name);
+    return name;
+  }
+}
+
+/* sysml.ts */
+/* SysML v2 text for one note: a standalone `package` holding one definition and the usages it owns (MOD-122, MOD-123).
+ * Only constructs the approved family mapping allows are written. Anything else is a flagLink, never guessed (IMP-060). */
+
+                     
+                                             
+               
+                                                                                                                           
+                      
+                                                          
+                
+ 
+
+                   
+                                                                      
+                                                                                                  
+                                                         
+                                                              
+                      
+               
+ 
+
+/** Source multiplicity text -> "[n]" / "[a..b]"; null when it is not a plain multiplicity. "1" is the default and is omitted. */
+function parseMultiplicity(raw        )                                       {
+  const s = raw.trim();
+  if (!s) return { text: null, ok: true };
+  const m = /^(\d+|\*)(?:\s*\.\.\s*(\d+|\*))?$/.exec(s);
+  if (!m) return { text: null, ok: false };
+  if (!m[2] && m[1] === "1") return { text: null, ok: true };
+  return { text: m[2] ? `[${m[1]}..${m[2]}]` : `[${m[1]}]`, ok: true };
+}
+
+const docComment = (t        )         => t.replace(/\r\n/g, "\n").replace(/\*\//g, "* /").trim();
+
+function renderBlock(d         )         {
+  const head = `${d.keyword} ${d.name}` + (d.specializes.length ? ` :> ${d.specializes.join(", ")}` : "");
+  const body           = [];
+  for (const u of d.usages) body.push(`        ${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.typeSymbol}` : ""}${u.mult ?? ""};`);
+  if (d.doc && d.doc.trim()) body.push(`        doc /* ${docComment(d.doc).split("\n").join("\n           ")} */`);
+  const def = body.length ? `    ${head} {\n${body.map((l) => l.slice(0)).join("\n")}\n    }` : `    ${head};`;
+  return `package ${d.pkg} {\n${def}\n}\n`;
+}
+
+/** Every `Pkg::Name` reference in a block, for the assembled-model reference check. */
+function referencedSymbols(sysml        )           {
+  const src = sysml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return [...src.matchAll(/\b([A-Za-z_]\w*::[A-Za-z_]\w*)\b/g)].map((m) => m[1] );
+}
+
+/* notes.ts */
+/* Note text in the ADR-V2-06 layout: frontmatter, title, user zone, three blank lines, `## Source: EA`, `## SysML v2` last. */
+
+                                                                        
+
+                     
+               
+                  
+             
+              
+                 
+                
+                      
+                         
+                                                                                                 
+                                       
+                   
+                                                             
+                                                            
+                       
+ 
+
+/** A value safe as a plain YAML scalar, quoted when it would not be. */
+function yamlScalar(s        )         {
+  if (s === "") return "";
+  if (/^[A-Za-z0-9_][^\n#]*$/.test(s) && !/: /.test(s) && !/\s$/.test(s) && !/^(true|false|null|yes|no|~)$/i.test(s)) return s;
+  return JSON.stringify(s);
+}
+
+function flagCallout(type          , title        , sourceLink        , detail          )         {
+  return [`> [!${type}] ${title}`, `> Source: ${sourceLink}.${detail.length ? " " + detail[0] : ""}`, ...detail.slice(1).map((l) => `> ${l}`)].join("\n");
+}
+
+/** Keeps free text from breaking the note structure: no stray `## ` heading, no unbalanced fence. */
+function safeBody(text        )         {
+  return text.replace(/\r\n?/g, "\n").split("\n").map((l) => (/^##\s/.test(l) ? "\\" + l : /^\s*```/.test(l) ? l.replace("```", "\\```") : l)).join("\n").trim();
+}
+
+function renderNote(n           )         {
+  const fm           = [
+    `type: ${yamlScalar(n.type)}`, `subtype:${n.subtype ? " " + yamlScalar(n.subtype) : ""}`, `id: ${n.id}`, `uid: ${n.uid}`, `status: Draft`,
+    `eaType: ${yamlScalar(n.eaType)}`, `tags: []`,
+  ];
+  if (n.sourceRole) fm.push(`sourceRole: ${n.sourceRole}`);
+  if (n.primarySymbol) fm.push(`primarySymbol: ${yamlScalar(n.primarySymbol)}`);
+  for (const [k, v] of n.relFields) if (v.length) fm.push(`${k}: [${v.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
+  const zone           = [`# ${n.title.replace(/\n/g, " ")}`];
+  const body = safeBody(n.bodyText);
+  if (body) zone.push("", body);
+  for (const f of n.flags) zone.push("", f);
+  let out = `---\n${fm.join("\n")}\n---\n${zone.join("\n")}\n\n\n\n## Source: EA\n\n${n.sourceLines.join("\n")}\n`;
+  if (n.sysml !== null) out += `\n${MDSE.renderSysmlSection(n.sysml)}`;
+  return out;
+}
+
+/* csv.ts */
+/* RFC 4180 CSV. Every field is quoted only when it has to be. */
+const cell = (v         )         => {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+function csv(headers          , rows             )         {
+  return [headers, ...rows].map((r) => r.map(cell).join(",")).join("\n") + "\n";
+}
+
+/* merge.ts */
+/* Add-onto-existing (D-0014): additive. Nothing is deleted; empty YAML is filled; a changed value is written only when pre-approved,
+ * otherwise a flagConflict is added to the note. A source row that has vanished gets a flagImport. Identical input = no writes. */
+
+
+                                                   
+                                                                         
+                                                                                                                                                   
+
+                      
+                                                                 
+                                 
+                        
+                     
+                   
+                     
+                            
+ 
+                                                                                                                                                                              
+
+const SKIP_KEYS = new Set(["id", "uid", "status", "tags"]);          // identity never moves; status and tags belong to the engineer
+const SOURCE = "## Source: EA", SYSML = "## SysML v2";
+
+function fmLines(text        )                                     {
+  const lines = text.split("\n");
+  return { lines, close: lines.indexOf("---", 1) };
+}
+const keyOf = (l        )                => /^([A-Za-z][\w-]*):/.exec(l)?.[1] ?? null;
+
+/** Inserts a callout at the end of the user zone (before the managed headings). */
+function addFlag(text        , flag        )         {
+  const n = MDSE.parse(text);
+  const hit = n.h2.find(([, h]                  ) => h === SOURCE || h === SYSML);
+  if (!hit) return text.replace(/\n+$/, "") + "\n\n" + flag + "\n";
+  const head = n.text.slice(0, hit[0]).replace(/\n+$/, ""), tail = n.text.slice(hit[0]);
+  return head + "\n\n" + flag + "\n\n\n\n" + tail;
+}
+const hasFlag = (text        , type        , title        )          => text.includes(`> [!${type}] ${title}`);
+
+function sourceLinesOf(text        )           {
+  const n = MDSE.parse(text), hit = n.h2.find(([, h]                  ) => h === SOURCE);
+  if (!hit) return [];
+  const next = n.h2.find(([p]                  ) => p > hit[0]);
+  return n.text.slice(hit[0] + SOURCE.length, next ? next[0] : n.text.length).split("\n").filter((l        ) => l.trim());
+}
+
+function mergeOne(ex        , gen        , path        , o            , changes               )         {
+  let text = ex;
+  const log = (kind                     , field        , detail        )       => { changes.push({ path, kind, field, detail }); };
+  const E = fmLines(text), G = fmLines(gen);
+  const eMap = new Map                (); E.lines.forEach((l, i) => { if (i > 0 && i < E.close) { const k = keyOf(l); if (k) eMap.set(k, i); } });
+  const conflictFlags           = [];
+  const inserts           = [];
+  for (let i = 1; i < G.close; i++) {
+    const gl = G.lines[i] , k = keyOf(gl); if (!k || SKIP_KEYS.has(k)) continue;
+    const at = eMap.get(k);
+    if (at === undefined) { inserts.push(gl); log("filled", k, `added ${gl.slice(k.length + 1).trim()}`); continue; }
+    const el = E.lines[at] ;
+    if (el === gl) continue;
+    const eVal = el.slice(k.length + 1).trim(), gVal = gl.slice(k.length + 1).trim();
+    if (!eVal) { E.lines[at] = gl; log("filled", k, `filled ${gVal}`); continue; }
+    if (o.preApproved.includes(k)) { E.lines[at] = gl; log("changed", k, `${eVal} -> ${gVal} (pre-approved)`); continue; }
+    const title = `Source differs: ${k}`;
+    if (!hasFlag(ex, "flagConflict", title)) { conflictFlags.push(flagCallout("flagConflict", title, o.sourceLink, [`Note has \`${eVal}\`, source has \`${gVal}\`. Nothing was changed.`])); log("conflict", k, `${eVal} vs ${gVal}`); }
+  }
+  if (inserts.length) E.lines.splice(E.close, 0, ...inserts);
+  text = E.lines.join("\n");
+
+  // flags from the generated note, added once (matched by their title line)
+  const gn = MDSE.parse(gen);
+  for (const m of gn.text.slice(gn.fmEnd).matchAll(/^> \[!(flag\w+)\] (.+)\n(?:>.*(?:\n|$))*/gm)) {
+    if (!hasFlag(text, m[1] , m[2] )) { text = addFlag(text, m[0].replace(/\n+$/, "")); log("flagged", m[1] , m[2] ); }
+  }
+  for (const f of conflictFlags) text = addFlag(text, f);
+
+  // Source: EA - append lines the note does not have; never remove
+  const have = new Set(sourceLinesOf(text)), add = sourceLinesOf(gen).filter((l) => !have.has(l));
+  if (add.length) {
+    const n = MDSE.parse(text), hit = n.h2.find(([, h]                  ) => h === SOURCE);
+    if (hit) {
+      const next = n.h2.find(([p]                  ) => p > hit[0]);
+      const cut = next ? next[0] : n.text.length;
+      const body = n.text.slice(0, cut).replace(/\n+$/, "");
+      text = body + "\n" + add.join("\n") + "\n" + (next ? "\n" + n.text.slice(cut) : "");
+    } else text = text.replace(/\n+$/, "") + `\n\n\n\n${SOURCE}\n\n${add.join("\n")}\n`;
+    log("appended", "Source: EA", `${add.length} line(s)`);
+  }
+
+  // SysML block
+  const gS = MDSE.extractSysml(gen), eS = MDSE.extractSysml(text);
+  if (gS !== null) {
+    if (eS === null) { text = MDSE.replaceSysmlBlock(text, gS); log("filled", "sysml", "block added"); }
+    else if (eS.replace(/\s+$/, "") !== gS.replace(/\s+$/, "")) {
+      if (o.preApproved.includes("sysml")) { text = MDSE.replaceSysmlBlock(text, gS); log("changed", "sysml", "block replaced (pre-approved)"); }
+      else if (!hasFlag(text, "flagConflict", "Source differs: sysml")) {
+        text = addFlag(text, flagCallout("flagConflict", "Source differs: sysml", o.sourceLink, ["The SysML v2 block in this note differs from the source. Nothing was changed."]));
+        log("conflict", "sysml", "block differs");
+      }
+    }
+  }
+  return text;
+}
+
+function planMerge(o            )            {
+  const writes            = [], changes                = [];
+  let created = 0, unchanged = 0, updated = 0;
+  const files = o.existing?.files ?? new Map                ();
+  for (const g of o.generated) {
+    const ex = files.get(g.path);
+    if (ex === undefined) { writes.push({ path: g.path, content: g.text }); changes.push({ path: g.path, kind: "created", field: "", detail: "new note" }); created++; continue; }
+    const before = changes.length, out = mergeOne(ex, g.text, g.path, o, changes);
+    if (out !== ex) { writes.push({ path: g.path, content: out }); updated++; } else unchanged++;
+    void before;
+  }
+  // notes whose source row has gone: flag, never delete
+  if (o.existing) {
+    const gen = new Set(o.generated.map((g) => g.path));
+    for (const [path, text] of files) {
+      if (gen.has(path) || !/\.md$/i.test(path)) continue;
+      const m = /^- EA GUID: (.+)$/m.exec(text); if (!m || o.presentGuids.has(m[1] .trim())) continue;
+      const title = "Missing from source";
+      if (hasFlag(text, "flagImport", title)) continue;
+      try { writes.push({ path, content: addFlag(text, flagCallout("flagImport", title, o.sourceLink, [`EA GUID ${m[1] .trim()} was not in ${o.sourceName}. The note was kept.`])) }); } catch { continue; }
+      changes.push({ path, kind: "flagged", field: "flagImport", detail: title }); updated++;
+    }
+  }
+  const conflicts = changes.filter((c) => c.kind === "conflict").length;
+  const changed = writes.length > 0;
+  const changelog = changed ? `# Changelog ${o.runLabel}\n\nSource \`${o.sourceName}\`.\n\n| Note | Change | Field | Detail |\n|---|---|---|---|\n${changes.map((c) => `| ${c.path.replace(/\|/g, "\\|")} | ${c.kind} | ${c.field} | ${c.detail.replace(/\|/g, "\\|")} |`).join("\n")}\n` : "";
+  return { writes, changes, changed, created, unchanged, updated, conflicts, changelog };
+}
+
+/* run.ts */
+/* The import run: QEAX source graph -> notes, SysML v2 blocks, ledger, run record, changelog (IMP section; SPEC.md).
+ * Pure: takes a reader and options, returns files. No DOM, no file-system access, no network.
+ *
+ * Provisional choices (D-0016, built to find where the rules break):
+ *  - OD-01 split: native emission is limited to definitions, owned part/port/action/state usages, specialization and
+ *    aggregation. Every other connector family is a flagLink with a ledger row, never a guessed relationship.
+ *  - `emission_enabled: false` in ea-family-mapping.json is overridden by options.emitNative (default true). The
+ *    pinned parser gate does not run in the page, so every block is reported "not checked" (MOD-139).
+ *  - Unreviewed MOD/IMP rules are followed as written; each defaulted decision is recorded as ledger evidence. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                        
+
+                         
+                     
+                      
+                                                                                       
+                                                                                            
+                         
+                                                                                                  
+                    
+                         
+                      
+                         
+                                                                                                                     
+                                 
+                                                                                                                          
+                      
+ 
+
+                     
+                                                                                                                                                
+                                                                                                                                                
+                                                                                                              
+ 
+const LEDGER_COLUMNS                         = ["source_system", "fixture_hash", "source_table", "source_pk", "ea_guid", "ea_type", "ea_stereotype", "source_package_id", "rule_id", "rule_version", "disposition", "target_semantic_kind", "target_stable_id", "target_file", "evidence", "diagnostic_code", "confidence", "operator_action"];
+
+                         
+                                                                        
+                                                                                                       
+                                                                         
+ 
+                        
+                                                  
+                   
+                      
+                         
+                         
+                     
+ 
+
+                                                                                                                                      
+                 
+                                                                                                                   
+                                                                                                                                         
+                                                                                                               
+                                                                                                        
+ 
+
+const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
+const DROPPED_TAGS = new Set(["Status", "Object Type", "Applicability Status", "Priority", "Abstraction Layer", "Domain", "Origin"]);   // IMP-029
+const RESERVED_NAME = /^(Template - |Rule - |README_|BASE_|CANVAS_)/;
+const SYSTEM_DIR = "99_System/11_Import";
+
+const stampOf = (iso        )         => iso.replace(/[-:T]/g, "").slice(0, 14) + "000";
+const labelOf = (iso        )         => iso.slice(0, 16).replace("T", " ").replace(":", ".");
+
+async function runImport(reader            , o               )                        {
+  const problems           = [];
+  if (reader.walMode) throw new Error("SQLITE_WAL_MODE: close the model in EA or checkpoint it first; the WAL is not read (IMP-053)");
+  const g = await readSourceGraph(reader);
+  const resolver = buildResolver(o.mapping);
+  const existing = o.existing && o.existing.hasVault ? o.existing : null;
+  const idx = existing ? MDSE_INDEX(existing) : null;
+  const runLabel = labelOf(o.runDate);
+  const sourceLink = `[[${existing ? "Changelog" : "Import Run"} ${runLabel}]]`;
+
+  // ---- package paths ---------------------------------------------------------------------------------------------
+  const pathMemo = new Map                  ();
+  const pkgPath = (id        )           => {
+    const hit = pathMemo.get(id); if (hit) return hit;
+    const chain           = [], seen = new Set        ();
+    for (let p = g.packages.get(id); p && !seen.has(p.id); p = g.packages.get(p.parentId)) { seen.add(p.id); chain.unshift(p.name); }
+    while (chain.length && o.omitRootPackages.includes(chain[0] )) chain.shift();
+    const out = chain.map((n) => safeName(n, "Package"));
+    pathMemo.set(id, out); return out;
+  };
+
+  // ---- ledger scaffolding ------------------------------------------------------------------------------------------
+  const ledger              = [];
+  const row = (table        , pk        , guid        , type        , stereo        , pkgId        , rule        )            => {
+    const r            = { source_system: o.lineage, fixture_hash: o.fingerprint, source_table: table, source_pk: String(pk), ea_guid: guid, ea_type: type, ea_stereotype: stereo, source_package_id: String(pkgId), rule_id: rule, rule_version: resolver.version, disposition: "", target_semantic_kind: "", target_stable_id: "", target_file: "", evidence: "", diagnostic_code: "", confidence: "mapped", operator_action: "", };
+    ledger.push(r); return r;
+  };
+  const set = (r           , disposition        , kind        , diag = "", action = "")       => { r.disposition = disposition; r.target_semantic_kind = kind; r.diagnostic_code = diag; r.operator_action = action; };
+
+  for (const p of g.packages.values()) { const r = row("t_package", p.id, p.guid, "Package", "", p.parentId, "folder_only"); set(r, "native", "Folder"); r.target_file = pkgPath(p.id).join("/"); }
+
+  // ---- elements: family -> disposition --------------------------------------------------------------------------
+  const drafts          = [], byObj = new Map               ();
+  const usageObjs                                                              = [];
+  const boundaries                                         = [];
+  const objRow = new Map                   ();
+  for (const e of g.objects) {
+    const key = e.stereotype ? `${e.type}:${e.stereotype}` : e.type;
+    const r = row("t_object", e.id, e.guid, e.type, e.stereotype, e.packageId, "family:" + key); objRow.set(e.id, r);
+    if (e.type === "Package") { set(r, "native", "Folder"); r.rule_id = "folder_only"; continue; }
+    const hit = resolver.element(e.type, e.stereotype);
+    if (!hit) { set(r, "deferred_review", "", "UNKNOWN_FAMILY", "Map this family or confirm it is out of scope"); r.confidence = "unmapped"; continue; }
+    const en = hit.entry;
+    if (isUsageEntry(en)) { usageObjs.push({ o: e, entry: en, row: r }); continue; }
+    if (en.disposition === "native_candidate" && en.native_kind && DEFINITION_KINDS[en.native_kind] || en.disposition === "mdse_note") {
+      const cls = classify(en, e, pkgPath(e.packageId));
+      if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); continue; }
+      const kw = en.native_kind ? DEFINITION_KINDS[en.native_kind] ?? null : null;
+      const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
+      const d        = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], pkgPath: pkgPath(e.packageId) };
+      drafts.push(d); byObj.set(e.id, d); continue;
+    }
+    if (en.disposition === "attachment_link") { set(r, "deferred_review", "", "ATTACHMENT_NOT_IMPLEMENTED", "Attachments are a later step (IMP-025)"); continue; }
+    if (en.disposition === "reference_only") { set(r, "evidence_only", "", "REFERENCE_ONLY"); continue; }
+    if (en.disposition === "aggregate_boundary_note") { boundaries.push({ o: e, row: r }); continue; }
+    if (en.disposition === "conditional_review") { set(r, "deferred_review", "", en.conditional_evidence[0] ?? "CONDITIONAL_REVIEW", "Needs the evidence named in the diagnostic"); continue; }
+    set(r, "deferred_review", "", "UNHANDLED_DISPOSITION_" + en.disposition);
+  }
+
+  // ---- identity ------------------------------------------------------------------------------------------------------
+  const taken = new Set        (idx ? idx.uids : []);
+  const fresh = drafts.filter((d) => !idx?.byGuid.has(d.o.guid));
+  const aggregate = boundaries.length ? { created: boundaries.map((b) => b.o.created).sort()[0] ?? "", guid: "boundary-aggregate" } : null;
+  const uidReqs = fresh.map((d) => ({ key: d.key, created: d.o.created, guid: d.o.guid, author: d.o.author }));
+  if (aggregate && !idx?.byGuid.has(aggregate.guid)) uidReqs.push({ key: "boundary", created: aggregate.created, guid: aggregate.guid, author: "" });
+  const uids = allocateUids(uidReqs, o.authors, taken, "20000101000000000");
+  const highest = idx ? new Map(idx.highest) : new Map                ();
+  const prefixOf = (type        , subtype        )         => { const c = o.classes[type] ; return c.prefixBySubtype?.[subtype] ?? c.prefix; };
+  const idReqs = fresh.map((d) => ({ key: d.key, prefix: prefixOf(d.type, d.subtype), created: d.o.created, guid: d.o.guid }));
+  if (uids.has("boundary")) idReqs.push({ key: "boundary", prefix: prefixOf("modelCheck", "Boundary"), created: aggregate .created, guid: aggregate .guid });
+  const ids = allocateIds(idReqs, highest);
+  for (const d of drafts) {
+    const known = idx?.byGuid.get(d.o.guid);
+    if (known) { d.uid = known.uid; d.id = known.id; d.existingPath = known.path; }
+    else { d.uid = uids.get(d.key) .uid; d.id = ids.get(d.key) ; for (const ev of uids.get(d.key) .evidence) d.evidence.push(ev); }
+    d.pkg = d.id.replace("-", "_"); d.symbol = `${d.pkg}::${d.ident}`;
+  }
+
+  // ---- placement: folders, file names -----------------------------------------------------------------------------
+  for (const d of drafts) { const p = byObj.get(d.o.parentId); if (p && p !== d) { d.parent = p; p.children.push(d); } }
+  const claimed = new Set        (idx ? idx.baseNames : []);
+  const claim = (want        )         => {
+    let base = want; if (RESERVED_NAME.test(base)) { problems.push(`reserved name collision: ${base}`); base = "EA " + base; }
+    let n = 1, name = base;
+    while (claimed.has(name.toLowerCase())) { n++; name = `${base}~${n}`; }
+    claimed.add(name.toLowerCase()); return name;
+  };
+  const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
+  for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop() .replace(/\.md$/, "") : claim(safeName(d.title));
+  const dirOf = (d       )         => (d.parent ? ownDirOf(d.parent) : d.pkgPath.join("/"));
+  const ownDirOf = (d       )         => { const base = dirOf(d); return (base ? base + "/" : "") + d.baseName; };
+  for (const d of drafts) {
+    if (d.existingPath) { d.path = d.existingPath; continue; }
+    const dir = dirOf(d);
+    d.path = d.children.length ? `${ownDirOf(d)}/${d.baseName}.md` : `${dir ? dir + "/" : ""}${d.baseName}.md`;
+  }
+
+  // ---- usages owned by definitions -----------------------------------------------------------------------------------
+  const scopes = new Map                   ();
+  const scopeOf = (d       )             => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d) );
+  const flagLink = (d       , title        , detail          )       => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
+  const ownerKeyword                         = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def" };
+  usageObjs.sort((a, b) => a.o.id - b.o.id);
+  for (const u of usageObjs) {
+    const e = u.o, kind = u.entry.native_kind ;
+    const owner = byObj.get(e.parentId);
+    if (kind === "ItemUsage") { set(u.row, "deferred_review", kind, "DIRECTION_EVIDENCE_MISSING", "Port item usage needs owning port and direction evidence"); continue; }
+    if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); continue; }
+    if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); continue; }
+    const name = scopeOf(owner).take(usageIdent(e.name || e.alias, `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
+    const ref           = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
+    let diag = "";
+    if (kind === "PartUsage" || kind === "PortUsage" || kind === "ActionUsage") {
+      const want = kind === "PartUsage" ? Number(e.pdata1) || 0 : e.classifier;                      // IMP-011: the block comes from PDATA1
+      const target = byObj.get(want);
+      const okKind = kind === "PartUsage" ? "part def" : kind === "PortUsage" ? "port def" : "action def";
+      if (target && target.keyword === okKind) { ref.typeDraft = target; ref.typedBy = target.title; }
+      else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
+    }
+    if (kind === "PartUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
+    owner.usages.push(ref);
+    set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
+    u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
+    if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);
+    owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""} — EA GUID: ${e.guid}`);
+  }
+
+  // ---- connectors ---------------------------------------------------------------------------------------------------
+  const deferredLinks                                                          = [];
+  const aggScopes = new Map               ();
+  for (const c of g.connectors) {
+    const key = connectorKey(c);
+    const r = row("t_connector", c.id, c.guid, c.type, c.stereotype, 0, "family:" + key);
+    const src = byObj.get(c.sourceId), dst = byObj.get(c.destId);
+    const defer = (code        , action = "Native relationship not emitted")       => {
+      set(r, "deferred_review", "", code, action); deferredLinks.push({ c, code, family: key });
+      if (src) {
+        const to = dst ? `[[${dst.baseName}]]` : (g.objectsById.get(c.destId)?.name ?? `object ${c.destId}`);
+        src.sourceLines.push(`- Connector ${key} to ${to} (unresolved: ${code}) — EA GUID: ${c.guid}`);
+        flagLink(src, `Unresolved ${key} link to ${dst ? dst.title : (g.objectsById.get(c.destId)?.name ?? "?")}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
+      }
+    };
+    const hit = resolver.relationship(c.type, c.stereotype);
+    if (!hit) { r.confidence = "unmapped"; defer("UNKNOWN_FAMILY", "Map this connector family or confirm it is out of scope"); continue; }
+    if (!g.objectsById.has(c.sourceId) || !g.objectsById.has(c.destId)) { defer("ENDPOINT_MISSING_IN_SOURCE"); continue; }
+    const en = hit.entry;
+    if (en.disposition === "reference_only") {
+      if (c.type === "NoteLink") {
+        const info = src?.type === "Info" ? src : dst?.type === "Info" ? dst : null, other = info === src ? dst : src;
+        if (info && other) {
+          info.describes.push(other.baseName); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
+          info.sourceLines.push(`- Link describes [[${other.baseName}]] — EA GUID: ${c.guid}`); continue;
+        }
+        set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); continue;
+      }
+      set(r, "evidence_only", "", "REFERENCE_ONLY"); continue;
+    }
+    if (key === "Nesting") { set(r, "evidence_only", "", "ORGANIZATIONAL_ONLY"); continue; }
+    if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); continue; }
+    if (key === "Generalization") {
+      if (src && dst && src.keyword && src.keyword === dst.keyword && src !== dst) {
+        src.specializes.push(dst); set(r, "native", "Specialization"); r.target_stable_id = src.id; r.target_file = src.path;
+        src.sourceLines.push(`- Specializes [[${dst.baseName}]] — EA GUID: ${c.guid}`); continue;
+      }
+      defer("GENERALIZATION_ENDPOINT_KIND"); continue;
+    }
+    if (key === "Aggregation") {
+      const srcWhole = c.sourceIsAggregate === 1 || c.sourceIsAggregate === 2, dstWhole = c.destIsAggregate === 1 || c.destIsAggregate === 2;
+      if (srcWhole === dstWhole) { defer(srcWhole ? "AGGREGATION_BOTH_ENDS_AGGREGATE" : "AGGREGATION_WHOLE_NOT_EVIDENCED"); continue; }
+      const whole = srcWhole ? src : dst, part = srcWhole ? dst : src, card = srcWhole ? c.destCard : c.sourceCard;
+      if (!whole || !part || whole.keyword !== "part def" || part.keyword !== "part def") { defer("AGGREGATION_ENDPOINT_KIND"); continue; }
+      const m = parseMultiplicity(card);
+      const name = scopeOf(whole).take(usageIdent(part.title, `part${part.o.id}`));
+      whole.usages.push({ kind: "part", name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid });
+      set(r, "native", "TypedOwnedUsage", m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
+      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""} — EA GUID: ${c.guid}`); aggScopes.set(whole, 1); continue;
+    }
+    defer(`NATIVE_EMISSION_NOT_IMPLEMENTED:${key}`, `Needs: ${en.required_evidence.join(", ")}`);
+  }
+
+  // ---- render notes -------------------------------------------------------------------------------------------------
+  const outFiles            = [];
+  let blocks = 0, flagCount = 0;
+  const generated = new Map                                                                    ();
+  for (const d of drafts) {
+    const e = d.o, src = [`- EA GUID: ${e.guid}`];
+    if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
+    src.push(`- EA type: ${e.type}`);
+    if (e.stereotype) src.push(`- EA stereotype: ${e.stereotype}`);
+    if (e.alias) src.push(`- EA alias: ${e.alias}`);
+    if (e.author) src.push(`- EA author: ${e.author}`);
+    if (e.created) src.push(`- EA created: ${e.created}`);
+    if (d.pkgPath.length) src.push(`- EA package: ${d.pkgPath.join(" > ")}`);
+    for (const [k, v] of g.tags.get(e.id) ?? []) if (v.trim() && !DROPPED_TAGS.has(k)) src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
+    src.push(...d.sourceLines);
+    const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
+      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })) }) : null;
+    if (sysml) blocks++;
+    flagCount += d.flags.length;
+    const model            = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: d.describes.length ? [["describes", d.describes]] : [],
+      bodyText: e.note, flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
+    generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
+    const r = objRow.get(e.id) ;
+    set(r, "native", d.keyword ? d.entry.native_kind  : `MdseNote:${d.type}`, d.evidence[0] ?? ""); r.target_stable_id = d.id; r.target_file = d.path; r.evidence = d.evidence.join(";");
+  }
+
+  // aggregate boundary note (MOD-131)
+  if (boundaries.length) {
+    const guid = aggregate .guid, known = idx?.byGuid.get(guid);
+    const uid = known?.uid ?? uids.get("boundary") .uid, id = known?.id ?? ids.get("boundary") , path = known?.path ?? `${claim("Boundaries")}.md`;
+    const lines = [`- EA GUID: ${guid}`, `- EA type: Boundary`, ...boundaries.map((b) => `- Boundary: ${b.o.name || "(unnamed)"} — EA package: ${pkgPath(b.o.packageId).join(" > ") || "(root)"} — EA GUID: ${b.o.guid}`)];
+    generated.set(path, { path, guid, draft: undefined                    , text: renderNote({ type: "modelCheck", subtype: "Boundary", id, uid, eaType: "Boundary", title: "Boundaries", relFields: [], bodyText: "Aggregate of every EA Boundary element (MOD-131). Descriptive evidence, not a native SysML relationship.", flags: [], sourceLines: lines, sysml: null }) });
+    for (const b of boundaries) { set(b.row, "evidence_only", "MdseNote:modelCheck/Boundary", "BOUNDARY_GROUPED"); b.row.target_stable_id = id; b.row.target_file = path; }
+  }
+
+  // ---- reconcile: every source row has exactly one disposition (IMP-059, IMP-064) ---------------------------------------
+  const expect                         = { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector };
+  for (const t of LEDGER_ORDER) { const n = ledger.filter((l) => l.source_table === t).length; if (n !== expect[t]) problems.push(`ledger rows for ${t}: ${n}, source rows: ${expect[t]}`); }
+  for (const l of ledger) if (!l.disposition) { l.disposition = "error"; l.diagnostic_code = "NO_DISPOSITION"; problems.push(`no disposition: ${l.source_table} ${l.source_pk}`); }
+  ledger.sort((a, b) => (LEDGER_ORDER.indexOf(a.source_table) - LEDGER_ORDER.indexOf(b.source_table)) || (a.ea_guid < b.ea_guid ? -1 : a.ea_guid > b.ea_guid ? 1 : 0) || (+a.source_pk - +b.source_pk));
+  const dispositions                         = {};
+  for (const l of ledger) dispositions[l.disposition] = (dispositions[l.disposition] ?? 0) + 1;
+
+  // ---- vault-level files ---------------------------------------------------------------------------------------------------
+  const sys = (name        , content        )          => ({ path: `${SYSTEM_DIR}/${name}`, content });
+  const named = (id        )         => g.objectsById.get(id)?.name ?? "";
+  const deferredElements = ledger.filter((l) => l.source_table === "t_object" && l.disposition === "deferred_review");
+  const elementsCsv = csv(["ea_guid", "ea_type", "ea_stereotype", "name", "package", "author", "created", "note", "diagnostic_code", "operator_action"],
+    deferredElements.map((l) => { const e = g.objects.find((x) => String(x.id) === l.source_pk) ; return [l.ea_guid, l.ea_type, l.ea_stereotype, e.name, pkgPath(e.packageId).join(" > "), e.author, e.created, e.note, l.diagnostic_code, l.operator_action]; }));
+  const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code"],
+    deferredLinks.map(({ c, code, family }) => [c.guid, family, named(c.sourceId), g.objectsById.get(c.sourceId)?.guid ?? "", named(c.destId), g.objectsById.get(c.destId)?.guid ?? "", c.direction, c.name, code]));
+  const manifest = { schema: "mdse-run-manifest/0.1", runDate: o.runDate, source: { name: o.sourceName, lineage: o.lineage, sha256: o.fingerprint }, importerRelease: o.releaseVersion, mappingSchema: resolver.version,
+    counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems,
+    nativeEmission: o.emitNative ? "ON (owner override of emission_enabled=false, D-0016); blocks not parser-checked" : "OFF", diagrams: "never read (ADR-V2-05)" };
+
+  // ---- merge / write plan --------------------------------------------------------------------------------------------------
+  const plan = planMerge({ generated: [...generated.values()].map((x) => ({ path: x.path, text: x.text, guid: x.guid })), existing, preApproved: o.preApproved, sourceLink, runLabel,
+    sourceName: o.sourceName, presentGuids: new Set(g.objects.map((x) => x.guid).concat([...g.packages.values()].map((p) => p.guid))) });
+  const sysFiles            = [];
+  if (plan.changed || !existing) {
+    sysFiles.push(sys("Ledger.csv", csv([...LEDGER_COLUMNS], ledger.map((l) => LEDGER_COLUMNS.map((k) => l[k])))), sys("Run Manifest.json", JSON.stringify(manifest, null, 2) + "\n"),
+      sys("Review - Deferred Elements.csv", elementsCsv), sys("Review - Deferred Links.csv", linksCsv),
+      sys("Parser Check.md", `# Parser Check\n\nStatus: **NOT RUN**. ${blocks} SysML v2 block(s) were generated in this run and none has been checked by the pinned parser.\nThe parser gate runs in CI or on a maintainer's machine, not in the importer page (MOD-139). Workbench must show these blocks as unchecked.\n`));
+    if (!existing) sysFiles.push(sys(`Import Run ${runLabel}.md`, runNote(o, g, dispositions, blocks, flagCount, problems, generated.size)));
+    else sysFiles.push(sys(`Changelog ${runLabel}.md`, plan.changelog));
+  }
+  outFiles.push(...plan.writes, ...sysFiles);
+  let baseIncluded = false;
+  if (!existing && o.baseFiles) {
+    baseIncluded = true;
+    const stamp = stampOf(o.runDate), vaultUid = `${stamp}${o.authors.fallbackCode}`;
+    for (const [p, text] of Object.entries(o.baseFiles)) {
+      const t = p === ".vault.yaml" ? text.replace(/^vault_uid:.*$/m, `vault_uid: ${vaultUid}`).replace(/^vault_name:.*$/m, `vault_name: ${o.vaultName}`).replace(/^author:.*$/m, `author: ${o.authors.fallbackCode}`).replace(/^mdse_release:.*$/m, `mdse_release: ${o.releaseVersion}`) : text;
+      outFiles.push({ path: p, content: t });
+    }
+  }
+  outFiles.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const dup = outFiles.map((f) => f.path.toLowerCase()).filter((p, i, a) => a.indexOf(p) !== i);
+  if (dup.length) problems.push(`duplicate output paths: ${dup.slice(0, 5).join(", ")}`);
+  const status = problems.length ? "FAILED" : existing && !plan.changed ? "NO_CHANGES" : "WRITE_READY";
+  return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems,
+    summary: { elements: g.counts.t_object, connectors: g.counts.t_connector, packages: g.counts.t_package, notes: generated.size, dispositions, flags: flagCount, sysmlBlocks: blocks, baseVaultIncluded: baseIncluded, created: plan.created, unchanged: plan.unchanged, updated: plan.updated, conflicts: plan.conflicts } };
+}
+
+function runNote(o               , g             , disp                        , blocks        , flags        , problems          , notes        )         {
+  return `# Import Run ${labelOf(o.runDate)}\n\nSource \`${o.sourceName}\` (${o.lineage}), SHA-256 \`${o.fingerprint}\`.\n\n| | |\n|---|---|\n| Packages | ${g.counts.t_package} |\n| Elements | ${g.counts.t_object} |\n| Connectors | ${g.counts.t_connector} |\n| Notes written | ${notes} |\n| SysML v2 blocks (not parser-checked) | ${blocks} |\n| Flags | ${flags} |\n\n## Dispositions\n\n${Object.entries(disp).sort().map(([k, v]) => `- ${k}: ${v}`).join("\n")}\n\n${problems.length ? `## Problems\n\n${problems.map((p) => `- ${p}`).join("\n")}\n\n` : ""}Ledger: \`Ledger.csv\`. Review tables: \`Review - Deferred Elements.csv\`, \`Review - Deferred Links.csv\`.\n`;
+}
+
+function MDSE_INDEX(v               )                                                                                                                                              {
+  const uids = new Set        (), byGuid = new Map                                                   (), highest = new Map                (), baseNames = new Set        ();
+  for (const [path, text] of v.files) {
+    if (!/\.md$/i.test(path)) continue;
+    baseNames.add(path.split("/").pop() .replace(/\.md$/i, "").toLowerCase());
+    let meta                        ; try { meta = MDSE.parse(text).meta; } catch { continue; }
+    if (meta.uid) uids.add(meta.uid);
+    const m = /^([A-Z]+)-(\d{5})$/.exec(meta.id ?? "");
+    if (m) highest.set(m[1] , Math.max(highest.get(m[1] ) ?? 0, +m[2] ));
+    for (const f of text.matchAll(/^-\s+[A-Z]+-(\d{5})\s*$/gm)) { void f; }          // ids under ## Former ids are counted below
+    const fm = /^## Former ids\s*\n([\s\S]*?)(?=\n## |\s*$)/m.exec(text);
+    if (fm) for (const x of fm[1] .matchAll(/\b([A-Z]+)-(\d{5})\b/g)) highest.set(x[1] , Math.max(highest.get(x[1] ) ?? 0, +x[2] ));
+    const g = /^- EA GUID: (.+)$/m.exec(text);
+    if (g && meta.uid && meta.id) byGuid.set(g[1] .trim(), { path, uid: meta.uid, id: meta.id });
+  }
+  return { uids, byGuid, highest, baseNames };
+}
+
+</script>
+<script>
+const MAPPING = {"schema":"mdse-v2-approved-family-resolver/0.1","status":"group_approved_execution_candidate_only","decision_authority":["24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","26_Definitions/STEP_00_APPROVED_MODEL_HANDLING_CLARIFICATIONS_2026-10-18.md","26_Definitions/STEP_02A_EA_DIAGRAM_DEFERRED_2026-10-18.md"],"automatic_native_emission":false,"unknown_family":"flag_for_review_no_implicit_fallback","source_data_tables":["t_object","t_connector","t_package"],"ea_diagrams_enabled":false,"counts":{"element_families":60,"relationship_families":26,"reduced_qeax_connectors":14688},"elements":[{"family":"Requirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:requirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:designConstraint","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:functionalRequirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:extendedRequirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:Functional","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:Webasto Requirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Requirement:performanceRequirement","disposition":"native_candidate","native_kind":"RequirementDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"RequirementDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity","disposition":"native_candidate","native_kind":"ActionDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ActionDefinition; owning contextual usage when source evidence supports.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity:System Function","disposition":"native_candidate","native_kind":"ActionDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ActionDefinition; owning contextual usage when source evidence supports.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity:Hardware Function","disposition":"native_candidate","native_kind":"ActionDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ActionDefinition; owning contextual usage when source evidence supports.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity:Software Function","disposition":"native_candidate","native_kind":"ActionDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ActionDefinition; owning contextual usage when source evidence supports.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity:Module Function","disposition":"native_candidate","native_kind":"ActionDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ActionDefinition; owning contextual usage when source evidence supports.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"UseCase","disposition":"native_candidate","native_kind":"UseCaseDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"UseCaseDefinition; actor/case usages local.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"State","disposition":"native_candidate","native_kind":"StateDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"StateDefinition; local usages within workflow.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"State:System State","disposition":"native_candidate","native_kind":"StateDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"StateDefinition; local usages within workflow.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Hardware Component","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Physical Component","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:block","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Module","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Software Component","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Software Unit","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Platform","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Physical System Variant","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Business Line","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"PartDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:System Partner","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":["external_part"],"approved_description":"external PartDefinition; Actor may have native actor-role usages in cases.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Actor","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":[],"review_notes":["external_part"],"approved_description":"external PartDefinition; Actor may have native actor-role usages in cases.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Object","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":["OBJECT_CLASSIFIER_SPECIALIZATION_REVIEW"],"review_notes":[],"approved_description":"PartDefinition. Valid previous instance-classifier reference maps to native specialization (not typing); unresolved/incompatible target flagged. Preserve original classifier in provenance.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Electrical & Material Interface","disposition":"native_candidate","native_kind":"InterfaceDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"InterfaceDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Data Interface","disposition":"native_candidate","native_kind":"InterfaceDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"InterfaceDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Mechanical Interface","disposition":"native_candidate","native_kind":"InterfaceDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"InterfaceDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Generic Physical Interface","disposition":"native_candidate","native_kind":"PortDefinition","conditional_evidence":["OWNING_PORT_USAGE_REVIEW"],"review_notes":[],"approved_description":"PortDefinition with typed PortUsage in owner.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Signal:Logical Signal","disposition":"native_candidate","native_kind":"ItemDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ItemDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Signal:Physical Signal","disposition":"native_candidate","native_kind":"ItemDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ItemDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Signal:Software Parameter","disposition":"native_candidate","native_kind":"AttributeDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"AttributeDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Activity:testCase","disposition":"native_candidate","native_kind":"VerificationCaseDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"VerificationCaseDefinition with explicit valid verify relationships.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Constraint","disposition":"native_candidate","native_kind":"ConstraintDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"ConstraintDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Event","disposition":"native_candidate","native_kind":"OccurrenceDefinition","conditional_evidence":[],"review_notes":[],"approved_description":"OccurrenceDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Class:Physical Context","disposition":"native_candidate","native_kind":"PartDefinition","conditional_evidence":["CONTEXT_KIND_EVIDENCE"],"review_notes":[],"approved_description":"if composite context, native PartDefinition with typed contained PartUsages and MDSE type Context; if a single external referenced part, external PartDefinition. Ambiguous source classification flagged.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Action","disposition":"native_candidate","native_kind":"ActionUsage","conditional_evidence":[],"review_notes":["UNTYPED_ALLOWED_REVIEW_FLAG"],"approved_description":"owned ActionUsage, untyped allowed with `UNRESOLVED_ACTION_TYPE`.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Part","disposition":"native_candidate","native_kind":"PartUsage","conditional_evidence":[],"review_notes":["UNTYPED_ALLOWED_REVIEW_FLAG"],"approved_description":"owned PartUsage, untyped allowed with `UNRESOLVED_PART_TYPE`.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Port","disposition":"native_candidate","native_kind":"PortUsage","conditional_evidence":[],"review_notes":["UNTYPED_ALLOWED_REVIEW_FLAG"],"approved_description":"owned PortUsage, untyped allowed with `UNRESOLVED_PORT_TYPE`.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Part:FlowProperty","disposition":"native_candidate","native_kind":"ItemUsage","conditional_evidence":["OWNING_PORT_AND_DIRECTION_EVIDENCE"],"review_notes":[],"approved_description":"ItemUsage owned by port; retain explicit direction, typing when known.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"StateNode","disposition":"native_candidate","native_kind":"StateUsage","conditional_evidence":[],"review_notes":[],"approved_description":"independent StateUsage local to workflow.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Synchronization","disposition":"conditional_review","native_kind":null,"conditional_evidence":["FORK_JOIN_CONTROL_FLOW_EVIDENCE"],"review_notes":[],"approved_description":"local fork/join workflow construct based on actual incoming/outgoing control-flow evidence.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Trigger","disposition":"conditional_review","native_kind":null,"conditional_evidence":["LEGAL_TRANSITION_CONTEXT"],"review_notes":[],"approved_description":"local transition trigger.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Package","disposition":"folder_only","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"folder only.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"InformationItem","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"description-only MDSE note with links; not native ItemDefinition.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Note","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"MDSE note with YAML element links.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Issue","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"MDSE Issue note with source-backed affected-element YAML links.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Change","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"MDSE change note with YAML element links.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Decision","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"descriptive MDSE note, source-backed connections/guards and YAML links; no inferred executable branching.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Text","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"MDSE notes, simplified names, original URL in YAML, YAML links.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Text:NavigationCell","disposition":"mdse_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"MDSE notes, simplified names, original URL in YAML, YAML links.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Artifact:Image","disposition":"attachment_link","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"attachments referenced in element YAML.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Artifact:Document","disposition":"attachment_link","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"attachments referenced in element YAML.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Sequence","disposition":"reference_only","native_kind":null,"conditional_evidence":["NON_DIAGRAM_SOURCE_ONLY"],"review_notes":[],"approved_description":"reference-only interaction/workflow view, preserving order/participants/messages, no inferred executable succession.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"ProxyConnector","disposition":"reference_only","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"reference to original connection/endpoints; no invented port/part or separate usage note.","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Boundary","disposition":"aggregate_boundary_note","native_kind":null,"conditional_evidence":[],"review_notes":[],"approved_description":"remove from generated model (still disposition-ledgered).","approved_source":"24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md","parser_accepted":false,"emission_enabled":false}],"relationships":[{"family":"Generalization","source_count":3735,"approved_direction":"specialization","disposition":"conditional_native_candidate","native_operation":"Specialization","required_evidence":["direction_and_endpoint_evidence"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Abstraction:allocate","source_count":2605,"approved_direction":"native allocation","disposition":"conditional_native_candidate","native_operation":"AllocationUsage","required_evidence":["semantic_roles"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Aggregation","source_count":2267,"approved_direction":"owned PartUsage where physical containment is evidenced, else review","disposition":"conditional_native_candidate","native_operation":"TypedOwnedUsage","required_evidence":["ownership_and_endpoint_category"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:satisfy","source_count":1330,"approved_direction":"native satisfy","disposition":"conditional_native_candidate","native_operation":"SatisfyRequirementUsage","required_evidence":["requirement_and_objective"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Realisation","source_count":883,"approved_direction":"part-to-action perform; part-to-requirement allocate; part-to-part allocate; else review","disposition":"conditional_native_candidate","native_operation":"ContextualPerformOrAllocate","required_evidence":["endpoint_roles"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:refine","source_count":596,"approved_direction":"Dependency plus Refinement metadata","disposition":"conditional_native_candidate","native_operation":"DependencyWithRefinementEvidence","required_evidence":["source_qualifier"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency","source_count":429,"approved_direction":"native Dependency","disposition":"conditional_native_candidate","native_operation":"Dependency","required_evidence":["endpoints_and_roles"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:trace","source_count":414,"approved_direction":"Dependency with trace provenance","disposition":"conditional_native_candidate","native_operation":"DependencyWithTraceEvidence","required_evidence":["source_qualifier"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Association","source_count":395,"approved_direction":"ConnectionUsage if connectivity proven; otherwise review","disposition":"conditional_native_candidate","native_operation":"ConnectionUsage","required_evidence":["actual_connectivity"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"UseCase:extend","source_count":378,"approved_direction":"conditional optional case usage","disposition":"conditional_native_candidate","native_operation":"ConditionalUseCaseUsage","required_evidence":["extension_context"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"ControlFlow","source_count":271,"approved_direction":"Succession with source guards","disposition":"conditional_native_candidate","native_operation":"SuccessionUsage","required_evidence":["source_action_occurrences"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:deriveReqt","source_count":232,"approved_direction":"requirement derivation","disposition":"conditional_native_candidate","native_operation":"RequirementDerivation","required_evidence":["requirement_endpoints"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"NoteLink","source_count":220,"approved_direction":"MDSE YAML links; no native relationship","disposition":"reference_only","native_operation":null,"required_evidence":["metadata_only"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"UseCase:include","source_count":219,"approved_direction":"required nested case usage","disposition":"conditional_native_candidate","native_operation":"RequiredUseCaseUsage","required_evidence":["owning_use_case"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Sequence","source_count":193,"approved_direction":"reference-only interaction","disposition":"reference_only","native_operation":null,"required_evidence":["non_diagram_source_reference_only"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"StateFlow","source_count":171,"approved_direction":"state transition","disposition":"conditional_native_candidate","native_operation":"TransitionUsage","required_evidence":["state_context"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Nesting","source_count":137,"approved_direction":"approved nested state/activity/port/requirement usage; else organizational","disposition":"conditional_native_candidate","native_operation":"ContextualNestedUsage","required_evidence":["native_owner_context"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Usage","source_count":128,"approved_direction":"generic Dependency unless independently stronger evidence","disposition":"conditional_native_candidate","native_operation":"DependencyUnlessStrongerEvidence","required_evidence":["source_intent"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:verify","source_count":47,"approved_direction":"verification","disposition":"conditional_native_candidate","native_operation":"VerifyRequirementUsage","required_evidence":["verification_case_and_requirement"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Dependency:RecoveryRequirement","source_count":10,"approved_direction":"requirement derivation","disposition":"conditional_native_candidate","native_operation":"RequirementDerivation","required_evidence":["requirement_endpoints"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Connector","source_count":9,"approved_direction":"port-to-port ConnectionUsage","disposition":"conditional_native_candidate","native_operation":"ConnectionUsage","required_evidence":["port_compatibility"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Abstraction:Derive","source_count":6,"approved_direction":"requirement derivation","disposition":"conditional_native_candidate","native_operation":"RequirementDerivation","required_evidence":["requirement_endpoints"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Abstraction:trace","source_count":5,"approved_direction":"Dependency with trace provenance","disposition":"conditional_native_candidate","native_operation":"DependencyWithTraceEvidence","required_evidence":["source_qualifier"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Usage:Responsibility","source_count":4,"approved_direction":"allocation when role is evidenced","disposition":"conditional_native_candidate","native_operation":"AllocationUsage","required_evidence":["responsibility_roles"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Abstraction:Refine","source_count":3,"approved_direction":"Dependency plus Refinement metadata","disposition":"conditional_native_candidate","native_operation":"DependencyWithRefinementEvidence","required_evidence":["source_qualifier"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false},{"family":"Realisation:deriveReqt","source_count":1,"approved_direction":"requirement derivation only with compatible requirements/roles, otherwise review","disposition":"conditional_native_candidate","native_operation":"RequirementDerivation","required_evidence":["requirement_endpoints_and_role"],"source_authority":"24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md","parser_accepted":false,"emission_enabled":false}]};
+const BASEVAULT = {".obsidian/app.json":"{\n  \"alwaysUpdateLinks\": true,\n  \"newLinkFormat\": \"shortest\",\n  \"useMarkdownLinks\": false,\n  \"showFrontmatter\": true,\n  \"propertiesInDocument\": \"visible\"\n}\n",".obsidian/community-plugins.json":"[]\n",".obsidian/core-plugins.json":"[\n  \"file-explorer\",\n  \"global-search\",\n  \"backlinks\",\n  \"outgoing-links\",\n  \"properties\",\n  \"tag-pane\",\n  \"outline\",\n  \"templates\",\n  \"bases\"\n]\n",".obsidian/plugin-lock.yaml":"# Controlled plugin payload (MOD-146).\nstatus: NOT_BUNDLED\nnote: Plugin binaries are not part of this build. The vault works as plain Markdown. Pinned versions and hashes arrive with the release manifest.\nplugins: []\n",".vault.yaml":"# Vault identity. The importer fills vault_uid and vault_name on its first run.\nvault_uid: UNINITIALIZED\nvault_name: UNINITIALIZED\nauthor: UNINITIALIZED\nmdse_release: 0.0.0-dev\nschema: mdse-vault/0.1\n","99_System/02_AI/AI_INSTRUCTIONS.md":"# MDSE AI Instructions\n\nStatus: updated 2026-10-19 for D-0003, D-0009 and D-0010; owner review requested. Ships into every vault as `99_System/02_AI/AI_INSTRUCTIONS.md`.\n\nFor every AI tool that creates, edits or reviews notes in an MDSE vault (Claude, ChatGPT, Rovo, Gemini or any other). AI tools cannot run Templater, so you do by hand exactly what the template snippets do. The result must look the same as a note created from a template.\n\n## AI processes\n\nEach AI process has an instruction file and an ID. Use the file for that process; do not write unique instructions for a run.\n\n| ID | Process | Instruction file |\n|---|---|---|\n| AI-CR-01 | Changelog review: sort changes into Engineering, Editorial, Irrelevant before an engineer reads them | `99_System/02_AI/processes/AI-CR-01_Changelog_Review.md` |\n\nBefore substantial work, read `99_System/03_Schemas/element-types.yaml`, `99_System/03_Schemas/relationships.yaml`, `99_System/03_Schemas/authors.yaml` (AI codes and the default time zone) and the person notes in `99_System/04_People` (each person's author code and time zone).\n\n## Where things go in a note\n\n- **Anything SysML v2 can define** (structure, parts, ports, connections, specialization, satisfy, verify, derive, allocate, and other SysML relationships) goes only in the note's `## SysML v2` block. Never copy it into YAML.\n- **Everything else** (class, identity, status, tags, provenance, MDSE-only links such as `describes`, `references`, `affects`) goes in YAML frontmatter, as defined in `relationships.yaml`.\n- `## SysML v2` is always the last section and holds exactly one fenced `sysml` block. Do not edit it by hand unless you can run the parser check; otherwise leave a `flagNote` describing the change you propose.\n\n## Creating a note\n\n1. **Classify first.** Choose the class, then copy the matching template from `99_System/05_Templates`. Keep its properties, their order (`type`, `subtype`, `id`, `uid`, `status`, `tags`) and its headings exactly. Do not add properties except governed optional properties in `element-types.yaml` and fields in `relationships.yaml`. If no class fits, ask the user.\n2. **Fill in `uid`** yourself. It is 30 characters, no spaces: `yyyyMMddHHmmssSSS` followed by a 13-character author code.\n   - **Time:** local time now, to the millisecond, not UTC. Use the `timezone` in the directing person's note in `99_System/04_People` if it has one; otherwise `defaultTimezone` in `authors.yaml`.\n   - **Author code, if a user directed the note:** that user's `code` from their person note, even if you wrote every word. If you do not know who the user is, ask. Notes carrying a person's `previousCodes` are also theirs.\n   - **Author code, if you created the note on your own:** your code from `ai_authors` in `authors.yaml`. If your tool is not listed, add it: tool name (lowercase letters, at most 11), then `ai`, then hyphens to 13 characters.\n   - **If that 30-character token is already used,** add one millisecond until it is unique in the vault.\n3. **Fill in `id`** yourself: the class prefix, a hyphen and a five-digit number. Standard requirements use `STD`, stakeholder requirements `STK`, other requirements `REQ`. Find the highest number used for that prefix across every note in the vault, including retired notes and ids listed under `## Former ids`, then add one. Never reuse a number. External designators (for example a standard's clause number) never go in `id`.\n4. **Check before saving:** `uid` matches `^\\d{17}[a-z-]{13}$`; `id` matches `^[A-Z]+-\\d{5}$`.\n\n```\nid: REQ-00042\nuid: 20260928101530123skellyspencer   (a user directed the note)\nuid: 20260928101530123claudeai-----   (Claude created it on its own)\n```\n\n## Status and review\n\n- Leave `status` at the template default. Never advance it or mark your own note reviewed or approved.\n- Never delete a note. To remove one, set `status` to Retired. The `id` stays reserved.\n\n## Flags\n\n- Mark issues with a flag callout: `> [!flagNote] Short description`, then detail lines. Types: `flagImport`, `flagConflict`, `flagLink`, `flagNote`.\n- You may add flags. Never remove one; only an engineer removes a flag.\n- A link whose relationship you cannot determine is a `flagLink`, not a guessed relationship.\n\n## Do not\n\n- Edit generated release files: `.obsidian/plugin-lock.yaml`, `.obsidian/community-plugins.json`, any plugin `data.json`, or `99_System/03_Schemas/`. Never add, update or remove plugins.\n- Change an existing note's `uid` or `id`.\n- Stamp `uid` or `id` on material brought in from outside (standards, external documents).\n- Add an EA GUID to a new note. It appears only in `## Source: EA` of translated notes.\n- Invent missing source facts.\n- Duplicate an existing concept. Reuse and link to it.\n- Create or split vaults. You may flag when scale suggests a split.\n- Infer a relationship from folder placement or Canvas layout. Both are presentation only.\n","99_System/02_AI/README.md":"# AI files\n\nInstructions for AI tools working **inside an engineering vault**. Everything in this folder ships into the vault at `99_System/02_AI/` (see [../ARCHITECTURE.md](../ARCHITECTURE.md)).\n\n| File | Purpose |\n|---|---|\n| [AI_INSTRUCTIONS.md](AI_INSTRUCTIONS.md) | How any AI tool creates and edits notes |\n| [processes/AI-CR-01_Changelog_Review.md](processes/AI-CR-01_Changelog_Review.md) | Changelog review before an engineer reads an import's changes |\n\nAdding a process: give it the next `AI-xx-nn` ID, write its file under `processes/`, add it to the table in AI_INSTRUCTIONS.md and MDSE_DEFINITION.md, and record a decision (AIP rules).\n\nInstructions for AI agents working on **this repository** are in [/AGENTS.md](../../AGENTS.md).\n","99_System/02_AI/processes/AI-CR-01_Changelog_Review.md":"# AI Process: Changelog Review\n\nProcess ID: AI-CR-01\nShips into every vault as `99_System/02_AI/processes/AI-CR-01_Changelog_Review.md`.\nStatus: FIRST DRAFT, 2026-10-19\nApplies to: any AI tool (Claude, ChatGPT, Rovo, Gemini, or other) reviewing the output of an import run before an engineer reads it.\n\n## Purpose\n\nAn import can create many conflicts and changes. Most are typos, formatting, or differences with no engineering meaning. Engineers should spend their time on true engineering differences. This process has the AI sort the changes first, so the engineer reviews the important ones.\n\n## Inputs\n\n- The changelog note for one import run (one changelog per run).\n- The files the changelog links.\n- The Ruleset and schemas, as referenced in `99_System/02_AI/AI_INSTRUCTIONS.md`.\n- The flags in the changed files (see Flag convention in the MDSE definition).\n\n## Steps\n\n1. Read the changelog. Do not assume any change is correct without checking the linked file.\n2. For each change and each conflict, assign exactly one class:\n   - **Editorial:** typo, spelling, capitalization, punctuation, whitespace, line order, or formatting, with the same meaning.\n   - **Irrelevant:** a difference that does not change any engineering fact, such as wording, synonym, or a reference style change.\n   - **Engineering:** a difference in a value, unit, quantity, revision, PartNumber, status, requirement text, relationship, usage, or anything else that could change how the product is built, tested, or understood.\n3. When unsure, use **Engineering**.\n4. Write one review summary note for this run, using the output format below.\n5. Do not change any model file.\n\n## Output format\n\nWrite one review summary note, named after the changelog it reviews, with this structure:\n\n- Run date, changelog link, and counts per class.\n- **Engineering** section first. For each item: the file link, the flag type, the source value, the existing value, and the question an engineer must answer. Do not propose a resolution.\n- **Editorial** section. For each item: the file link, and the proposed fix (for example, \"correct spelling of 'resistor'\"). List these for batch approval only.\n- **Irrelevant** section. For each item: the file link and the reason it has no engineering meaning.\n\n## Rules\n\n- Do not edit any file. This process only reports.\n- Do not replace existing `## SysML v2` content, filled YAML values, or engineer-written body text.\n- Do not resolve, remove, or change any flag. Flags are removed by the engineer after review.\n- Do not delete notes. Do not create notes.\n- Do not invent a source fact or an engineering explanation. If the cause of a difference is unknown, say so.\n- Do not describe an Editorial or Irrelevant item as Engineering to be safe. Do not describe an Engineering item as Editorial to save time.\n- Follow the rules in `99_System/02_AI/AI_INSTRUCTIONS.md`.\n\n## Done when\n\n- Every change and conflict in the changelog appears in the review note exactly once.\n- Counts in the summary match the number of items listed.\n- Every Engineering item links to its file and states the question for the engineer.\n","99_System/03_Schemas/README.md":"# Schemas\n\nMachine-readable model contract. Tools read these files; they never copy their content into code by hand. A change here needs a decision (see [../README.md](../README.md)). Rules refer to \"the latest version\"; exact versions are pinned only in the release manifest (MOD-146).\n\n| File | Defines | Read by | State |\n|---|---|---|---|\n| `element-types.yaml` | Classes, id prefixes, subtypes, property order, governed optional properties | core (via generated `tools/core/src/classes.json`), importer, oracle | Active. STD/STK via `prefix_by_subtype` (D-0015) |\n| `relationships.yaml` | Relationship fields stored in YAML, with endpoint rules | importer, Workbench | **Under revision.** SysML-defined fields leave this file (D-0003, OD-01) |\n| `authors.yaml` | Default time zone, AI author codes, unmapped-author fallback | core, Bootstrap, AI tools | Active |\n| `ea-family-mapping.json` | Disposition of each of the 60 EA element families and 26 connector families: native SysML construct, MDSE note, folder, or review | importer only (not shipped into vaults) | Approved mapping; `emission_enabled` false until the parser gate passes per family. Some `approved_source` and `approved_description` fields cite archived Test_Vault_ paths; the Boundary description is stale (disposition `aggregate_boundary_note` is current) |\n\n## Derived files\n\n| Derived | From | Regenerate | Checked by |\n|---|---|---|---|\n| `tools/core/src/classes.json` | `element-types.yaml` | see `testing/oracles/test_core_crosscheck.py` for the expected shape | `npm run test:oracles` |\n\n## Not carried\n\n`local-model.yaml` (V1 Local Model, replaced by SysML usages; OD-08) and the V1 EA mapping files (`ea-element-mapping.yaml`, `ea-connector-mapping.yaml`, `ea-field-dispositions.yaml`, `ea-tag-dispositions.yaml`, `ea-package-rules.yaml`) stay in the Test_Vault_ archive. The EA field and tag rules they implemented are in RULESET.md section IMP, \"EA fields and tags\", as Unreviewed. Bring a file across only when a reviewed rule needs it.\n","99_System/03_Schemas/authors.yaml":"# Authorship configuration for uid generation.\n# People are not listed here. Each person has a note in 99_System/04_People with their author code, time zone, previous codes and the names they appear under in the EA source (Workspace Decision Log W-25).\nschemaVersion: '2.0'\n# Time zone used for the time in a uid when a person's note has no `timezone`.\ndefaultTimezone: America/Los_Angeles\n# AI authors. Used only when an AI creates a note without a user's direct instruction.\n# When a user directs the note, even if an AI writes it, the user's code from their person note is used (W-21).\n# Standard: [tool name][ai][hyphens], always 13 characters. Tool name is lowercase letters only, cut to 11 letters if longer, so \"ai\" is never lost.\n# New tool: add it here with the same pattern (for example a tool called Copilot becomes copilotai----).\nai_authors:\n  - {code: claudeai-----, tool: Claude (Anthropic)}\n  - {code: chatgptai----, tool: ChatGPT (OpenAI)}\n  - {code: rovoai-------, tool: Rovo (Atlassian)}\n  - {code: geminiai-----, tool: Gemini (Google)}\n# Generic/historical unmapped-EA-author fallback (W-12).\n# W-316 explicitly overrides this for the EA8647 v0.8 import: missing/unusable author uses skellyspencer for that import only.\nunmapped: {code: sparxeaauthor, ea_names: ['', '7.1.0-2']}\n","99_System/03_Schemas/element-types.yaml":"schemaVersion: '1.18'\ndate: '2026-10-05'\nbasis: MDSE ruleset 1.23\ncommonProperties: [type, subtype, id, uid, status, tags]   # order fixed by W-97\noptionalProperties:\n  - name: abstract\n    value: boolean\n    default: false\n    omitWhenDefault: true\n    meaning: \"Reusable definition may organize/generalize a specialization family but cannot itself be selected as the effective definition of an occurrence. Abstractness is not inherited (W-314/W-319).\"\nrelationshipFields: after governed optional properties (or after tags when none are present), in the order of relationships.yaml; may hold lists (W-126, W-319)\ntranslatedOnlyProperties: [eaType]   # written by the translator, between status and tags (W-31, W-97)\nclasses:\n- name: Object\n  prefix: OBJ\n  subtype: [\"electrical\", \"circuit\", \"mechanical\", \"software\", \"firmware\", \"part\", \"interface\"]\n- name: Item Flow\n  prefix: IFLOW\n  subtype: [\"information\", \"energy\", \"material\"]\n- name: Behavior\n  prefix: BEH\n  subtype: [\"function\", \"activity\", \"action\", \"step\"]\n- name: Functional Flow\n  prefix: FFLOW\n  subtype: []\n- name: Condition\n  prefix: COND\n  subtype: [\"state\", \"state machine\", \"mode\", \"design\"]\n- name: Requirement\n  prefix: REQ\n  subtype: [\"functional\", \"design\", \"standard\", \"stakeholder\", \"engineering\"]\n  # D-0015: standard = regulatory/standards requirement (STD); stakeholder = customer or internal business need (STK).\n  # Every other subtype keeps the class prefix.\n  prefix_by_subtype: {standard: STD, stakeholder: STK}\n- name: Use Case\n  prefix: UC\n  subtype: [\"what\", \"where\", \"why\", \"when\", \"who\"]\n- name: Actor\n  prefix: ACT\n  subtype: []\n- name: Failure Mode\n  prefix: FM\n  subtype: []\n- name: Issue\n  prefix: ISS\n  subtype: [\"engineering issue\", \"lifecycle risk\"]\n- name: Info\n  prefix: INFO\n  subtype: []\n- name: Verification\n  prefix: VER\n  subtype: [\"test\", \"analysis\", \"inspection\", \"demonstration\"]\n- name: Procedure\n  prefix: PROC\n  subtype: [\"test\", \"assembly\", \"configuration\", \"commissioning\", \"calibration\", \"maintenance\", \"repair\", \"decommissioning\"]\n- name: Setup\n  prefix: SETUP\n  subtype: []\n- name: Plan\n  prefix: PLAN\n  subtype: []\n- name: Result\n  prefix: RES\n  subtype: []\n- name: Document\n  prefix: DOC\n  subtype: []\n- name: Artifact\n  prefix: ART\n  subtype: []\n- name: modelCheck\n  prefix: MC\n  folder: null   # no folder of its own: translated notes stay in their EA package folders (W-117, W-181)\n  subtype: [\"StateNode\", \"Change\", \"Boundary\", \"Decision\", \"ActivityPartition\", \"Trigger\", \"Synchronization\", \"Sequence\", \"ActionPin\", \"ProxyConnector\", \"Event\", \"ActivityParameter\", \"Package\"]\n  note: 'Holding class for EA elements with no approved mapping; the subtype is the EA type (W-100, W-146, W-147). Sorted in stage 2 (Post-Import Task 7). Not meant to be created by hand (W-181).'\n- name: Diagram\n  prefix: DIA\n  folder: 72_Diagrams\n  subtype: [\"custom\", \"logical\", \"use case\", \"composite structure\", \"statechart\", \"activity\", \"sequence\", \"package\"]\n","99_System/03_Schemas/relationships.yaml":"# UNDER REVISION (D-0003): fields SysML v2 can define move to the ## SysML v2 block and leave this file.\n# Proposed split: governance/OPEN_DECISIONS.md, OD-01. Until OD-01 is decided, do not build on the SysML-defined fields here.\nschemaVersion: '1.36'\ndate: '2026-10-05'\nstorage: Author forward/owner-side fields. Inverse fields are persisted in YAML and written with the forward field by the translator, Workbench or the regenerate script (W-275); the forward field wins when they disagree.\npaired:\n- {forward: subtypeOf, inverse: supertypeOf, from: any, to: any, sameClass: true}\n- {forward: hasPart, inverse: partOf, from: [Object], to: [Object]}\n- {forward: hasChild, inverse: childOf, from: any, to: any, excludePairs: [[Object, Object], [Object, Condition]]}\n- {forward: hasState, inverse: stateOf, from: [Object, Condition], to: [Condition]}\n- {forward: includes, inverse: includedIn, from: any, to: any}\n- {forward: copyOf, inverse: hasCopy, from: any, to: any, sameClass: true}\n- {forward: dependsOn, inverse: dependencyOf, from: any, to: any}\n- {forward: derivedFrom, inverse: derivedBy, from: [Requirement], to: [Requirement]}\n- {forward: refines, inverse: refinedBy, from: [Requirement], to: [Requirement]}\n- {forward: drives, inverse: drivenBy, from: any, to: any}\n- {forward: references, inverse: referencedBy, from: [Requirement], to: [Requirement, Document]}\n- {forward: precedes, inverse: follows, from: any, to: any, sameClass: true}\n- {forward: triggeredBy, inverse: triggers, from: [Behavior, Condition], to: [Behavior, Condition, Item Flow]}\n- {forward: supersedes, inverse: supersededBy, from: any, to: any, sameClass: true}\n- {forward: describes, inverse: describedBy, from: [Info, Artifact, Document], to: any}\n- {forward: tracesTo, inverse: tracesFrom, from: any, to: any, provisional: true}\n- {forward: performs, inverse: performedBy, from: [Object], to: [Behavior]}\n- {forward: hasDesign, inverse: designOf, from: [Object, Document], to: [Condition]}\n- {forward: appliesTo, inverse: applies, from: [Requirement], to: any}\n- {forward: satisfies, inverse: satisfiedBy, from: [Behavior, Condition], to: [Requirement]}\n- {forward: verifies, inverse: verifiedBy, from: [Verification], to: [Requirement]}\n- {forward: realizedBy, inverse: realizes, from: [Use Case], to: [Behavior, Condition]}\n- {forward: optionOf, inverse: hasOption, from: [Use Case], to: [Use Case]}\n- {forward: affects, inverse: affectedBy, from: [Issue, Failure Mode, Use Case], to: any}\ntemporaryPairs: []\nsymmetric:\n- field: conflictsWith\n  between: any\n  meaning: Mutual compatibility conflict; generated mirror is derivative. Kept though nothing writes it yet (W-192).\noneWay:\n- {field: participants, from: [Use Case], to: [Object, Actor, Behavior, Document]}\n- {field: initialState, from: [Condition], to: [Condition]}\n- {field: finalState, from: [Condition], to: [Condition]}\nguidance:\n  hasState: 'hasState/stateOf: an Object or state-machine Condition may own Condition notes representing states/state machines. Subtype rules determine the precise semantic pairing.'\n  states: 'initialState and finalState are one-way, written on a Condition subtype state machine and pointing at Condition subtype state records. finalState may hold several values.'\n  affects: 'affects/affectedBy: the source has an impact on a target that exists anyway, good or bad (for example an Issue or Failure Mode on the element it harms, or normal use in a Use Case on the parts it loads or wears); written on the source, affectedBy generated. drives is different: the target exists or happens because of the source. To design against an impact, prefer Use Case drives Requirement, applied to the element (W-284).'\n  triggeredBy: 'triggeredBy/triggers: what starts a behavior or condition. The field is written on the triggered Behavior or Condition and may point at another Behavior, Condition or Item Flow.'\n  endpoints: 'Endpoint rules (W-272, W-277): from is the class of the note the field is written on, to is the class of the note it points at; any means every class; sameClass means both notes have the same class; excludePairs lists [from, to] pairs that must use another field. The rules say what a person or AI may create; the translator writes links as drawn in EA and an off-rule link is a Review finding, not an error. A relationship with no from/to has no rule written yet. provisional means every link of it is a Review finding until it is replaced by a stronger relationship; a person, AI or Workbench may create it when no relationship fits yet (W-288, replacing importOnly from W-283).'\n  includes: 'includes/includedIn is membership without ownership: the whole includes a member it does not own, and a member may be included in several wholes. Written on the whole. hasChild is ownership (one parent); hasPart is Object assembly (W-277).'\n  refine: 'refines/refinedBy is between two requirements: the source requirement adds precision to the target (W-165).'\n  drives: 'drives/drivenBy: the element on which it is written gives rise to or causes the other; drives is written on the source, drivenBy generated. First used for Use Case to Requirement (W-165); any to any since W-283 so it also covers causes.'\n  references: 'references/referencedBy: one note mentions another, written on the note that mentions it. First used for requirements that mention other requirements (W-167); general enough for a requirement that cites a standard clause or a document.'\n  participants: 'participants is one-way, written only on the Use Case, listing the Objects, Actors, Behaviors and Documents that take part in it; interface occurrences are represented in Local Model rather than as first-class Port notes.'\n  precedes: 'precedes/follows is the order of steps in a flow: precedes is written on the step before, pointing at the step after; follows is generated. Used for EA ControlFlow (W-174) and StateFlow (W-175); a guard, trigger or effect is a source-section line on the step before.'\n  tracesTo: 'Provisional link: the two notes are related and the relationship is not chosen yet. The translator writes it for EA connectors that fit no rule; a person, AI or Workbench writes it when unsure. Every link is a Review finding until replaced by a stronger relationship (W-288).'\n  composition: 'hasPart/partOf is for Object notes only. hasChild/childOf is generic ownership for remaining first-class notes; state/design semantics use hasState or hasDesign instead of generic containment when applicable.'\n  copy: copyOf/hasCopy says a note is a copy of another first-class element and lets a reader trace back to the original note.\n  supersedes: 'supersedes/supersededBy is for a note that has been replaced by another note: supersedes is written on the replacing note and points at the note it replaces; supersededBy is generated on the replaced note (W-191). Nothing in the import writes it.'","99_System/05_Templates/Template - Actor.md":"---\ntype: Actor\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Artifact.md":"---\ntype: Artifact\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Behavior.md":"---\ntype: Behavior\nsubtype: # one of: function, activity, action, step\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Condition.md":"---\ntype: Condition\nsubtype: # one of: state, state machine, mode, design\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Diagram.md":"---\ntype: Diagram\nsubtype: # one of: custom, logical, use case, composite structure, statechart, activity, sequence, package\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Document.md":"---\ntype: Document\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Failure Mode.md":"---\ntype: \"Failure Mode\"\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Functional Flow.md":"---\ntype: \"Functional Flow\"\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Info.md":"---\ntype: Info\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Issue.md":"---\ntype: Issue\nsubtype: # one of: engineering issue, lifecycle risk\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Item Flow.md":"---\ntype: \"Item Flow\"\nsubtype: # one of: information, energy, material\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Object.md":"---\ntype: Object\nsubtype: # one of: electrical, circuit, mechanical, software, firmware, part, interface\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Plan.md":"---\ntype: Plan\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Procedure.md":"---\ntype: Procedure\nsubtype: # one of: test, assembly, configuration, commissioning, calibration, maintenance, repair, decommissioning\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Requirement.md":"---\ntype: Requirement\nsubtype: # one of: functional, design, standard, stakeholder, engineering\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Result.md":"---\ntype: Result\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Setup.md":"---\ntype: Setup\nsubtype:\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Use Case.md":"---\ntype: \"Use Case\"\nsubtype: # one of: what, where, why, when, who\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - Verification.md":"---\ntype: Verification\nsubtype: # one of: test, analysis, inspection, demonstration\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/05_Templates/Template - modelCheck.md":"---\ntype: modelCheck\nsubtype: # one of: StateNode, Change, Boundary, Decision, ActivityPartition, Trigger, Synchronization, Sequence, ActionPin, ProxyConnector, Event, ActivityParameter, Package\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n","99_System/11_Import/README.md":"# Import\n\nRun records, ledgers and review tables written by the importer. Do not edit; fix the source or the mapping and re-import.\n","README.md":"# MDSE vault\n\nMarkdown Systems Engineering vault (release 0.0.0-dev). SysML v2 text in the last `## SysML v2` block of a note is authoritative; everything else is YAML and Markdown.\n\n- AI tools: start at `99_System/02_AI/AI_INSTRUCTIONS.md`.\n- Schemas: `99_System/03_Schemas`.\n- Imports: `99_System/11_Import`.\n"};
 const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
-const BUILD = "build 56fd8a0d83";
+const BUILD = "build d0b25e9a4d";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };
@@ -714,7 +1728,7 @@ $("qeax").addEventListener("change", async (ev) => {
       `<tr><td><code>${t}</code></td><td class=n>${has ? countOf(x) : "—"}</td><td>${has ? "read" : "<span class=warn>absent</span>"}</td></tr>`).join("") + "</table>" +
       (missing.length ? `<p class="bad">Missing required table(s): ${missing.join(", ")}</p>` : "") + `<p class="mut">EA diagrams are out of scope and are never read (ADR-V2-05).</p>`;
     $("srcStatus").innerHTML = missing.length ? `<span class=bad>${esc(f.name)} is not a usable EA export</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1048576).toFixed(1)} MiB`;
-    source = { file: f, reader: r }; log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
+    source = { file: f, reader: r }; refreshButtons(); log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
   } catch (e) { $("srcStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("source error: " + e.message); }
 });
 
@@ -749,12 +1763,59 @@ async function walkDir(dir, prefix, out) {
     else if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]);
   }
 }
+const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
+let vaultFiles = null, vaultExists = false;
+function refreshButtons() { $("genNew").disabled = !source; $("genAdd").disabled = !(source && vaultHandle); }
 $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     const files = []; await walkDir(vaultHandle, "", files);
-    const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · read &amp; write`;
+    vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
+    if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The base vault will be written with the notes.</p>';
+    $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
   } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
+});
+
+const localIso = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+async function generate(existing) {
+  $("genStatus").textContent = "Fingerprinting source…";
+  const fingerprint = await fileSha256(source.file);
+  $("genStatus").textContent = "Translating…";
+  const opts = { sourceName: source.file.name, fingerprint, runDate: localIso(), lineage: $("lineage").value.trim() || "EA", vaultName: $("vname").value.trim() || "MDSE Vault",
+    authors: { authorMap: {}, fallbackCode: $("fallback").value.trim().padEnd(13, "-").slice(0, 13), unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"],
+    releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
+  const res = await runImport(source.reader, opts);
+  const d = res.summary.dispositions;
+  $("genOut").innerHTML = `<table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +
+    `<tr><td>Notes</td><td>${res.summary.notes} (${res.summary.created} new · ${res.summary.updated} updated · ${res.summary.unchanged} unchanged · ${res.summary.conflicts} conflicts)</td></tr>` +
+    `<tr><td>Dispositions</td><td>${Object.entries(d).map(([k, v]) => k + " " + v).join(" · ")}</td></tr><tr><td>SysML v2 blocks</td><td>${res.summary.sysmlBlocks} <span class="warn">not parser-checked</span></td></tr>` +
+    `<tr><td>Base vault</td><td>${res.summary.baseVaultIncluded ? "included" : "not needed"}</td></tr></table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
+  log(`run ${res.status}: ${JSON.stringify(res.summary)}`);
+  return res;
+}
+$("genNew").addEventListener("click", async () => {
+  try {
+    const res = await generate(null);
+    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}</span>`; return; }
+    const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, enc.encode(f.content)]));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
+    $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${res.files.length} files</span>`;
+  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
+});
+async function writeFile(root, path, text) {
+  const parts = path.split("/"); let dir = root;
+  for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
+  const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
+}
+$("genAdd").addEventListener("click", async () => {
+  try {
+    const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles) } : null);
+    if (res.status === "NO_CHANGES") { $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
+    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}: nothing written</span>`; return; }
+    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("genStatus").textContent = "Cancelled."; return; }
+    for (const f of res.files) await writeFile(vaultHandle, f.path, f.content);
+    $("genStatus").innerHTML = `<span class=ok>Wrote ${res.files.length} file(s).</span>`;
+  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
 });
 </script></body></html>

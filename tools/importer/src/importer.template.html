@@ -31,8 +31,10 @@ code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);
 <div id="vaultOut"></div></section>
 
 <section class="card" aria-labelledby="h-gen"><h2 id="h-gen">3 · Generate</h2>
-<div class="row"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Add to chosen vault</button></div>
-<p id="genStatus" class="warn" style="margin:8px 0 0">Translation from QEAX to notes is not implemented in this build (milestone M2). Steps 1 and 2 are working and tested.</p></section>
+<div class="row"><label>Vault name <input id="vname" value="MDSE Vault"></label><label>Source lineage <input id="lineage" value="EA8647"></label><label>Fallback author code <input id="fallback" value="skellyspencer" size="14" maxlength="13"></label></div>
+<div class="row"><button id="genNew" disabled>Build new vault (ZIP, includes base vault)</button><button id="genAdd" disabled>Write to chosen folder</button></div>
+<p class="mut" style="margin:8px 0 0">A chosen folder with no vault in it (no <code>.vault.yaml</code>, no <code>.obsidian</code>) receives the base vault together with the notes. A folder that already holds a vault is only added to; nothing is deleted.</p>
+<p id="genStatus" style="margin:8px 0 0"></p><div id="genOut"></div></section>
 
 <section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
 </main>
@@ -43,6 +45,11 @@ code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);
 /*@@CORE@@*/
 </script>
 <script>
+/*@@IMPORTER@@*/
+</script>
+<script>
+const MAPPING = /*@@MAPPING@@*/;
+const BASEVAULT = /*@@BASEVAULT@@*/;
 const CLASSES = /*@@CLASSES@@*/;
 const BUILD = "/*@@BUILD@@*/";
 const $ = (id) => document.getElementById(id);
@@ -65,7 +72,7 @@ $("qeax").addEventListener("change", async (ev) => {
       `<tr><td><code>${t}</code></td><td class=n>${has ? countOf(x) : "—"}</td><td>${has ? "read" : "<span class=warn>absent</span>"}</td></tr>`).join("") + "</table>" +
       (missing.length ? `<p class="bad">Missing required table(s): ${missing.join(", ")}</p>` : "") + `<p class="mut">EA diagrams are out of scope and are never read (ADR-V2-05).</p>`;
     $("srcStatus").innerHTML = missing.length ? `<span class=bad>${esc(f.name)} is not a usable EA export</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1048576).toFixed(1)} MiB`;
-    source = { file: f, reader: r }; log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
+    source = { file: f, reader: r }; refreshButtons(); log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
   } catch (e) { $("srcStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("source error: " + e.message); }
 });
 
@@ -100,12 +107,59 @@ async function walkDir(dir, prefix, out) {
     else if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]);
   }
 }
+const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
+let vaultFiles = null, vaultExists = false;
+function refreshButtons() { $("genNew").disabled = !source; $("genAdd").disabled = !(source && vaultHandle); }
 $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     const files = []; await walkDir(vaultHandle, "", files);
-    const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · read &amp; write`;
+    vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
+    if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The base vault will be written with the notes.</p>';
+    $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
   } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
+});
+
+const localIso = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+async function generate(existing) {
+  $("genStatus").textContent = "Fingerprinting source…";
+  const fingerprint = await fileSha256(source.file);
+  $("genStatus").textContent = "Translating…";
+  const opts = { sourceName: source.file.name, fingerprint, runDate: localIso(), lineage: $("lineage").value.trim() || "EA", vaultName: $("vname").value.trim() || "MDSE Vault",
+    authors: { authorMap: {}, fallbackCode: $("fallback").value.trim().padEnd(13, "-").slice(0, 13), unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"],
+    releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
+  const res = await runImport(source.reader, opts);
+  const d = res.summary.dispositions;
+  $("genOut").innerHTML = `<table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +
+    `<tr><td>Notes</td><td>${res.summary.notes} (${res.summary.created} new · ${res.summary.updated} updated · ${res.summary.unchanged} unchanged · ${res.summary.conflicts} conflicts)</td></tr>` +
+    `<tr><td>Dispositions</td><td>${Object.entries(d).map(([k, v]) => k + " " + v).join(" · ")}</td></tr><tr><td>SysML v2 blocks</td><td>${res.summary.sysmlBlocks} <span class="warn">not parser-checked</span></td></tr>` +
+    `<tr><td>Base vault</td><td>${res.summary.baseVaultIncluded ? "included" : "not needed"}</td></tr></table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
+  log(`run ${res.status}: ${JSON.stringify(res.summary)}`);
+  return res;
+}
+$("genNew").addEventListener("click", async () => {
+  try {
+    const res = await generate(null);
+    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}</span>`; return; }
+    const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, enc.encode(f.content)]));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
+    $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${res.files.length} files</span>`;
+  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
+});
+async function writeFile(root, path, text) {
+  const parts = path.split("/"); let dir = root;
+  for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
+  const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
+}
+$("genAdd").addEventListener("click", async () => {
+  try {
+    const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles) } : null);
+    if (res.status === "NO_CHANGES") { $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
+    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}: nothing written</span>`; return; }
+    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("genStatus").textContent = "Cancelled."; return; }
+    for (const f of res.files) await writeFile(vaultHandle, f.path, f.content);
+    $("genStatus").innerHTML = `<span class=ok>Wrote ${res.files.length} file(s).</span>`;
+  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
 });
 </script></body></html>

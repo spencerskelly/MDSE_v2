@@ -2,7 +2,7 @@
 
 Builds the Obsidian vault that users receive, and the release manifest that pins every tool, schema and plugin.
 
-**Rules:** RULESET.md section BAS. **State: not built.** No code has been carried; the V2 pilot scaffold in Test_Vault_ was not deployable.
+**Rules:** RULESET.md section BAS. **State: minimal.** `src/base_vault.ts` produces `.vault.yaml`, minimal `.obsidian`, `99_System` AI/schema/template content and a README; the importer writes it when the output folder holds no vault. **Not yet built:** plugin payload and hashes (`plugin-lock.yaml` says `NOT_BUNDLED`), release manifest and release check.
 
 ## Owns
 

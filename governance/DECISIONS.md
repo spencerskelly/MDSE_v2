@@ -144,3 +144,17 @@ Rules: carried as Active in the IMP (Merge, rerun and conflicts), BOM and MOD (F
 Requirement subtype `standard` is any regulatory or standards requirement and takes `STD-NNNNN`. Subtype `stakeholder` is any customer or internal business need and takes `STK-NNNNN`. Every other Requirement subtype keeps `REQ-NNNNN`. `element-types.yaml` declares this with `prefix_by_subtype`; core and the Python oracle check the prefix against the subtype. Closes OD-07.
 
 Rules: ~MOD-017.
+
+## D-0016 — Build the importer on provisional rules to find where they break
+
+2026-10-19 · Spencer · Accepted
+
+M2 and M3 are built now, before OD-01 (relationship split) and OD-03 (usage identity) are closed. The importer follows the Unreviewed MOD and IMP rules as written and takes these provisional choices, each reported on the ledger or in the run record:
+
+- Native SysML is limited to definitions, owned part, port, action and state usages, specialization, and composite or shared aggregation. Every other connector family is a `flagLink` and a `deferred_review` ledger row.
+- The importer overrides `emission_enabled: false` in `ea-family-mapping.json` with a run option (default on). Blocks written this way are reported "not parser-checked"; the pinned parser gate runs in CI, not in the page.
+- Package name per note comes from the note id; definition and usage identifiers are derived from the EA name.
+- The importer is tested on a synthetic QEAX generated at test time with `node:sqlite`; no QEAX is committed.
+- When the output folder holds no vault, the base vault is written with the notes. The plugin payload is not bundled yet (`plugin-lock.yaml` says `NOT_BUNDLED`).
+
+Rules: none edited. Revisit when OD-01 and OD-03 close.
