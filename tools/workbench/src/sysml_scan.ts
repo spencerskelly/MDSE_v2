@@ -4,8 +4,8 @@
 
 /** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
 export interface Prop { name: string; value: string }
-export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string; /** the declaration as written, whitespace collapsed */ head: string; /** `ordered` / `nonunique` modifiers */ mods?: string[]; props?: Prop[]; doc?: string }
-export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; props?: Prop[]; doc?: string; text: string }
+export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string; /** typed by the conjugate of the definition: `port p : ~PortDef` */ conj?: boolean; /** an interface or connection definition end: `end supplier : P` */ end?: boolean; /** `ref part x` */ ref?: boolean; subsets?: string[]; redefines?: string[]; /** the declaration as written, whitespace collapsed */ head: string; /** `ordered` / `nonunique` modifiers */ mods?: string[]; props?: Prop[]; doc?: string }
+export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** connect: `interface` | `connection` | `plain`; flow and connect: the definition or item type (`flow of Signal`, `interface i : Def`) */ form?: string; type?: string; /** connect: end names in `connect e1 ::> a.p to e2 ::> b.p` */ endA?: string; endB?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; props?: Prop[]; doc?: string; text: string }
 export interface Definition { keyword: string; pkg: string; name: string; symbol: string; specializes: string[]; usages: Usage[]; stmts: Stmt[]; raw: string[]; /** text of the definition own doc comment (requirement wording) */ doc?: string; /** wording of helper usages by name (guard constraints, trigger items, effect actions) */ notes: Record<string, string>; /** catalog ids of every construct seen inside (governance/language/catalog.json) */ langs: string[] }
 export interface ScanResult { defs: Definition[]; warnings: string[]; /** catalog ids of every construct in the block */ langs: string[] }
 import { classify } from "./sysml_lang.ts";
@@ -45,7 +45,21 @@ function parseItems(s: string, start: number, close: boolean): { items: Item[]; 
 }
 
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
-const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?((?:\s+(?:ordered|nonunique))*)$/;
+const SNAME = "[A-Za-z_]\\w*", SPATH = "[A-Za-z_][\\w:.]*";
+/** [end] [dir] [ref] kind name [relations] [mult] [modifiers]. Relations: `: T`, `: ~T`, `:> a, b`, `:>> c`. */
+const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
+/** `end supplier : P;` with no kind keyword, as an interface or connection definition writes its ends. */
+const END_USAGE = new RegExp(`^end\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)$`);
+function relationsOf(txt: string): { type?: string; conj?: boolean; subsets?: string[]; redefines?: string[] } {
+  const out: { type?: string; conj?: boolean; subsets?: string[]; redefines?: string[] } = {};
+  for (const m of txt.matchAll(new RegExp(`(::>>|:>>|:>|::>|:)\\s*(~?)(${SPATH}(?:\\s*,\\s*${SPATH})*)`, "g"))) {
+    const names = m[3]!.split(",").map((x) => x.trim());
+    if (m[1] === ":") { out.type = names[0]; if (m[2]) out.conj = true; }
+    else if (m[1] === ":>") out.subsets = [...(out.subsets ?? []), ...names];
+    else if (m[1] === ":>>") out.redefines = [...(out.redefines ?? []), ...names];
+  }
+  return out;
+}
 const QN = "([A-Za-z_][\\w:.]*)";
 
 function interpret(it: Item, d: Definition): void {
@@ -83,14 +97,28 @@ function interpretOne(it: Item, d: Definition): boolean {
     for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1]!, text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
-  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2]!.replace("ref ", ""), name: m[3]!, ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}), head: h, ...(m[6]?.trim() ? { mods: m[6].trim().split(/\s+/) } : {}) }); return true; }
+  if ((m = USAGE.exec(h))) {
+    const r = relationsOf((m[6] ?? "") + " " + (m[8] ?? ""));
+    d.usages.push({ kind: m[4]!, name: m[5]!, ...(r.type ? { type: r.type } : {}), ...(r.conj ? { conj: true } : {}), ...(m[7] ? { mult: m[7] } : {}), ...(m[2] ? { dir: m[2] } : {}), ...(m[1] ? { end: true } : {}), ...(m[3] ? { ref: true } : {}),
+      ...(r.subsets ? { subsets: r.subsets } : {}), ...(r.redefines ? { redefines: r.redefines } : {}), head: h, ...(m[9]?.trim() ? { mods: m[9].trim().split(/\s+/) } : {}) });
+    return true;
+  }
+  if ((m = END_USAGE.exec(h))) {
+    const r = relationsOf((m[2] ?? "") + " " + (m[4] ?? ""));
+    d.usages.push({ kind: "end", name: m[1]!, end: true, ...(r.type ? { type: r.type } : {}), ...(r.conj ? { conj: true } : {}), ...(m[3] ? { mult: m[3] } : {}), ...(r.subsets ? { subsets: r.subsets } : {}), ...(r.redefines ? { redefines: r.redefines } : {}), head: h });
+    return true;
+  }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1]!, ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1]!, b: m[2]!, tag: it.tag || "dependsOn", text: h }); return true; }
   if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1]!, b: m[3]!, ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
   if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1]!, b: m[5]!, ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
-  if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1]!, b: m[2]!, text: h }); return true; }
+  if ((m = new RegExp(`^(?:(connection|interface)(?:\\s+(${SNAME}))?(?:\\s*:\\s*(${SPATH}))?\\s+)?connect\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)\\s+to\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)$`).exec(h))) {
+    st({ kind: "connect", a: m[5]!, b: m[7]!, form: m[1] ?? "plain", ...(m[2] ? { name: m[2] } : {}), ...(m[3] ? { type: m[3] } : {}), ...(m[4] ? { endA: m[4] } : {}), ...(m[6] ? { endB: m[6] } : {}), text: h }); return true;
+  }
+  if ((m = new RegExp(`^flow(?:\\s+(${SNAME}))?(?:\\s+of\\s+(${SPATH}))?\\s+from\\s+([\\w.]+)\\s+to\\s+([\\w.]+)$`).exec(h))) { st({ kind: "flow", a: m[3]!, b: m[4]!, ...(m[1] ? { name: m[1] } : {}), ...(m[2] ? { type: m[2] } : {}), text: h }); return true; }
+  if ((m = /^bind\s+([\w.]+)\s*=\s*([\w.]+)$/.exec(h))) { st({ kind: "bind", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1]!, b: m[2]!, tag: m[3] ?? "", text: h }); return true; }
   return classify(h).length > 0;

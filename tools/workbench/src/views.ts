@@ -125,16 +125,41 @@ export function behavior(ix: ModelIndex, path: string): FlowResult {
 }
 
 /* ---- Interfaces ------------------------------------------------------------------------------------------------- */
-export interface InterfaceResult { ports: Array<{ name: string; type: string; path: string | null }>; flows: Array<{ name: string; dir: string; type: string; path: string | null }>; connections: Array<{ from: string; to: string }>; users: string[] }
+export interface PortFeature { dir: string; kind: string; name: string; type: string; mult: string; path: string | null }
+export interface InterfaceResult {
+  /** port usages the selected definition owns; `features` are the directed features of the port definition that types each one, read through the conjugation */
+  ports: Array<{ name: string; type: string; path: string | null; conj: boolean; mult: string; ref: boolean; features: PortFeature[] }>;
+  /** items the selected definition owns (a port definition's directed flows) */
+  flows: Array<{ name: string; dir: string; type: string; path: string | null }>;
+  /** everything a port or interface definition owns besides ports: items, attributes, nested ports */
+  features: PortFeature[];
+  /** ends of an interface or connection definition */
+  ends: Array<{ name: string; type: string; path: string | null; conj: boolean; mult: string }>;
+  connections: Array<{ from: string; to: string; form: string; name: string; via: string; viaPath: string | null; endA: string; endB: string }>;
+  /** `flow of T from a to b` statements */
+  transfers: Array<{ from: string; to: string; type: string; typePath: string | null; name: string }>;
+  binds: Array<{ a: string; b: string }>;
+  users: string[];
+}
+const FLIP: Record<string, string> = { in: "out", out: "in" };
 export function interfaces(ix: ModelIndex, path: string): InterfaceResult {
   const d = ix.notes.get(path)?.def;
   const res = (s?: string): string | null => (s ? ix.bySymbol.get(s) ?? null : null);
   const users = incoming(ix, path).filter((e) => e.kind === "hasPort").map((e) => e.from);
-  if (!d) return { ports: [], flows: [], connections: [], users };
+  const empty: InterfaceResult = { ports: [], flows: [], features: [], ends: [], connections: [], transfers: [], binds: [], users };
+  if (!d) return empty;
+  const featuresOf = (typeSym: string | undefined, conj: boolean): PortFeature[] => {
+    const pd = ix.notes.get(res(typeSym) ?? "")?.def; if (!pd) return [];
+    return pd.usages.map((u) => ({ dir: conj ? FLIP[u.dir ?? ""] ?? u.dir ?? "" : u.dir ?? "", kind: u.kind, name: u.name, type: u.type ?? "", mult: u.mult ?? "", path: res(u.type) }));   // conjugation reverses in and out (SysML v2 7.12)
+  };
   return {
-    ports: d.usages.filter((u) => u.kind === "port").map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type) })),
+    ports: d.usages.filter((u) => u.kind === "port" && !u.end).map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "", ref: !!u.ref, features: featuresOf(u.type, !!u.conj) })),
     flows: d.usages.filter((u) => u.kind === "item").map((u) => ({ name: u.name, dir: u.dir ?? "", type: u.type ?? "", path: res(u.type) })),
-    connections: d.stmts.filter((s) => s.kind === "connect").map((s) => ({ from: s.a!, to: s.b! })), users,
+    features: d.keyword === "port def" || d.keyword === "interface def" ? d.usages.filter((u) => !u.end && u.kind !== "port" || (u.kind === "port" && d.keyword === "port def")).map((u) => ({ dir: u.dir ?? "", kind: u.kind, name: u.name, type: u.type ?? "", mult: u.mult ?? "", path: res(u.type) })) : [],
+    ends: d.usages.filter((u) => u.end).map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "" })),
+    connections: d.stmts.filter((s) => s.kind === "connect").map((s) => ({ from: s.a!, to: s.b!, form: s.form ?? "plain", name: s.name ?? "", via: s.type ?? "", viaPath: res(s.type), endA: s.endA ?? "", endB: s.endB ?? "" })),
+    transfers: d.stmts.filter((s) => s.kind === "flow").map((s) => ({ from: s.a!, to: s.b!, type: s.type ?? "", typePath: res(s.type), name: s.name ?? "" })),
+    binds: d.stmts.filter((s) => s.kind === "bind").map((s) => ({ a: s.a!, b: s.b! })), users,
   };
 }
 

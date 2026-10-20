@@ -343,8 +343,8 @@ function relations(h        , add                      , isDef = false)       {
 
 /** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
                                               
-                                                                                                                                                                                                                                                        
-                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
                                                                                                                                    
 
@@ -383,7 +383,21 @@ function parseItems(s        , start        , close         )                   
 }
 
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
-const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?((?:\s+(?:ordered|nonunique))*)$/;
+const SNAME = "[A-Za-z_]\\w*", SPATH = "[A-Za-z_][\\w:.]*";
+/** [end] [dir] [ref] kind name [relations] [mult] [modifiers]. Relations: `: T`, `: ~T`, `:> a, b`, `:>> c`. */
+const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
+/** `end supplier : P;` with no kind keyword, as an interface or connection definition writes its ends. */
+const END_USAGE = new RegExp(`^end\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)$`);
+function relationsOf(txt        )                                                                              {
+  const out                                                                              = {};
+  for (const m of txt.matchAll(new RegExp(`(::>>|:>>|:>|::>|:)\\s*(~?)(${SPATH}(?:\\s*,\\s*${SPATH})*)`, "g"))) {
+    const names = m[3] .split(",").map((x) => x.trim());
+    if (m[1] === ":") { out.type = names[0]; if (m[2]) out.conj = true; }
+    else if (m[1] === ":>") out.subsets = [...(out.subsets ?? []), ...names];
+    else if (m[1] === ":>>") out.redefines = [...(out.redefines ?? []), ...names];
+  }
+  return out;
+}
 const QN = "([A-Za-z_][\\w:.]*)";
 
 function interpret(it      , d            )       {
@@ -421,14 +435,28 @@ function interpretOne(it      , d            )          {
     for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1] , text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
-  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2] .replace("ref ", ""), name: m[3] , ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}), head: h, ...(m[6]?.trim() ? { mods: m[6].trim().split(/\s+/) } : {}) }); return true; }
+  if ((m = USAGE.exec(h))) {
+    const r = relationsOf((m[6] ?? "") + " " + (m[8] ?? ""));
+    d.usages.push({ kind: m[4] , name: m[5] , ...(r.type ? { type: r.type } : {}), ...(r.conj ? { conj: true } : {}), ...(m[7] ? { mult: m[7] } : {}), ...(m[2] ? { dir: m[2] } : {}), ...(m[1] ? { end: true } : {}), ...(m[3] ? { ref: true } : {}),
+      ...(r.subsets ? { subsets: r.subsets } : {}), ...(r.redefines ? { redefines: r.redefines } : {}), head: h, ...(m[9]?.trim() ? { mods: m[9].trim().split(/\s+/) } : {}) });
+    return true;
+  }
+  if ((m = END_USAGE.exec(h))) {
+    const r = relationsOf((m[2] ?? "") + " " + (m[4] ?? ""));
+    d.usages.push({ kind: "end", name: m[1] , end: true, ...(r.type ? { type: r.type } : {}), ...(r.conj ? { conj: true } : {}), ...(m[3] ? { mult: m[3] } : {}), ...(r.subsets ? { subsets: r.subsets } : {}), ...(r.redefines ? { redefines: r.redefines } : {}), head: h });
+    return true;
+  }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1] , ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1] , b: m[2] , tag: it.tag || "dependsOn", text: h }); return true; }
   if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[3] , ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
   if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[5] , ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
-  if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^(?:(connection|interface)(?:\\s+(${SNAME}))?(?:\\s*:\\s*(${SPATH}))?\\s+)?connect\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)\\s+to\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)$`).exec(h))) {
+    st({ kind: "connect", a: m[5] , b: m[7] , form: m[1] ?? "plain", ...(m[2] ? { name: m[2] } : {}), ...(m[3] ? { type: m[3] } : {}), ...(m[4] ? { endA: m[4] } : {}), ...(m[6] ? { endB: m[6] } : {}), text: h }); return true;
+  }
+  if ((m = new RegExp(`^flow(?:\\s+(${SNAME}))?(?:\\s+of\\s+(${SPATH}))?\\s+from\\s+([\\w.]+)\\s+to\\s+([\\w.]+)$`).exec(h))) { st({ kind: "flow", a: m[3] , b: m[4] , ...(m[1] ? { name: m[1] } : {}), ...(m[2] ? { type: m[2] } : {}), text: h }); return true; }
+  if ((m = /^bind\s+([\w.]+)\s*=\s*([\w.]+)$/.exec(h))) { st({ kind: "bind", a: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1] , b: m[2] , tag: m[3] ?? "", text: h }); return true; }
   return classify(h).length > 0;
@@ -731,16 +759,41 @@ function behavior(ix            , path        )             {
 }
 
 /* ---- Interfaces ------------------------------------------------------------------------------------------------- */
-                                                                                                                                                                                                                                                  
+                                                                                                                  
+                           
+                                                                                                                                                                
+                                                                                                                                        
+                                                                                
+                                                                                 
+                                                                                                      
+                          
+                                                      
+                                                                                                
+                                                                                                                                                
+                                           
+                                                                                                      
+                                         
+                  
+ 
+const FLIP                         = { in: "out", out: "in" };
 function interfaces(ix            , path        )                  {
   const d = ix.notes.get(path)?.def;
   const res = (s         )                => (s ? ix.bySymbol.get(s) ?? null : null);
   const users = incoming(ix, path).filter((e) => e.kind === "hasPort").map((e) => e.from);
-  if (!d) return { ports: [], flows: [], connections: [], users };
+  const empty                  = { ports: [], flows: [], features: [], ends: [], connections: [], transfers: [], binds: [], users };
+  if (!d) return empty;
+  const featuresOf = (typeSym                    , conj         )                => {
+    const pd = ix.notes.get(res(typeSym) ?? "")?.def; if (!pd) return [];
+    return pd.usages.map((u) => ({ dir: conj ? FLIP[u.dir ?? ""] ?? u.dir ?? "" : u.dir ?? "", kind: u.kind, name: u.name, type: u.type ?? "", mult: u.mult ?? "", path: res(u.type) }));   // conjugation reverses in and out (SysML v2 7.12)
+  };
   return {
-    ports: d.usages.filter((u) => u.kind === "port").map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type) })),
+    ports: d.usages.filter((u) => u.kind === "port" && !u.end).map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "", ref: !!u.ref, features: featuresOf(u.type, !!u.conj) })),
     flows: d.usages.filter((u) => u.kind === "item").map((u) => ({ name: u.name, dir: u.dir ?? "", type: u.type ?? "", path: res(u.type) })),
-    connections: d.stmts.filter((s) => s.kind === "connect").map((s) => ({ from: s.a , to: s.b  })), users,
+    features: d.keyword === "port def" || d.keyword === "interface def" ? d.usages.filter((u) => !u.end && u.kind !== "port" || (u.kind === "port" && d.keyword === "port def")).map((u) => ({ dir: u.dir ?? "", kind: u.kind, name: u.name, type: u.type ?? "", mult: u.mult ?? "", path: res(u.type) })) : [],
+    ends: d.usages.filter((u) => u.end).map((u) => ({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "" })),
+    connections: d.stmts.filter((s) => s.kind === "connect").map((s) => ({ from: s.a , to: s.b , form: s.form ?? "plain", name: s.name ?? "", via: s.type ?? "", viaPath: res(s.type), endA: s.endA ?? "", endB: s.endB ?? "" })),
+    transfers: d.stmts.filter((s) => s.kind === "flow").map((s) => ({ from: s.a , to: s.b , type: s.type ?? "", typePath: res(s.type), name: s.name ?? "" })),
+    binds: d.stmts.filter((s) => s.kind === "bind").map((s) => ({ a: s.a , b: s.b  })), users,
   };
 }
 
@@ -1453,10 +1506,11 @@ function edLineRange(s        , m       )                   {
                    
                                                                                                                   
                                                                                                                                                     
+                                                                                                                                                       
  
                                                                                                                                                                 
 const ED_DEP_KINDS = ["derivedFrom", "refines", "trace", "dependsOn"];
-const emptyForm = (rel        )          => ({ rel, depKind: "", target: "", usageKind: "", name: "", mult: "", dir: "", ordered: false, nonunique: false, doc: "", attrs: [], ownerFirst: true });
+const emptyForm = (rel        )          => ({ rel, depKind: "", target: "", usageKind: "", name: "", mult: "", dir: "", ordered: false, nonunique: false, doc: "", attrs: [], ownerFirst: true, conj: false, ref: false, subsets: [], redefines: [] });
 
 /** The relationship an edge ref names, read back from the index as a form. null when the member is not found. */
 function edRelInfo(ix            , ref         )                 {
@@ -1470,7 +1524,8 @@ function edRelInfo(ix            , ref         )                 {
   if (u) {
     const kinds = u.type ? [u.kind] : [];
     return mk("owns", { target: u.type ? path(u.type) : "", usageKind: u.kind, name: u.name, mult: (u.mult ?? "").replace(/^\[|\]$/g, ""), dir: u.dir ?? "", ordered: !!u.mods?.includes("ordered"), nonunique: !!u.mods?.includes("nonunique"),
-      doc: u.doc ?? "", attrs: u.props ?? [] }, kinds.length ? "" : "This usage has no type, so it is not a relationship yet. Edit it in the note.");
+      doc: u.doc ?? "", attrs: u.props ?? [], conj: !!u.conj, ref: !!u.ref, subsets: u.subsets ?? [], redefines: u.redefines ?? [] },
+      u.end ? "An interface end. Change it in the Ports tab." : kinds.length ? "" : "This usage has no type, so it is not a relationship yet. Edit it in the note.");
   }
   const s = d.stmts.find((x) => x.text === ref.key);
   if (!s) return null;
@@ -1511,7 +1566,7 @@ function attrLine(a      , pad        )         {
 function edRenderMember(f         , ownerSym        , targetSym        , pad        )         {
   let head        ;
   switch (f.rel) {
-    case "owns": head = `${f.dir ? f.dir + " " : ""}${f.usageKind} ${f.name} : ${targetSym}${f.mult ? `[${f.mult}]` : ""}${f.ordered ? " ordered" : ""}${f.nonunique ? " nonunique" : ""}`; break;
+    case "owns": head = `${f.ref ? "ref " : ""}${f.dir ? f.dir + " " : ""}${f.usageKind} ${f.name} : ${f.conj ? "~" : ""}${targetSym}${f.mult ? `[${f.mult}]` : ""}${f.subsets.length ? ` :> ${f.subsets.join(", ")}` : ""}${f.redefines.length ? ` :>> ${f.redefines.join(", ")}` : ""}${f.ordered ? " ordered" : ""}${f.nonunique ? " nonunique" : ""}`; break;
     case "satisfy": head = `satisfy ${targetSym}`; break;
     case "allocate": head = f.ownerFirst ? `allocate ${ownerSym} to ${targetSym}` : `allocate ${targetSym} to ${ownerSym}`; break;
     case "perform": head = `perform action ${f.name} : ${targetSym}`; break;
@@ -1627,6 +1682,266 @@ function planUpdateRelationship(ix            , files                     , ref 
   return { summary: `${owner.title}: changed ${ref.key}`, writes: [{ path: owner.path, before: text, after: r.after }], problems: [] };
 }
 
+/* edit_port.ts */
+/* Ports and their connections in full SysML v2 (D-0033). A port definition owns directed features (`in item x : T`,
+ * `out attribute v`), a port usage is typed by a port definition or its conjugate (`port p : ~P [2] ordered`), an interface
+ * definition owns ends (`end supplier : P`), and a part connects ports with `connect`, `connection`, `interface`, `flow` and
+ * `bind` statements. These plans write only inside the `## SysML v2` block and check what the language checks: names, types,
+ * multiplicity, conjugation pairing and flow direction (a conjugated port reverses its directed features). */
+
+
+
+
+
+                                                                         
+                    
+                               
+                                                                             
+                                                                                                           
+                                                                                       
+                                                               
+                                                                       
+                                                                                                                               
+                                                                                   
+ 
+
+const ptBad = (problem        )           => ({ summary: "", writes: [], problems: [problem] });
+const PT_ID = /^[A-Za-z_]\w*$/, PT_QNAME = /^[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*$/, PT_PATH = /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/;
+const ED_PORT_OWNERS                             = {
+  feature: ["port def"], port: ["part def", "item def", "port def"], end: ["interface def"],
+  connect: ["part def", "item def"], flow: ["part def", "item def", "interface def"], bind: ["part def", "item def", "interface def"],
+};
+const ED_PORT_LABEL                           = { feature: "Port feature", port: "Port", end: "Interface end", connect: "Connection", flow: "Flow", bind: "Binding" };
+/** Kinds a note's definition can own, for the "Add" list. */
+const edPortKindsFor = (n                  )             => (n?.def ? (Object.keys(ED_PORT_OWNERS)              ).filter((k) => ED_PORT_OWNERS[k].includes(n.def .keyword)) : []);
+
+const ptFlip = (d                    )         => (d === "in" ? "out" : d === "out" ? "in" : d ?? "");
+const edMultText = (raw                    )                => {
+  const m = (raw ?? "").trim().replace(/^\[|\]$/g, "").trim();
+  if (!m || m === "1") return "";
+  return /^(\d+|\*)(\.\.(\d+|\*))?$/.test(m) ? `[${m}]` : null;
+};
+const ptDefOf = (ix            , sym                    )                    => { const p = sym ? ix.bySymbol.get(sym) : undefined; return p ? ix.notes.get(p)?.def ?? null : null; };
+
+/* ---- resolving a feature path ------------------------------------------------------------------------------- */
+function ptLookup(ix            , def            , name        , seen = new Set        ())                    {
+  const u = def.usages.find((x) => x.name === name);
+  if (u) return u;
+  if (seen.has(def.symbol)) return undefined;
+  seen.add(def.symbol);
+  for (const s of def.specializes) { const d = ptDefOf(ix, s), r = d ? ptLookup(ix, d, name, seen) : undefined; if (r) return r; }
+  return undefined;
+}
+                                                                                                                                                                                                   
+/** Walks `a.b.c` from the owner. `null` = a segment's type is outside the vault, so nothing more can be checked; a string = the problem. */
+function edResolvePath(ix            , owner            , path        )                           {
+  if (!PT_PATH.test(path)) return `"${path}" is not a path like charger.dcOut.`;
+  const segs = path.split(".");
+  let cur             = owner, flipped = false, u                   ;
+  for (let i = 0; i < segs.length; i++) {
+    u = ptLookup(ix, cur, segs[i] );
+    if (!u) return `"${segs[i]}" is not a member of ${cur.name}.`;
+    if (i === segs.length - 1) break;
+    const next = ptDefOf(ix, u.type);
+    if (!next) return u.type ? null : `"${segs[i]}" has no type, so "${segs[i + 1]}" cannot be found.`;
+    if (u.conj) flipped = !flipped;
+    cur = next;
+  }
+  return { usage: u , flipped, dir: flipped ? ptFlip(u .dir) : u .dir ?? "" };
+}
+
+/* ---- candidate paths for the UI ------------------------------------------------------------------------------ */
+                                                                                             
+/** Usages of the owner, the members of their types, and one level more: the paths a connection, flow or binding can name. */
+function edFeaturePaths(ix            , owner            , depth = 3)               {
+  const out               = [];
+  const walk = (def            , prefix        , flipped         , level        , seen             )       => {
+    const names = new Set        ();
+    const defs = [def, ...def.specializes.map((s) => ptDefOf(ix, s)).filter((x)                  => !!x)];
+    for (const d of defs) for (const u of d.usages) {
+      if (names.has(u.name) || !PT_ID.test(u.name)) continue; names.add(u.name);
+      const p = prefix + u.name, inner = ptDefOf(ix, u.type);
+      out.push({ path: p, kind: (u.end ? "end " : "") + u.kind, type: u.type ? (u.conj ? "~" : "") + (ix.notes.get(ix.bySymbol.get(u.type) ?? "")?.title ?? u.type) : "", conj: !!u.conj, dir: flipped ? ptFlip(u.dir) : u.dir ?? "" });
+      if (inner && level < depth && !seen.has(inner.symbol) && out.length < 600) walk(inner, p + ".", u.conj ? !flipped : flipped, level + 1, new Set([...seen, inner.symbol]));
+    }
+  };
+  walk(owner, "", false, 1, new Set([owner.symbol]));
+  return out;
+}
+
+/* ---- rendering and checking ---------------------------------------------------------------------------------- */
+const ptKeywordOf = (ix            , sym        )                => { const p = ix.bySymbol.get(sym); return p ? ix.notes.get(p)?.def?.keyword ?? null : null; };
+                                                                       
+
+function edCheckPortSpec(ix            , owner      , s          , ignoreName = "")          {
+  const problems           = [], notes           = [], def = owner.def;
+  const r          = { stmt: "", problems, notes };
+  if (!def) { problems.push(`"${owner.title}" has no SysML definition.`); return r; }
+  if (!ED_PORT_OWNERS[s.kind].includes(def.keyword)) { problems.push(`A ${ED_PORT_LABEL[s.kind].toLowerCase()} goes in ${ED_PORT_OWNERS[s.kind].join(" or ")}, not in a ${def.keyword}.`); return r; }
+  const name = (s.name ?? "").trim(), taken = new Set(def.usages.map((u) => u.name).concat(def.stmts.map((x) => x.name ?? "").filter(Boolean)));
+  if (ignoreName) taken.delete(ignoreName);
+  const typeRef = (sym                    , allowed          , what        , required         )         => {
+    const t = (sym ?? "").trim();
+    if (!t) { if (required) problems.push(`Pick the ${what}.`); return ""; }
+    if (!PT_QNAME.test(t)) { problems.push(`"${t}" is not a type name.`); return ""; }
+    const kw = ptKeywordOf(ix, t);
+    if (kw && !allowed.includes(kw)) problems.push(`The ${what} must be a ${allowed.join(" or ")}; "${t}" is a ${kw}.`);
+    if (!kw && allowed.includes("port def") && allowed.length === 1) notes.push(`"${t}" is not a note in this vault; it is written as given.`);
+    return t;
+  };
+  const mult = edMultText(s.mult);
+  if (mult === null) problems.push(`Quantity "${s.mult}" is not like 3 or 0..1 or 1..*.`);
+  const mods = `${s.ordered ? " ordered" : ""}${s.nonunique ? " nonunique" : ""}`;
+
+  if (s.kind === "feature" || s.kind === "port" || s.kind === "end") {
+    if (!PT_ID.test(name)) problems.push(name ? `"${name}" is not a valid name (letters, digits, underscore).` : "A name is required.");
+    else if (taken.has(name)) problems.push(`"${name}" is already a member of ${def.name}.`);
+    const mk = s.kind === "feature" ? s.memberKind ?? "item" : s.kind === "port" ? "port" : "end";
+    if (s.kind === "feature" && !["item", "attribute", "port"].includes(mk)) problems.push(`A port feature is an item, attribute or port, not "${mk}".`);
+    const dir = s.dir ?? "";
+    if (dir && !["in", "out", "inout"].includes(dir)) problems.push(`Direction "${dir}" is not in, out or inout.`);
+    if (dir && !["item", "attribute"].includes(mk)) problems.push("Only an item or attribute has a direction.");
+    const t = mk === "item" ? typeRef(s.type, ["item def", "part def"], "item type", false) : mk === "attribute" ? typeRef(s.type, ["item def", "part def", "port def"], "attribute type", false) : typeRef(s.type, ["port def"], "port definition", true);
+    if (s.conj && !["port", "end"].includes(mk)) problems.push("Only a port or an interface end can be conjugated.");
+    if (s.ref && mk !== "port") problems.push("Only a port can be a reference.");
+    if (problems.length) return r;
+    const type = t ? ` : ${s.conj ? "~" : ""}${t}${mult}` : mult ? ` ${mult}` : "";
+    r.stmt = mk === "end" ? `end ${name}${type}${mods};` : `${s.ref ? "ref " : ""}${dir ? dir + " " : ""}${mk} ${name}${type}${mods};`;
+    return r;
+  }
+
+  const paths                                      = [["first", s.a], ["second", s.b]];
+  const res                         = [];
+  for (const [which, p] of paths) {
+    const pa = (p ?? "").trim();
+    if (!pa) { problems.push(`Pick the ${which} end.`); res.push(null); continue; }
+    const x = edResolvePath(ix, def, pa);
+    if (typeof x === "string") { problems.push(x); res.push(null); } else res.push(x);
+  }
+  if (s.name?.trim()) { if (!PT_ID.test(s.name.trim())) problems.push(`"${s.name}" is not a valid name.`); else if (taken.has(s.name.trim())) problems.push(`"${s.name.trim()}" is already used in ${def.name}.`); }
+  const nm = s.name?.trim() ? s.name.trim() + " " : "";
+  if (problems.length) return r;
+  const [A, B] = [res[0], res[1]], a = s.a .trim(), b = s.b .trim();
+
+  if (s.kind === "bind") {
+    if (a === b) problems.push("A feature cannot be bound to itself.");
+    if (A && B && A.usage.type && B.usage.type && A.usage.type !== B.usage.type) notes.push(`Bound features have different types (${A.usage.type}, ${B.usage.type}).`);
+    if (problems.length) return r;
+    r.stmt = `bind ${a} = ${b};`; return r;
+  }
+
+  if (s.kind === "flow") {
+    const item = s.item?.trim() ? typeRef(s.item, ["item def", "part def"], "item type", false) : "";
+    if (A && !["", "out", "inout"].includes(A.dir)) problems.push(`"${a}" is ${A.dir}${A.flipped ? " after the port is conjugated" : ""}: a flow starts at an out or inout feature.`);
+    if (B && !["", "in", "inout"].includes(B.dir)) problems.push(`"${b}" is ${B.dir}${B.flipped ? " after the port is conjugated" : ""}: a flow ends at an in or inout feature.`);
+    if (A && B && A.usage.type && B.usage.type && A.usage.type !== B.usage.type) notes.push(`The ends have different types (${A.usage.type}, ${B.usage.type}).`);
+    if (item && A?.usage.type && A.usage.type !== item) notes.push(`The first end is typed ${A.usage.type}, not ${item}.`);
+    if (problems.length) return r;
+    r.stmt = `flow ${nm}${item ? `of ${item} ` : ""}from ${a} to ${b};`; return r;
+  }
+
+  /* connect */
+  const form = s.form ?? "plain";
+  if (!["plain", "connection", "interface"].includes(form)) { problems.push(`Unknown connection form "${form}".`); return r; }
+  if (a === b) problems.push("A port cannot be connected to itself.");
+  if (form === "interface") for (const [p, x] of [[a, A], [b, B]]                                    ) if (x && x.usage.kind !== "port") problems.push(`"${p}" is a ${x.usage.kind}; an interface connects ports.`);
+  const defSym = s.def?.trim() ?? "";
+  let dsym = "";
+  if (defSym) {
+    dsym = typeRef(defSym, form === "interface" ? ["interface def"] : ["interface def", "connection def"], form === "interface" ? "interface definition" : "connection definition", false);
+    const dd = ptDefOf(ix, dsym), ends = dd?.usages.filter((u) => u.end) ?? [];
+    const endA = s.endA?.trim() ?? "", endB = s.endB?.trim() ?? "";
+    if (!!endA !== !!endB) problems.push("Name both ends or neither.");
+    if (dd && !problems.length) {
+      let ea                   , eb                   ;
+      if (endA) {
+        ea = ends.find((u) => u.name === endA); eb = ends.find((u) => u.name === endB);
+        if (!ea) problems.push(`"${endA}" is not an end of ${dd.name}.`); if (!eb) problems.push(`"${endB}" is not an end of ${dd.name}.`);
+        if (ea && eb && ea === eb) problems.push("The two connected ports need two different ends.");
+      } else if (ends.length === 2) { ea = ends[0]; eb = ends[1]; notes.push(`Ends taken in order: ${ea .name}, ${eb .name}.`); }
+      else if (ends.length) problems.push(`${dd.name} has ${ends.length} ends; name the two this connects.`);
+      for (const [e, x, p] of [[ea, A, a], [eb, B, b]]                                                       ) {
+        if (!e || !x || !x.usage.type || !e.type) continue;
+        if (x.usage.type !== e.type) problems.push(`"${p}" is typed ${x.usage.type}, but end ${e.name} is typed ${e.type}.`);
+        else if (!!x.usage.conj !== !!e.conj) problems.push(`"${p}" is ${x.usage.conj ? "conjugated (~)" : "not conjugated"}, but end ${e.name} is ${e.conj ? "conjugated (~)" : "not conjugated"}.`);
+      }
+    }
+  } else if (s.endA?.trim() || s.endB?.trim()) problems.push("End names need an interface or connection definition.");
+  if (!defSym && A && B && A.usage.type && A.usage.type === B.usage.type && !!A.usage.conj === !!B.usage.conj && A.usage.kind === "port" && B.usage.kind === "port")
+    notes.push(`Both ports are ${A.usage.conj ? "~" : ""}${A.usage.type}; a connection normally pairs a port with its conjugate (~).`);
+  if (problems.length) return r;
+  const ends = s.endA?.trim() ? [`${s.endA.trim()} ::> `, `${s.endB .trim()} ::> `] : ["", ""];
+  const head = form === "plain" ? "" : `${form} ${nm}${dsym ? `: ${dsym} ` : ""}`;
+  r.stmt = `${head}connect ${ends[0]}${a} to ${ends[1]}${b};`;
+  return r;
+}
+
+/* ---- plans --------------------------------------------------------------------------------------------------- */
+const ptFinish = (summary        , c         )         => summary + (c.notes.length ? "  Note: " + c.notes.join(" ") : "");
+const ptLabel = (s          )         => `${ED_PORT_LABEL[s.kind]}${s.name ? " " + s.name : ""}`;
+
+function planPortAdd(ix            , files                     , ownerPath        , s          )           {
+  const owner = ix.notes.get(ownerPath), text = files.get(ownerPath);
+  if (!owner || text === undefined) return ptBad("The note is not loaded.");
+  const c = edCheckPortSpec(ix, owner, s);
+  if (c.problems.length) return { summary: "", writes: [], problems: c.problems };
+  const r = edWithBlock(owner, text, (block) => (block.includes(c.stmt) ? block : edInsert(block, owner.def , c.stmt)));
+  if ("problem" in r) return ptBad(r.problem);
+  return { summary: ptFinish(`${owner.title}: add ${ptLabel(s).toLowerCase()}.`, c), writes: [{ path: ownerPath, before: text, after: r.text }], problems: [] };
+}
+
+function ptWithMember(owner      , text        , head        , fn                                                                           )                                         {
+  const r = edWithBlock(owner, text, (block) => {
+    const at = edFindDef(block, owner.def .keyword, owner.def .name);
+    if (!at || !at.open) return null;
+    const m = edMembers(block, at.term + 1, at.close).find((x) => x.head === head);
+    return m ? fn(block, m) : null;
+  });
+  return "problem" in r && r.problem.startsWith("Could not find") ? { problem: "That member is no longer in the note. Refresh and try again." } : r;
+}
+
+function planPortRemove(ix            , files                     , ownerPath        , head        )           {
+  const owner = ix.notes.get(ownerPath), text = files.get(ownerPath);
+  if (!owner?.def || text === undefined) return ptBad("The note is not loaded.");
+  const r = ptWithMember(owner, text, head, (block, m) => { const [a, b] = edLineRange(block, m); return block.slice(0, a) + block.slice(b); });
+  return "problem" in r ? ptBad(r.problem) : { summary: `${owner.title}: remove \`${head}\`.`, writes: [{ path: ownerPath, before: text, after: r.text }], problems: [] };
+}
+
+/** Rewrites one member from a spec. A member with a body (properties, doc) is not rewritten: it would lose them. */
+function planPortReplace(ix            , files                     , ownerPath        , head        , s          )           {
+  const owner = ix.notes.get(ownerPath), text = files.get(ownerPath);
+  if (!owner?.def || text === undefined) return ptBad("The note is not loaded.");
+  const old = owner.def.usages.find((u) => u.head === head);
+  const c = edCheckPortSpec(ix, owner, s, old && s.kind !== "connect" && s.kind !== "flow" && s.kind !== "bind" ? old.name : (owner.def.stmts.find((x) => x.text === head)?.name ?? ""));
+  if (c.problems.length) return { summary: "", writes: [], problems: c.problems };
+  let hasBody = false;
+  const r = ptWithMember(owner, text, head, (block, m) => {
+    if (m.body !== null) { hasBody = true; return block; }
+    return block.slice(0, m.start) + c.stmt + block.slice(m.end);
+  });
+  if (hasBody) return ptBad("This member has properties or a description written inside it; change it in the note so they are kept.");
+  if ("problem" in r) return ptBad(r.problem);
+  return { summary: ptFinish(`${owner.title}: change \`${head}\`.`, c), writes: [{ path: ownerPath, before: text, after: r.text }], problems: [] };
+}
+
+/** The spec a member reads back as, for the edit form. null when the member is not one of these kinds. */
+function edSpecOfMember(ix            , ownerPath        , head        )                  {
+  const d = ix.notes.get(ownerPath)?.def;
+  if (!d) return null;
+  const u = d.usages.find((x) => x.head === head);
+  if (u) {
+    const kind           = u.end ? "end" : d.keyword === "port def" ? "feature" : "port";
+    if (kind === "port" && u.kind !== "port") return null;
+    return { kind, name: u.name, memberKind: u.kind, dir: u.dir ?? "", type: u.type ?? "", conj: !!u.conj, mult: (u.mult ?? "").replace(/^\[|\]$/g, ""), ordered: !!u.mods?.includes("ordered"), nonunique: !!u.mods?.includes("nonunique"), ref: !!u.ref };
+  }
+  const s = d.stmts.find((x) => x.text === head);
+  if (!s) return null;
+  if (s.kind === "connect") return { kind: "connect", name: s.name ?? "", form: s.form ?? "plain", def: s.type ?? "", a: s.a ?? "", b: s.b ?? "", endA: s.endA ?? "", endB: s.endB ?? "" };
+  if (s.kind === "flow") return { kind: "flow", name: s.name ?? "", a: s.a ?? "", b: s.b ?? "", item: s.type ?? "" };
+  if (s.kind === "bind") return { kind: "bind", name: "", a: s.a ?? "", b: s.b ?? "" };
+  return null;
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -1652,6 +1967,20 @@ const ED_HELP                         = {
   dir: { title: "Direction", what: "For an item: does it flow into, out of, or both ways through its owner.", options: ["in, out, inout, or none."], note: "Item usage" },
   ordered: { title: "Ordered", what: "The instances have a fixed order, like the cells in a string.", options: ["On or off."] },
   nonunique: { title: "Nonunique", what: "The same instance may appear more than once.", options: ["On or off. Rare."] },
+  pMember: { title: "Port feature", what: "What a port carries. An item is a thing that moves through the port (current, a signal, fluid); an attribute is a value the port exposes (voltage); a nested port is a port inside the port.", options: ["Item: `in item current : Current;`", "Attribute: `out attribute voltage;`", "Port: `port control : ControlPort;`"], note: "Port definition" },
+  pDir: { title: "Direction of a feature", what: "Which way the feature goes through the port, as seen from the part that owns the port.", options: ["in: arrives at the part. out: leaves the part. inout: both.", "A conjugated port (~) reverses every direction.", "Blank: no direction given."], note: "Port definition" },
+  pType: { title: "Type", what: "The definition the feature, port or end is typed by. Pick a note, or for an attribute type a library name such as ISQ::VoltageValue.", options: ["A port or an end is typed by a port definition.", "An item is typed by an item definition."], note: "Port usage" },
+  conj: { title: "Conjugated (~)", what: "The mirror of a port definition: every in becomes out and every out becomes in. One side of a connection is the port, the other side is its conjugate, so what one sends the other receives.", options: ["Written `~PortDef` after the colon.", "A power source is DcPort, the load is ~DcPort."], note: "Conjugation" },
+  pRef: { title: "Reference port", what: "A port that refers to a port owned elsewhere instead of owning a new one.", options: ["Written `ref port`.", "Rare; leave off unless you know you need it."], note: "Port usage" },
+  pPort: { title: "Port", what: "A connection point on this part, typed by a port definition.", options: ["Type: a port definition (or, with ~, its conjugate).", "Quantity: how many identical ports, such as [4].", "Ordered / nonunique apply when the quantity is more than one."], note: "Port usage" },
+  pEnd: { title: "Interface end", what: "One side of an interface. A binary interface has two ends; each end is typed by a port definition, and the receiving end is usually the conjugate (~).", options: ["`end supplier : DcPort;` and `end consumer : ~DcPort;`", "A connection that uses the interface binds its two ports to these ends."], note: "Interface definition" },
+  cForm: { title: "Kind of connection", what: "How the connection is written.", options: ["Plain: `connect a to b;` just links two features.", "Connection: `connection name : Def connect a to b;` names the link and can be typed by a connection definition.", "Interface: `interface name : Def connect a to b;` connects two ports through an interface definition and checks their types against its ends."], note: "Connection (connect)" },
+  cDef: { title: "Interface or connection definition", what: "The definition that types this connection. With an interface definition each port must match one of its ends, including whether it is conjugated.", options: ["Optional for a plain or connection form.", "Interface definition: ends are checked."], note: "Interface usage" },
+  cEnd: { title: "End bindings", what: "Which end of the definition each port plays: `connect supplier ::> charger.dcOut to consumer ::> battery.dcIn`.", options: ["Leave both blank to take the definition's two ends in order.", "Name both, or neither."], note: "Interface usage" },
+  cPath: { title: "Connection end", what: "A feature reached through the owner's parts: `charger.dcOut` is the port dcOut on the part charger.", options: ["Type in the search box, or pick from the list.", "Ports listed first level, then features inside them."], note: "Connection (connect)" },
+  fItem: { title: "Item carried", what: "What moves in the flow, written `flow of Current from … to …`.", options: ["Optional. An item definition.", "A warning shows if it differs from the feature's own type."], note: "Flow" },
+  fFlow: { title: "Flow", what: "Something moves from an out feature to an in feature, through connected ports. The check follows conjugation: the output of a ~port is an in.", options: ["From: an out or inout feature.", "To: an in or inout feature."], note: "Flow" },
+  bind: { title: "Binding", what: "Two features are the same value: `bind a.x = b.y;`. Use it to pass a value through a part boundary.", options: ["No direction. A warning shows if the two types differ."], note: "Binding connector" },
   doc: { title: "Description", what: "Free text that explains why this relationship exists. Written as a doc comment inside it.", options: ["Plain words; no limit."], note: "Documentation" },
   custom: { title: "Other attribute", what: "A name and a value you define that the list does not offer, written as an attribute inside the relationship.", options: ["Name: letters, digits, underscore.", "Value: a number or text. Anything else is stored as a comment."], note: "Attribute usage" },
   target: { title: "Target", what: "The other end of the relationship. Changing it re-points the relationship; nothing else moves.", options: ["Only notes allowed for this kind are listed."] },
@@ -2000,10 +2329,19 @@ function mountWorkbench(root             , host       = {})      {
   function vInterfaces()              {
     const miss = needNote(); if (miss) return miss;
     const r = V.interfaces(ix , sel), pane = h("div", { class: "pane" }, h("h2", {}, "Interfaces of " + note(sel) .title));
-    if (!r.ports.length && !r.flows.length && !r.connections.length && !r.users.length) return h("div", { class: "pane" }, h("h2", {}, note(sel) .title), empty("No ports, flows or connections."));
-    if (r.ports.length) pane.append(h("h3", {}, "Ports"), tableOf([["n", "Port"], ["t", "Type"]], r.ports.map((p) => [p.name, p.path ? lnk(p.path) : h("span", { class: "gap" }, p.type || "untyped")])));
-    if (r.flows.length) pane.append(h("h3", {}, "Flows"), tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, p.path ? lnk(p.path) : h("span", { class: "gap" }, p.type || "untyped")])));
-    if (r.connections.length) pane.append(h("h3", {}, "Connections"), tableOf([["a", "From"], ["b", "To"]], r.connections.map((c) => [c.from, c.to])));
+    if (!r.ports.length && !r.flows.length && !r.features.length && !r.ends.length && !r.connections.length && !r.transfers.length && !r.binds.length && !r.users.length) return h("div", { class: "pane" }, h("h2", {}, note(sel) .title), empty("No ports, flows or connections."));
+    const typeCell = (path               , type        )                       => (path ? lnk(path) : h("span", { class: "gap" }, type || "untyped"));
+    if (r.ports.length) {
+      pane.append(h("h3", {}, "Ports"), tableOf([["n", "Port"], ["t", "Type"], ["c", "Conjugated"], ["m", "Quantity"], ["f", "Directed features (as seen from this port)"]],
+        r.ports.map((p) => [(p.ref ? "ref " : "") + p.name, typeCell(p.path, p.type), p.conj ? "~ yes" : "", p.mult, p.features.length ? p.features.map((f) => `${f.dir ? f.dir + " " : ""}${f.name}`).join(", ") : ""])));
+    }
+    if (r.features.length) pane.append(h("h3", {}, "Features"), tableOf([["d", "Direction"], ["k", "Kind"], ["n", "Name"], ["t", "Type"], ["m", "Quantity"]], r.features.map((f) => [f.dir, f.kind, f.name, typeCell(f.path, f.type), f.mult])));
+    else if (r.flows.length) pane.append(h("h3", {}, "Flows"), tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, typeCell(p.path, p.type)])));
+    if (r.ends.length) pane.append(h("h3", {}, "Ends"), tableOf([["n", "End"], ["t", "Port type"], ["c", "Conjugated"], ["m", "Quantity"]], r.ends.map((e) => [e.name, typeCell(e.path, e.type), e.conj ? "~ yes" : "", e.mult])));
+    if (r.connections.length) pane.append(h("h3", {}, "Connections"), tableOf([["f", "Form"], ["n", "Name"], ["v", "Interface / definition"], ["a", "From"], ["b", "To"]],
+      r.connections.map((c) => [c.form === "plain" ? "connect" : c.form, c.name, c.via ? typeCell(c.viaPath, c.via) : "", (c.endA ? c.endA + " ::> " : "") + c.from, (c.endB ? c.endB + " ::> " : "") + c.to])));
+    if (r.transfers.length) pane.append(h("h3", {}, "Flows across connections"), tableOf([["t", "Carries"], ["a", "From"], ["b", "To"]], r.transfers.map((x) => [x.type ? typeCell(x.typePath, x.type) : "(unspecified)", x.from, x.to])));
+    if (r.binds.length) pane.append(h("h3", {}, "Bindings"), tableOf([["a", "A"], ["b", "B"]], r.binds.map((x) => [x.a, x.b])));
     if (r.users.length) pane.append(h("h3", {}, "Used by (as a port type)"), h("div", {}, ...r.users.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     return pane;
   }
@@ -2129,7 +2467,8 @@ function mountWorkbench(root             , host       = {})      {
 
 
 const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const RL = { edMembers, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
+const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
+const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
 
                     
                                
@@ -2157,8 +2496,13 @@ const EDIT_STYLE = `
 
 `;
 
-                                               
-const SAVED                                      = { mode: "manage", ref: null };                       // survives redraws of the panel
+                                                         
+const SAVED                                                      = { mode: "manage", ref: null, stale: false };
+/** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
+function markEditStale()       { SAVED.stale = true; }
+/** Called by the panel when a rebuilt index arrives; redraws only after our own write, so a form being filled is not lost to an unrelated rebuild. */
+function editRefresh(el             )       { (el                                         ).mdRefresh?.(); }
+const PORT_SAVED                                                                        = { kind: "", editing: "", spec: null };                       // survives redraws of the panel
 
 function editView(c         )              {
   const host = c.host;
@@ -2167,8 +2511,10 @@ function editView(c         )              {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
+  (box                                        ).mdRefresh = ()       => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
+  let listRefresh                      = null;                                 // redraws only a list, never a form being filled
   box.addEventListener("keydown", (e) => { if ((e                 ).key === "Escape") { box.querySelectorAll(".hlp").forEach((x) => x.remove()); box.querySelectorAll(".q[aria-expanded=true]").forEach((x) => x.setAttribute("aria-expanded", "false")); } });
 
   /* ---- shared: preview + apply ---- */
@@ -2185,8 +2531,8 @@ function editView(c         )              {
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
     applyRow.append(h("button", { class: "sm pri", onclick: async (e       ) => {
-      const b = e.target                     ; b.disabled = true;
-      try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
+      const b = e.target                     ; b.disabled = true; SAVED.stale = true;
+      try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
       catch (err) { b.disabled = false; showPlan({ summary: "", writes: [], problems: [String((err         )?.message ?? err)] }); }
     } }, "Apply"), h("button", { class: "sm", onclick: () => showPlan(null) }, "Cancel"));
   };
@@ -2278,6 +2624,96 @@ function editView(c         )              {
     return v;
   }
 
+
+  /* ---- ports (D-0033): port features, ports, interface ends, connections, flows, bindings ---- */
+  function portsView()              {
+    if (!from?.def) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a part, port or interface definition in Obsidian to work on its ports.");
+    const d = from.def, kinds = PT.edPortKindsFor(from), v = h("div", {});
+    if (!kinds.length) return h("div", { class: "empty", style: "padding:12px 0" }, `A ${d.keyword} has no ports or connections. Open a part, item, port or interface definition.`);
+    v.append(h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${from.id} · ${d.keyword}`)));
+    const titleOfSym = (sym                    )         => (sym ? ix.notes.get(ix.bySymbol.get(sym) ?? "")?.title ?? sym : "");
+    /* what is there now */
+    const cur = h("div", {});
+    const drawCur = ()       => {
+    const rows                                                      = [];
+    const d = from?.def; if (!d) return;
+    for (const u of d.usages) { const k = PT.ED_PORT_OWNERS.feature.includes(d.keyword) ? "feature" : u.end ? "end" : u.kind === "port" ? "port" : ""; if (k) rows.push({ head: u.head, what: PT.ED_PORT_LABEL[k               ], text: u.head.replace(/OBJ_\d+::|[A-Z]+_\d+::/g, "") }); }
+    for (const s of d.stmts) if (s.kind === "connect" || s.kind === "flow" || s.kind === "bind") rows.push({ head: s.text, what: PT.ED_PORT_LABEL[s.kind], text: s.text.replace(/[A-Z]+_\d+::/g, "") });
+    cur.replaceChildren();
+    if (!rows.length) cur.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet."));
+    else cur.append(h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, h("span", { class: "tag k" }, r.what)), h("td", {}, h("code", {}, r.text)),
+      h("td", { style: "white-space:nowrap" },
+        h("button", { class: "sm", onclick: () => { const sp = PT.edSpecOfMember(ix, from .path, r.head); if (!sp) { showPlan({ summary: "", writes: [], problems: ["This member is not edited here; change it in the note."] }); return; } PORT_SAVED.kind = sp.kind; PORT_SAVED.editing = r.head; PORT_SAVED.spec = sp; render(); } }, "Edit"), " ",
+        h("button", { class: "sm", onclick: () => showPlan(PT.planPortRemove(ix, host.files(), from .path, r.head)) }, "Remove")))))));
+    };
+    listRefresh = drawCur; drawCur();
+    v.append(cur);
+    /* add / edit */
+    const kind = (PORT_SAVED.kind && kinds.includes(PORT_SAVED.kind) ? PORT_SAVED.kind : "")                    ;
+    const kindSel = h("select", { "aria-label": "Add" }, h("option", { value: "" }, PORT_SAVED.editing ? `Editing: ${PT.ED_PORT_LABEL[kind               ]}` : "Add…"), ...kinds.map((k) => h("option", { value: k, selected: k === kind ? true : undefined }, PT.ED_PORT_LABEL[k])))                     ;
+    kindSel.addEventListener("change", () => { PORT_SAVED.kind = kindSel.value                    ; PORT_SAVED.editing = ""; PORT_SAVED.spec = null; render(); });
+    v.append(h("div", { style: "margin-top:8px" }, kindSel));
+    if (!kind) { v.append(previewBox, applyRow); return v; }
+    const sp              = PORT_SAVED.spec ?? { kind, name: "", memberKind: kind === "feature" ? "item" : kind === "port" ? "port" : "", form: "plain" };
+    sp.kind = kind;
+    const editing = PORT_SAVED.editing;
+    const txt = (val        , on                     , ph = "", list = "")                   => { const i = h("input", { type: "text", placeholder: ph, ...(list ? { list } : {}) })                    ; i.value = val; i.addEventListener("input", () => { on(i.value); showPlan(null); }); return i; };
+    const chk = (val         , on                      )                   => h("input", { type: "checkbox", checked: val, onchange: (e       ) => { on((e.target                    ).checked); showPlan(null); } })                    ;
+    const sel = (vals                         , cur2        , on                     , label        , redraw = false)                    =>
+      h("select", { "aria-label": label, onchange: (e       ) => { on((e.target                     ).value); showPlan(null); if (redraw) drawForm(); } }, ...opts(vals, cur2))                     ;
+    /* a type chosen with the searchable browser; `allowed` are the definition keywords on offer */
+    const typePick = (label        , topic        , allowed          , get                          , set                     , free         )              => {
+      const line = h("div", {}), items = [...ix.notes.values()].filter((n) => n.def && allowed.includes(n.def.keyword));
+      const show = ()       => { const t = get() ?? ""; line.replaceChildren(...[h("b", {}, t ? titleOfSym(t) : "(none)"), " ", t ? h("button", { class: "sm", type: "button", onclick: () => { set(""); show(); showPlan(null); } }, "Clear") : null].filter((x)                            => x !== null)); };
+      show();
+      const det = h("details", {}, h("summary", {}, "Choose…"), items.length ? picker(items, (n) => { set(n.def .symbol); show(); showPlan(null); }, ix.bySymbol.get(get() ?? "") ?? "").el : h("div", { class: "empty", style: "padding:6px" }, "No eligible notes."));
+      const wrap = h("div", {}, line, det);
+      if (free) wrap.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, "or a library type, such as ISQ::VoltageValue"), txt(ix.bySymbol.has(get() ?? "") ? "" : get() ?? "", (x) => { set(x.trim()); }, "Qualified name"));
+      return field(label, wrap, topic);
+    };
+    const form = h("div", {}), drawForm = ()       => {
+      form.replaceChildren();
+      const pathList = h("datalist", { id: "mded-paths" });
+      const wantPorts = sp.kind === "connect" && sp.form === "interface";
+      for (const c of PT.edFeaturePaths(ix, d)) if (!c.kind.startsWith("end ") || d.keyword === "interface def") if (!wantPorts || c.kind.includes("port")) pathList.append(h("option", { value: c.path }, `${c.kind}${c.type ? " : " + c.type : ""}${c.dir ? " · " + c.dir : ""}`));
+      if (sp.kind === "feature" || sp.kind === "port" || sp.kind === "end") {
+        const mk = sp.kind === "feature" ? sp.memberKind ?? "item" : sp.kind === "port" ? "port" : "end";
+        if (sp.kind === "feature") form.append(field("Feature", sel([["item", "item"], ["attribute", "attribute"], ["port", "port (nested)"]], mk, (x) => { sp.memberKind = x; if (x === "port") sp.dir = ""; }, "Feature kind", true), "pMember"));
+        form.append(field("Name", txt(sp.name, (x) => { sp.name = x; }, "e.g. dcOut"), "name"));
+        if (mk === "item" || mk === "attribute") form.append(field("Direction", sel([["", "(none)"], ["in", "in"], ["out", "out"], ["inout", "inout"]], sp.dir ?? "", (x) => { sp.dir = x; }, "Direction"), "pDir"));
+        form.append(typePick(mk === "item" ? "Item type" : mk === "attribute" ? "Attribute type" : "Port definition", "pType", mk === "item" ? ["item def", "part def"] : mk === "attribute" ? ["item def", "part def", "port def"] : ["port def"], () => sp.type, (x) => { sp.type = x; }, mk === "attribute"));
+        if (mk === "port" || mk === "end") form.append(field("Conjugated (~)", chk(!!sp.conj, (x) => { sp.conj = x; }), "conj"));
+        form.append(field("Quantity (multiplicity)", txt(sp.mult ?? "", (x) => { sp.mult = x; }, "e.g. 2 or 0..1 (default 1)"), "mult"),
+          field("Ordered", chk(!!sp.ordered, (x) => { sp.ordered = x; }), "ordered"), field("Nonunique", chk(!!sp.nonunique, (x) => { sp.nonunique = x; }), "nonunique"));
+        if (sp.kind === "port") form.append(field("Reference port", chk(!!sp.ref, (x) => { sp.ref = x; }), "pRef"));
+        return;
+      }
+      form.append(pathList);
+      const ends = ()           => sp.def ? (ix.notes.get(ix.bySymbol.get(sp.def) ?? "")?.def?.usages.filter((u) => u.end).map((u) => u.name) ?? []) : [];
+      if (sp.kind === "connect") {
+        form.append(field("Kind", sel([["plain", "Plain: connect a to b"], ["connection", "Connection"], ["interface", "Interface"]], sp.form ?? "plain", (x) => { sp.form = x; }, "Kind of connection", true), "cForm"));
+        if (sp.form !== "plain") {
+          form.append(field("Name (optional)", txt(sp.name, (x) => { sp.name = x; }, "e.g. powerLink"), "name"));
+          form.append(typePick(sp.form === "interface" ? "Interface definition" : "Interface or connection definition", "cDef", sp.form === "interface" ? ["interface def"] : ["interface def", "connection def"], () => sp.def, (x) => { sp.def = x; sp.endA = ""; sp.endB = ""; drawForm(); }, false));
+        }
+      } else if (sp.kind === "flow") {
+        form.append(field("Name (optional)", txt(sp.name, (x) => { sp.name = x; }, "e.g. powerFlow"), "name"), typePick("Item carried (optional)", "fItem", ["item def", "part def"], () => sp.item, (x) => { sp.item = x; }, false));
+      }
+      const ph = d.keyword === "interface def" ? "e.g. supplier.current" : "e.g. charger.dcOut";
+      form.append(field(sp.kind === "flow" ? "From (out)" : "First", txt(sp.a ?? "", (x) => { sp.a = x.trim(); }, ph, "mded-paths"), sp.kind === "bind" ? "bind" : sp.kind === "flow" ? "fFlow" : "cPath"),
+        field(sp.kind === "flow" ? "To (in)" : "Second", txt(sp.b ?? "", (x) => { sp.b = x.trim(); }, ph, "mded-paths"), sp.kind === "bind" ? "bind" : sp.kind === "flow" ? "fFlow" : "cPath"));
+      if (sp.kind === "connect" && sp.form !== "plain" && sp.def && ends().length) {
+        form.append(field("First port plays end", sel([["", "(take the definition's ends in order)"], ...ends().map((e)                   => [e, e])], sp.endA ?? "", (x) => { sp.endA = x; if (x && !sp.endB) { sp.endB = ends().find((e) => e !== x) ?? ""; drawForm(); } }, "First end"), "cEnd"),
+          field("Second port plays end", sel([["", "(in order)"], ...ends().map((e)                   => [e, e])], sp.endB ?? "", (x) => { sp.endB = x; }, "Second end"), "cEnd"));
+      }
+    };
+    drawForm();
+    v.append(h("div", { style: "margin-top:6px" }, h("b", {}, editing ? "Change" : "New " + PT.ED_PORT_LABEL[kind].toLowerCase())), form,
+      h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(editing ? PT.planPortReplace(ix, host.files(), from .path, editing, sp) : PT.planPortAdd(ix, host.files(), from .path, sp)) }, "Preview"),
+        h("button", { class: "sm", onclick: () => { PORT_SAVED.kind = ""; PORT_SAVED.editing = ""; PORT_SAVED.spec = null; render(); } }, "Done")), previewBox, applyRow);
+    return v;
+  }
+
   /* ---- add element ---- */
   function elemView()              {
     const kinds = ED.edElementKinds(host.classes());
@@ -2314,6 +2750,7 @@ function editView(c         )              {
   const titleOf = (path               , fallback        )         => (path ? ix.notes.get(path)?.title ?? fallback : fallback);
   function manageView()              {
     if (SAVED.ref) return formView(SAVED.ref);
+    listRefresh = ()       => { if (SAVED.mode === "manage" && !SAVED.ref) render(); };
     if (!from) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a model note in Obsidian to see its relationships, or choose Edit on a table row or a canvas line.");
     const seen = new Set        (), rows                                                      = [];
     for (const e of [...outgoing(ix, from.path), ...incoming(ix, from.path)]) {
@@ -2389,9 +2826,9 @@ function editView(c         )              {
 
   function render()       {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "elem", "text"]          )[i] === SAVED.mode));
-    plan = null; previewBox.replaceChildren(); applyRow.replaceChildren();
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "elem" ? elemView() : textView());
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "elem", "text"]          )[i] === SAVED.mode));
+    plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "elem" ? elemView() : textView());
   }
   void plan;
   render();
@@ -2570,7 +3007,7 @@ function mountPanel(root             , host           , opt                     
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
     }
-    const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo ; undo = null; try { msg = await u(); } catch (e) { msg = "Undo failed: " + String((e         )?.message ?? e); } draw(); } }, "Undo") : null) : null;
+    const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo ; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e         )?.message ?? e); } draw(); } }, "Undo") : null) : null;
     const body = h("div", { class: "body" });
     if (!ix) body.append(empty(loading));
     else try {
@@ -2587,7 +3024,7 @@ function mountPanel(root             , host           , opt                     
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) return; draw(); },
+    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
     select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
     setLens(l) { lens = l; editEl = null; draw(); },

@@ -128,6 +128,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const portA = obj("Port", "ctrlIn", prod, { parent: controller, classifier: gpi });
   const portB = obj("Port", "ctrlOut", prod, { parent: controller, classifier: gpi });
   const portC = obj("Port", "pmPort", power, { parent: pm, classifier: gpi });
+  obj("Port", "auxIn", prod, { parent: controller, classifier: gpi, mult: "0..2", tags: { isConjugated: "true" } });   // conjugated, counted port (D-0033)
   con("Connector", portA, portB);                                                            // same owner -> connect
   con("Connector", portB, portC);                                                            // different owners -> review
   const a1 = obj("Action", "measure", fns, { parent: fn }), a2 = obj("Action", "adjust", fns, { parent: fn });

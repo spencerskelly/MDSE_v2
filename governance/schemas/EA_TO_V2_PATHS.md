@@ -79,7 +79,7 @@ Generated from the accepted source profile (`EA8647-2026-09-06-v1`), the approve
 
 ## Tagged values
 
-121 tags: 38 kept in the body, 3 used by the importer, 80 dropped (placeholders and unused). Source: `ea-tag-dispositions.json`.
+122 tags: 38 kept in the body, 4 used by the importer, 80 dropped (placeholders and unused). Source: `ea-tag-dispositions.json`.
 
 ## Not accounted for
 

@@ -209,7 +209,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const ex = existingBy.get(pn);
     if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: "", fresh: false }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
-    const path = names.claim(key.startsWith("d:") ? `${dir}/Drawings` : `${dir}/Parts`, safeName(`${pn} ${l.name}`.trim(), pn), ".md");
+    const path = names.claim(key.startsWith("d:") ? `${dir}/Drawings` : `${dir}/Parts`, safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
@@ -255,12 +255,13 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const firstUse = parsed.usages.find((u) => u.child === pn), own = firstUse?.ownSrc ?? null, alts = firstUse?.alternates ?? [];
     const sources = [...(own ? [own] : []), ...alts].filter((s) => s.mfr || s.mpn);
     const sysml = isDoc ? null : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
-    const head = [`- BOM Part Number: ${pn}`, `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revision: ${JSON.stringify(l.rev)} (as exported)`];
+    const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revision: ${JSON.stringify(l.rev)} (as exported)`];
     if (l.source || l.state) head.push(`- Source / state: ${l.source || "-"} / ${l.state || "-"}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     if (sources.length) head.push(`- Manufacturer sources: ${sources.map((s, i) => `${i + 1}. ${[s.mfr, s.mpn].filter(Boolean).join(" ")}${i ? " (alternate)" : ""}`).join("; ")}`);
+    if (l.name) body.push(l.name, "");
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
-    files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: `${pn} ${l.name}`.trim(),
+    files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
       relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), flags, sourceLines: [...head, ...srcLines], sysml }) });
   }
 

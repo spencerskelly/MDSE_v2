@@ -257,6 +257,66 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
+        notes = {f"10_Model/{q.name}": q.read_text() for q in (ROOT / "testing/fixtures/charger-ports").glob("*.md")}
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 1000})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
+            pg.wait_for_selector("header >> text=Charger")
+            pg.click("button[role=tab]:has-text('Edit')")
+            pg.click(".mded .tabs button:has-text('Ports')")
+
+            # a conjugated, counted port typed by a port definition chosen in the browser
+            pg.select_option("select[aria-label=Add]", "port")
+            pg.fill(".mded input[placeholder='e.g. dcOut']", "aux")
+            pg.click(".mded details:has-text('Choose') summary")
+            pg.fill("input[aria-label='Search targets']", "DcPort")
+            pg.click(".pick .it:has-text('DcPort')")
+            pg.check(".mded .hq:has-text('Conjugated') input[type=checkbox]")
+            pg.fill(".mded input[placeholder^='e.g. 2 or']", "0..1")
+            pg.click("button:has-text('Preview')")
+            pg.wait_for_selector(".diff .add:has-text('port aux : ~')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /port aux : ~OBJ_00002::DcPort\\[0\\.\\.1\\];/.test(window.__notes[p])", arg="10_Model/Charger.md")
+
+            # the "?" for conjugation opens the short definition
+            pg.locator(".mded .hq:has-text('Conjugated') .q").click()
+            pg.wait_for_selector(".mded .hlp b:has-text('Conjugated')")
+
+            # a flow that runs against the direction is refused with the reason
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Station.md")
+            pg.wait_for_selector("header >> text=Station")
+            pg.click(".mded .tabs button:has-text('Ports')")
+            pg.select_option("select[aria-label=Add]", "flow")
+            pg.fill(".mded input[placeholder='e.g. charger.dcOut']:nth-of-type(1)", "battery.dcIn.flowOut")
+            pg.locator(".mded input[list=mded-paths]").nth(1).fill("charger.dcOut.flowOut")
+            pg.click("button:has-text('Preview')")
+            pg.wait_for_selector(".callout:has-text('a flow starts at an out')")
+            pg.locator(".mded input[list=mded-paths]").nth(0).fill("charger.dcOut.flowOut")
+            pg.locator(".mded input[list=mded-paths]").nth(1).fill("battery.dcIn.flowOut")
+            pg.click("button:has-text('Preview')")
+            pg.wait_for_selector(".diff .add:has-text('flow from charger.dcOut.flowOut to battery.dcIn.flowOut')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /flow from charger.dcOut.flowOut to battery.dcIn.flowOut;/.test(window.__notes[p])", arg="10_Model/Station.md")
+            # and it can be removed again from the list
+            pg.locator(".mded table.rl tr:has-text('flow from') button:has-text('Remove')").click()
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => !/flow from/.test(window.__notes[p])", arg="10_Model/Station.md")
+            b.close()
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()

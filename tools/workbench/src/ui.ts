@@ -282,10 +282,19 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   function vInterfaces(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
     const r = V.interfaces(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Interfaces of " + note(sel)!.title));
-    if (!r.ports.length && !r.flows.length && !r.connections.length && !r.users.length) return h("div", { class: "pane" }, h("h2", {}, note(sel)!.title), empty("No ports, flows or connections."));
-    if (r.ports.length) pane.append(h("h3", {}, "Ports"), tableOf([["n", "Port"], ["t", "Type"]], r.ports.map((p) => [p.name, p.path ? lnk(p.path) : h("span", { class: "gap" }, p.type || "untyped")])));
-    if (r.flows.length) pane.append(h("h3", {}, "Flows"), tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, p.path ? lnk(p.path) : h("span", { class: "gap" }, p.type || "untyped")])));
-    if (r.connections.length) pane.append(h("h3", {}, "Connections"), tableOf([["a", "From"], ["b", "To"]], r.connections.map((c) => [c.from, c.to])));
+    if (!r.ports.length && !r.flows.length && !r.features.length && !r.ends.length && !r.connections.length && !r.transfers.length && !r.binds.length && !r.users.length) return h("div", { class: "pane" }, h("h2", {}, note(sel)!.title), empty("No ports, flows or connections."));
+    const typeCell = (path: string | null, type: string): HTMLElement | string => (path ? lnk(path) : h("span", { class: "gap" }, type || "untyped"));
+    if (r.ports.length) {
+      pane.append(h("h3", {}, "Ports"), tableOf([["n", "Port"], ["t", "Type"], ["c", "Conjugated"], ["m", "Quantity"], ["f", "Directed features (as seen from this port)"]],
+        r.ports.map((p) => [(p.ref ? "ref " : "") + p.name, typeCell(p.path, p.type), p.conj ? "~ yes" : "", p.mult, p.features.length ? p.features.map((f) => `${f.dir ? f.dir + " " : ""}${f.name}`).join(", ") : ""])));
+    }
+    if (r.features.length) pane.append(h("h3", {}, "Features"), tableOf([["d", "Direction"], ["k", "Kind"], ["n", "Name"], ["t", "Type"], ["m", "Quantity"]], r.features.map((f) => [f.dir, f.kind, f.name, typeCell(f.path, f.type), f.mult])));
+    else if (r.flows.length) pane.append(h("h3", {}, "Flows"), tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, typeCell(p.path, p.type)])));
+    if (r.ends.length) pane.append(h("h3", {}, "Ends"), tableOf([["n", "End"], ["t", "Port type"], ["c", "Conjugated"], ["m", "Quantity"]], r.ends.map((e) => [e.name, typeCell(e.path, e.type), e.conj ? "~ yes" : "", e.mult])));
+    if (r.connections.length) pane.append(h("h3", {}, "Connections"), tableOf([["f", "Form"], ["n", "Name"], ["v", "Interface / definition"], ["a", "From"], ["b", "To"]],
+      r.connections.map((c) => [c.form === "plain" ? "connect" : c.form, c.name, c.via ? typeCell(c.viaPath, c.via) : "", (c.endA ? c.endA + " ::> " : "") + c.from, (c.endB ? c.endB + " ::> " : "") + c.to])));
+    if (r.transfers.length) pane.append(h("h3", {}, "Flows across connections"), tableOf([["t", "Carries"], ["a", "From"], ["b", "To"]], r.transfers.map((x) => [x.type ? typeCell(x.typePath, x.type) : "(unspecified)", x.from, x.to])));
+    if (r.binds.length) pane.append(h("h3", {}, "Bindings"), tableOf([["a", "A"], ["b", "B"]], r.binds.map((x) => [x.a, x.b])));
     if (r.users.length) pane.append(h("h3", {}, "Used by (as a port type)"), h("div", {}, ...r.users.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     return pane;
   }

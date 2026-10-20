@@ -10,6 +10,8 @@ export interface UsageDecl {
   typeSymbol?: string;
   /** Already formatted, for example "[3]" or "[0..1]". */
   mult?: string;
+  /** port usages: typed by the conjugate of the port definition (`port p : ~P`). */
+  conj?: boolean;
 }
 
 export interface DefDecl {
@@ -38,7 +40,7 @@ const docComment = (t: string): string => t.replace(/\r\n/g, "\n").replace(/\*\/
 export function renderBlock(d: DefDecl): string {
   const head = `${d.keyword} ${d.name}` + (d.specializes.length ? ` :> ${d.specializes.join(", ")}` : "");
   const body: string[] = [];
-  for (const u of d.usages) body.push(`        ${u.dir ? u.dir + " " : ""}${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.typeSymbol}` : ""}${u.mult ?? ""};`);
+  for (const u of d.usages) body.push(`        ${u.dir ? u.dir + " " : ""}${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.conj ? "~" : ""}${u.typeSymbol}` : ""}${u.mult ?? ""};`);
   for (const m of d.members ?? []) body.push(`        ${m}`);
   if (d.doc && d.doc.trim()) body.push(`        doc /* ${docComment(d.doc).split("\n").join("\n           ")} */`);
   const def = body.length ? `    ${head} {\n${body.map((l) => l.slice(0)).join("\n")}\n    }` : `    ${head};`;

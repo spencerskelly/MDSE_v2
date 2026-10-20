@@ -7,6 +7,7 @@ import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as ED from "./edit.ts";
 import * as RL from "./edit_rel.ts";
+import * as PT from "./edit_port.ts";
 import { ED_HELP } from "./edit_help.ts";
 
 export interface EditHost {
@@ -35,8 +36,13 @@ export const EDIT_STYLE = `
 
 `;
 
-type Mode = "manage" | "rel" | "elem" | "text";
-const SAVED: { mode: Mode; ref: EdgeRef | null } = { mode: "manage", ref: null };                       // survives redraws of the panel
+type Mode = "manage" | "rel" | "ports" | "elem" | "text";
+const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean } = { mode: "manage", ref: null, stale: false };
+/** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
+export function markEditStale(): void { SAVED.stale = true; }
+/** Called by the panel when a rebuilt index arrives; redraws only after our own write, so a form being filled is not lost to an unrelated rebuild. */
+export function editRefresh(el: HTMLElement): void { (el as unknown as { mdRefresh?: () => void }).mdRefresh?.(); }
+const PORT_SAVED: { kind: PT.PortKind | ""; editing: string; spec: PT.PortSpec | null } = { kind: "", editing: "", spec: null };                       // survives redraws of the panel
 
 export function editView(c: EditCtx): HTMLElement {
   const host = c.host;
@@ -45,8 +51,10 @@ export function editView(c: EditCtx): HTMLElement {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m: Mode): void => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["elem", "Add element"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["elem", "Add element"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
+  (box as unknown as { mdRefresh: () => void }).mdRefresh = (): void => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
+  let listRefresh: (() => void) | null = null;                                 // redraws only a list, never a form being filled
   box.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Escape") { box.querySelectorAll(".hlp").forEach((x) => x.remove()); box.querySelectorAll(".q[aria-expanded=true]").forEach((x) => x.setAttribute("aria-expanded", "false")); } });
 
   /* ---- shared: preview + apply ---- */
@@ -63,8 +71,8 @@ export function editView(c: EditCtx): HTMLElement {
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
     applyRow.append(h("button", { class: "sm pri", onclick: async (e: Event) => {
-      const b = e.target as HTMLButtonElement; b.disabled = true;
-      try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
+      const b = e.target as HTMLButtonElement; b.disabled = true; SAVED.stale = true;
+      try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
       catch (err) { b.disabled = false; showPlan({ summary: "", writes: [], problems: [String((err as Error)?.message ?? err)] }); }
     } }, "Apply"), h("button", { class: "sm", onclick: () => showPlan(null) }, "Cancel"));
   };
@@ -156,6 +164,96 @@ export function editView(c: EditCtx): HTMLElement {
     return v;
   }
 
+
+  /* ---- ports (D-0033): port features, ports, interface ends, connections, flows, bindings ---- */
+  function portsView(): HTMLElement {
+    if (!from?.def) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a part, port or interface definition in Obsidian to work on its ports.");
+    const d = from.def, kinds = PT.edPortKindsFor(from), v = h("div", {});
+    if (!kinds.length) return h("div", { class: "empty", style: "padding:12px 0" }, `A ${d.keyword} has no ports or connections. Open a part, item, port or interface definition.`);
+    v.append(h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${from.id} · ${d.keyword}`)));
+    const titleOfSym = (sym: string | undefined): string => (sym ? ix.notes.get(ix.bySymbol.get(sym) ?? "")?.title ?? sym : "");
+    /* what is there now */
+    const cur = h("div", {});
+    const drawCur = (): void => {
+    const rows: Array<{ head: string; what: string; text: string }> = [];
+    const d = from?.def; if (!d) return;
+    for (const u of d.usages) { const k = PT.ED_PORT_OWNERS.feature.includes(d.keyword) ? "feature" : u.end ? "end" : u.kind === "port" ? "port" : ""; if (k) rows.push({ head: u.head, what: PT.ED_PORT_LABEL[k as PT.PortKind], text: u.head.replace(/OBJ_\d+::|[A-Z]+_\d+::/g, "") }); }
+    for (const s of d.stmts) if (s.kind === "connect" || s.kind === "flow" || s.kind === "bind") rows.push({ head: s.text, what: PT.ED_PORT_LABEL[s.kind], text: s.text.replace(/[A-Z]+_\d+::/g, "") });
+    cur.replaceChildren();
+    if (!rows.length) cur.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet."));
+    else cur.append(h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, h("span", { class: "tag k" }, r.what)), h("td", {}, h("code", {}, r.text)),
+      h("td", { style: "white-space:nowrap" },
+        h("button", { class: "sm", onclick: () => { const sp = PT.edSpecOfMember(ix, from!.path, r.head); if (!sp) { showPlan({ summary: "", writes: [], problems: ["This member is not edited here; change it in the note."] }); return; } PORT_SAVED.kind = sp.kind; PORT_SAVED.editing = r.head; PORT_SAVED.spec = sp; render(); } }, "Edit"), " ",
+        h("button", { class: "sm", onclick: () => showPlan(PT.planPortRemove(ix, host.files(), from!.path, r.head)) }, "Remove")))))));
+    };
+    listRefresh = drawCur; drawCur();
+    v.append(cur);
+    /* add / edit */
+    const kind = (PORT_SAVED.kind && kinds.includes(PORT_SAVED.kind) ? PORT_SAVED.kind : "") as PT.PortKind | "";
+    const kindSel = h("select", { "aria-label": "Add" }, h("option", { value: "" }, PORT_SAVED.editing ? `Editing: ${PT.ED_PORT_LABEL[kind as PT.PortKind]}` : "Add…"), ...kinds.map((k) => h("option", { value: k, selected: k === kind ? true : undefined }, PT.ED_PORT_LABEL[k]))) as HTMLSelectElement;
+    kindSel.addEventListener("change", () => { PORT_SAVED.kind = kindSel.value as PT.PortKind | ""; PORT_SAVED.editing = ""; PORT_SAVED.spec = null; render(); });
+    v.append(h("div", { style: "margin-top:8px" }, kindSel));
+    if (!kind) { v.append(previewBox, applyRow); return v; }
+    const sp: PT.PortSpec = PORT_SAVED.spec ?? { kind, name: "", memberKind: kind === "feature" ? "item" : kind === "port" ? "port" : "", form: "plain" };
+    sp.kind = kind;
+    const editing = PORT_SAVED.editing;
+    const txt = (val: string, on: (x: string) => void, ph = "", list = ""): HTMLInputElement => { const i = h("input", { type: "text", placeholder: ph, ...(list ? { list } : {}) }) as HTMLInputElement; i.value = val; i.addEventListener("input", () => { on(i.value); showPlan(null); }); return i; };
+    const chk = (val: boolean, on: (x: boolean) => void): HTMLInputElement => h("input", { type: "checkbox", checked: val, onchange: (e: Event) => { on((e.target as HTMLInputElement).checked); showPlan(null); } }) as HTMLInputElement;
+    const sel = (vals: Array<[string, string]>, cur2: string, on: (x: string) => void, label: string, redraw = false): HTMLSelectElement =>
+      h("select", { "aria-label": label, onchange: (e: Event) => { on((e.target as HTMLSelectElement).value); showPlan(null); if (redraw) drawForm(); } }, ...opts(vals, cur2)) as HTMLSelectElement;
+    /* a type chosen with the searchable browser; `allowed` are the definition keywords on offer */
+    const typePick = (label: string, topic: string, allowed: string[], get: () => string | undefined, set: (x: string) => void, free: boolean): HTMLElement => {
+      const line = h("div", {}), items = [...ix.notes.values()].filter((n) => n.def && allowed.includes(n.def.keyword));
+      const show = (): void => { const t = get() ?? ""; line.replaceChildren(...[h("b", {}, t ? titleOfSym(t) : "(none)"), " ", t ? h("button", { class: "sm", type: "button", onclick: () => { set(""); show(); showPlan(null); } }, "Clear") : null].filter((x): x is HTMLElement | string => x !== null)); };
+      show();
+      const det = h("details", {}, h("summary", {}, "Choose…"), items.length ? picker(items, (n) => { set(n.def!.symbol); show(); showPlan(null); }, ix.bySymbol.get(get() ?? "") ?? "").el : h("div", { class: "empty", style: "padding:6px" }, "No eligible notes."));
+      const wrap = h("div", {}, line, det);
+      if (free) wrap.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, "or a library type, such as ISQ::VoltageValue"), txt(ix.bySymbol.has(get() ?? "") ? "" : get() ?? "", (x) => { set(x.trim()); }, "Qualified name"));
+      return field(label, wrap, topic);
+    };
+    const form = h("div", {}), drawForm = (): void => {
+      form.replaceChildren();
+      const pathList = h("datalist", { id: "mded-paths" });
+      const wantPorts = sp.kind === "connect" && sp.form === "interface";
+      for (const c of PT.edFeaturePaths(ix, d)) if (!c.kind.startsWith("end ") || d.keyword === "interface def") if (!wantPorts || c.kind.includes("port")) pathList.append(h("option", { value: c.path }, `${c.kind}${c.type ? " : " + c.type : ""}${c.dir ? " · " + c.dir : ""}`));
+      if (sp.kind === "feature" || sp.kind === "port" || sp.kind === "end") {
+        const mk = sp.kind === "feature" ? sp.memberKind ?? "item" : sp.kind === "port" ? "port" : "end";
+        if (sp.kind === "feature") form.append(field("Feature", sel([["item", "item"], ["attribute", "attribute"], ["port", "port (nested)"]], mk, (x) => { sp.memberKind = x; if (x === "port") sp.dir = ""; }, "Feature kind", true), "pMember"));
+        form.append(field("Name", txt(sp.name, (x) => { sp.name = x; }, "e.g. dcOut"), "name"));
+        if (mk === "item" || mk === "attribute") form.append(field("Direction", sel([["", "(none)"], ["in", "in"], ["out", "out"], ["inout", "inout"]], sp.dir ?? "", (x) => { sp.dir = x; }, "Direction"), "pDir"));
+        form.append(typePick(mk === "item" ? "Item type" : mk === "attribute" ? "Attribute type" : "Port definition", "pType", mk === "item" ? ["item def", "part def"] : mk === "attribute" ? ["item def", "part def", "port def"] : ["port def"], () => sp.type, (x) => { sp.type = x; }, mk === "attribute"));
+        if (mk === "port" || mk === "end") form.append(field("Conjugated (~)", chk(!!sp.conj, (x) => { sp.conj = x; }), "conj"));
+        form.append(field("Quantity (multiplicity)", txt(sp.mult ?? "", (x) => { sp.mult = x; }, "e.g. 2 or 0..1 (default 1)"), "mult"),
+          field("Ordered", chk(!!sp.ordered, (x) => { sp.ordered = x; }), "ordered"), field("Nonunique", chk(!!sp.nonunique, (x) => { sp.nonunique = x; }), "nonunique"));
+        if (sp.kind === "port") form.append(field("Reference port", chk(!!sp.ref, (x) => { sp.ref = x; }), "pRef"));
+        return;
+      }
+      form.append(pathList);
+      const ends = (): string[] => sp.def ? (ix.notes.get(ix.bySymbol.get(sp.def) ?? "")?.def?.usages.filter((u) => u.end).map((u) => u.name) ?? []) : [];
+      if (sp.kind === "connect") {
+        form.append(field("Kind", sel([["plain", "Plain: connect a to b"], ["connection", "Connection"], ["interface", "Interface"]], sp.form ?? "plain", (x) => { sp.form = x; }, "Kind of connection", true), "cForm"));
+        if (sp.form !== "plain") {
+          form.append(field("Name (optional)", txt(sp.name, (x) => { sp.name = x; }, "e.g. powerLink"), "name"));
+          form.append(typePick(sp.form === "interface" ? "Interface definition" : "Interface or connection definition", "cDef", sp.form === "interface" ? ["interface def"] : ["interface def", "connection def"], () => sp.def, (x) => { sp.def = x; sp.endA = ""; sp.endB = ""; drawForm(); }, false));
+        }
+      } else if (sp.kind === "flow") {
+        form.append(field("Name (optional)", txt(sp.name, (x) => { sp.name = x; }, "e.g. powerFlow"), "name"), typePick("Item carried (optional)", "fItem", ["item def", "part def"], () => sp.item, (x) => { sp.item = x; }, false));
+      }
+      const ph = d.keyword === "interface def" ? "e.g. supplier.current" : "e.g. charger.dcOut";
+      form.append(field(sp.kind === "flow" ? "From (out)" : "First", txt(sp.a ?? "", (x) => { sp.a = x.trim(); }, ph, "mded-paths"), sp.kind === "bind" ? "bind" : sp.kind === "flow" ? "fFlow" : "cPath"),
+        field(sp.kind === "flow" ? "To (in)" : "Second", txt(sp.b ?? "", (x) => { sp.b = x.trim(); }, ph, "mded-paths"), sp.kind === "bind" ? "bind" : sp.kind === "flow" ? "fFlow" : "cPath"));
+      if (sp.kind === "connect" && sp.form !== "plain" && sp.def && ends().length) {
+        form.append(field("First port plays end", sel([["", "(take the definition's ends in order)"], ...ends().map((e): [string, string] => [e, e])], sp.endA ?? "", (x) => { sp.endA = x; if (x && !sp.endB) { sp.endB = ends().find((e) => e !== x) ?? ""; drawForm(); } }, "First end"), "cEnd"),
+          field("Second port plays end", sel([["", "(in order)"], ...ends().map((e): [string, string] => [e, e])], sp.endB ?? "", (x) => { sp.endB = x; }, "Second end"), "cEnd"));
+      }
+    };
+    drawForm();
+    v.append(h("div", { style: "margin-top:6px" }, h("b", {}, editing ? "Change" : "New " + PT.ED_PORT_LABEL[kind].toLowerCase())), form,
+      h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(editing ? PT.planPortReplace(ix, host.files(), from!.path, editing, sp) : PT.planPortAdd(ix, host.files(), from!.path, sp)) }, "Preview"),
+        h("button", { class: "sm", onclick: () => { PORT_SAVED.kind = ""; PORT_SAVED.editing = ""; PORT_SAVED.spec = null; render(); } }, "Done")), previewBox, applyRow);
+    return v;
+  }
+
   /* ---- add element ---- */
   function elemView(): HTMLElement {
     const kinds = ED.edElementKinds(host.classes());
@@ -192,6 +290,7 @@ export function editView(c: EditCtx): HTMLElement {
   const titleOf = (path: string | null, fallback: string): string => (path ? ix.notes.get(path)?.title ?? fallback : fallback);
   function manageView(): HTMLElement {
     if (SAVED.ref) return formView(SAVED.ref);
+    listRefresh = (): void => { if (SAVED.mode === "manage" && !SAVED.ref) render(); };
     if (!from) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a model note in Obsidian to see its relationships, or choose Edit on a table row or a canvas line.");
     const seen = new Set<string>(), rows: Array<{ ref: EdgeRef; text: string; kind: string }> = [];
     for (const e of [...outgoing(ix, from.path), ...incoming(ix, from.path)]) {
@@ -267,9 +366,9 @@ export function editView(c: EditCtx): HTMLElement {
 
   function render(): void {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "elem", "text"] as Mode[])[i] === SAVED.mode));
-    plan = null; previewBox.replaceChildren(); applyRow.replaceChildren();
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "elem" ? elemView() : textView());
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "elem", "text"] as Mode[])[i] === SAVED.mode));
+    plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "elem" ? elemView() : textView());
   }
   void plan;
   render();

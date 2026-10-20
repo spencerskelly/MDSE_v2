@@ -326,3 +326,15 @@ Rules: WKB-011, WKB-012, WKB-013.
 7. **Not yet.** No real BOM workbook has been run; the redline layout is inferred. The EA key for a part number is undecided, so EA to BOM matching is a report. A part number already in the vault is not refreshed from a newer BOM. A replaced part number (struck in a redline) is recorded as text, not as a `supersedes` link, because the old number has no note. The pages and plugins have not been run in a real Obsidian.
 
 Rules: IMP-099, IMP-100, BAS-012, BOO-007, BOO-008, BOM-015, BOM-016, BOM-017.
+
+## D-0033 — Ports in full SysML v2 (first tranche)
+
+2026-10-20 · Spencer · Accepted
+
+1. **Scope.** The EA model comes into v2 with its functionality. This tranche covers ports and their connections: port definition features, conjugated and counted port usages, interface ends, connections in three forms, flows and bindings. Language: SysML v2 as pinned; the real parser gate runs in CI only.
+2. **Workbench.** The scanner reads all of it; the Interfaces view shows ports (with conjugation and directed features seen from the owner), ends, connections, flows and bindings; the Edit lens has a Ports tab (WKB-014..016).
+3. **Importer.** Port multiplicity, conjugation from an `isConjugated` tag, and no interface-typed ports (IMP-101). EA stores port conjugation in a way not yet seen in a real model; only the tag is read.
+4. **BOM filenames.** A BOM note is named by its part number alone; the part number is also the title of the note's file. This corrects BOM-016.
+5. **Not yet.** InformationFlow to `flow of Signal from a.x to b.y` (needs the conveyed items from t_xref, layout unverified); attributes from t_attribute; the assembly merge tool (alias, then merge); dependency kind as real metadata instead of a comment tag.
+
+Rules: IMP-101, WKB-014, WKB-015, WKB-016, BOM-016.

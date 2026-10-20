@@ -40,7 +40,7 @@ export function edMembers(s: string, from: number, to: number): EdMem[] {
   return out;
 }
 /** Range to delete for a member: its whole line(s) when it stands alone on them. */
-function edLineRange(s: string, m: EdMem): [number, number] {
+export function edLineRange(s: string, m: EdMem): [number, number] {
   let a = m.start; while (a > 0 && (s[a - 1] === " " || s[a - 1] === "\t")) a--;
   if (a > 0 && s[a - 1] !== "\n") a = m.start;
   let b = m.end; while (b < s.length && (s[b] === " " || s[b] === "\t")) b++;
@@ -53,10 +53,11 @@ function edLineRange(s: string, m: EdMem): [number, number] {
 export interface RelForm {
   rel: string; /** dependency kinds: derivedFrom | refines | trace | dependsOn */ depKind: string; target: string;
   usageKind: string; name: string; mult: string; dir: string; ordered: boolean; nonunique: boolean; doc: string; attrs: Prop[]; ownerFirst: boolean;
+  /** kept as read so a change does not drop them: `ref port p : ~P :> q :>> r` */ conj: boolean; ref: boolean; subsets: string[]; redefines: string[];
 }
 export interface RelInfo { ref: EdgeRef; owner: Note; form: RelForm; rel: EdRel | null; /** why the member cannot be changed (it can still be removed) */ why: string }
 export const ED_DEP_KINDS = ["derivedFrom", "refines", "trace", "dependsOn"];
-const emptyForm = (rel: string): RelForm => ({ rel, depKind: "", target: "", usageKind: "", name: "", mult: "", dir: "", ordered: false, nonunique: false, doc: "", attrs: [], ownerFirst: true });
+const emptyForm = (rel: string): RelForm => ({ rel, depKind: "", target: "", usageKind: "", name: "", mult: "", dir: "", ordered: false, nonunique: false, doc: "", attrs: [], ownerFirst: true, conj: false, ref: false, subsets: [], redefines: [] });
 
 /** The relationship an edge ref names, read back from the index as a form. null when the member is not found. */
 export function edRelInfo(ix: ModelIndex, ref: EdgeRef): RelInfo | null {
@@ -70,7 +71,8 @@ export function edRelInfo(ix: ModelIndex, ref: EdgeRef): RelInfo | null {
   if (u) {
     const kinds = u.type ? [u.kind] : [];
     return mk("owns", { target: u.type ? path(u.type) : "", usageKind: u.kind, name: u.name, mult: (u.mult ?? "").replace(/^\[|\]$/g, ""), dir: u.dir ?? "", ordered: !!u.mods?.includes("ordered"), nonunique: !!u.mods?.includes("nonunique"),
-      doc: u.doc ?? "", attrs: u.props ?? [] }, kinds.length ? "" : "This usage has no type, so it is not a relationship yet. Edit it in the note.");
+      doc: u.doc ?? "", attrs: u.props ?? [], conj: !!u.conj, ref: !!u.ref, subsets: u.subsets ?? [], redefines: u.redefines ?? [] },
+      u.end ? "An interface end. Change it in the Ports tab." : kinds.length ? "" : "This usage has no type, so it is not a relationship yet. Edit it in the note.");
   }
   const s = d.stmts.find((x) => x.text === ref.key);
   if (!s) return null;
@@ -111,7 +113,7 @@ function attrLine(a: Prop, pad: string): string {
 export function edRenderMember(f: RelForm, ownerSym: string, targetSym: string, pad: string): string {
   let head: string;
   switch (f.rel) {
-    case "owns": head = `${f.dir ? f.dir + " " : ""}${f.usageKind} ${f.name} : ${targetSym}${f.mult ? `[${f.mult}]` : ""}${f.ordered ? " ordered" : ""}${f.nonunique ? " nonunique" : ""}`; break;
+    case "owns": head = `${f.ref ? "ref " : ""}${f.dir ? f.dir + " " : ""}${f.usageKind} ${f.name} : ${f.conj ? "~" : ""}${targetSym}${f.mult ? `[${f.mult}]` : ""}${f.subsets.length ? ` :> ${f.subsets.join(", ")}` : ""}${f.redefines.length ? ` :>> ${f.redefines.join(", ")}` : ""}${f.ordered ? " ordered" : ""}${f.nonunique ? " nonunique" : ""}`; break;
     case "satisfy": head = `satisfy ${targetSym}`; break;
     case "allocate": head = f.ownerFirst ? `allocate ${ownerSym} to ${targetSym}` : `allocate ${targetSym} to ${ownerSym}`; break;
     case "perform": head = `perform action ${f.name} : ${targetSym}`; break;

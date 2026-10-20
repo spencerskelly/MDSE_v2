@@ -687,6 +687,12 @@
    "note": "Body (W-92), below the EA GUID as a `- Weight (g): <value>` line (EA tag name, W-93), real values only."
   },
   {
+   "tag": "isConjugated",
+   "disposition": "structure",
+   "decision": "D-0033",
+   "note": "Structure (D-0033). Port only. A true value makes the port usage typed by the conjugate of its port definition (`port p : ~P`). Not copied into notes. The EA storage of port conjugation is unverified; this reads the tag if a model carries it."
+  },
+  {
    "tag": "direction",
    "disposition": "structure",
    "decision": "W-90",

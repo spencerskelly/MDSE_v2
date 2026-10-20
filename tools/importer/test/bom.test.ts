@@ -26,7 +26,7 @@ const FLAT_ROWS = [
 ];
 const flatText = [FLAT_HEAD, ...FLAT_ROWS].join("\n");
 const baseOpts = { sourceName: "bom.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-20T10:00:00", authorCode: "skellyspencer", classes, existing: null, pending: [] as Array<[string, string]> };
-const byTitle = (files: Array<{ path: string; content: string }>, pn: string) => files.find((f) => f.path.startsWith("BOM/") && f.path.includes("/" + pn + " "))!;
+const byTitle = (files: Array<{ path: string; content: string }>, pn: string) => files.find((f) => f.path.startsWith("BOM/") && f.path.endsWith("/" + pn + ".md"))!;
 
 test("flat BOM: one note per part number, parent-owned usages, pinned revision, units kept", () => {
   const r = buildBom(parseDelimited(flatText), baseOpts);
@@ -41,7 +41,7 @@ test("flat BOM: one note per part number, parent-owned usages, pinned revision, 
   assert.match(a, /attribute quantity = 0\.559;\n\s+attribute unit = "M";/);              // measured -> quantity + raw unit
   assert.match(a, /attribute unit = "ML";/);                                              // case kept
   assert.doesNotMatch(a, /01141-91 \{|P_01141_91/);                                       // drawing line is not a usage
-  assert.match(a, /^references: \["\[\[01141-91 DWG CABLE ASSY THERMISTOR PWRSTN\]\]"\]$/m);
+  assert.match(a, /^references: \["\[\[01141-91\]\]"\]$/m);
   assert.match(a, /^hasPart: \[/m);
   const dwg = byTitle(r.files, "01141-91").content; assert.match(dwg, /^type: Document$/m); assert.doesNotMatch(dwg, /## SysML v2/);
   // leading zeros survive
@@ -53,7 +53,7 @@ test("pinned child revision that is not the child's latest: flagConflict on the 
   const r = buildBom(parseDelimited(flatText), baseOpts);
   const parent = byTitle(r.files, "04270-001").content, child = byTitle(r.files, "04766").content;
   assert.match(parent, /\[!flagConflict\] Pins 04766 at an older revision/); assert.match(parent, /"-B99"/); assert.match(parent, /"-C99"/);
-  assert.match(child, /## Used at an older revision\n\n- \[\[04270-001 PCBA GREEN LED SMARTGUARD\]\] line 1 pins revision "-B99"/);
+  assert.match(child, /## Used at an older revision\n\n- \[\[04270-001\]\] line 1 pins revision "-B99"/);
   assert.match(child, /attribute revision = "-C99";/);                                    // latest wins the properties (BOM-007)
   assert.equal(r.summary.conflicts, 1);
 });

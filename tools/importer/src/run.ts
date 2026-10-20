@@ -84,7 +84,7 @@ export interface ImportResult {
   errors: ErrorRecord[];
 }
 
-interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout" }
+interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout"; conj?: boolean }
 interface Draft {
   key: string; o: EaObject; family: string; entry: ElementEntry; type: string; subtype: string; evidence: string[];
   title: string; uid: string; id: string; baseName: string; path: string; ownDir: string | null; parent: Draft | null; children: Draft[];
@@ -284,14 +284,18 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const want = kind === "PartUsage" ? Number(e.pdata1) || 0 : e.classifier;                      // IMP-011: the block comes from PDATA1
       const target = byObj.get(want);
       const okKind = kind === "PartUsage" ? "part def" : kind === "PortUsage" ? "port def" : "action def";
-      if (target && (target.keyword === okKind || (kind === "PortUsage" && target.keyword === "interface def"))) { ref.typeDraft = target; ref.typedBy = target.title; }
+      if (target && target.keyword === okKind) { ref.typeDraft = target; ref.typedBy = target.title; }
       else if (kind === "ActionUsage" && want === 0) { /* a plain step in an activity has no type; that is not a gap */ }
+      else if (kind === "PortUsage" && target?.keyword === "interface def") {                 // SysML v2 types a port by a port definition, never by an interface definition
+        diag = "UNRESOLVED_PORT_TYPE:TARGET_IS_INTERFACE_DEF"; owner.sourceLines.push(`- Port ${e.name || e.alias || e.id} is typed by interface [[${target.baseName}]]`);
+      }
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
     const name = scopeOf(owner).take(usageIdent(e.name || e.alias || ref.typeDraft?.title || "", `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
     ref.name = name;
-    if (kind === "PartUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
+    if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag
+    if (kind === "PartUsage" || kind === "PortUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
     owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
@@ -492,7 +496,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       }
     }
     const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
-      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })),
+      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}), ...(u.conj ? { conj: true } : {}) })),
       ...(reqText ? { doc: reqText } : {}), members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
