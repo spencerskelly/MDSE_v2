@@ -63,7 +63,7 @@ All five are TypeScript (GOV-002) and release together under one release manifes
 | `99_System/22_Views/` | `tools/base-vault/` (README only). Temporary Workbench views; Git-ignored; never model content (D-0023) |
 | `99_System/23_Saved_Views/` | `tools/base-vault/` (README only). Canvases the user saved; committed; never model content (D-0023) |
 | `.gitignore` | `tools/base-vault/`. Files that stay local: Obsidian workspace and per-user settings, plugin `data.json`, temporary views |
-| `.obsidian/` plugins and lock | `tools/base-vault/`, `tools/bootstrap/`, `tools/workbench/` builds |
+| `.obsidian/` plugins and lock | `tools/base-vault/`, `tools/bootstrap/`, `tools/workbench/` builds. Today only the Workbench is bundled (`plugin-lock.yaml` status PARTIAL). An existing vault is brought up to date by the importer's vault-update step (D-0024) |
 
 Methodology material (this repository's governance beyond the files above) never ships into a vault.
 

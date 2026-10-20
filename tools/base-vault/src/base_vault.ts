@@ -1,7 +1,8 @@
 /* Base Vault payload: the files a new vault starts with (ARCHITECTURE.md, "What ships into a vault").
  * Deterministic: same repository content and release give identical output. Text files only.
- * GAP: the pinned plugin binaries (Bootstrap, Workbench, Templater, Advanced Canvas, Obsidian Git) are not bundled yet.
- * plugin-lock.yaml says so; the vault opens and works as plain Markdown without them. */
+ * Bundled plugins: the Workbench (built from this repository). GAP: the pinned third-party plugins (Bootstrap, Templater,
+ * Advanced Canvas, Obsidian Git) are not bundled yet; plugin-lock.yaml says so and the vault works as plain Markdown without them. */
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -16,7 +17,20 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-export interface BaseVaultOptions { root: string; release: string; classes: Record<string, { prefix: string; subtype: string[] }> }
+/** A plugin built from this repository, shipped in `.obsidian/plugins/<id>/`. `files` maps file name to text. */
+export interface PluginPayload { id: string; version: string; files: Record<string, string> }
+export interface BaseVaultOptions { root: string; release: string; classes: Record<string, { prefix: string; subtype: string[] }>; plugins?: PluginPayload[] }
+/** The Workbench plugin as built by `npm run build:workbench` (tools/workbench/dist/plugin). Throws if it has not been built. */
+export function workbenchPayload(root: string): PluginPayload {
+  const dir = join(root, "tools/workbench/dist/plugin"), files: Record<string, string> = {};
+  for (const n of ["main.js", "manifest.json", "styles.css"]) {
+    try { files[n] = readFileSync(join(dir, n), "utf8"); } catch { throw new Error(`Workbench plugin not built (${dir}/${n}). Run: npm run build:workbench`); }
+  }
+  const m = JSON.parse(files["manifest.json"]!);
+  return { id: m.id, version: m.version, files };
+}
+export const NOT_BUNDLED_PLUGINS = ["bootstrap", "templater-obsidian", "advanced-canvas", "obsidian-git"];
+const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
   const files: Record<string, string> = {};
@@ -36,8 +50,15 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     `mdse_release: ${o.release}`, "schema: mdse-vault/0.1", ""].join("\n"));
   put(".obsidian/app.json", JSON.stringify({ alwaysUpdateLinks: true, newLinkFormat: "shortest", useMarkdownLinks: false, showFrontmatter: true, propertiesInDocument: "visible" }, null, 2) + "\n");
   put(".obsidian/core-plugins.json", JSON.stringify(["file-explorer", "global-search", "backlinks", "outgoing-links", "properties", "tag-pane", "outline", "templates", "bases"], null, 2) + "\n");
-  put(".obsidian/community-plugins.json", "[]\n");
-  put(".obsidian/plugin-lock.yaml", ["# Controlled plugin payload (MOD-146).", "status: NOT_BUNDLED", "note: Plugin binaries are not part of this build. The vault works as plain Markdown. Pinned versions and hashes arrive with the release manifest.", "plugins: []", ""].join("\n"));
+  const plugins = o.plugins ?? [];
+  put(".obsidian/community-plugins.json", JSON.stringify(plugins.map((p) => p.id), null, 2) + "\n");
+  for (const p of plugins) for (const [name, text] of Object.entries(p.files)) put(`.obsidian/plugins/${p.id}/${name}`, text);
+  put(".obsidian/plugin-lock.yaml", plugins.length ? [
+    "# Controlled plugin payload (MOD-146). Generated; do not edit.", "status: PARTIAL",
+    "note: Only the plugins under `plugins` are shipped, with SHA-256 of each file. The pinned third-party plugins under `not_bundled` are not part of this build; the vault works as plain Markdown without them.",
+    "plugins:", ...plugins.flatMap((p) => [`  - id: ${p.id}`, `    version: ${p.version}`, "    files:", ...Object.entries(p.files).sort(([a], [b]) => (a < b ? -1 : 1)).map(([n, x]) => `      ${n}: sha256:${sha(x.replace(/\r\n/g, "\n"))}`)]),
+    "not_bundled:", ...NOT_BUNDLED_PLUGINS.map((n) => `  - ${n}`), ""].join("\n")
+    : ["# Controlled plugin payload (MOD-146).", "status: NOT_BUNDLED", "note: Plugin binaries are not part of this build. The vault works as plain Markdown. Pinned versions and hashes arrive with the release manifest.", "plugins: []", ""].join("\n"));
 
   for (const [type, c] of Object.entries(o.classes)) {
     const sub = c.subtype.length ? `subtype: # one of: ${c.subtype.join(", ")}` : "subtype:";

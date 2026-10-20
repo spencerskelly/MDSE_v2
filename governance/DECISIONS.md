@@ -218,3 +218,11 @@ Rules: none edited. Caveat: if the vault is synced or committed while a preview 
 5. **Other decisions taken this session and recorded here:** "canvas" means an Obsidian Canvas file generated from a view profile; "table" means the Workbench tables with CSV export; a filtered note is hidden and not traversed through (a pass-through option is not built); a classifier groups notes at the same distance once more than N share a class (default 6); the AI instructions treat both view folders as pictures, not sources.
 
 Rules: none edited.
+
+## D-0024 — The importer can update an existing vault's configuration without a data source; the base vault bundles the Workbench
+
+2026-10-19 · Spencer · Accepted
+
+With a vault folder chosen and no source, the importer previews and applies a vault update: the Workbench plugin, schemas, templates, AI instructions and governed Obsidian settings are brought up to the importer's release. Nothing is written by the preview; nothing is deleted; notes, attachments, plugin `data.json` and workspace files are never read or changed. Per file class: AI, schemas, templates and `plugin-lock.yaml` are replaced when different with the old copy saved under `99_System/11_Import/Update <date>/Replaced/`; plugin builds are replaced; `community-plugins.json` and `core-plugins.json` gain the shipped entries and keep the user's; `app.json` has its governed keys set and keeps the rest; `.gitignore` gains missing lines; `.vault.yaml` keeps identity and updates `mdse_release` and `schema`; `README.md`, the view-folder READMEs and anything else are created if missing and never overwritten; malformed JSON is left alone and reported. A folder with no vault gets the whole base vault. A `Vault Update <date>.md` note records every change. The base vault now bundles the Workbench plugin and lists its SHA-256 in `plugin-lock.yaml` (status PARTIAL); the third-party plugins stay `not_bundled`. Because the importer embeds the Workbench build, `npm run build` builds the Workbench first.
+
+Rules: none edited. Open: whether a hand-edited template should block replacement instead of being saved aside (a locally-modified check needs a stored hash of each shipped file); replaced copies accumulate under `11_Import` until the user deletes them.

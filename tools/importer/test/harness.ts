@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import type { ReaderLike, RawRow } from "../src/ea_source.ts";
 import type { ImportOptions } from "../src/run.ts";
-import { buildBaseVault } from "../../base-vault/src/base_vault.ts";
+import { buildBaseVault, workbenchPayload } from "../../base-vault/src/base_vault.ts";
 
 export function sqliteReader(file: string): ReaderLike & { close(): void } {
   const db = new DatabaseSync(file, { readOnly: true });
@@ -24,7 +24,7 @@ export function defaultOptions(over: Partial<ImportOptions> = {}): ImportOptions
     authors: { authorMap: {}, fallbackCode: "skellyspencer", unmappedNames: ["", "7.1.0-2"] },
     omitRootPackages: ["Model", "IPC !"], vaultName: "Test Vault", releaseVersion: "0.0.0-dev", classes,
     mapping: json("governance/schemas/ea-family-mapping.json"),
-    baseFiles: buildBaseVault({ root: ROOT, release: "0.0.0-dev", classes }),
+    baseFiles: buildBaseVault({ root: ROOT, release: "0.0.0-dev", classes, plugins: [workbenchPayload(ROOT)] }),
     existing: null, preApproved: [], emitNative: true, ...over,
   };
 }

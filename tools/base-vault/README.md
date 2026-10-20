@@ -2,7 +2,7 @@
 
 Builds the Obsidian vault that users receive, and the release manifest that pins every tool, schema and plugin.
 
-**Rules:** RULESET.md section BAS. **State: minimal.** `src/base_vault.ts` produces `.vault.yaml`, minimal `.obsidian`, `99_System` AI/schema/template content and a README; the importer writes it when the output folder holds no vault. **Not yet built:** plugin payload and hashes (`plugin-lock.yaml` says `NOT_BUNDLED`), release manifest and release check.
+**Rules:** RULESET.md section BAS. **State: minimal; ships the Workbench plugin (0.5+) with hashes in `plugin-lock.yaml`, status PARTIAL.** `src/base_vault.ts` produces `.vault.yaml`, minimal `.obsidian`, `99_System` AI/schema/template content and a README; the importer writes it when the output folder holds no vault. **Not yet built:** the third-party plugin payload (Bootstrap, Templater, Advanced Canvas, Obsidian Git; listed under `not_bundled` in `plugin-lock.yaml`), release manifest and release check.
 
 ## Owns
 

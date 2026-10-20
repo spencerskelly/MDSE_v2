@@ -7,7 +7,8 @@ Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline 
 ## Run it
 
 - **Page:** `npm run build:workbench`, then open `tools/workbench/dist/mdse_workbench.html`. Choose "Open vault folder" (Chromium browsers), "Choose folder (any browser)", or "Open MDSE.zip", or drop a folder or zip on the page. Nothing leaves the browser.
-- **Obsidian:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
+- **Obsidian, new or existing vault:** the importer ships this plugin in the base vault and its "Update vault configuration" step installs or upgrades it in an existing vault without a data source (D-0024).
+- **Obsidian, by hand:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
 
 ## In Obsidian: table and canvas
 

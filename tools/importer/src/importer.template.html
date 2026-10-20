@@ -36,6 +36,11 @@ code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);
 <p class="mut" style="margin:8px 0 0">A chosen folder with no vault in it (no <code>.vault.yaml</code>, no <code>.obsidian</code>) receives the base vault together with the notes. A folder that already holds a vault is only added to; nothing is deleted.</p>
 <p id="genStatus" style="margin:8px 0 0"></p><div id="genOut"></div></section>
 
+<section class="card" aria-labelledby="h-upd"><h2 id="h-upd">4 · Update vault configuration (no source needed)</h2>
+<p class="mut" style="margin:0 0 8px">Choose a vault folder in step 2, then preview. Brings the Workbench plugin, schemas, templates, AI instructions and governed Obsidian settings up to this importer's release. Your notes, attachments, plugin settings (<code>data.json</code>), <code>README.md</code> and anything else of yours are not touched; <code>.gitignore</code>, the plugin lists and <code>.vault.yaml</code> are merged, not replaced; nothing is deleted. Replaced templates and schemas are copied aside first. A folder with no vault gets the base vault.</p>
+<div class="row"><button id="updPreview" class="alt" disabled>Preview vault update</button><button id="updApply" disabled>Apply vault update</button></div>
+<p id="updStatus" style="margin:8px 0 0"></p><div id="updOut"></div></section>
+
 <section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
 </main>
 <script>
@@ -110,7 +115,7 @@ async function walkDir(dir, prefix, out) {
 }
 const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
 let vaultFiles = null, vaultExists = false;
-function refreshButtons() { $("genNew").disabled = !source; $("genAdd").disabled = !(source && vaultHandle); }
+function refreshButtons() { $("genNew").disabled = !source; $("genAdd").disabled = !(source && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true; }
 $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
@@ -168,6 +173,32 @@ async function writeFile(root, path, text) {   // text is a string or a Uint8Arr
   for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
 }
+let pendingUpdate = null;
+async function readVaultFile(path) {
+  try { let dir = vaultHandle; const parts = path.split("/"); for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p); return await (await (await dir.getFileHandle(parts.at(-1))).getFile()).text(); } catch (_) { return null; }
+}
+$("updPreview").addEventListener("click", async () => {
+  try {
+    pendingUpdate = null; $("updApply").disabled = true; $("updStatus").textContent = "Comparing…"; $("updOut").innerHTML = "";
+    const res = await planVaultUpdate({ base: BASEVAULT, read: readVaultFile, runDate: localIso() });
+    const s = res.summary, shown = res.rows.filter((r) => r.action !== "same");
+    $("updOut").innerHTML = `<p>${s.add} to add · ${s.replace} to replace · ${s.merge} to merge · ${s.same} already current · ${s.left} of yours left alone</p>` +
+      (shown.length ? "<table><tr><th>File</th><th>Action</th><th>Why</th></tr>" + shown.map((r) => `<tr><td><code>${esc(r.path)}</code></td><td class="${r.action === "left" ? "mut" : r.action === "replace" ? "warn" : ""}">${r.action}</td><td>${esc(r.reason)}</td></tr>`).join("") + "</table>" : "");
+    log(`vault update preview for ${vaultHandle.name}: ${JSON.stringify(s)}`);
+    if (res.status === "NO_CHANGES") { $("updStatus").innerHTML = '<span class=ok>Vault configuration is already current. Nothing to do.</span>'; return; }
+    pendingUpdate = res; $("updApply").disabled = false; $("updStatus").innerHTML = `Ready: ${res.files.length} file(s) would be written (including ${s.backups} saved copy/copies and an update note). Nothing has been written yet.`;
+  } catch (e) { reportFailure(e, "preview vault update"); }
+});
+$("updApply").addEventListener("click", async () => {
+  if (!pendingUpdate) return;
+  try {
+    const res = pendingUpdate;
+    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("updStatus").textContent = "Cancelled."; return; }
+    for (const f of res.files) await writeFile(vaultHandle, f.path, f.bytes || f.content);
+    pendingUpdate = null; $("updApply").disabled = true;
+    $("updStatus").innerHTML = `<span class=ok>Updated: wrote ${res.files.length} file(s). Reload Obsidian (or the plugin) to use the new Workbench.</span>`; log(`vault update applied: ${res.files.length} files`);
+  } catch (e) { reportFailure(e, "apply vault update"); }
+});
 $("genAdd").addEventListener("click", async () => {
   try {
     const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
