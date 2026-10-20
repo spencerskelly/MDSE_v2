@@ -262,7 +262,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.name) body.push(l.name, "");
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
     files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
-      relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), flags, sourceLines: [...head, ...srcLines], sysml }) });
+      relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), flags, sourceLines: [...head, ...srcLines], sysml,
+      ...(isDoc ? {} : { sourceRole: "authoritative-model", primarySymbol: `${inf.id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}` }) }) });
   }
 
   // EA <-> BOM join on part number: a report only, nothing is corrected on either side (BOM-004). The EA key is not settled, so

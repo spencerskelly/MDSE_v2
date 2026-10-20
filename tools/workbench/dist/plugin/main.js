@@ -1161,7 +1161,7 @@ function toCanvas(ix            , start        , profile         , spec         
  * (D-0003); a new note gets uid, id, status and the SysML block, nothing else. */
 
 
-                                                                                                   
+                                                                                                                                                                                                                 
                                                                                
                                                                                                  
                                          
@@ -1935,6 +1935,369 @@ function edSpecOfMember(ix            , ownerPath        , head        )        
   return null;
 }
 
+/* merge_ops.ts */
+/* Alias and merge (D-0034). Two notes that describe the same part are first joined by an alias (`aliasOf` on the note that
+ * will go away, pointing at the note that stays), reviewed, and then merged: one note per part holding both notes' content.
+ * Pure functions over the vault's text; the Obsidian shell shows the preview and applies it (WKB-006). Nothing here uses
+ * the index for the content of a merge, only for names, so a batch can merge many notes into the same one. */
+
+
+
+
+
+
+const mgBad = (problem        )           => ({ summary: "", writes: [], problems: [problem] });
+const MG_CORE = new Set(["type", "subtype", "id", "uid", "status", "eaType", "tags", "sourceRole", "primarySymbol"]);
+const MG_GENERIC = new Set(["", "part"]);
+const mgEsc = (s        )         => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const mgBase = (target        )         => (target.trim().replace(/\.md$/i, "").split("/").pop() ?? "").trim();
+
+/* ---- reading a note into its parts --------------------------------------------------------------------------- */
+                                               
+                                                                                                                                      
+function mgRead(text        )                {
+  const crlf = text.includes("\r\n"), norm = text.replace(/\r\n/g, "\n");
+  let n;
+  try { n = MDSE.parse(norm); } catch { return null; }
+  const fm         = [];
+  for (const line of norm.slice(4, n.fmBlockEnd).split("\n")) {
+    const m = /^([A-Za-z][\w-]*):/.exec(line);
+    if (m) fm.push({ key: m[1] , lines: [line] }); else if (fm.length) fm[fm.length - 1] .lines.push(line);
+  }
+  const managed = n.h2.filter(([, h]                  ) => h === MDSE.SOURCE_HEADING || h === MDSE.SYSML_HEADING);
+  const cut = managed.length ? managed[0][0] : norm.length;
+  let src                  = null;
+  const at = n.h2.findIndex(([, h]                  ) => h === MDSE.SOURCE_HEADING);
+  if (at >= 0) {
+    const from = n.h2[at][0] + n.h2[at][1].length, stop = at + 1 < n.h2.length ? n.h2[at + 1][0] : norm.length;
+    src = norm.slice(from, stop).split("\n"); while (src.length && !src[0] .trim()) src.shift(); while (src.length && !src[src.length - 1] .trim()) src.pop();
+  }
+  return { fm, meta: n.meta, zone: norm.slice(n.fmEnd, cut).replace(/\s+$/, ""), src, block: MDSE.extractSysml(norm)                 , crlf };
+}
+/** The user zone split into the text, its `## Aliases` bullets and its `## Former ids` bullets. */
+function mgZone(zone        )                                                        {
+  const main           = [], aliases           = [], former           = [];
+  let into = main;
+  for (const line of zone.split("\n")) {
+    if (/^## Aliases\s*$/.test(line)) { into = aliases; continue; }
+    if (/^## Former ids\s*$/.test(line)) { into = former; continue; }
+    if (/^## /.test(line)) into = main;
+    if (into !== main && !line.trim()) continue;
+    into.push(line);
+  }
+  return { main: main.join("\n").replace(/\s+$/, ""), aliases, former };
+}
+const mgWithoutTitle = (main        )         => main.replace(/^# .*(\n|$)/, "").replace(/^\n+/, "").replace(/\s+$/, "");
+const mgTitle = (main        , fallback        )         => /^# (.*)$/m.exec(main)?.[1]?.trim() || fallback;
+
+/* ---- links ---------------------------------------------------------------------------------------------------- */
+/** Rewrites `[[Absorbed]]` to the survivor. In the text the old name stays as the shown text; in frontmatter lists it does not. */
+function mgRewriteLinks(text        , map                     , display                     , yaml         )         {
+  if (!map.size) return text;
+  return text.replace(/(!?)\[\[([^\]|#\n]+)((?:#[^\]|\n]*)?)(?:\|([^\]\n]*))?\]\]/g, (all, bang        , target        , head        , alt                    ) => {
+    const key = mgBase(target).toLowerCase(), to = map.get(key);
+    if (to === undefined) return all;
+    const shown = alt ?? (yaml ? "" : display.get(key) ?? "");
+    return `${bang}[[${to}${head}${shown && shown !== to ? "|" + shown : ""}]]`;
+  });
+}
+function mgRewriteSymbols(block        , map                     )         {
+  if (!map.size) return block;
+  const re = new RegExp(`(?<![\\w:.])(${[...map.keys()].map(mgEsc).join("|")})(?![\\w])`, "g");
+  return block.replace(re, (m) => map.get(m) ?? m);
+}
+
+/* ---- aliases -------------------------------------------------------------------------------------------------- */
+                                                                                                                    
+/** Notes that carry `aliasOf`, with the note it points at (null when that note is not in the vault). */
+function mgAliasPairs(ix            )              {
+  const out              = [];
+  for (const n of ix.notes.values()) {
+    const l = n.links.find((x) => x.field === "aliasOf");
+    if (l) out.push({ absorbed: n.path, survivor: ix.byName.get(l.target.toLowerCase()) ?? null, target: l.target });
+  }
+  return out.sort((a, b) => a.absorbed.localeCompare(b.absorbed));
+}
+/** Follows aliasOf to the note that stays. Returns a problem text for a loop or a dangling target. */
+function mgRoots(ix            , pairs             )                               {
+  const next = new Map(pairs.map((p) => [p.absorbed, p.survivor]));
+  const out = new Map                ();
+  for (const p of pairs) {
+    let cur = p.absorbed; const seen = new Set        ();
+    while (next.has(cur)) {
+      if (seen.has(cur)) return `Aliases of "${ix.notes.get(p.absorbed)?.title}" loop back on themselves.`;
+      seen.add(cur); const to = next.get(cur);
+      if (!to) return `"${ix.notes.get(cur)?.title}" is an alias of "${pairs.find((x) => x.absorbed === cur)?.target}", which is not in the vault.`;
+      cur = to;
+    }
+    out.set(p.absorbed, cur);
+  }
+  return out;
+}
+
+const mgSetAlias = (text        , target               )         => {
+  const nl = text.includes("\r\n") ? "\r\n" : "\n", n = MDSE.parse(text.replace(/\r\n/g, "\n"));
+  const lines = n.text.slice(4, n.fmBlockEnd).split("\n").filter(Boolean), keep           = [];
+  for (let i = 0; i < lines.length; i++) { if (/^aliasOf:/.test(lines[i] )) { while (i + 1 < lines.length && /^(\s+|- )/.test(lines[i + 1] )) i++; continue; } keep.push(lines[i] ); }
+  if (target !== null) keep.push(`aliasOf: [${JSON.stringify(`[[${target}]]`)}]`);
+  return (`---\n${keep.join("\n")}\n---\n` + n.text.slice(n.fmEnd)).replace(/\n/g, nl);
+};
+
+function planAliasMark(ix            , files                     , absorbedPath        , survivorPath        )           {
+  const a = ix.notes.get(absorbedPath), s = ix.notes.get(survivorPath), text = files.get(absorbedPath);
+  if (!a || !s || text === undefined) return mgBad("Both notes must be in the vault.");
+  if (a.path === s.path) return mgBad("A note cannot be an alias of itself.");
+  if (a.type !== s.type) return mgBad(`"${a.title}" is a ${a.type} and "${s.title}" is a ${s.type}; only notes of the same class are merged.`);
+  if (a.type !== "Object") return mgBad("Alias and merge are for Object notes (parts).");
+  const have = a.links.find((x) => x.field === "aliasOf");
+  if (have && ix.byName.get(have.target.toLowerCase()) === s.path) return mgBad("Nothing to change: it is already an alias of that note.");
+  if (have) return mgBad(`"${a.title}" is already an alias of "${have.target}". Clear that first.`);
+  const roots = mgRoots(ix, [...mgAliasPairs(ix), { absorbed: a.path, survivor: s.path, target: s.name }]);
+  if (typeof roots === "string") return mgBad(roots);
+  return { summary: `"${a.title}" is the same part as "${s.title}": ${a.title} will be merged into ${s.title}.`, writes: [{ path: a.path, before: text, after: mgSetAlias(text, s.name) }], problems: [] };
+}
+function planAliasClear(ix            , files                     , absorbedPath        )           {
+  const a = ix.notes.get(absorbedPath), text = files.get(absorbedPath);
+  if (!a || text === undefined || !a.links.some((x) => x.field === "aliasOf")) return mgBad("That note has no alias.");
+  return { summary: `Clear the alias on "${a.title}".`, writes: [{ path: a.path, before: text, after: mgSetAlias(text, null) }], problems: [] };
+}
+/** Many aliases at once (from the suggestions). Each pair is checked alone and against the ones before it. */
+function planAliasMarkMany(ix            , files                     , pairs                                               )           {
+  const writes              = [], problems           = [], working = new Map(files), seen = new Set        ();
+  const known = mgAliasPairs(ix);
+  for (const p of pairs) {
+    if (seen.has(p.absorbed)) { problems.push(`"${ix.notes.get(p.absorbed)?.title}" appears twice.`); continue; }
+    seen.add(p.absorbed);
+    const one = planAliasMark(ix, working, p.absorbed, p.survivor);
+    if (one.problems.length) { problems.push(one.problems[0] ); continue; }
+    const w = one.writes[0] ; working.set(w.path, w.after); writes.push(w);
+    known.push({ absorbed: p.absorbed, survivor: p.survivor, target: ix.notes.get(p.survivor) .name });
+  }
+  const roots = mgRoots(ix, known);
+  if (typeof roots === "string") problems.push(roots);
+  if (problems.length) return { summary: "", writes: [], problems };
+  return { summary: `Mark ${writes.length} alias${writes.length === 1 ? "" : "es"}.`, writes, problems: [] };
+}
+
+/* ---- matching: which EA notes are the BOM parts ---------------------------------------------------------------- */
+                                                                                                                                                               
+const MG_PN_LINE = /^- (?:PN|Part ?Number|Part number):\s*(.+?)\s*$/;
+const mgTokens = (s        )           => (s.toLowerCase().match(/[a-z0-9][a-z0-9._-]*[a-z0-9]|[a-z0-9]/g) ?? []);
+const mgPnKey = (s        )         => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** BOM part notes (`- BOM Part Number:`) against the other Object notes: by the EA part number, by the number inside the title, by a close name. */
+function mgSuggest(ix            )                 {
+  const bom                                               = [], ea         = [];
+  const taken = new Set(mgAliasPairs(ix).flatMap((p) => [p.absorbed]));
+  for (const n of ix.notes.values()) {
+    if (n.type !== "Object") continue;
+    const pn = n.sourceLines.map((l) => /^- BOM Part Number:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean);
+    if (pn) bom.push({ n, pn, name: n.sourceLines.map((l) => /^- Name:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean) ?? "" });
+    else if (!taken.has(n.path)) ea.push(n);
+  }
+  const byPn = new Map                (), byTok = new Map                (), tokensOf = new Map                     ();
+  const add = (m                     , k        , n      )       => { const l = m.get(k); if (l) { if (!l.includes(n)) l.push(n); } else m.set(k, [n]); };
+  for (const n of ea) {
+    for (const l of n.sourceLines) { const v = MG_PN_LINE.exec(l)?.[1]; if (v) add(byPn, mgPnKey(v), n); }
+    const toks = new Set(mgTokens(n.title)); tokensOf.set(n.path, toks);
+    for (const t of toks) add(byTok, t, n);
+  }
+  const out                 = [];
+  const claims = new Map                ();
+  for (const b of bom) {
+    const cands = new Map                                                                         ();
+    for (const n of byPn.get(mgPnKey(b.pn)) ?? []) cands.set(n.path, { path: n.path, level: "pn", score: 1 });
+    for (const n of byTok.get(b.pn.toLowerCase()) ?? []) if (!cands.has(n.path)) cands.set(n.path, { path: n.path, level: "title", score: 0.9 });
+    if (!cands.size && b.name) {
+      const bt = new Set(mgTokens(b.name)), pool = new Map                ();
+      for (const t of bt) if ((byTok.get(t)?.length ?? 0) <= 25) for (const n of byTok.get(t) ?? []) pool.set(n.path, (pool.get(n.path) ?? 0) + 1);
+      for (const [path, hit] of pool) {
+        const et = tokensOf.get(path) , uni = new Set([...bt, ...et]).size, score = hit / uni;
+        if (hit >= 2 && score >= 0.6) cands.set(path, { path, level: "name", score: Math.round(score * 100) / 100 });
+      }
+    }
+    const list = [...cands.values()].sort((x, y) => y.score - x.score).slice(0, 5);
+    if (list.length) out.push({ survivor: b.n.path, pn: b.pn, candidates: list, confident: false });
+    for (const c of list.slice(0, 1)) claims.set(c.path, (claims.get(c.path) ?? 0) + 1);
+  }
+  for (const s of out) { const c = s.candidates; s.confident = (c.length === 1 && c[0] .level !== "name") || (c.length > 1 && c[0] .level === "pn" && c[1] .level !== "pn"); if (s.confident && (claims.get(c[0] .path) ?? 0) > 1) s.confident = false; }
+  return out.sort((x, y) => Number(y.confident) - Number(x.confident) || x.pn.localeCompare(y.pn));
+}
+
+/* ---- merging two blocks ------------------------------------------------------------------------------------------ */
+const mgNorm = (s        )         => s.replace(/\s+/g, " ").trim();
+                                                                                                 
+function mgMergeBlocks(sBlock        , aBlock        )                   {
+  const S = scanSysml(sBlock), A = scanSysml(aBlock);
+  if (S.defs.length !== 1 || A.defs.length !== 1) return "Notes with more than one definition are not merged yet.";
+  if (S.warnings.length || A.warnings.length) return "A SysML block has statements the scanner does not read; fix it first.";
+  const sd = S.defs[0] , ad = A.defs[0] ;
+  if (sd.keyword !== ad.keyword) return `The two definitions are different kinds (${sd.keyword}, ${ad.keyword}).`;
+  const rename = new Map([[ad.symbol, sd.symbol]]);
+  let block = sBlock, carried = 0;
+  const notCarried           = [], specialized           = [];
+  const sAt = edFindDef(sBlock, sd.keyword, sd.name), aAt = edFindDef(aBlock, ad.keyword, ad.name);
+  const sMems = sAt?.open ? edMembers(sBlock, sAt.term + 1, sAt.close) : [], aMems = aAt?.open ? edMembers(aBlock, aAt.term + 1, aAt.close) : [];
+  const sHeads = new Set(sMems.map((m) => mgNorm(m.head))), sFull = new Map(sMems.map((m) => [mgNorm(m.head), mgNorm(sBlock.slice(m.start, m.end))]));
+  const sAttr = new Map(sMems.map((m) => [/^attribute\s+(\w+)\s*=/.exec(m.head)?.[1] ?? "", m]).filter(([k]) => k)                                           );
+  const sNames = new Set(sd.usages.map((u) => u.name));
+  for (const m of aMems) {
+    const raw = aBlock.slice(m.start, m.end), text = mgRewriteSymbols(raw, rename), head = mgNorm(mgRewriteSymbols(m.head, rename));
+    const isDoc = /^doc\b/.test(m.head);
+    const usage = ad.usages.find((u) => u.head === m.head);
+    const attr = /^attribute\s+(\w+)\s*=/.exec(m.head)?.[1];
+    if (isDoc) { if (sMems.some((x) => /^doc\b/.test(x.head))) { if (!sHeads.has(head)) notCarried.push(text); continue; } }
+    else if (sHeads.has(head)) { if (sFull.get(head) !== mgNorm(text)) notCarried.push(text); continue; }
+    else if (usage && sNames.has(usage.name)) { notCarried.push(text); continue; }
+    else if (attr && sAttr.has(attr)) { notCarried.push(text); continue; }
+    const next = edInsert(block, sd, text);
+    if (next === null) return `Could not find "${sd.keyword} ${sd.name}" in the surviving block.`;
+    block = next; carried++;
+  }
+  for (const sym of ad.specializes) {
+    const t = rename.get(sym) ?? sym;
+    if (t === sd.symbol || sd.specializes.includes(t) || specialized.includes(t)) continue;
+    const at = edFindDef(block, sd.keyword, sd.name);
+    if (!at) return `Could not find "${sd.keyword} ${sd.name}" in the surviving block.`;
+    const rest = block.slice(at.nameEnd, at.headEnd);
+    block = /:>/.test(rest) ? block.slice(0, at.headEnd).replace(/\s*$/, "") + `, ${t}` + (at.open ? " " : "") + block.slice(at.headEnd) : block.slice(0, at.nameEnd) + ` :> ${t}` + block.slice(at.nameEnd);
+    specialized.push(t);
+  }
+  const check = scanSysml(block);
+  if (check.warnings.length) return `The merged block does not scan clean: ${check.warnings[0]}`;
+  return { block, carried, notCarried, specialized };
+}
+
+/* ---- merging frontmatter ------------------------------------------------------------------------------------------ */
+const mgLinks = (lines          )           => [...lines.join("\n").matchAll(/\[\[([^\]|#\n]+)/g)].map((m) => m[1] .trim());
+function mgMergeFrontmatter(s        , a        , names                     , survName        , notes          , symbol        )           {
+  const out           = [];
+  const rel = (f        ) => f.filter((x) => !MG_CORE.has(x.key) && x.key !== "aliasOf");
+  const merged = new Map                  ();
+  for (const f of [...rel(s.fm), ...rel(a.fm)]) {
+    const cur = merged.get(f.key) ?? [];
+    for (const l of mgLinks(f.lines)) {
+      const to = names.get(mgBase(l).toLowerCase()) ?? mgBase(l);
+      if (to.toLowerCase() !== survName.toLowerCase() && !cur.some((x) => x.toLowerCase() === to.toLowerCase())) cur.push(to);
+    }
+    merged.set(f.key, cur);
+  }
+  const done = new Set        ();
+  const lacksSymbol = !s.fm.some((x) => x.key === "primarySymbol");
+  for (const f of s.fm) {
+    if (f.key === "aliasOf") continue;
+    if (MG_CORE.has(f.key)) {
+      if (f.key === "subtype" && MG_GENERIC.has(s.meta.subtype ?? "") && !MG_GENERIC.has(a.meta.subtype ?? "")) { out.push(`subtype: ${a.meta.subtype}`); notes.push(`subtype ${s.meta.subtype || "(none)"} -> ${a.meta.subtype}`); continue; }
+      if (f.key === "eaType" && s.meta.eaType === "BOM" && a.meta.eaType && a.meta.eaType !== "BOM") { out.push(`eaType: ${a.fm.find((x) => x.key === "eaType") .lines[0] .replace(/^eaType:\s*/, "")}`); continue; }
+      if (f.key === "tags") {
+        const t = (x        )                  => { const m = /^\[(.*)\]\s*$/.exec((x.meta.tags ?? "").trim()); return m ? m[1] .split(",").map((y) => y.trim()).filter(Boolean) : null; };
+        const ts = t(s), ta = t(a);
+        if (ts && ta) { out.push(`tags: [${[...new Set([...ts, ...ta])].join(", ")}]`); continue; }
+        if (!ts || !ta) { if (ta && ta.length) notes.push("tags of the merged note were not combined (not a simple list)"); }
+      }
+      if (f.key === "status" && s.meta.status !== a.meta.status) notes.push(`status ${a.meta.status} kept as ${s.meta.status}`);
+      out.push(...f.lines);
+      if (f.key === "tags" && lacksSymbol && symbol) out.push("sourceRole: authoritative-model", `primarySymbol: ${symbol}`);          // an older BOM note had none
+      continue;
+    }
+    const l = merged.get(f.key);
+    if (l && l.length) out.push(`${f.key}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
+    done.add(f.key);
+  }
+  for (const [k, l] of merged) if (!done.has(k) && l.length) out.push(`${k}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
+  return out;
+}
+
+/* ---- the merge ------------------------------------------------------------------------------------------------------- */
+                                                                                                                 
+/** Merges every absorbed note into its survivor (the end of its alias chain) and rewrites the links and symbols that named it. */
+function planNoteMerge(ix            , files                     , pairs              )              {
+  const fail = (p        )              => ({ ...mgBad(p), merged: 0, carried: 0, notCarried: 0, rewritten: 0 });
+  const list = pairs ?? mgAliasPairs(ix);
+  if (!list.length) return fail("There are no aliases to merge.");
+  const roots = mgRoots(ix, mgAliasPairs(ix));
+  if (typeof roots === "string") return fail(roots);
+  const abs = list.map((p) => p.absorbed), surv = new Set        ();
+  for (const a of abs) {
+    const s = roots.get(a) , an = ix.notes.get(a), sn = ix.notes.get(s);
+    if (!an || !sn) return fail("Both notes must be in the vault.");
+    if (an.type !== sn.type) return fail(`"${an.title}" and "${sn.title}" are different classes.`);
+    if (abs.includes(s)) return fail(`"${sn.title}" is merged away in the same batch.`);
+    surv.add(s);
+  }
+  const work = new Map                (), notes           = [];
+  let carried = 0, notCarried = 0;
+  const nameMap = new Map                (), display = new Map                (), symMap = new Map                ();
+  for (const a of abs) {
+    const an = ix.notes.get(a) , sn = ix.notes.get(roots.get(a) ) ;
+    nameMap.set(an.name.toLowerCase(), sn.name); display.set(an.name.toLowerCase(), an.title);
+    if (an.def && sn.def) symMap.set(an.def.symbol, sn.def.symbol);
+  }
+  /* one merged text per survivor, absorbed notes folded in one at a time */
+  for (const s of surv) {
+    let text = files.get(s) ;
+    const sn = ix.notes.get(s) ;
+    for (const a of abs.filter((x) => roots.get(x) === s)) {
+      const at = files.get(a) , an = ix.notes.get(a) ;
+      const S = mgRead(text), A = mgRead(at);
+      if (!S || !A) return fail(`"${an.title}" or "${sn.title}" does not have readable frontmatter.`);
+      if (S.meta.type !== A.meta.type) return fail(`"${an.title}" and "${sn.title}" are different classes.`);
+      let block = S.block, extra = "";
+      if (A.block !== null) {
+        if (S.block === null) return fail(`"${sn.title}" has no SysML block to merge "${an.title}" into. Keep "${an.title}" instead.`);
+        const r = mgMergeBlocks(S.block, A.block);
+        if (typeof r === "string") return fail(`${an.title} into ${sn.title}: ${r}`);
+        block = r.block; carried += r.carried; notCarried += r.notCarried.length;
+        if (r.notCarried.length) extra = `## Not carried over from ${an.title}\n\nThe surviving note already had these with a different value. Decide which to keep.\n\n\`\`\`sysml\n${r.notCarried.join("\n")}\n\`\`\``;
+      }
+      const sz = mgZone(S.zone), az = mgZone(A.zone);
+      const aTitle = mgTitle(az.main, an.title), sTitle = mgTitle(sz.main, sn.title), aBody = mgWithoutTitle(az.main);
+      const zoneParts = [sz.main];
+      if (aBody && !sz.main.includes(aBody)) zoneParts.push(`## Merged from ${aTitle}\n\n${aBody}`);
+      if (extra) zoneParts.push(extra);
+      const aliases = [...new Set([...sz.aliases, ...az.aliases, ...(aTitle.toLowerCase() !== sTitle.toLowerCase() ? [`- ${aTitle}`] : [])])];
+      const former = [...new Set([...sz.former, ...az.former, `- ${A.meta.id} (uid ${A.meta.uid})`])];
+      if (aliases.length) zoneParts.push(`## Aliases\n\n${aliases.join("\n")}`);
+      zoneParts.push(`## Former ids\n\n${former.join("\n")}`);
+      const fm = mgMergeFrontmatter(S, A, nameMap, sn.name, notes, block !== null ? scanSysml(block).defs[0]?.symbol ?? "" : "");
+      const srcLines = S.src || A.src ? [...new Set([...(S.src ?? []), ...(A.src ?? [])])] : null;
+      let out = `---\n${fm.join("\n")}\n---\n${zoneParts.filter(Boolean).join("\n\n")}`;
+      if (srcLines) out += `\n\n\n\n${MDSE.SOURCE_HEADING}\n\n${srcLines.join("\n")}\n`;
+      if (block !== null) out += (srcLines ? "\n" : "\n\n\n\n") + MDSE.renderSysmlSection(block);
+      else out += "\n";
+      text = S.crlf ? out.replace(/\n/g, "\r\n") : out;
+    }
+    work.set(s, text);
+  }
+  /* every other note: links and symbols that named an absorbed note now name the survivor */
+  const writes              = [];
+  let rewritten = 0;
+  const nameRe = new RegExp(`\\[\\[\\s*(?:[^\\]|#\\n]*/)?(?:${[...nameMap.keys()].map(mgEsc).join("|")})(?:\\.md)?\\s*[#|\\]]`, "i");
+  const symRe = symMap.size ? new RegExp(`(?<![\\w:.])(?:${[...symMap.keys()].map(mgEsc).join("|")})(?![\\w])`) : null;
+  for (const [path, before] of files) {
+    if (abs.includes(path)) continue;
+    let text = work.get(path) ?? before;
+    const hit = nameRe.test(text) || (symRe !== null && symRe.test(text));
+    if (hit) {
+      const cut = text.search(/^## SysML v2\s*$/m), headEnd = cut < 0 ? text.length : cut;
+      const fmEnd = text.indexOf("\n---", 3), head = text.slice(0, headEnd), tail = text.slice(headEnd);
+      const fmPart = fmEnd >= 0 ? head.slice(0, fmEnd + 4) : "", rest = head.slice(fmPart.length);
+      text = mgRewriteLinks(fmPart, nameMap, display, true) + mgRewriteLinks(rest, nameMap, display, false) + tail;
+      if (symRe) { const blk = MDSE.extractSysml(text)                 ; if (blk !== null) { const nb = mgRewriteSymbols(blk, symMap); if (nb !== blk) text = MDSE.replaceSysmlBlock(text, nb); } }
+    }
+    if (text !== before) { writes.push({ path, before, after: text }); if (!work.has(path)) rewritten++; }
+  }
+  for (const [path, after] of work) {
+    const t = after; const before = files.get(path) ;
+    const i = writes.findIndex((w) => w.path === path);
+    const final = i >= 0 ? writes[i] .after : t;
+    if (i >= 0) writes[i] = { path, before, after: final }; else writes.push({ path, before, after: final });
+  }
+  for (const a of abs) writes.push({ path: a, before: files.get(a) , after: "", remove: true });
+  void notes;
+  return { summary: `Merge ${abs.length} note${abs.length === 1 ? "" : "s"} into ${surv.size}: ${[...surv].slice(0, 3).map((s) => ix.notes.get(s) .title).join(", ")}${surv.size > 3 ? "…" : ""}. ${carried} SysML member${carried === 1 ? "" : "s"} carried over${notCarried ? `, ${notCarried} kept apart for review` : ""}; links and references updated in ${rewritten} other note${rewritten === 1 ? "" : "s"}.`,
+    writes, problems: [], merged: abs.length, carried, notCarried, rewritten };
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -1974,6 +2337,10 @@ const ED_HELP                         = {
   fItem: { title: "Item carried", what: "What moves in the flow, written `flow of Current from … to …`.", options: ["Optional. An item definition.", "A warning shows if it differs from the feature's own type."], note: "Flow" },
   fFlow: { title: "Flow", what: "Something moves from an out feature to an in feature, through connected ports. The check follows conjugation: the output of a ~port is an in.", options: ["From: an out or inout feature.", "To: an in or inout feature."], note: "Flow" },
   bind: { title: "Binding", what: "Two features are the same value: `bind a.x = b.y;`. Use it to pass a value through a part boundary.", options: ["No direction. A warning shows if the two types differ."], note: "Binding connector" },
+  alias: { title: "Alias (same part)", what: "Marks one note as the same part as another. Nothing is merged yet: the alias is a line in the note's header that you can review and clear.", options: ["Written as `aliasOf` on the note that will go away.", "Merge turns every alias into one note per part."] },
+  mergeKeep: { title: "Which note stays", what: "The note that stays keeps its file name, id, uid and SysML package. The other note's content is folded into it and its file is removed.", options: ["Usually the BOM note, because its file name is the part number.", "Links and references to the removed note are rewritten to the one that stays; its old name is kept as an alias.", "The removed note's id and uid are listed under Former ids."] },
+  mergeAll: { title: "Merge", what: "Combines each aliased pair into one note: header fields, text, Source lines and SysML members. Anything both notes say differently is kept apart under a heading for you to decide, never overwritten.", options: ["You see the changed files before anything is written.", "Undo brings the removed notes back."] },
+  suggest: { title: "Find matches", what: "Looks for EA notes that are the same part as a BOM part. Confident matches are the EA part number (PN) equal to the BOM number, or the number inside the EA name, with one candidate only.", options: ["PN: the EA part number line equals the BOM number.", "Name has number: the BOM number appears in the EA title.", "Close name: similar words only; never selected for you."] },
   doc: { title: "Description", what: "Free text that explains why this relationship exists. Written as a doc comment inside it.", options: ["Plain words; no limit."], note: "Documentation" },
   custom: { title: "Other attribute", what: "A name and a value you define that the list does not offer, written as an attribute inside the relationship.", options: ["Name: letters, digits, underscore.", "Value: a number or text. Anything else is stored as a comment."], note: "Attribute usage" },
   target: { title: "Target", what: "The other end of the relationship. Changing it re-points the relationship; nothing else moves.", options: ["Only notes allowed for this kind are listed."] },
@@ -2462,6 +2829,7 @@ function mountWorkbench(root             , host       = {})      {
 const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
+const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, planNoteMerge };
 
                     
                                
@@ -2489,7 +2857,7 @@ const EDIT_STYLE = `
 
 `;
 
-                                                         
+                                                                   
 const SAVED                                                      = { mode: "manage", ref: null, stale: false };
 /** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
 function markEditStale()       { SAVED.stale = true; }
@@ -2504,7 +2872,7 @@ function editView(c         )              {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box                                        ).mdRefresh = ()       => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh                      = null;                                 // redraws only a list, never a form being filled
@@ -2518,11 +2886,15 @@ function editView(c         )              {
     if (!p) return;
     if (p.problems.length) { previewBox.append(h("div", { class: "callout flagConflict" }, h("b", {}, "Not possible"), ...p.problems.map((x) => h("div", {}, x)))); return; }
     previewBox.append(h("div", { class: "mut", style: "font-size:12px" }, p.summary));
-    for (const w of p.writes) {
+    const SHOWN = 8, big = p.writes.filter((w) => !w.remove).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove);
+    for (const w of big) {
       const d = ED.edDiff(w.before, w.after);
       previewBox.append(h("div", { class: "mut", style: "font-size:11.5px;margin-top:4px" }, (w.before === null ? "New file: " : "Changes: ") + w.path),
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
+    const rest = p.writes.filter((w) => !w.remove).length - big.length;
+    if (rest > 0) previewBox.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, `… and ${rest} more changed file${rest === 1 ? "" : "s"}, shown when you apply (Undo restores them all).`));
+    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} removed after merging`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
     applyRow.append(h("button", { class: "sm pri", onclick: async (e       ) => {
       const b = e.target                     ; b.disabled = true; SAVED.stale = true;
       try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
@@ -2707,6 +3079,67 @@ function editView(c         )              {
     return v;
   }
 
+
+  /* ---- alias and merge (D-0034) ---- */
+  const MERGE_SAVED = { found: null                            , pick: new Set        (), keep: "other" };
+  function mergeView()              {
+    const v = h("div", {});
+    const title = (p        )         => ix.notes.get(p)?.title ?? p;
+    /* aliases waiting to be merged */
+    const aliasBox = h("div", {}), drawAliases = ()       => {
+      aliasBox.replaceChildren();
+      const pairs = MG.mgAliasPairs(ix);
+      aliasBox.append(h("div", { style: "margin-top:4px" }, h("b", {}, "Aliases"), helpBtn("alias"), " ", h("span", { class: "mut" }, `${pairs.length} waiting`)));
+      if (!pairs.length) { aliasBox.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet. Mark a note as the same part as another, or find matches below.")); return; }
+      aliasBox.append(h("table", { class: "rl" }, h("tbody", {}, ...pairs.slice(0, 200).map((p) => h("tr", {}, h("td", {}, h("a", { href: "#", class: "lnk", onclick: (e       ) => { e.preventDefault(); c.open(p.absorbed); } }, title(p.absorbed)), " → ",
+        p.survivor ? h("a", { href: "#", class: "lnk", onclick: (e       ) => { e.preventDefault(); c.open(p.survivor ); } }, title(p.survivor)) : h("span", { class: "mut" }, p.target + " (not in vault)")),
+        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p])) }, "Merge"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
+      if (pairs.length > 200) aliasBox.append(h("div", { class: "mut", style: "font-size:12px" }, `… and ${pairs.length - 200} more (Merge all covers them).`));
+      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length})`), helpBtn("mergeAll")));
+    };
+    listRefresh = ()       => { if (SAVED.mode === "merge") drawAliases(); };
+    drawAliases();
+    v.append(aliasBox);
+    /* mark the open note */
+    if (from && from.type === "Object") {
+      let other              = null;
+      const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e       ) => { MERGE_SAVED.keep = (e.target                     ).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
+      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from .path);
+      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, "").el);
+      v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
+        h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+          if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
+          showPlan(MERGE_SAVED.keep === "other" ? MG.planAliasMark(ix, host.files(), from .path, other.path) : MG.planAliasMark(ix, host.files(), other.path, from .path));
+        } }, "Preview alias")));
+    }
+    /* matches between BOM parts and EA notes */
+    const found = h("div", {});
+    const drawFound = ()       => {
+      found.replaceChildren();
+      const list = MERGE_SAVED.found;
+      if (!list) return;
+      if (!list.length) { found.append(h("div", { class: "empty", style: "padding:6px 0" }, "No BOM part matches an EA note by part number or name.")); return; }
+      const lab                         = { pn: "PN", title: "name has number", name: "close name" };
+      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones become aliases.`),
+        h("table", { class: "rl" }, h("tbody", {}, ...list.slice(0, 300).map((s) => {
+          const top = s.candidates[0] , key = s.survivor + "|" + top.path;
+          return h("tr", {}, h("td", {}, h("input", { type: "checkbox", "aria-label": `Alias ${title(top.path)}`, checked: MERGE_SAVED.pick.has(key), onchange: (e       ) => { if ((e.target                    ).checked) MERGE_SAVED.pick.add(key); else MERGE_SAVED.pick.delete(key); showPlan(null); } })),
+            h("td", {}, h("b", {}, s.pn), " ", h("span", { class: "mut" }, title(s.survivor))), h("td", {}, "→ ", title(top.path), s.candidates.length > 1 ? h("span", { class: "mut" }, ` (+${s.candidates.length - 1} more)`) : null),
+            h("td", {}, h("span", { class: "tag k" }, lab[top.level] ?? top.level)));
+        }))),
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => {
+          const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s , absorbed: a  }));
+          showPlan(pairs.length ? MG.planAliasMarkMany(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
+        } }, "Mark ticked as aliases")));
+    };
+    v.append(h("div", { style: "margin-top:10px" }, h("b", {}, "BOM parts and EA notes"), helpBtn("suggest")),
+      h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+        const s = MG.mgSuggest(ix); MERGE_SAVED.found = s; MERGE_SAVED.pick = new Set(s.filter((x) => x.confident).map((x) => x.survivor + "|" + x.candidates[0] .path)); drawFound(); showPlan(null);
+      } }, "Find matches")), found, previewBox, applyRow);
+    drawFound();
+    return v;
+  }
+
   /* ---- add element ---- */
   function elemView()              {
     const kinds = ED.edElementKinds(host.classes());
@@ -2819,9 +3252,9 @@ function editView(c         )              {
 
   function render()       {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "elem", "text"]          )[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "text"]          )[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "elem" ? elemView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : textView());
   }
   void plan;
   render();
@@ -3291,20 +3724,31 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /* ---- Edit lens (D-0030): apply a previewed plan; every file is checked against what the preview was built from ---- */
-  async applyPlan(plan                                                                                                                )                                                            {
+  async applyPlan(plan                                                                                                                                  )                                                            {
     if (plan.problems.length || !plan.writes.length) throw new Error(plan.problems[0] ?? "Nothing to write.");
-    const done                                                                = [];
+    const done                                                                                  = [];
     const back = async ()                => {
       for (const w of done.reverse()) {
+        if ((w                        ).remove) { await restoreRemoved(w); continue; }
         const f = this.app.vault.getAbstractFileByPath(w.path);
         if (!f) continue;
         if (w.before === null) await this.app.vault.delete(f); else await this.app.vault.process(f, () => w.before);
         if (w.before === null) this.files.delete(w.path); else this.files.set(w.path, w.before);
       }
     };
+    const restoreRemoved = async (w                                         )                => {          // a removed file comes back
+      if (this.app.vault.getAbstractFileByPath(w.path)) return;
+      await ensureFolder(this.app, w.path.includes("/") ? w.path.slice(0, w.path.lastIndexOf("/")) : "");
+      await this.app.vault.create(w.path, w.before ?? ""); this.files.set(w.path, w.before ?? "");
+    };
     try {
       for (const w of plan.writes) {
-        if (w.before === null) {
+        if ((w                        ).remove) {
+          const f = this.app.vault.getAbstractFileByPath(w.path);
+          if (!f) throw new Error(`${w.path} is gone. Preview again.`);
+          if ((await this.app.vault.read(f)) !== w.before) throw new Error(`"${w.path}" changed since the preview. Preview again.`);
+          await this.app.vault.delete(f); this.files.delete(w.path);
+        } else if (w.before === null) {
           if (this.app.vault.getAbstractFileByPath(w.path)) throw new Error(`${w.path} already exists. Preview again.`);
           await ensureFolder(this.app, w.path.includes("/") ? w.path.slice(0, w.path.lastIndexOf("/")) : "");
           await this.app.vault.create(w.path, w.after);
@@ -3313,7 +3757,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
           if (!f) throw new Error(`${w.path} is gone. Preview again.`);
           await this.app.vault.process(f, (cur        ) => { if (cur !== w.before) throw new Error(`"${w.path}" changed since the preview. Preview again.`); return w.after; });
         }
-        this.files.set(w.path, w.after); done.push(w);
+        if (!(w                        ).remove) this.files.set(w.path, w.after);
+        done.push(w);
       }
     } catch (e) { await back(); this.laterRebuild(200); throw e; }
     this.laterRebuild(200);
@@ -3321,6 +3766,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const undo = async ()                  => {
       for (const w of applied) {
         const f = this.app.vault.getAbstractFileByPath(w.path);
+        if ((w                        ).remove) { if (f) throw new Error(`"${w.path}" exists again; not undone.`); continue; }
         if (!f) continue;
         const cur = await this.app.vault.read(f);
         if (cur !== w.after) throw new Error(`"${w.path}" changed since; not undone.`);

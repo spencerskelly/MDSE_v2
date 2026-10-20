@@ -5,7 +5,7 @@
 import MDSE from "../../core/src/mdse_core.js";
 import type { ModelIndex, Note } from "./index.ts";
 
-export interface EditWrite { path: string; /** null = a new file */ before: string | null; after: string }
+export interface EditWrite { path: string; /** null = a new file */ before: string | null; after: string; /** the file is deleted (merge); `before` is what it held, so the undo can bring it back */ remove?: boolean }
 export interface EditPlan { summary: string; writes: EditWrite[]; problems: string[] }
 export interface EdClass { prefix: string; subtype: string[]; prefixBySubtype?: Record<string, string> }
 export type EdClasses = Record<string, EdClass>;

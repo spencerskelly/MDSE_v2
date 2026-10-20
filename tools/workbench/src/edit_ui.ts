@@ -8,6 +8,7 @@ import { incoming, outgoing } from "./index.ts";
 import * as ED from "./edit.ts";
 import * as RL from "./edit_rel.ts";
 import * as PT from "./edit_port.ts";
+import * as MG from "./merge_ops.ts";
 import { ED_HELP } from "./edit_help.ts";
 
 export interface EditHost {
@@ -36,7 +37,7 @@ export const EDIT_STYLE = `
 
 `;
 
-type Mode = "manage" | "rel" | "ports" | "elem" | "text";
+type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text";
 const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean } = { mode: "manage", ref: null, stale: false };
 /** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
 export function markEditStale(): void { SAVED.stale = true; }
@@ -51,7 +52,7 @@ export function editView(c: EditCtx): HTMLElement {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m: Mode): void => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["elem", "Add element"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box as unknown as { mdRefresh: () => void }).mdRefresh = (): void => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh: (() => void) | null = null;                                 // redraws only a list, never a form being filled
@@ -65,11 +66,15 @@ export function editView(c: EditCtx): HTMLElement {
     if (!p) return;
     if (p.problems.length) { previewBox.append(h("div", { class: "callout flagConflict" }, h("b", {}, "Not possible"), ...p.problems.map((x) => h("div", {}, x)))); return; }
     previewBox.append(h("div", { class: "mut", style: "font-size:12px" }, p.summary));
-    for (const w of p.writes) {
+    const SHOWN = 8, big = p.writes.filter((w) => !w.remove).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove);
+    for (const w of big) {
       const d = ED.edDiff(w.before, w.after);
       previewBox.append(h("div", { class: "mut", style: "font-size:11.5px;margin-top:4px" }, (w.before === null ? "New file: " : "Changes: ") + w.path),
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
+    const rest = p.writes.filter((w) => !w.remove).length - big.length;
+    if (rest > 0) previewBox.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, `… and ${rest} more changed file${rest === 1 ? "" : "s"}, shown when you apply (Undo restores them all).`));
+    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} removed after merging`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
     applyRow.append(h("button", { class: "sm pri", onclick: async (e: Event) => {
       const b = e.target as HTMLButtonElement; b.disabled = true; SAVED.stale = true;
       try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
@@ -254,6 +259,67 @@ export function editView(c: EditCtx): HTMLElement {
     return v;
   }
 
+
+  /* ---- alias and merge (D-0034) ---- */
+  const MERGE_SAVED = { found: null as MG.MgSuggestion[] | null, pick: new Set<string>(), keep: "other" };
+  function mergeView(): HTMLElement {
+    const v = h("div", {});
+    const title = (p: string): string => ix.notes.get(p)?.title ?? p;
+    /* aliases waiting to be merged */
+    const aliasBox = h("div", {}), drawAliases = (): void => {
+      aliasBox.replaceChildren();
+      const pairs = MG.mgAliasPairs(ix);
+      aliasBox.append(h("div", { style: "margin-top:4px" }, h("b", {}, "Aliases"), helpBtn("alias"), " ", h("span", { class: "mut" }, `${pairs.length} waiting`)));
+      if (!pairs.length) { aliasBox.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet. Mark a note as the same part as another, or find matches below.")); return; }
+      aliasBox.append(h("table", { class: "rl" }, h("tbody", {}, ...pairs.slice(0, 200).map((p) => h("tr", {}, h("td", {}, h("a", { href: "#", class: "lnk", onclick: (e: Event) => { e.preventDefault(); c.open(p.absorbed); } }, title(p.absorbed)), " → ",
+        p.survivor ? h("a", { href: "#", class: "lnk", onclick: (e: Event) => { e.preventDefault(); c.open(p.survivor!); } }, title(p.survivor)) : h("span", { class: "mut" }, p.target + " (not in vault)")),
+        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p])) }, "Merge"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
+      if (pairs.length > 200) aliasBox.append(h("div", { class: "mut", style: "font-size:12px" }, `… and ${pairs.length - 200} more (Merge all covers them).`));
+      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length})`), helpBtn("mergeAll")));
+    };
+    listRefresh = (): void => { if (SAVED.mode === "merge") drawAliases(); };
+    drawAliases();
+    v.append(aliasBox);
+    /* mark the open note */
+    if (from && from.type === "Object") {
+      let other: Note | null = null;
+      const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e: Event) => { MERGE_SAVED.keep = (e.target as HTMLSelectElement).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
+      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from!.path);
+      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, "").el);
+      v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
+        h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+          if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
+          showPlan(MERGE_SAVED.keep === "other" ? MG.planAliasMark(ix, host.files(), from!.path, other.path) : MG.planAliasMark(ix, host.files(), other.path, from!.path));
+        } }, "Preview alias")));
+    }
+    /* matches between BOM parts and EA notes */
+    const found = h("div", {});
+    const drawFound = (): void => {
+      found.replaceChildren();
+      const list = MERGE_SAVED.found;
+      if (!list) return;
+      if (!list.length) { found.append(h("div", { class: "empty", style: "padding:6px 0" }, "No BOM part matches an EA note by part number or name.")); return; }
+      const lab: Record<string, string> = { pn: "PN", title: "name has number", name: "close name" };
+      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones become aliases.`),
+        h("table", { class: "rl" }, h("tbody", {}, ...list.slice(0, 300).map((s) => {
+          const top = s.candidates[0]!, key = s.survivor + "|" + top.path;
+          return h("tr", {}, h("td", {}, h("input", { type: "checkbox", "aria-label": `Alias ${title(top.path)}`, checked: MERGE_SAVED.pick.has(key), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) MERGE_SAVED.pick.add(key); else MERGE_SAVED.pick.delete(key); showPlan(null); } })),
+            h("td", {}, h("b", {}, s.pn), " ", h("span", { class: "mut" }, title(s.survivor))), h("td", {}, "→ ", title(top.path), s.candidates.length > 1 ? h("span", { class: "mut" }, ` (+${s.candidates.length - 1} more)`) : null),
+            h("td", {}, h("span", { class: "tag k" }, lab[top.level] ?? top.level)));
+        }))),
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => {
+          const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s!, absorbed: a! }));
+          showPlan(pairs.length ? MG.planAliasMarkMany(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
+        } }, "Mark ticked as aliases")));
+    };
+    v.append(h("div", { style: "margin-top:10px" }, h("b", {}, "BOM parts and EA notes"), helpBtn("suggest")),
+      h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+        const s = MG.mgSuggest(ix); MERGE_SAVED.found = s; MERGE_SAVED.pick = new Set(s.filter((x) => x.confident).map((x) => x.survivor + "|" + x.candidates[0]!.path)); drawFound(); showPlan(null);
+      } }, "Find matches")), found, previewBox, applyRow);
+    drawFound();
+    return v;
+  }
+
   /* ---- add element ---- */
   function elemView(): HTMLElement {
     const kinds = ED.edElementKinds(host.classes());
@@ -366,9 +432,9 @@ export function editView(c: EditCtx): HTMLElement {
 
   function render(): void {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "elem", "text"] as Mode[])[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "text"] as Mode[])[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "elem" ? elemView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : textView());
   }
   void plan;
   render();

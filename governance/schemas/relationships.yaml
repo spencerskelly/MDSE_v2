@@ -37,7 +37,9 @@ oneWay:
 - {field: participants, from: [Use Case], to: [Object, Actor, Behavior, Document]}
 - {field: initialState, from: [Condition], to: [Condition]}
 - {field: finalState, from: [Condition], to: [Condition]}
+- {field: aliasOf, from: [Object], to: [Object]}
 guidance:
+  aliasOf: 'aliasOf is one-way and temporary: the note it is written on is the same part as the note it points at and is waiting to be merged into it (D-0034). The merge removes the note, so no inverse is written.'
   hasState: 'hasState/stateOf: an Object or state-machine Condition may own Condition notes representing states/state machines. Subtype rules determine the precise semantic pairing.'
   states: 'initialState and finalState are one-way, written on a Condition subtype state machine and pointing at Condition subtype state records. finalState may hold several values.'
   affects: 'affects/affectedBy: the source has an impact on a target that exists anyway, good or bad (for example an Issue or Failure Mode on the element it harms, or normal use in a Use Case on the parts it loads or wears); written on the source, affectedBy generated. drives is different: the target exists or happens because of the source. To design against an impact, prefer Use Case drives Requirement, applied to the element (W-284).'

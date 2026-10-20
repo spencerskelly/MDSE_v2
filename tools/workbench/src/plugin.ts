@@ -261,20 +261,31 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /* ---- Edit lens (D-0030): apply a previewed plan; every file is checked against what the preview was built from ---- */
-  async applyPlan(plan: { summary: string; writes: Array<{ path: string; before: string | null; after: string }>; problems: string[] }): Promise<{ message: string; undo: () => Promise<string> }> {
+  async applyPlan(plan: { summary: string; writes: Array<{ path: string; before: string | null; after: string; remove?: boolean }>; problems: string[] }): Promise<{ message: string; undo: () => Promise<string> }> {
     if (plan.problems.length || !plan.writes.length) throw new Error(plan.problems[0] ?? "Nothing to write.");
-    const done: Array<{ path: string; before: string | null; after: string }> = [];
+    const done: Array<{ path: string; before: string | null; after: string; remove?: boolean }> = [];
     const back = async (): Promise<void> => {
       for (const w of done.reverse()) {
+        if ((w as { remove?: boolean }).remove) { await restoreRemoved(w); continue; }
         const f = this.app.vault.getAbstractFileByPath(w.path);
         if (!f) continue;
         if (w.before === null) await this.app.vault.delete(f); else await this.app.vault.process(f, () => w.before);
         if (w.before === null) this.files.delete(w.path); else this.files.set(w.path, w.before);
       }
     };
+    const restoreRemoved = async (w: { path: string; before: string | null }): Promise<void> => {          // a removed file comes back
+      if (this.app.vault.getAbstractFileByPath(w.path)) return;
+      await ensureFolder(this.app, w.path.includes("/") ? w.path.slice(0, w.path.lastIndexOf("/")) : "");
+      await this.app.vault.create(w.path, w.before ?? ""); this.files.set(w.path, w.before ?? "");
+    };
     try {
       for (const w of plan.writes) {
-        if (w.before === null) {
+        if ((w as { remove?: boolean }).remove) {
+          const f = this.app.vault.getAbstractFileByPath(w.path);
+          if (!f) throw new Error(`${w.path} is gone. Preview again.`);
+          if ((await this.app.vault.read(f)) !== w.before) throw new Error(`"${w.path}" changed since the preview. Preview again.`);
+          await this.app.vault.delete(f); this.files.delete(w.path);
+        } else if (w.before === null) {
           if (this.app.vault.getAbstractFileByPath(w.path)) throw new Error(`${w.path} already exists. Preview again.`);
           await ensureFolder(this.app, w.path.includes("/") ? w.path.slice(0, w.path.lastIndexOf("/")) : "");
           await this.app.vault.create(w.path, w.after);
@@ -283,7 +294,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
           if (!f) throw new Error(`${w.path} is gone. Preview again.`);
           await this.app.vault.process(f, (cur: string) => { if (cur !== w.before) throw new Error(`"${w.path}" changed since the preview. Preview again.`); return w.after; });
         }
-        this.files.set(w.path, w.after); done.push(w);
+        if (!(w as { remove?: boolean }).remove) this.files.set(w.path, w.after);
+        done.push(w);
       }
     } catch (e) { await back(); this.laterRebuild(200); throw e; }
     this.laterRebuild(200);
@@ -291,6 +303,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const undo = async (): Promise<string> => {
       for (const w of applied) {
         const f = this.app.vault.getAbstractFileByPath(w.path);
+        if ((w as { remove?: boolean }).remove) { if (f) throw new Error(`"${w.path}" exists again; not undone.`); continue; }
         if (!f) continue;
         const cur = await this.app.vault.read(f);
         if (cur !== w.after) throw new Error(`"${w.path}" changed since; not undone.`);

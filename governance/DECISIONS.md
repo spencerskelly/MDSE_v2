@@ -338,3 +338,15 @@ Rules: IMP-099, IMP-100, BAS-012, BOO-007, BOO-008, BOM-015, BOM-016, BOM-017.
 5. **Not yet.** InformationFlow to `flow of Signal from a.x to b.y` (needs the conveyed items from t_xref, layout unverified); attributes from t_attribute; the assembly merge tool (alias, then merge); dependency kind as real metadata instead of a comment tag.
 
 Rules: IMP-101, WKB-014, WKB-015, WKB-016, BOM-016.
+
+## D-0034 — Alias, then merge (one note per part)
+
+2026-10-20 · Spencer · Accepted
+
+1. **Two steps.** A note that is the same part as another is first marked `aliasOf` the one that stays (MOD-167). Merge acts only on aliases, so each match is reviewed before anything is combined.
+2. **Finding matches.** The EA part number line (`- PN:` / `- Part Number:`) equal to the BOM number; then the BOM number inside the EA title; then a close name (never pre-ticked). Only a single candidate, not claimed by another BOM part, is ticked. Hundreds of parts become one reviewed batch plus a manual remainder (WKB-017).
+3. **Merge.** The BOM note stays by default, because its file name is the part number. Content is combined without loss (WKB-018): conflicts are kept apart under a heading, the removed id and uid are under Former ids, and every link and SysML symbol that named the removed note is rewritten (WKB-019). Undo restores the removed notes.
+4. **Generic and specific parts.** Merge is for an EA element that is the part. An EA element that is a generic design a part number realizes stays separate; use Specializes (the part number's definition specializes the generic one).
+5. **Not yet.** Re-importing EA after a merge: the removed note's uid is only in Former ids, so the importer would see a new element. Canvases that show a removed note are not updated. Notes with more than one definition are refused. Matching when the EA part number is absent and the name differs is manual.
+
+Rules: MOD-167, WKB-017, WKB-018, WKB-019.

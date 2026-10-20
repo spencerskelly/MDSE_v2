@@ -317,6 +317,56 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_merge_tab_finds_matches_marks_aliases_merges_and_undoes(self):
+        notes = {f"10_Model/{q.name}": q.read_text() for q in (ROOT / "testing/fixtures/charger-merge").glob("*.md")}
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 1000})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
+            pg.wait_for_selector("header >> text=CHG-1")
+            pg.click("button[role=tab]:has-text('Edit')")
+            pg.click(".mded .tabs button:has-text('Merge')")
+
+            # the EA part number matches the BOM number: a confident match, ticked for us
+            pg.click("button:has-text('Find matches')")
+            pg.wait_for_selector("tr:has-text('CHG-1'):has-text('Charger'):has-text('PN')")
+            self.assertTrue(pg.locator("input[aria-label='Alias Charger']").is_checked())
+            pg.click("button:has-text('Mark ticked as aliases')")
+            pg.wait_for_selector(".diff .add:has-text('aliasOf')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /aliasOf: \\[\"\\[\\[CHG-1\\]\\]\"\\]/.test(window.__notes[p])", arg="10_Model/Charger.md")
+
+            # the pair is listed; merging shows what is removed, then writes it
+            pg.wait_for_selector("table.rl tr:has-text('Charger'):has-text('CHG-1') button:has-text('Merge')")
+            pg.click("table.rl tr:has-text('Charger') button:has-text('Merge')")
+            pg.wait_for_selector(".callout:has-text('removed after merging')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("() => !('10_Model/Charger.md' in window.__notes)")
+            merged = pg.evaluate("p => window.__notes[p]", "10_Model/CHG-1.md")
+            self.assertIn("port dcOut : OBJ_00001::DcPort;", merged)
+            self.assertIn("## Former ids", merged)
+            station = pg.evaluate("p => window.__notes[p]", "10_Model/Station.md")
+            self.assertIn("[[CHG-1|Charger]]", station)
+            self.assertIn("part charger : OBJ_00003::P_CHG_1;", station)
+
+            # undo brings the removed note and every rewritten link back
+            pg.click("button:has-text('Undo')")
+            pg.wait_for_function("() => '10_Model/Charger.md' in window.__notes")
+            self.assertIn("[[Charger]]", pg.evaluate("p => window.__notes[p]", "10_Model/Station.md"))
+            b.close()
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()
