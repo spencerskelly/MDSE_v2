@@ -3,10 +3,10 @@
  * every vault string goes in as text. The only writes are the two Review actions the host performs (D-0025). */
 import { h, STYLE, csvCell, download } from "./ui.ts";
 import type { Child } from "./ui.ts";
-import type { ModelIndex, Note } from "./index.ts";
+import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
-import { editView, EDIT_STYLE } from "./edit_ui.ts";
+import { editView, setEditRef, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
 export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
@@ -22,11 +22,15 @@ export interface PanelHost {
   hasPreview?(): boolean;
   /** Editing (D-0030). Absent = the Edit lens is hidden. */
   edit?: EditHost;
+  /** From a table in the main window: open this relationship in the panel's Edit lens. */
+  editRelationship?(ref: EdgeRef): void;
 }
 export interface PanelApp {
   setIndex(ix: ModelIndex | null, loading?: string): void;
   select(path: string): void;
   setLens(lens: V.Lens): void;
+  /** Open the Edit lens on one relationship (from a table row or a canvas line). */
+  editRelationship(ref: EdgeRef): void;
   lens(): V.Lens; selected(): string; destroy(): void;
 }
 
@@ -64,9 +68,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (c === undefined) return "";
     if (typeof c === "string") return c;
     if (Array.isArray(c)) return c.length ? h("div", { class: "cellist" }, ...c.map((x) => link(x.path, x.text))) : "";
+    if (c.action) { const ref = c.action; return host.edit || host.editRelationship ? h("button", { class: "sm", title: "Change, add properties to, or remove this relationship", onclick: () => (compact ? openEditor(ref) : host.editRelationship?.(ref)) }, c.text) : ""; }
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
+  function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
   function tableView(t: V.TableData): HTMLElement {
     const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}, h("h3", {}, t.title));
@@ -75,7 +82,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const shown = t.rows.slice(0, CAP);
     box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
     if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
-    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
+    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return box;
   }
 
@@ -157,7 +164,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
-    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; draw(); } }, label)));
+    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; if (k !== "edit") editEl = null; draw(); } }, label)));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
@@ -173,7 +180,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
-      else if (lens === "edit" && host.edit) body.append(editView({ ix, sel, host: host.edit, done: (m, u) => { msg = m; undo = u; draw(); }, open: (p) => host.openNote(p) }));
+      else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
     wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
@@ -181,9 +188,10 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; draw(); },
+    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) return; draw(); },
+    editRelationship(ref) { openEditor(ref); },
     select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
-    setLens(l) { lens = l; draw(); },
+    setLens(l) { lens = l; editEl = null; draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { wrap.remove(); style.remove(); },
   };

@@ -341,8 +341,10 @@ function relations(h        , add                      , isDef = false)       {
  * statements the importer writes, and keeps anything else as `raw` so nothing is silently dropped. Conformance is the
  * pinned parser's job (the parser gate), not this file's. */
 
-                                                                                          
-                                                                                                                                                                                                                                  
+/** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
+                                              
+                                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
                                                                                                                                    
 
@@ -351,7 +353,7 @@ function relations(h        , add                      , isDef = false)       {
 function stripComments(src        )         {
   // `// word` after a semicolon is a kind tag (the importer's dependency kinds); other comments are dropped.
   return src.replace(/\/\*[\s\S]*?\*\//g, " ").split("\n").map((l) => {
-    const m = /^(.*?;)\s*\/\/\s*([A-Za-z]+)\s*$/.exec(l);
+    const m = /^(.*?[;}])\s*\/\/\s*([A-Za-z]+)\s*$/.exec(l);
     if (m) return `${m[1]} @${m[2]}`;
     const i = l.indexOf("//");
     return i >= 0 ? l.slice(0, i) : l;
@@ -365,7 +367,7 @@ function parseItems(s        , start        , close         )                   
     const h = head.replace(/\s+/g, " ").trim();
     let tag = "";
     const m = /^\s*@([A-Za-z]+)/.exec(s.slice(i));
-    if (m && endsWithSemi) { tag = m[1] ; i += m[0].length; }
+    if (m && (endsWithSemi || body)) { tag = m[1] ; i += m[0].length; }
     if (h || body) items.push({ head: h, body, tag });
     head = "";
   };
@@ -381,13 +383,28 @@ function parseItems(s        , start        , close         )                   
 }
 
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
-const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?$/;
+const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?((?:\s+(?:ordered|nonunique))*)$/;
 const QN = "([A-Za-z_][\\w:.]*)";
 
 function interpret(it      , d            )       {
+  const nu = d.usages.length, ns = d.stmts.length;
   const handled = interpretOne(it, d);
   if (!handled) { if (it.head) d.raw.push(it.head); return; }
-  if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) interpret(c, d);          // nested members of any construct
+  const rec                                               = d.usages.length > nu ? d.usages[d.usages.length - 1] : d.stmts.length > ns ? d.stmts[d.stmts.length - 1] : undefined;
+  if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) {
+    if (rec) {                                                                         // properties of a usage or statement are kept on it, not as usages of the definition (D-0031)
+      const dm = /^doc ~D(\d+)$/.exec(c.head);
+      if (dm) { rec.doc = docText(c.head); for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); continue; }
+      const am = /^attribute\s+([A-Za-z_]\w*)\s*(?:=\s*(.*))?$/.exec(c.head);
+      if (am) {
+        const sub = c.body?.find((x) => /^doc ~D\d+$/.test(x.head)), raw = (am[2] ?? "").trim();
+        (rec.props ??= []).push({ name: am[1] , value: sub ? docText(sub.head) : raw.replace(/^"(.*)"$/, "$1") });
+        for (const i of classify("attribute x")) if (!d.langs.includes(i)) d.langs.push(i);
+        continue;
+      }
+    }
+    interpret(c, d);                                                                   // nested members of any construct
+  }
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
@@ -404,7 +421,7 @@ function interpretOne(it      , d            )          {
     for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1] , text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
-  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2] .replace("ref ", ""), name: m[3] , ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}) }); return true; }
+  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2] .replace("ref ", ""), name: m[3] , ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}), head: h, ...(m[6]?.trim() ? { mods: m[6].trim().split(/\s+/) } : {}) }); return true; }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1] , ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return true; }
@@ -465,7 +482,9 @@ function scanSysml(block        )             {
                                                                     
  
 /** `reverse` marks an edge whose SOURCE could not be resolved: `from` is the resolved end (the target), `toSymbol` is the unresolved source. */
-                                                                                                                                                           
+/** Where an edge is written, so it can be changed or removed (D-0031): the note that holds the SysML text and the member inside it. */
+                                                                                           
+                                                                                                                                                                          
                                                     
 
                       
@@ -517,11 +536,13 @@ function resolveAll(ix            )       {
   for (const n of ix.notes.values()) {
     const d = n.def;
     if (d) {
+      let ref                     ;
       const E = (kind        , target               , symbol        , label = "", detail = "", from = n.path)       =>
-        link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail });
-      for (const s of d.specializes) E("specializes", sym(s), s);
-      for (const u of d.usages) if (u.type) E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`);
+        link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
+      for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`); }
       for (const s of d.stmts) {
+        ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a  : s.text };
         if (s.kind === "satisfy") E("satisfies", sym(s.a ), s.a );
         else if (s.kind === "verify") E("verifies", sym(s.a ), s.a );
         else if (s.kind === "perform") E("performs", sym(s.b ), s.b , s.name ?? "");
@@ -530,7 +551,7 @@ function resolveAll(ix            )       {
         else if (s.kind === "allocate" || s.kind === "dependency") {
           const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a ), b = sym(s.b );
           if (a) E(kind, b, s.b , "", "", a);                                              // source known: normal edge, target may dangle
-          else if (b) link(ix, { from: b, to: null, toSymbol: s.a , kind, label: "", via: "sysml", detail: "", reverse: true });   // source missing: never a self-loop
+          else if (b) link(ix, { from: b, to: null, toSymbol: s.a , kind, label: "", via: "sysml", detail: "", reverse: true, ref });   // source missing: never a self-loop
           else E(kind, null, s.b , "", "", n.path);
         }
       }
@@ -842,7 +863,7 @@ function tableRows(ix            , f              = {})             {
   return rows;
 }
 
-                                                                                                                                                            
+                                                                                                                                                                           
 function relationshipRows(ix            , kinds           = [], text = "")           {
   const q = text.toLowerCase();
   const rows           = [];
@@ -850,8 +871,8 @@ function relationshipRows(ix            , kinds           = [], text = "")      
     if (kinds.length && !kinds.includes(e.kind)) continue;
     const fromTitle = e.reverse ? e.toSymbol : nm(ix, e.from, e.from), toTitle = e.reverse ? nm(ix, e.from, e.from) : e.to ? nm(ix, e.to, e.to) : e.toSymbol;
     if (q && !`${fromTitle} ${toTitle} ${e.kind} ${e.label}`.toLowerCase().includes(q)) continue;
-    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false }
-      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
+    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false, ...(e.ref ? { ref: e.ref } : {}) }
+      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to, ...(e.ref ? { ref: e.ref } : {}) });
   }
   return rows;
 }
@@ -944,7 +965,7 @@ const LENS_PROFILE                       = { dashboard: "Everything", note: "Eve
 const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
 const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit";
 
-                                                                   
+                                                                                                                                                   
                                         
                                                                                                                                                                                        
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
@@ -990,7 +1011,7 @@ function lensTables(ix            , lens      , sel        , o              = {}
       out.push({ id: "usages", title: n ? `Usages in ${n.title}` : "Usages", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "mult", label: "Multiplicity" }], rows: u.map((x) => ({ kind: (x.dir ? x.dir + " " : "") + x.kind, name: x.name, type: x.type ? ({ text: ix.bySymbol.get(x.type) ? nm(ix, ix.bySymbol.get(x.type) , x.type) : x.type + " (not in vault)", path: ix.bySymbol.get(x.type) ?? null }        ) : { text: "untyped", cls: "gap" }        , mult: x.mult ?? "" })), empty: n ? "No usages." : "Select a note." });
     } else {
       const rows = relationshipRows(ix, [], o.text ?? "").filter((r) => !sel || scope === "all" || r.from === sel || r.to === sel);
-      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }], rows: rows.map((r) => ({ from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" }         : { text: r.fromTitle, path: r.from }        , kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to }         : { text: r.toTitle + " (not in vault)", cls: "gap" }        , label: r.label })), empty: "No relationships." });
+      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }, { key: "edit", label: "" }], rows: rows.map((r) => ({ edit: r.ref ? { text: "Edit", action: r.ref }         : "", from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" }         : { text: r.fromTitle, path: r.from }        , kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to }         : { text: r.toTitle + " (not in vault)", cls: "gap" }        , label: r.label })), empty: "No relationships." });
     }
   }
   return out;
@@ -1004,6 +1025,13 @@ function lensTables(ix            , lens      , sel        , o              = {}
 
 
 
+/** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
+const EDGE_REF_SEP = "~r~";
+function edgeRefOfId(id        )                 {
+  const i = id.indexOf(EDGE_REF_SEP);
+  if (i < 0) return null;
+  try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r            : null; } catch { return null; }
+}
                                                                                                                                                              
                                                                                                                                                                                                                  
                                                                 
@@ -1072,7 +1100,7 @@ function toCanvas(ix            , start        , profile         , spec         
     b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
   const push = (from        , to        , e      )       => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   };
   for (const e of g.edges) push(id.get(e.from) , id.get(e.to ) , e);
   for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
@@ -1369,6 +1397,266 @@ function edDiff(before               , after        )                           
   let ea = a.length, eb = b.length; while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
   return { removed: a.slice(s, ea), added: b.slice(s, eb) };
 }
+
+/* edit_rel.ts */
+/* Change and remove relationships, and their properties (D-0031). A relationship is a member of a note's `## SysML v2`
+ * block (a usage, a statement, a `:>` entry or a `verify` line); the index gives each edge an EdgeRef naming the note and
+ * the member. These functions read the member back into a form, validate a changed form, and produce an EditPlan. */
+
+
+
+
+
+const relBad = (problem        )           => ({ summary: "", writes: [], problems: [problem] });
+
+/* ---- members of a definition body ---------------------------------------------------------------------------- */
+                                                                                                                 
+/** The members directly inside s[from, to): each runs to its `;`, its matching `}` or the end of its `doc` comment, plus a trailing `// tag`. */
+function edMembers(s        , from        , to        )          {
+  const out          = [];
+  let i = from;
+  while (i < to) {
+    while (i < to && /\s/.test(s[i] )) i++;
+    if (i >= to) break;
+    if (s[i] === "/" && s[i + 1] === "/") { const e = s.indexOf("\n", i); i = e < 0 ? to : e + 1; continue; }
+    if (s[i] === "/" && s[i + 1] === "*") { const e = s.indexOf("*/", i + 2); i = e < 0 ? to : e + 2; continue; }
+    const start = i; let head = "", end = -1, body                = null, bodyStart = -1;
+    for (let j = i; j < to; j++) {
+      const c = s[j] ;
+      if (c === "/" && s[j + 1] === "*") { const e = s.indexOf("*/", j + 2); if (e < 0) { j = to; break; } if (head.trim() === "doc") { end = e + 2; break; } j = e + 1; continue; }
+      if (c === "/" && s[j + 1] === "/") { const e = s.indexOf("\n", j); j = e < 0 ? to : e; continue; }
+      if (c === '"') { const e = s.indexOf('"', j + 1); head += s.slice(j, e + 1); j = e < 0 ? to : e; continue; }
+      if (c === ";") { end = j + 1; break; }
+      if (c === "{") { const close = edCloseOf(s, j); if (close < 0) { j = to; break; } end = close; body = s.slice(j + 1, close - 1); bodyStart = j + 1; break; }
+      head += c;
+    }
+    if (end < 0) break;
+    const tm = /^[ \t]*\/\/[ \t]*([A-Za-z]+)[ \t]*(?=\r?\n|$)/.exec(s.slice(end, to));
+    const tag = tm ? tm[1]  : "";
+    if (tm) end += tm[0].length;
+    out.push({ start, end, head: head.replace(/\s+/g, " ").trim(), body, bodyStart, tag });
+    i = end;
+  }
+  return out;
+}
+/** Range to delete for a member: its whole line(s) when it stands alone on them. */
+function edLineRange(s        , m       )                   {
+  let a = m.start; while (a > 0 && (s[a - 1] === " " || s[a - 1] === "\t")) a--;
+  if (a > 0 && s[a - 1] !== "\n") a = m.start;
+  let b = m.end; while (b < s.length && (s[b] === " " || s[b] === "\t")) b++;
+  if (s[b] === "\r") b++;
+  if (s[b] === "\n") b++; else b = m.end;
+  return [a, b];
+}
+
+/* ---- the form ---------------------------------------------------------------------------------------------- */
+                   
+                                                                                                                  
+                                                                                                                                                    
+ 
+                                                                                                                                                                
+const ED_DEP_KINDS = ["derivedFrom", "refines", "trace", "dependsOn"];
+const emptyForm = (rel        )          => ({ rel, depKind: "", target: "", usageKind: "", name: "", mult: "", dir: "", ordered: false, nonunique: false, doc: "", attrs: [], ownerFirst: true });
+
+/** The relationship an edge ref names, read back from the index as a form. null when the member is not found. */
+function edRelInfo(ix            , ref         )                 {
+  const owner = ix.notes.get(ref.owner), d = owner?.def;
+  if (!owner || !d) return null;
+  const path = (sym        )         => ix.bySymbol.get(sym) ?? "";
+  const mk = (relId        , f                  , why = "")          => ({ ref, owner, form: { ...emptyForm(relId), ...f }, rel: ED_RELS.find((r) => r.id === relId) ?? null, why });
+  if (ref.kind === "specializes") return d.specializes.includes(ref.key) ? mk("specializes", { target: path(ref.key) }) : null;
+  if (ref.kind === "verify") return d.stmts.some((s) => s.kind === "verify" && s.a === ref.key) ? mk("verify", { target: path(ref.key) }) : null;
+  const u = d.usages.find((x) => x.head === ref.key);
+  if (u) {
+    const kinds = u.type ? [u.kind] : [];
+    return mk("owns", { target: u.type ? path(u.type) : "", usageKind: u.kind, name: u.name, mult: (u.mult ?? "").replace(/^\[|\]$/g, ""), dir: u.dir ?? "", ordered: !!u.mods?.includes("ordered"), nonunique: !!u.mods?.includes("nonunique"),
+      doc: u.doc ?? "", attrs: u.props ?? [] }, kinds.length ? "" : "This usage has no type, so it is not a relationship yet. Edit it in the note.");
+  }
+  const s = d.stmts.find((x) => x.text === ref.key);
+  if (!s) return null;
+  const base = { doc: s.doc ?? "", attrs: s.props ?? [] };
+  if (s.kind === "satisfy") return mk("satisfy", { ...base, target: path(s.a ) }, s.b ? "This satisfy names a `by` element; edit it in the note." : "");
+  if (s.kind === "allocate") { const first = s.a === d.symbol; return mk("allocate", { ...base, ownerFirst: first, target: path(first ? s.b  : s.a ) }); }
+  if (s.kind === "perform") return mk("perform", { ...base, name: s.name ?? "", target: path(s.b ) });
+  if (s.kind === "include") return mk("include", { ...base, name: s.name ?? "", target: path(s.b ) });
+  if (s.kind === "optionalUseCase") return mk("extend", { ...base, name: s.name ?? "", target: path(s.b ) });
+  if (s.kind === "dependency") { const first = s.a === d.symbol; return mk(s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", { ...base, depKind: s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", ownerFirst: first, target: path(first ? s.b  : s.a ) }); }
+  return mk("", base, "This kind of statement is not edited here.");
+}
+
+/* ---- properties each relationship offers ------------------------------------------------------------------- */
+                                                                        
+/** Properties a relationship has as named options, and whether free-form attributes are allowed on it. */
+function edPropsFor(rel        , usageKind = "")                                         {
+  switch (rel) {
+    case "owns": return { options: ["name", "mult", ...(usageKind === "item" ? ["dir"          ] : []), "ordered", "nonunique", "doc"], custom: true };
+    case "perform": case "include": return { options: ["name", "doc"], custom: true };
+    case "extend": return { options: ["name", "doc"], custom: true };
+    case "satisfy": case "allocate": case "derivedFrom": case "refines": case "trace": case "dependsOn": return { options: ["doc"], custom: true };
+    default: return { options: [], custom: false };                                    // specializes, verify: the head is the whole relationship
+  }
+}
+
+/* ---- rendering ------------------------------------------------------------------------------------------ */
+const ATTR_NAME = /^[A-Za-z_]\w*$/;
+const SAFE_VALUE = /^(?:-?\d+(?:\.\d+)?|"[A-Za-z0-9 _.,:%+()-]*")$/;
+const edDocComment = (t        , pad        )         => `doc /* ${t.replace(/\r\n/g, "\n").trim().replace(/\*\//g, "* /").split("\n").join("\n" + pad + "   ")} */`;
+function attrLine(a      , pad        )         {
+  const v = a.value.replace(/\s+/g, " ").trim();
+  if (/^-?\d+(\.\d+)?$/.test(v)) return `attribute ${a.name} = ${v};`;
+  if (/^[A-Za-z0-9 _.,:%+()-]*$/.test(v) && !/\/\//.test(v)) return `attribute ${a.name} = "${v}";`;
+  return `attribute ${a.name} { ${edDocComment(v, pad)} }`;
+}
+/** The member as it is written for this form. `pad` is the member's own indentation. */
+function edRenderMember(f         , ownerSym        , targetSym        , pad        )         {
+  let head        ;
+  switch (f.rel) {
+    case "owns": head = `${f.dir ? f.dir + " " : ""}${f.usageKind} ${f.name} : ${targetSym}${f.mult ? `[${f.mult}]` : ""}${f.ordered ? " ordered" : ""}${f.nonunique ? " nonunique" : ""}`; break;
+    case "satisfy": head = `satisfy ${targetSym}`; break;
+    case "allocate": head = f.ownerFirst ? `allocate ${ownerSym} to ${targetSym}` : `allocate ${targetSym} to ${ownerSym}`; break;
+    case "perform": head = `perform action ${f.name} : ${targetSym}`; break;
+    case "include": head = `include use case ${f.name} : ${targetSym}`; break;
+    case "extend": head = `use case ${f.name} : ${targetSym}[0..1]`; break;
+    default: head = f.ownerFirst ? `dependency from ${ownerSym} to ${targetSym}` : `dependency from ${targetSym} to ${ownerSym}`;
+  }
+  const dep = ED_DEP_KINDS.includes(f.rel) ? ` // ${f.depKind || f.rel}` : "";
+  const inner = [...(f.doc.trim() ? [edDocComment(f.doc, pad + "    ")] : []), ...f.attrs.map((a) => attrLine(a, pad + "    "))];
+  if (!inner.length) return `${head};${dep}`;
+  return `${head} {\n${inner.map((l) => `${pad}    ${l}`).join("\n")}\n${pad}}${dep}`;
+}
+
+/* ---- plans ---------------------------------------------------------------------------------------------- */
+function withMember(ix            , files                     , ref         , fn                                                                                           )                                                                     {
+  const owner = ix.notes.get(ref.owner), text = files.get(ref.owner);
+  if (!owner?.def || text === undefined) return { problem: "The note that holds this relationship is not loaded." };
+  const r = edWithBlock(owner, text, (block) => {
+    const at = edFindDef(block, owner.def .keyword, owner.def .name);
+    if (!at || !at.open) return null;
+    const mems = edMembers(block, at.term + 1, at.close);
+    const mem = mems.find((m) => m.head === ref.key);
+    if (!mem) return null;
+    const line = block.lastIndexOf("\n", mem.start) + 1, pad = /^[ \t]*/.exec(block.slice(line, mem.start + 1)) [0];
+    return fn(block, mem, mems, pad, at.term);
+  });
+  return "problem" in r ? { problem: r.problem.startsWith("Could not find") ? "That relationship is no longer in the note. Refresh and try again." : r.problem } : { owner, text, after: r.text };
+}
+
+/** Removes the relationship (and any properties written inside it). */
+function planRemoveRelationship(ix            , files                     , ref         )           {
+  const info = edRelInfo(ix, ref);
+  if (!info) return relBad("That relationship is no longer in the note. Refresh and try again.");
+  const owner = ix.notes.get(ref.owner) , text = files.get(ref.owner) ;
+  const label = `${owner.title}: ${ref.kind === "member" ? ref.key : ref.kind + " " + ref.key}`;
+  if (ref.kind === "specializes" || ref.kind === "verify") {
+    const r = edWithBlock(owner, text, (block) => {
+      const at = edFindDef(block, owner.def .keyword, owner.def .name);
+      if (!at) return null;
+      if (ref.kind === "specializes") {
+        const rest = block.slice(at.nameEnd, at.headEnd), list = (/:>\s*([^{;]*)$/.exec(rest)?.[1] ?? "").split(",").map((x) => x.trim()).filter(Boolean).filter((x) => x !== ref.key);
+        const cut = rest.search(/\s*:>/);
+        return block.slice(0, at.nameEnd + (cut < 0 ? 0 : cut)) + (list.length ? ` :> ${list.join(", ")}` : "") + (at.open ? " " : "") + block.slice(at.headEnd);
+      }
+      if (!at.open) return null;
+      const mems = edMembers(block, at.term + 1, at.close), obj = mems.find((m) => /^objective\b/.test(m.head) && m.body !== null);
+      if (!obj) return null;
+      const inner = edMembers(block, obj.bodyStart, obj.bodyStart + obj.body .length), mine = inner.find((m) => new RegExp(`^verify\\s+(?:requirement\\s+)?${ref.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`).test(m.head));
+      if (!mine) return null;
+      if (inner.length === 1) { const [a, b] = edLineRange(block, obj); return block.slice(0, a) + block.slice(b); }
+      const [a, b] = edLineRange(block, mine);
+      return block.slice(0, a) + block.slice(b);
+    });
+    return "problem" in r ? relBad(r.problem) : { summary: `Remove ${label}.`, writes: [{ path: ref.owner, before: text, after: r.text }], problems: [] };
+  }
+  const r = withMember(ix, files, ref, (block, mem) => { const [a, b] = edLineRange(block, mem); return block.slice(0, a) + block.slice(b); });
+  return "problem" in r ? relBad(r.problem) : { summary: `Remove ${label}.`, writes: [{ path: ref.owner, before: text, after: r.after }], problems: [] };
+}
+
+/** Writes a changed form back over the member. */
+function planUpdateRelationship(ix            , files                     , ref         , form         )           {
+  const info = edRelInfo(ix, ref);
+  if (!info) return relBad("That relationship is no longer in the note. Refresh and try again.");
+  if (info.why) return relBad(info.why);
+  const owner = info.owner, rel = info.rel;
+  if (!rel) return relBad("This kind of relationship is not edited here.");
+  const target = ix.notes.get(form.target);
+  if (!target?.def) return relBad("Pick a target that is a note with a SysML definition.");
+  if (!rel.to(target, owner) && target.path !== info.form.target) return relBad(`"${target.title}" is not an eligible target of "${rel.label}".`);
+  const kindOk = ED_DEP_KINDS.includes(info.form.rel) ? ED_DEP_KINDS.includes(form.depKind) : true;
+  if (!kindOk) return relBad("Unknown dependency kind.");
+  const f          = { ...info.form, ...form, rel: ED_DEP_KINDS.includes(info.form.rel) ? form.depKind : info.form.rel };
+  if (info.form.rel === "owns" && !edUsageKinds(target).includes(f.usageKind)) { f.usageKind = edUsageKinds(target)[0] ?? f.usageKind; if (f.usageKind !== "item") f.dir = ""; }
+  const props = edPropsFor(info.form.rel, f.usageKind);
+  if (props.options.includes("name") && f.name !== info.form.name) {
+    if (!ATTR_NAME.test(f.name)) return relBad(`"${f.name}" is not a SysML name (letters, digits, underscore; not starting with a digit).`);
+    if (owner.def .usages.some((u) => u.name === f.name) || Object.keys(owner.def .notes).includes(f.name)) return relBad(`"${f.name}" is already used in this definition.`);
+    const block0 = MDSE.extractSysml(files.get(owner.path) )          ;
+    if (info.form.name && new RegExp(`\\b${info.form.name}\\b`).test(block0.replace(ref.key, ""))) return relBad(`"${info.form.name}" is referred to elsewhere in the block; rename it in the note.`);
+  }
+  if (f.mult && !/^(\d+|\*)(\.\.(\d+|\*))?$/.test(f.mult)) return relBad(`Quantity "${f.mult}" is not like 3 or 0..1 or 1..*.`);
+  if (f.mult === "1") f.mult = "";
+  if (f.dir && !["in", "out", "inout"].includes(f.dir)) return relBad("Direction must be in, out or inout.");
+  const seen = new Set        ();
+  for (const a of f.attrs) {
+    if (!ATTR_NAME.test(a.name) || edIdent(a.name) === "") return relBad(`Attribute name "${a.name}" is not a SysML name.`);
+    if (["doc", "ordered", "nonunique", "name"].includes(a.name)) return relBad(`"${a.name}" is a built-in option; choose it from the list instead of typing it.`);
+    if (seen.has(a.name)) return relBad(`Attribute "${a.name}" appears twice.`);
+    seen.add(a.name);
+  }
+  if (f.attrs.length && !props.custom) return relBad("This relationship does not take extra attributes.");
+  if (!props.options.includes("doc") && f.doc.trim()) return relBad("This relationship does not take a description.");
+  const sym = target.def.symbol, ownerSym = owner.def .symbol;
+  if (ref.kind === "specializes" || ref.kind === "verify") {
+    if (target.path === info.form.target) return relBad("Nothing to change.");
+    const text = files.get(owner.path) ;
+    const r = edWithBlock(owner, text, (block) => {
+      if (ref.kind === "verify") return block.replace(new RegExp(`(verify\\s+(?:requirement\\s+)?)${ref.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `$1${sym}`);
+      const at = edFindDef(block, owner.def .keyword, owner.def .name);
+      if (!at) return null;
+      const head = block.slice(at.nameEnd, at.headEnd).replace(new RegExp(`(:>[^{;]*?)\\b${ref.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `$1${sym}`);
+      return block.slice(0, at.nameEnd) + head + block.slice(at.headEnd);
+    });
+    return "problem" in r ? relBad(r.problem) : { summary: `${owner.title}: ${ref.kind} ${ref.key} → ${sym}`, writes: [{ path: owner.path, before: text, after: r.text }], problems: [] };
+  }
+  const text = files.get(owner.path) ;
+  const r = withMember(ix, files, ref, (block, mem, _all, pad) => {
+    const next = edRenderMember(f, ownerSym, sym, pad);
+    if (block.slice(mem.start, mem.end) === next) return block;
+    return block.slice(0, mem.start) + next + block.slice(mem.end);
+  });
+  if ("problem" in r) return relBad(r.problem);
+  return { summary: `${owner.title}: changed ${ref.key}`, writes: [{ path: owner.path, before: text, after: r.after }], problems: [] };
+}
+
+/* edit_help.ts */
+/* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
+ * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
+                                                                                   
+
+const ED_HELP                         = {
+  owns: { title: "Owned usage (has part / port / action / state / item)", what: "This definition contains an instance of the target, such as a charger that has 4 cells.", options: ["The usage kind follows the target's kind: part, port, action, state or item.", "Quantity, direction (items only), ordered and nonunique are properties of the usage."], note: "Part usage" },
+  satisfy: { title: "Satisfies", what: "This part, action or state meets the requirement.", options: ["Target: a requirement.", "Use Verifies on a test case to show how it is checked."], note: "Satisfy" },
+  verify: { title: "Verifies", what: "This verification case checks the requirement.", options: ["Target: a requirement. Written inside the case's objective."], note: "Verify" },
+  allocate: { title: "Allocated to", what: "One element is realised by another, for example a function by a part. A typed mapping, stronger than a dependency.", options: ["Target: any definition.", "Use Dependency when you only know the two are related."], note: "Allocation (allocate)" },
+  perform: { title: "Performs", what: "This part carries out the action. The part owns a usage of the action definition.", options: ["Target: an action definition.", "Name: the usage's name inside this part."], note: "Perform" },
+  specializes: { title: "Specializes", what: "This definition is a kind of the target and inherits everything the target has.", options: ["Same kind of definition only (part with part, requirement with requirement).", "Not a dependency: use it for is-a, not for related-to."], note: "Specialization (definition)" },
+  include: { title: "Includes use case", what: "This use case always includes the target's behaviour as a step.", options: ["Target: a use case.", "Name: the usage's name."], note: "Include" },
+  extend: { title: "Extended by use case", what: "The target use case is an optional extension of this one, written as an optional [0..1] usage.", options: ["Target: a use case."], note: "Use case usage" },
+  derivedFrom: { title: "Derived from", what: "This requirement is derived from the target requirement.", options: ["Requirement to requirement.", "Refines is for adding precision, not for deriving."], note: "Dependency" },
+  refines: { title: "Refines", what: "This adds precision to the target.", options: ["Any definition to any definition."], note: "Dependency" },
+  trace: { title: "Traces to", what: "The two are related and the relationship is not chosen yet.", options: ["Provisional: replace it with a stronger relationship when you can."], note: "Dependency" },
+  dependsOn: { title: "Depends on", what: "This needs the target, with no further meaning.", options: ["Prefer Satisfy, Allocate or Refines when one fits."], note: "Dependency" },
+  depKind: { title: "Kind of dependency", what: "A dependency is one SysML statement; its kind is kept as a comment tag the Workbench reads.", options: ["derivedFrom, refines, trace, dependsOn."], note: "Dependency" },
+  usageKind: { title: "Usage kind", what: "What the owned element is: a part, port, item, action or state.", options: ["Set by the target: a part definition gives part, a port or interface definition gives port, and so on."] },
+  name: { title: "Name", what: "The usage's identifier inside this definition. Letters, digits, underscore.", options: ["Referenced by connections and flows: a name used elsewhere in the block cannot be changed here."] },
+  mult: { title: "Quantity (multiplicity)", what: "How many. 3, 0..1, 1..* or *. Blank means exactly one.", options: ["Written as [3] after the type."], note: "Multiplicity" },
+  dir: { title: "Direction", what: "For an item: does it flow into, out of, or both ways through its owner.", options: ["in, out, inout, or none."], note: "Item usage" },
+  ordered: { title: "Ordered", what: "The instances have a fixed order, like the cells in a string.", options: ["On or off."] },
+  nonunique: { title: "Nonunique", what: "The same instance may appear more than once.", options: ["On or off. Rare."] },
+  doc: { title: "Description", what: "Free text that explains why this relationship exists. Written as a doc comment inside it.", options: ["Plain words; no limit."], note: "Documentation" },
+  custom: { title: "Other attribute", what: "A name and a value you define that the list does not offer, written as an attribute inside the relationship.", options: ["Name: letters, digits, underscore.", "Value: a number or text. Anything else is stored as a comment."], note: "Attribute usage" },
+  target: { title: "Target", what: "The other end of the relationship. Changing it re-points the relationship; nothing else moves.", options: ["Only notes allowed for this kind are listed."] },
+  remove: { title: "Remove", what: "Deletes this relationship, and the properties written inside it, from the SysML block. The notes at both ends stay.", options: ["You see the change first, and can undo it."] },
+};
 
 /* vault_files.ts */
 /* Getting a vault into memory: a folder (picker, drop or <input webkitdirectory>) or an MDSE.zip. Text notes only;
@@ -1839,7 +2127,10 @@ function mountWorkbench(root             , host       = {})      {
 
 
 
-const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
+
+const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
+const RL = { edMembers, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
+
                     
                                
                           
@@ -1847,7 +2138,9 @@ const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKey
                       
                                                                                           
  
-                                                                                                                                                              
+                                                                                                                                                                        
+/** The relationship the Edit lens is working on (chosen from a table, the canvas or the list). */
+function setEditRef(ref                )       { SAVED.ref = ref; if (ref) SAVED.mode = "manage"; }
 
 const EDIT_STYLE = `
 .mded .tabs{display:flex;gap:4px;margin:0 0 8px}.mded .tabs button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--bg2);color:var(--fg);cursor:pointer}.mded .tabs button[aria-pressed=true]{border-color:var(--acc);font-weight:600}
@@ -1857,18 +2150,26 @@ const EDIT_STYLE = `
 .mded .pick .it .sn{color:var(--mut);font-size:11.5px;white-space:normal}
 .mded .diff{font-family:var(--font-monospace,monospace);font-size:11.5px;white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;padding:4px 6px;margin:6px 0}.mded .diff .add{color:#1b7a3a}.mded .diff .del{color:#b3261e;text-decoration:line-through}
 .mded .acts2{display:flex;gap:6px;margin:8px 0}
+.mded .q{display:inline-block;width:16px;height:16px;line-height:14px;text-align:center;border:1px solid var(--line);border-radius:50%;font-size:11px;margin-left:6px;cursor:pointer;color:var(--mut);background:var(--bg2);padding:0}.mded .q:hover,.mded .q[aria-expanded=true]{border-color:var(--acc);color:var(--fg)}
+.mded .hlp{border:1px solid var(--acc);border-radius:6px;padding:6px 8px;margin:4px 0;font-size:12px;background:var(--bg2);white-space:normal}.mded .hlp b{display:block}.mded .hlp ul{margin:4px 0 4px 16px;padding:0}
+.mded table.rl{width:100%;font-size:12px;border-collapse:collapse}.mded table.rl td{padding:3px 4px;border-top:1px solid var(--line);vertical-align:top}
+.mded .prop{display:flex;gap:4px;align-items:center;margin:4px 0}.mded .prop>label{min-width:84px;font-size:12px;color:var(--mut)}.mded .prop input[type=text],.mded .prop select{flex:1}
+
 `;
 
-                                    
-const SAVED                 = { mode: "rel" };                       // survives redraws of the panel
+                                               
+const SAVED                                      = { mode: "manage", ref: null };                       // survives redraws of the panel
 
 function editView(c         )              {
-  const { ix, host } = c, from = ix.notes.get(c.sel), box = h("div", { class: "mded" });
+  const host = c.host;
+  let ix = c.getIx(), from = ix.notes.get(c.getSel());                         // refreshed by render(): the form a person is filling survives index rebuilds
+  const box = h("div", { class: "mded" });
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["rel", "Add relationship"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
+  box.addEventListener("keydown", (e) => { if ((e                 ).key === "Escape") { box.querySelectorAll(".hlp").forEach((x) => x.remove()); box.querySelectorAll(".q[aria-expanded=true]").forEach((x) => x.setAttribute("aria-expanded", "false")); } });
 
   /* ---- shared: preview + apply ---- */
   const previewBox = h("div", {}), applyRow = h("div", { class: "acts2" });
@@ -1885,11 +2186,31 @@ function editView(c         )              {
     }
     applyRow.append(h("button", { class: "sm pri", onclick: async (e       ) => {
       const b = e.target                     ; b.disabled = true;
-      try { const r = await host.applyPlan(p); c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
+      try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
       catch (err) { b.disabled = false; showPlan({ summary: "", writes: [], problems: [String((err         )?.message ?? err)] }); }
     } }, "Apply"), h("button", { class: "sm", onclick: () => showPlan(null) }, "Cancel"));
   };
-  const field = (label        , el             )              => h("div", {}, h("label", { class: "f" }, label), el);
+  /* ---- "?" help: a short popover from bundled text, one open at a time ---- */
+  const helpBtn = (topic                         )              => {
+    const key = ()         => (typeof topic === "function" ? topic() : topic);
+    const b = h("button", { class: "q", type: "button", "aria-label": "What is this?", "aria-expanded": "false", title: "What is this?" }, "?");
+    b.addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const t = ED_HELP[key()];
+      if (!t) return;
+      const wasOpen = b.getAttribute("aria-expanded") === "true";
+      box.querySelectorAll(".hlp").forEach((x) => x.remove());
+      box.querySelectorAll(".q[aria-expanded=true]").forEach((x) => x.setAttribute("aria-expanded", "false"));
+      if (wasOpen) return;
+      b.setAttribute("aria-expanded", "true");
+      const path = t.note ? `99_System/04_Language/${t.note}.md` : "", have = !!path && host.files().has(path);
+      const pop = h("div", { class: "hlp", role: "note" }, h("b", {}, t.title), h("div", {}, t.what), t.options?.length ? h("ul", {}, ...t.options.map((o) => h("li", {}, o))) : null,
+        have ? h("a", { href: "#", class: "lnk", onclick: (ev       ) => { ev.preventDefault(); c.open(path); } }, `More: ${t.note}`) : null);
+      (b.closest(".prop") ?? b.closest("label") ?? b).after(pop);
+    });
+    return b;
+  };
+  const field = (label        , el             , topic                          = "")              => h("div", { class: "hq" }, h("label", { class: "f" }, label, topic ? helpBtn(topic) : null), el);
   const opts = (vals                         , cur        )          => vals.map(([v, l]) => h("option", { value: v, selected: v === cur ? true : undefined }, l));
 
   /* ---- target browser: search, type filter, folder groups ---- */
@@ -1939,10 +2260,10 @@ function editView(c         )              {
     };
     const drawExtra = ()       => {
       extra.replaceChildren();
-      if (rel.inputs.includes("name")) extra.append(field("Name of the usage", name));
-      if (rel.inputs.includes("mult")) extra.append(field("Quantity (multiplicity)", mult));
-      if (rel.inputs.includes("dir") && target && ED.edUsageKinds(target)[0] === "item") extra.append(field("Flow direction", h("select", { "aria-label": "Direction", onchange: (e       ) => { dir = (e.target                     ).value; } }, ...opts([["", "(none)"], ["in", "in"], ["out", "out"], ["inout", "inout"]], dir))));
-      if (rel.id === "owns" && target && ED.edUsageKinds(target).length > 1) extra.append(field("Usage kind", h("select", { onchange: (e       ) => { usageKind = (e.target                     ).value; } }, ...opts(ED.edUsageKinds(target).map((k) => [k, k]), usageKind))));
+      if (rel.inputs.includes("name")) extra.append(field("Name of the usage", name, "name"));
+      if (rel.inputs.includes("mult")) extra.append(field("Quantity (multiplicity)", mult, "mult"));
+      if (rel.inputs.includes("dir") && target && ED.edUsageKinds(target)[0] === "item") extra.append(field("Flow direction", h("select", { "aria-label": "Direction", onchange: (e       ) => { dir = (e.target                     ).value; } }, ...opts([["", "(none)"], ["in", "in"], ["out", "out"], ["inout", "inout"]], dir)), "dir"));
+      if (rel.id === "owns" && target && ED.edUsageKinds(target).length > 1) extra.append(field("Usage kind", h("select", { onchange: (e       ) => { usageKind = (e.target                     ).value; } }, ...opts(ED.edUsageKinds(target).map((k) => [k, k]), usageKind)), "usageKind"));
     };
     const drawPicker = ()       => {
       target = null; showPlan(null); drawExtra();
@@ -1952,7 +2273,7 @@ function editView(c         )              {
     kindSel.append(...opts(rels.map((r) => [r.id, r.label]), rel.id));
     kindSel.addEventListener("change", () => { rel = rels.find((r) => r.id === kindSel.value) ; help.textContent = rel.help; drawPicker(); });
     help.textContent = rel.help;
-    v.append(h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${from.id} · ${ED.edRelsFor(from).length} relationship kinds`)), field("Relationship", kindSel), help, field("Target", pickBox), extra, h("div", { class: "acts2" }, h("button", { class: "sm", onclick: compute }, "Preview")), previewBox, applyRow);
+    v.append(h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${from.id} · ${ED.edRelsFor(from).length} relationship kinds`)), field("Relationship", kindSel, () => rel.id), help, field("Target", pickBox, "target"), extra, h("div", { class: "acts2" }, h("button", { class: "sm", onclick: compute }, "Preview")), previewBox, applyRow);
     drawPicker();
     return v;
   }
@@ -1988,10 +2309,89 @@ function editView(c         )              {
       h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => showPlan(ED.planSetRequirementText(ix, host.files(), from.path, ta.value)) }, "Preview")), previewBox, applyRow);
   }
 
+  /* ---- relationships of the selected note: change, add properties, remove ---- */
+  const relLabel = (id        )         => ED.ED_RELS.find((r) => r.id === id)?.label ?? id;
+  const titleOf = (path               , fallback        )         => (path ? ix.notes.get(path)?.title ?? fallback : fallback);
+  function manageView()              {
+    if (SAVED.ref) return formView(SAVED.ref);
+    if (!from) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a model note in Obsidian to see its relationships, or choose Edit on a table row or a canvas line.");
+    const seen = new Set        (), rows                                                      = [];
+    for (const e of [...outgoing(ix, from.path), ...incoming(ix, from.path)]) {
+      if (!e.ref || e.via !== "sysml") continue;
+      const id = `${e.ref.owner}|${e.ref.kind}|${e.ref.key}`;
+      if (seen.has(id)) continue; seen.add(id);
+      const a = e.reverse ? e.toSymbol : titleOf(e.from, e.from), z = e.reverse ? titleOf(e.from, e.from) : e.to ? titleOf(e.to, e.toSymbol) : e.toSymbol + " (not in vault)";
+      rows.push({ ref: e.ref, kind: e.kind, text: `${a} → ${z}${e.label ? "  (" + e.label + ")" : ""}` });
+    }
+    const v = h("div", {}, h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${rows.length} SysML relationship${rows.length === 1 ? "" : "s"}`)));
+    if (!rows.length) v.append(h("div", { class: "empty", style: "padding:8px 0" }, "None yet. Use Add relationship."));
+    else v.append(h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, h("span", { class: "tag k" }, r.kind)), h("td", {}, r.text),
+      h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", onclick: () => { SAVED.ref = r.ref; render(); } }, "Edit"), " ",
+        h("button", { class: "sm", title: "Preview removing this relationship", onclick: () => showPlan(RL.planRemoveRelationship(ix, host.files(), r.ref)) }, "Remove")))))));
+    v.append(previewBox, applyRow);
+    return v;
+  }
+  function formView(ref         )              {
+    const info = RL.edRelInfo(ix, ref), v = h("div", {});
+    const back = h("button", { class: "sm", onclick: () => { SAVED.ref = null; render(); } }, "← All relationships");
+    if (!info) { v.append(back, h("div", { class: "callout flagConflict" }, h("b", {}, "Relationship not found"), "It was changed or removed. Go back and pick it again.")); return v; }
+    const owner = info.owner, f             = { ...info.form, attrs: info.form.attrs.map((a) => ({ ...a })) }, relId = info.form.rel;
+    const rel = info.rel;
+    v.append(back, h("div", { style: "margin:6px 0" }, h("b", {}, owner.title), " ", h("span", { class: "tag k" }, relLabel(relId)), helpBtn(relId), " ", h("span", { class: "mut" }, ref.kind === "member" ? ref.key : `${ref.kind} ${ref.key}`)));
+    const removeRow = h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => showPlan(RL.planRemoveRelationship(ix, host.files(), ref)) }, "Remove relationship"), helpBtn("remove"));
+    if (info.why || !rel) { v.append(h("div", { class: "callout" }, info.why || "This kind of relationship is not edited here."), removeRow, previewBox, applyRow); return v; }
+
+    /* target */
+    const tNote = ()                   => ix.notes.get(f.target);
+    const tLine = h("div", {}), tPick = h("details", {}, h("summary", {}, "Change target…"));
+    const drawT = ()       => { tLine.replaceChildren(h("b", {}, tNote()?.title ?? "(not in vault)"), " ", h("span", { class: "mut" }, tNote() ? `${tNote() .id} · ${tNote() .type}` : "")); };
+    const targets = ED.edTargets(ix, rel, owner);
+    tPick.append(targets.length ? picker(targets, (n) => { f.target = n.path; if (relId === "owns") { const k = ED.edUsageKinds(n); if (!k.includes(f.usageKind)) f.usageKind = k[0] ?? f.usageKind; } drawT(); drawProps(); showPlan(null); }, f.target).el : h("div", { class: "empty" }, "No other eligible target."));
+    drawT();
+    v.append(field("Target", h("div", {}, tLine, tPick), "target"));
+
+    /* dependency kind */
+    if (RL.ED_DEP_KINDS.includes(relId)) v.append(field("Kind of dependency", h("select", { "aria-label": "Kind of dependency", onchange: (e       ) => { f.depKind = (e.target                     ).value; showPlan(null); } }, ...opts(RL.ED_DEP_KINDS.map((k) => [k, relLabel(k)]), f.depKind || relId)), "depKind"));
+
+    /* properties: the ones set, an "Add property" list of the rest, and free attributes where allowed */
+    const props = h("div", {});
+    const shown = new Set           ();
+    const initShown = ()       => { const P = RL.edPropsFor(relId, f.usageKind); for (const o of P.options) if (o === "name" || (o === "mult" && f.mult) || (o === "dir" && f.dir) || (o === "ordered" && f.ordered) || (o === "nonunique" && f.nonunique) || (o === "doc" && f.doc)) shown.add(o); };
+    initShown();
+    const LABEL                            = { name: "Name", mult: "Quantity", dir: "Direction", ordered: "Ordered", nonunique: "Nonunique", doc: "Description" };
+    const row = (label        , topic        , ctl             , remove             )              =>
+      h("div", { class: "prop" }, h("label", {}, label, topic ? helpBtn(topic) : null), ctl, remove ? h("button", { class: "sm", type: "button", "aria-label": `Remove ${label}`, title: "Remove this property", onclick: remove }, "×") : null);
+    const txt = (val        , on                     , ph = "")                   => { const i = h("input", { type: "text", placeholder: ph })                    ; i.value = val; i.addEventListener("input", () => { on(i.value); showPlan(null); }); return i; };
+    function drawProps()       {
+      const P = RL.edPropsFor(relId, f.usageKind);
+      for (const o of [...shown]) if (!P.options.includes(o)) shown.delete(o);
+      props.replaceChildren();
+      for (const o of P.options.filter((x) => shown.has(x))) {
+        if (o === "name") props.append(row(LABEL.name, "name", txt(f.name, (x) => { f.name = x; })));
+        else if (o === "mult") props.append(row(LABEL.mult, "mult", txt(f.mult, (x) => { f.mult = x; }, "3 or 0..1"), () => { f.mult = ""; shown.delete("mult"); drawProps(); showPlan(null); }));
+        else if (o === "dir") props.append(row(LABEL.dir, "dir", h("select", { "aria-label": "Direction", onchange: (e       ) => { f.dir = (e.target                     ).value; showPlan(null); } }, ...opts([["", "(none)"], ["in", "in"], ["out", "out"], ["inout", "inout"]], f.dir)), () => { f.dir = ""; shown.delete("dir"); drawProps(); showPlan(null); }));
+        else if (o === "ordered" || o === "nonunique") props.append(row(LABEL[o], o, h("input", { type: "checkbox", checked: f[o], onchange: (e       ) => { f[o] = (e.target                    ).checked; showPlan(null); } }), () => { f[o] = false; shown.delete(o); drawProps(); showPlan(null); }));
+        else { const ta = h("textarea", { "aria-label": "Description", style: "min-height:60px" })                       ; ta.value = f.doc; ta.addEventListener("input", () => { f.doc = ta.value; showPlan(null); }); props.append(row(LABEL.doc, "doc", ta, () => { f.doc = ""; shown.delete("doc"); drawProps(); showPlan(null); })); }
+      }
+      f.attrs.forEach((a, i) => props.append(row("Attribute", "custom", h("div", { style: "display:flex;gap:4px;flex:1" }, txt(a.name, (x) => { a.name = x; }, "name"), txt(a.value, (x) => { a.value = x; }, "value")), () => { f.attrs.splice(i, 1); drawProps(); showPlan(null); })));
+      const avail = P.options.filter((x) => !shown.has(x));
+      if (avail.length || P.custom) {
+        const sel = h("select", { "aria-label": "Add property" }, h("option", { value: "" }, "Add property…"), ...avail.map((x) => h("option", { value: x }, LABEL[x])), ...(P.custom ? [h("option", { value: "@custom" }, "Other attribute…")] : []))                     ;
+        sel.addEventListener("change", () => { const x = sel.value; if (x === "@custom") f.attrs.push({ name: "", value: "" }); else if (x) shown.add(x             ); drawProps(); showPlan(null); });
+        props.append(h("div", { class: "prop" }, h("label", {}, "Properties", helpBtn("custom")), sel));
+      }
+    }
+    drawProps();
+    v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:8px" }, "Properties"), props);
+    v.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(RL.planUpdateRelationship(ix, host.files(), ref, { ...f, attrs: f.attrs.filter((a) => a.name.trim() || a.value.trim()) })) }, "Preview changes"), removeRow), previewBox, applyRow);
+    return v;
+  }
+
   function render()       {
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["rel", "elem", "text"]          )[i] === SAVED.mode));
+    ix = c.getIx(); from = ix.notes.get(c.getSel());
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "elem", "text"]          )[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren();
-    body.replaceChildren(SAVED.mode === "rel" ? relView() : SAVED.mode === "elem" ? elemView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "elem" ? elemView() : textView());
   }
   void plan;
   render();
@@ -2021,11 +2421,15 @@ function editView(c         )              {
                          
                                                             
                   
+                                                                                          
+                                        
  
                     
                                                           
                              
                               
+                                                                                    
+                                       
                                                       
  
 
@@ -2063,9 +2467,12 @@ function mountPanel(root             , host           , opt                     
     if (c === undefined) return "";
     if (typeof c === "string") return c;
     if (Array.isArray(c)) return c.length ? h("div", { class: "cellist" }, ...c.map((x) => link(x.path, x.text))) : "";
+    if (c.action) { const ref = c.action; return host.edit || host.editRelationship ? h("button", { class: "sm", title: "Change, add properties to, or remove this relationship", onclick: () => (compact ? openEditor(ref) : host.editRelationship?.(ref)) }, c.text) : ""; }
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
+  function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
   function tableView(t             )              {
     const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}, h("h3", {}, t.title));
@@ -2074,7 +2481,7 @@ function mountPanel(root             , host           , opt                     
     const shown = t.rows.slice(0, CAP);
     box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
     if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
-    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
+    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return box;
   }
 
@@ -2156,7 +2563,7 @@ function mountPanel(root             , host           , opt                     
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e       ) => { pinned = !(e.target                    ).checked; draw(); } }), " follow the selected note") : null);
-    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; draw(); } }, label)));
+    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; if (k !== "edit") editEl = null; draw(); } }, label)));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
@@ -2172,7 +2579,7 @@ function mountPanel(root             , host           , opt                     
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
-      else if (lens === "edit" && host.edit) body.append(editView({ ix, sel, host: host.edit, done: (m, u) => { msg = m; undo = u; draw(); }, open: (p) => host.openNote(p) }));
+      else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
     wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
@@ -2180,15 +2587,16 @@ function mountPanel(root             , host           , opt                     
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; draw(); },
+    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) return; draw(); },
+    editRelationship(ref) { openEditor(ref); },
     select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
-    setLens(l) { lens = l; draw(); },
+    setLens(l) { lens = l; editEl = null; draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { wrap.remove(); style.remove(); },
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId };
 })();
 </script>
 <script>

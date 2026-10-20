@@ -98,7 +98,7 @@ export function planAddElement(ix: ModelIndex, classes: EdClasses, o: AddElement
 
 /* ---- locating a definition in the block ------------------------------------------------------------------- */
 /** Index just past the `}` that closes the brace at `open`, skipping comments and strings; -1 when unbalanced. */
-function edCloseOf(s: string, open: number): number {
+export function edCloseOf(s: string, open: number): number {
   let depth = 0;
   for (let i = open; i < s.length; i++) {
     const c = s[i]!;
@@ -110,8 +110,8 @@ function edCloseOf(s: string, open: number): number {
   }
   return -1;
 }
-interface DefSpot { indent: string; headEnd: number; nameEnd: number; term: number; open: boolean; close: number }
-function edFindDef(block: string, keyword: string, name: string): DefSpot | null {
+export interface DefSpot { indent: string; headEnd: number; nameEnd: number; term: number; open: boolean; close: number }
+export function edFindDef(block: string, keyword: string, name: string): DefSpot | null {
   const re = new RegExp(`(^|\\n)([ \\t]*)((?:abstract\\s+)?${keyword.replace(/ /g, "\\s+")}\\s+)(${name})\\b([^{;\\n]*)([{;])`);
   const m = re.exec(block);
   if (!m) return null;
@@ -122,7 +122,7 @@ function edFindDef(block: string, keyword: string, name: string): DefSpot | null
 }
 
 /** Appends one member statement inside the definition (turning `kw Name;` into `kw Name { … }`). */
-function edInsert(block: string, d: NonNullable<Note["def"]>, stmt: string): string | null {
+export function edInsert(block: string, d: NonNullable<Note["def"]>, stmt: string): string | null {
   const at = edFindDef(block, d.keyword, d.name);
   if (!at) return null;
   const pad = at.indent + "    ";
@@ -131,7 +131,7 @@ function edInsert(block: string, d: NonNullable<Note["def"]>, stmt: string): str
   return before + (before.endsWith("\n") ? "" : "\n") + `${pad}${stmt}\n${at.indent}` + block.slice(at.close);
 }
 
-function edWithBlock(note: Note, text: string, fn: (block: string) => string | null): { text: string } | { problem: string } {
+export function edWithBlock(note: Note, text: string, fn: (block: string) => string | null): { text: string } | { problem: string } {
   const block = MDSE.extractSysml(text) as string | null;
   if (!block || !note.def) return { problem: `"${note.title}" has no SysML block to edit.` };
   const next = fn(block);

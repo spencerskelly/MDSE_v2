@@ -2,7 +2,7 @@
  * Ported from V1: view profiles are data (which relationship kinds to follow, in which direction), a traversal
  * with a node cap, and a drawn result that is presentation only. Rewritten for V2: the relationship kinds come
  * from the SysML v2 text, not from YAML fields. */
-import type { Edge, ModelIndex, Note } from "./index.ts";
+import type { Edge, EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 
 export interface TreeNode { path: string | null; label: string; detail: string; kind: string; qty: number; children: TreeNode[]; cycle?: boolean; more?: number }
@@ -257,7 +257,7 @@ export function tableRows(ix: ModelIndex, f: TableFilter = {}): TableRow[] {
   return rows;
 }
 
-export interface RelRow { from: string | null; fromTitle: string; kind: string; to: string | null; toTitle: string; label: string; via: string; resolved: boolean }
+export interface RelRow { from: string | null; fromTitle: string; kind: string; to: string | null; toTitle: string; label: string; via: string; resolved: boolean; ref?: EdgeRef }
 export function relationshipRows(ix: ModelIndex, kinds: string[] = [], text = ""): RelRow[] {
   const q = text.toLowerCase();
   const rows: RelRow[] = [];
@@ -265,8 +265,8 @@ export function relationshipRows(ix: ModelIndex, kinds: string[] = [], text = ""
     if (kinds.length && !kinds.includes(e.kind)) continue;
     const fromTitle = e.reverse ? e.toSymbol : nm(ix, e.from, e.from), toTitle = e.reverse ? nm(ix, e.from, e.from) : e.to ? nm(ix, e.to, e.to) : e.toSymbol;
     if (q && !`${fromTitle} ${toTitle} ${e.kind} ${e.label}`.toLowerCase().includes(q)) continue;
-    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false }
-      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
+    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false, ...(e.ref ? { ref: e.ref } : {}) }
+      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to, ...(e.ref ? { ref: e.ref } : {}) });
   }
   return rows;
 }
@@ -359,7 +359,7 @@ export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", not
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
 export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit";
 
-export interface Cell { text: string; path?: string | null; cls?: string }
+export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
 export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
@@ -405,7 +405,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
       out.push({ id: "usages", title: n ? `Usages in ${n.title}` : "Usages", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "mult", label: "Multiplicity" }], rows: u.map((x) => ({ kind: (x.dir ? x.dir + " " : "") + x.kind, name: x.name, type: x.type ? ({ text: ix.bySymbol.get(x.type) ? nm(ix, ix.bySymbol.get(x.type)!, x.type) : x.type + " (not in vault)", path: ix.bySymbol.get(x.type) ?? null } as Cell) : { text: "untyped", cls: "gap" } as Cell, mult: x.mult ?? "" })), empty: n ? "No usages." : "Select a note." });
     } else {
       const rows = relationshipRows(ix, [], o.text ?? "").filter((r) => !sel || scope === "all" || r.from === sel || r.to === sel);
-      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }], rows: rows.map((r) => ({ from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" } as Cell : { text: r.fromTitle, path: r.from } as Cell, kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to } as Cell : { text: r.toTitle + " (not in vault)", cls: "gap" } as Cell, label: r.label })), empty: "No relationships." });
+      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }, { key: "edit", label: "" }], rows: rows.map((r) => ({ edit: r.ref ? { text: "Edit", action: r.ref } as Cell : "", from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" } as Cell : { text: r.fromTitle, path: r.from } as Cell, kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to } as Cell : { text: r.toTitle + " (not in vault)", cls: "gap" } as Cell, label: r.label })), empty: "No relationships." });
     }
   }
   return out;

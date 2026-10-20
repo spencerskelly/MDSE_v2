@@ -12,7 +12,9 @@ export interface Note {
   links: Array<{ field: string; target: string }>; issues: string[];
 }
 /** `reverse` marks an edge whose SOURCE could not be resolved: `from` is the resolved end (the target), `toSymbol` is the unresolved source. */
-export interface Edge { from: string; to: string | null; toSymbol: string; kind: string; label: string; via: "sysml" | "yaml"; detail: string; reverse?: boolean }
+/** Where an edge is written, so it can be changed or removed (D-0031): the note that holds the SysML text and the member inside it. */
+export interface EdgeRef { owner: string; kind: "member" | "specializes" | "verify"; key: string }
+export interface Edge { from: string; to: string | null; toSymbol: string; kind: string; label: string; via: "sysml" | "yaml"; detail: string; reverse?: boolean; ref?: EdgeRef }
 export type ParserStatus = "not-run" | "passed" | "failed";
 
 export interface ModelIndex {
@@ -64,11 +66,13 @@ function resolveAll(ix: ModelIndex): void {
   for (const n of ix.notes.values()) {
     const d = n.def;
     if (d) {
+      let ref: EdgeRef | undefined;
       const E = (kind: string, target: string | null, symbol: string, label = "", detail = "", from = n.path): void =>
-        link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail });
-      for (const s of d.specializes) E("specializes", sym(s), s);
-      for (const u of d.usages) if (u.type) E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`);
+        link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
+      for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`); }
       for (const s of d.stmts) {
+        ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a! : s.text };
         if (s.kind === "satisfy") E("satisfies", sym(s.a!), s.a!);
         else if (s.kind === "verify") E("verifies", sym(s.a!), s.a!);
         else if (s.kind === "perform") E("performs", sym(s.b!), s.b!, s.name ?? "");
@@ -77,7 +81,7 @@ function resolveAll(ix: ModelIndex): void {
         else if (s.kind === "allocate" || s.kind === "dependency") {
           const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a!), b = sym(s.b!);
           if (a) E(kind, b, s.b!, "", "", a);                                              // source known: normal edge, target may dangle
-          else if (b) link(ix, { from: b, to: null, toSymbol: s.a!, kind, label: "", via: "sysml", detail: "", reverse: true });   // source missing: never a self-loop
+          else if (b) link(ix, { from: b, to: null, toSymbol: s.a!, kind, label: "", via: "sysml", detail: "", reverse: true, ref });   // source missing: never a self-loop
           else E(kind, null, s.b!, "", "", n.path);
         }
       }

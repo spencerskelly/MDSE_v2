@@ -15,7 +15,7 @@ declare const WB: {
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
-  edAuthor: (yaml: string) => string;
+  edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
 };
 const obsidian = require("obsidian");
@@ -103,6 +103,7 @@ function hostFor(plugin: any): any {
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
+    editRelationship: (ref: unknown) => plugin.editRelationship(ref),
     edit: {
       files: () => plugin.files,
       classes: () => CLASSES,
@@ -151,6 +152,19 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
   preview: { fileName: string } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
   author = "";
+  /** Opens the Edit lens in the right panel on one relationship (from a main-window table or a canvas line). */
+  async editRelationship(ref: unknown): Promise<void> {
+    await this.openPanel(); await this.ensureIndex();
+    this.apps.forEach((a: any) => a.editRelationship?.(ref));
+  }
+  /** Relationship refs for the lines selected on the open canvas (Obsidian's canvas keeps its selection on view.canvas). */
+  canvasSelectionRefs(): any[] {
+    const view = this.app.workspace.getActiveViewOfType?.(obsidian.ItemView) ?? this.app.workspace.activeLeaf?.view;
+    const sel = view?.getViewType?.() === "canvas" ? view.canvas?.selection : null;
+    const out: any[] = [];
+    if (sel) for (const it of sel) { const r = it?.id ? WB.edgeRefOfId(String(it.id)) : null; if (r) out.push(r); }
+    return out;
+  }
   async saveSettings() { await this.saveData(this.settings); }
 
   /* ---- the one shared index ---- */
@@ -297,6 +311,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const noteOpen = (chk: boolean, fn: (f: any) => void): boolean => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder: string, only: (l: string) => boolean, fn: (l: string) => void) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x: any) => x[1], (x: any) => fn(x[0])).open();
     this.addCommand({ id: "open", name: "Open MDSE Workbench (right panel)", callback: () => this.openPanel() });
+    this.addCommand({ id: "edit-canvas-line", name: "Edit the relationship selected on the canvas", checkCallback: (chk: boolean) => {
+      const refs = this.canvasSelectionRefs(); if (!refs.length) return false;
+      if (!chk) { if (refs.length > 1) new obsidian.Notice("Several lines are selected; editing the first."); this.editRelationship(refs[0]); }
+      return true;
+    } });
+    try { this.registerEvent(this.app.workspace.on("canvas:edge-menu", (menu: any, edge: any) => { const r = edge?.id ? WB.edgeRefOfId(String(edge.id)) : null; if (r) menu.addItem((i: any) => i.setTitle("Edit relationship (MDSE)").setIcon("pencil").onClick(() => this.editRelationship(r))); })); } catch { /* older Obsidian: the command still works */ }
     this.addCommand({ id: "refresh", name: "Refresh MDSE Workbench index", callback: async () => { this.files = await readVault(this.app); await this.rebuild(); } });
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk: boolean) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
     this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });

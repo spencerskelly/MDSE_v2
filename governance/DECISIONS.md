@@ -298,3 +298,17 @@ Rules: IMP-097, IMP-098.
 5. **Not yet.** Removing or changing a relationship, connections between ports, transitions and flows, renaming, moving a note, editing a usage's quantity. Eligibility follows the importer's endpoint rules, not a full SysML type check; the parser gate remains the conformance check.
 
 Rules: WKB-008, WKB-009, WKB-010.
+
+## D-0031 — Change and remove relationships, relationship properties, and "?" help
+
+2026-10-20 · Spencer · Accepted
+
+1. **Selecting.** A relationship opens in the Edit lens from the Relationships tab (the selected note's list), the Edit button on a relationship table row (panel or main window), or the canvas: a canvas edge's id carries its location, so the command "Edit the relationship selected on the canvas" (and the line's right-click menu, where Obsidian offers one) opens it. The canvas is a disposable preview; regenerate it after an edit.
+2. **Change.** Target (searchable browser, eligible notes only), dependency kind, and properties. Remove deletes the relationship and everything written inside it. Both show a diff first, are undoable and refused if the file changed (WKB-009).
+3. **Properties ("attributes").** Written inside the relationship in SysML: `doc` (description), `attribute name = value;` for free attributes, quantity, direction, `ordered`, `nonunique`, name. A drop-down offers the options that relationship has; "Other attribute…" takes a typed name and value only where allowed (owned usages, satisfy, allocate, perform, include, extend, dependency kinds; not specializes or verifies). Values that are not a number or simple text are stored in a `doc` inside the attribute, so text such as `;`, `}` or `*/` cannot break the block.
+4. **Scanner.** Attributes and docs inside a usage or statement are kept on it as properties, not as usages of the definition; `ordered` / `nonunique` are read; a `// kind` tag after a closing brace is read, so a dependency keeps its kind when it has a description.
+5. **"?" help.** A button beside each option opens a popover with a one-sentence definition, up to three option lines and a link to the full note in `99_System/04_Language`. The text is bundled (no lookup, no delay); a test checks every linked note exists and every topic is concise.
+6. **Form state.** The Edit lens keeps a form being filled when the index refreshes; it is reset after an applied edit, a lens change or a different selected note.
+7. **Not yet.** Changing a relationship's kind across groups (for example satisfy to allocate), reordering, connections between ports, transitions and flows, members with more than one definition per note (the index reads the first definition of a note, as before).
+
+Rules: WKB-011, WKB-012, WKB-013.

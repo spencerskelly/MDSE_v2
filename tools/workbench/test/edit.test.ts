@@ -4,6 +4,7 @@ import MDSE from "../../core/src/mdse_core.js";
 import { buildIndex } from "../src/index.ts";
 import type { ModelIndex } from "../src/index.ts";
 import * as E from "../src/edit.ts";
+const ED = E;
 import { importedVault, classes } from "./harness.ts";
 
 const base = await importedVault();
@@ -92,4 +93,25 @@ test("requirement text is replaced in place, helper docs are untouched, hostile 
 test("the diff shows only the lines that changed", () => {
   assert.deepEqual(E.edDiff("a\nb\nc", "a\nB\nc"), { removed: ["b"], added: ["B"] });
   assert.deepEqual(E.edDiff(null, "x\ny"), { removed: [], added: ["x", "y"] });
+});
+
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+test("the built plugin and page compile as one scope (no module declares a name another already declared)", () => {
+  for (const f of ["../dist/plugin/main.js", "../dist/mdse_workbench.html"]) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    const code = f.endsWith(".html") ? [...src.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!).join("\n") : src;
+    assert.doesNotThrow(() => new vm.Script(code), f);
+  }
+});
+
+import { existsSync } from "node:fs";
+import { ED_HELP } from "../src/edit_help.ts";
+test("every '?' topic is short, and the note it points at exists in the language notes (D-0031)", () => {
+  for (const [k, t] of Object.entries(ED_HELP)) {
+    assert.ok(t.title && t.what, k);
+    assert.ok(t.what.length <= 200 && (t.options ?? []).every((o) => o.length <= 160) && (t.options ?? []).length <= 3, `${k}: concise`);
+    if (t.note) assert.ok(existsSync(new URL(`../../../governance/language/sysml-v2/${t.note}.md`, import.meta.url)), `${k}: note ${t.note}`);
+  }
+  for (const r of ED.ED_RELS) assert.ok(ED_HELP[r.id], `help for ${r.id}`);
 });

@@ -1,11 +1,18 @@
 /* Obsidian Canvas export (JSON Canvas 1.0). A canvas is a generated, disposable picture of one traversal: file cards for
  * notes in the vault, text cards for references whose note is not in the vault. It carries no model meaning (D-0003);
  * regenerate it any time. Layout is layered left to right by distance from the start note. */
-import type { Edge, ModelIndex } from "./index.ts";
+import type { Edge, EdgeRef, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
 import type { Profile, ViewSpec } from "./views.ts";
 import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault } from "./views.ts";
 
+/** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
+export const EDGE_REF_SEP = "~r~";
+export function edgeRefOfId(id: string): EdgeRef | null {
+  const i = id.indexOf(EDGE_REF_SEP);
+  if (i < 0) return null;
+  try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r as EdgeRef : null; } catch { return null; }
+}
 export interface CanvasNode { id: string; type: "file" | "text"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string }
 export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow"; label?: string; color?: string }
 export interface CanvasDoc { nodes: CanvasNode[]; edges: CanvasEdge[] }
@@ -74,7 +81,7 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
     b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
   const push = (from: string, to: string, e: Edge): void => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   };
   for (const e of g.edges) push(id.get(e.from)!, id.get(e.to!)!, e);
   for (const x of ghosts) { const anchor = id.get(x.anchor)!; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }

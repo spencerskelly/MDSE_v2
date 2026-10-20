@@ -174,6 +174,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
             pg.click("button[role=tab]:has-text('Edit')")
+            pg.click("button:has-text('Add relationship')")
 
             # relationship: dropdown of kinds, searchable target browser, preview diff, apply, undo
             pg.select_option("select[aria-label=Relationship]", "allocate")
@@ -187,6 +188,20 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("button:has-text('Undo')")
             pg.click("button:has-text('Undo')")
             pg.wait_for_function("([p, t]) => window.__notes[p] === t", arg=["10_Model/Charger.md", before])
+            pg.select_option("select[aria-label=Relationship]", "allocate")      # add it again and keep it for the change/remove steps below
+            pg.fill("input[aria-label='Search targets']", "controller")
+            pg.click(".pick .it:has-text('Controller')")
+            pg.click("button:has-text('Preview')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /allocate .* to .*Controller/.test(window.__notes[p])", arg="10_Model/Charger.md")
+
+            # "?" help: a short popover, one at a time, closed by the same button
+            pg.click("button:has-text('Add relationship')")
+            pg.locator(".mded .q").first.click()
+            pg.wait_for_selector(".mded .hlp b")
+            self.assertEqual(pg.locator(".mded .hlp").count(), 1)
+            pg.locator(".mded .q").first.click()
+            self.assertEqual(pg.locator(".mded .hlp").count(), 0)
 
             # element: folder datalist, new note appears in the vault and opens
             pg.click("button:has-text('Add element')")
@@ -204,6 +219,41 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertRegex(made, r"uid: \d{17}skellyspencer")
             pg.click("button:has-text('Undo')")
             pg.wait_for_function("() => !Object.keys(window.__notes).some(k => k.startsWith('10_Model/New/'))")
+
+            # change / properties / remove from the note's relationship list
+            pg.click("button[role=tab]:has-text('Edit')")
+            pg.click(".mded .tabs button:has-text('Relationships')")
+            pg.wait_for_timeout(500)
+            pg.wait_for_selector("table.rl")
+            row = pg.locator("table.rl tr", has_text="allocatedTo").first
+            row.locator("button:has-text('Edit')").click()
+            pg.wait_for_selector("select[aria-label='Add property']")
+            pg.select_option("select[aria-label='Add property']", "doc")
+            pg.fill("textarea[aria-label=Description]", "Why this part exists")
+            pg.select_option("select[aria-label='Add property']", "@custom")
+            pg.locator(".prop input[placeholder=name]").fill("supplier")
+            pg.locator(".prop input[placeholder=value]").fill("Acme")
+            pg.click("button:has-text('Preview changes')")
+            pg.wait_for_selector(".diff .add:has-text('attribute supplier')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("p => /attribute supplier = \"Acme\"/.test(window.__notes[p]) && /doc \\/\\* Why this part exists/.test(window.__notes[p])", arg="10_Model/Charger.md")
+            pg.click("button:has-text('Undo')")
+            pg.wait_for_function("p => !/attribute supplier/.test(window.__notes[p])", arg="10_Model/Charger.md")
+            # remove
+            pg.click(".mded .tabs button:has-text('Relationships')")
+            pg.locator("table.rl tr", has_text="allocatedTo").first.locator("button:has-text('Remove')").click()
+            pg.wait_for_selector(".diff .del")
+            cur = pg.evaluate("p => window.__notes[p]", "10_Model/Charger.md")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("([p, t]) => window.__notes[p] !== t && !/allocate .* to .*Controller/.test(window.__notes[p])", arg=["10_Model/Charger.md", cur])
+            pg.click("button:has-text('Undo')")
+
+            # a canvas line selected in Obsidian opens in the Edit lens
+            ref = pg.evaluate("""() => { const ix = window.__plugin.ix; const e = ix.edges.find((x) => x.ref && x.ref.kind === 'member' && x.kind === 'allocatedTo' && x.to); return e.ref; }""")
+            pg.evaluate("""r => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ id: 'e3~r~' + encodeURIComponent(JSON.stringify(r)) }]) } } }; }""", ref)
+            self.assertTrue(pg.evaluate("window.__cmds['edit-canvas-line'].checkCallback(true)"))
+            pg.evaluate("window.__cmds['edit-canvas-line'].checkCallback(false)")
+            pg.wait_for_selector("select[aria-label='Add property']")
             b.close()
         self.assertEqual(errors, [])
 

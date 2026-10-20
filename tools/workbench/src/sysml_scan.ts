@@ -2,8 +2,10 @@
  * statements the importer writes, and keeps anything else as `raw` so nothing is silently dropped. Conformance is the
  * pinned parser's job (the parser gate), not this file's. */
 
-export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string }
-export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; text: string }
+/** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
+export interface Prop { name: string; value: string }
+export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string; /** the declaration as written, whitespace collapsed */ head: string; /** `ordered` / `nonunique` modifiers */ mods?: string[]; props?: Prop[]; doc?: string }
+export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; props?: Prop[]; doc?: string; text: string }
 export interface Definition { keyword: string; pkg: string; name: string; symbol: string; specializes: string[]; usages: Usage[]; stmts: Stmt[]; raw: string[]; /** text of the definition own doc comment (requirement wording) */ doc?: string; /** wording of helper usages by name (guard constraints, trigger items, effect actions) */ notes: Record<string, string>; /** catalog ids of every construct seen inside (governance/language/catalog.json) */ langs: string[] }
 export interface ScanResult { defs: Definition[]; warnings: string[]; /** catalog ids of every construct in the block */ langs: string[] }
 import { classify } from "./sysml_lang.ts";
@@ -13,7 +15,7 @@ interface Item { head: string; body: Item[] | null; tag: string }
 function stripComments(src: string): string {
   // `// word` after a semicolon is a kind tag (the importer's dependency kinds); other comments are dropped.
   return src.replace(/\/\*[\s\S]*?\*\//g, " ").split("\n").map((l) => {
-    const m = /^(.*?;)\s*\/\/\s*([A-Za-z]+)\s*$/.exec(l);
+    const m = /^(.*?[;}])\s*\/\/\s*([A-Za-z]+)\s*$/.exec(l);
     if (m) return `${m[1]} @${m[2]}`;
     const i = l.indexOf("//");
     return i >= 0 ? l.slice(0, i) : l;
@@ -27,7 +29,7 @@ function parseItems(s: string, start: number, close: boolean): { items: Item[]; 
     const h = head.replace(/\s+/g, " ").trim();
     let tag = "";
     const m = /^\s*@([A-Za-z]+)/.exec(s.slice(i));
-    if (m && endsWithSemi) { tag = m[1]!; i += m[0].length; }
+    if (m && (endsWithSemi || body)) { tag = m[1]!; i += m[0].length; }
     if (h || body) items.push({ head: h, body, tag });
     head = "";
   };
@@ -43,13 +45,28 @@ function parseItems(s: string, start: number, close: boolean): { items: Item[]; 
 }
 
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
-const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?$/;
+const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?((?:\s+(?:ordered|nonunique))*)$/;
 const QN = "([A-Za-z_][\\w:.]*)";
 
 function interpret(it: Item, d: Definition): void {
+  const nu = d.usages.length, ns = d.stmts.length;
   const handled = interpretOne(it, d);
   if (!handled) { if (it.head) d.raw.push(it.head); return; }
-  if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) interpret(c, d);          // nested members of any construct
+  const rec: { props?: Prop[]; doc?: string } | undefined = d.usages.length > nu ? d.usages[d.usages.length - 1] : d.stmts.length > ns ? d.stmts[d.stmts.length - 1] : undefined;
+  if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) {
+    if (rec) {                                                                         // properties of a usage or statement are kept on it, not as usages of the definition (D-0031)
+      const dm = /^doc ~D(\d+)$/.exec(c.head);
+      if (dm) { rec.doc = docText(c.head); for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); continue; }
+      const am = /^attribute\s+([A-Za-z_]\w*)\s*(?:=\s*(.*))?$/.exec(c.head);
+      if (am) {
+        const sub = c.body?.find((x) => /^doc ~D\d+$/.test(x.head)), raw = (am[2] ?? "").trim();
+        (rec.props ??= []).push({ name: am[1]!, value: sub ? docText(sub.head) : raw.replace(/^"(.*)"$/, "$1") });
+        for (const i of classify("attribute x")) if (!d.langs.includes(i)) d.langs.push(i);
+        continue;
+      }
+    }
+    interpret(c, d);                                                                   // nested members of any construct
+  }
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
@@ -66,7 +83,7 @@ function interpretOne(it: Item, d: Definition): boolean {
     for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1]!, text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
-  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2]!.replace("ref ", ""), name: m[3]!, ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}) }); return true; }
+  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2]!.replace("ref ", ""), name: m[3]!, ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}), head: h, ...(m[6]?.trim() ? { mods: m[6].trim().split(/\s+/) } : {}) }); return true; }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1]!, ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h }); return true; }
