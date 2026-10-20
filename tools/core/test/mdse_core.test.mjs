@@ -129,3 +129,30 @@ test("requirement id prefix follows subtype (STD, STK, REQ)", () => {
   assert.ok(codes(req("stakeholder", "STD-00042")).includes("ID_PREFIX"));
   assert.ok(codes(req("functional", "STK-00042")).includes("ID_PREFIX"));
 });
+
+test("setFrontmatterField changes one value and nothing else; flags can be removed from the user zone only", () => {
+  const src = read("Charger.md").replace("\n# Charger", "\n# Charger\n\n> [!flagNote] Check the rating\n> Detail line.\n\n> [!flagLink] Untyped part usage `x`\n> Source: [[Import Run 1]].").replace(/^status: .*$/m, "status: Draft");
+  const r = M.setFrontmatterField(src, "status", "Retired");
+  assert.equal(r.changed, true);
+  assert.equal(M.parse(r.text).meta.status, "Retired");
+  assert.equal(r.text.replace("status: Retired", "status: Draft"), src.replace(/\r\n/g, "\n"), "only the one line differs");
+  assert.deepEqual(codes(r.text), codes(src));
+  assert.equal(M.setFrontmatterField(src, "status", "In: review").text.includes('status: "In: review"'), true, "values that need quotes are quoted");
+  assert.equal(M.setFrontmatterField(src, "nosuchkey", "x").reason, "FIELD_MISSING");
+  assert.equal(M.setFrontmatterField(src, "status", "a\nb").reason, "BAD_VALUE");
+  assert.equal(M.setFrontmatterField(src, "status", "Draft").changed, false);
+  const crlf = M.setFrontmatterField(src.replace(/\n/g, "\r\n"), "status", "Retired").text;
+  assert.ok(crlf.includes("\r\n") && !/[^\r]\n/.test(crlf), "line endings kept");
+
+  const f = M.removeFlag(src, "flagNote", "Check the rating");
+  assert.equal(f.removed, true);
+  assert.ok(!f.text.includes("Check the rating") && !f.text.includes("Detail line.") && f.text.includes("flagLink"));
+  assert.ok(!/\n\n\n\n# |\n\n\n\n>/.test(f.text));
+  assert.equal(M.removeFlag(src, "flagNote", "No such flag").removed, false);
+  assert.equal(M.removeFlag(src, "flagConflict", "Check the rating").removed, false, "type must match");
+  // a flag-looking line inside the managed sections is never removed
+  const trick = src.replace("## Source: EA", "> [!flagNote] Inside source\n\n## Source: EA");
+  assert.equal(M.removeFlag(trick, "flagNote", "Inside source").removed, false);
+  assert.equal(M.parse(f.text).meta.uid, M.parse(src).meta.uid);
+  assert.equal(M.extractSysml(f.text), M.extractSysml(src), "SysML block untouched");
+});

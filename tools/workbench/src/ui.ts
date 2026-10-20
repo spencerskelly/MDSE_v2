@@ -17,8 +17,8 @@ export interface Host {
 }
 export interface App { setFiles(files: Map<string, string>): Promise<void>; select(path: string): void; index(): ModelIndex | null; destroy(): void }
 
-type Child = Node | string | null | undefined | false;
-function h(tag: string, attrs: Record<string, unknown> = {}, ...kids: Child[]): HTMLElement {
+export type Child = Node | string | null | undefined | false;
+export function h(tag: string, attrs: Record<string, unknown> = {}, ...kids: Child[]): HTMLElement {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v === undefined || v === null || v === false) continue;
@@ -75,8 +75,8 @@ function highlight(code: string): HTMLElement {
   pre.append(code.slice(last));
   return pre;
 }
-const csvCell = (v: unknown): string => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
-function download(name: string, text: string): void {
+export const csvCell = (v: unknown): string => { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+export function download(name: string, text: string): void {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" })); a.download = name; a.click();
 }
 

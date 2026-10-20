@@ -1,0 +1,184 @@
+/* The Obsidian interface: a right-sidebar panel that follows the selected note, and a main-window table view. Both read the
+ * one shared index the plugin builds; neither has its own file list (Obsidian's file explorer is the browser). Plain DOM;
+ * every vault string goes in as text. The only writes are the two Review actions the host performs (D-0025). */
+import { h, STYLE, csvCell, download } from "./ui.ts";
+import type { Child } from "./ui.ts";
+import type { ModelIndex, Note } from "./index.ts";
+import { incoming, outgoing } from "./index.ts";
+import * as V from "./views.ts";
+
+export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
+export interface PanelHost {
+  openNote(path: string): void;
+  /** Open the table for a lens in the main window. */
+  openTable(lens: V.Lens): void;
+  /** Open the canvas for a lens in the main window (a transient preview). */
+  openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
+  saveCanvas?(): Promise<string>;
+  /** Review actions. Resolves to a message and a way back. */
+  updateNote?(path: string, change: NoteChange): Promise<{ message: string; undo: () => Promise<string> }>;
+  hasPreview?(): boolean;
+}
+export interface PanelApp {
+  setIndex(ix: ModelIndex | null, loading?: string): void;
+  select(path: string): void;
+  setLens(lens: V.Lens): void;
+  lens(): V.Lens; selected(): string; destroy(): void;
+}
+
+const PANEL_STYLE = `
+.mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
+.mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}
+.mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
+.mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
+.mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
+.mdp .chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.mdp .chips label{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;cursor:pointer}
+.mdw.mdm{display:block;height:100%;overflow:auto}.mdm header{display:flex}.mdm .body{padding:10px 16px}.mdm table{font-size:13.5px}.mdm .cellist a{display:block}
+.mdp .cellist a,.mdm .cellist a{display:block}.mdp .msg{padding:6px 10px;color:var(--mut);font-size:12px}
+.mdw button.sm{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw button.sm:hover{border-color:var(--acc)}.mdw button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+`;
+
+export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens } = { mode: "panel" }): PanelApp {
+  const compact = opt.mode === "panel";
+  const style = h("style"); style.textContent = STYLE + PANEL_STYLE;
+  const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
+  root.replaceChildren(style, wrap);
+  let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
+  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false;
+
+  const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
+  const link = (p: string | null | undefined, label?: string, cls = ""): Node => {
+    const n = note(p);
+    if (!p || !n) return h("span", { class: cls || "mut" }, label ?? "(not in vault)");
+    return h("a", { href: "#", class: "lnk", onclick: (e: Event) => { e.preventDefault(); host.openNote(p); } }, label ?? n.title);
+  };
+  const empty = (m: string): HTMLElement => h("div", { class: "empty", style: "padding:16px 0" }, m);
+  const tag = (t: string): HTMLElement => h("span", { class: "tag" }, t);
+
+  /* ---- generic table renderer ---- */
+  const cellNode = (c: V.TableCell | undefined): Child => {
+    if (c === undefined) return "";
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) return c.length ? h("div", { class: "cellist" }, ...c.map((x) => link(x.path, x.text))) : "";
+    return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
+  };
+  const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  const CAP = compact ? 25 : 1000;
+  function tableView(t: V.TableData): HTMLElement {
+    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}, h("h3", {}, t.title));
+    if (t.note) box.append(h("div", { class: "mut", style: "font-size:12px;margin-bottom:4px" }, t.note));
+    if (!t.rows.length) { box.append(empty(t.empty)); return box; }
+    const shown = t.rows.slice(0, CAP);
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
+    if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
+    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
+    return box;
+  }
+
+  /* ---- lenses ---- */
+  function dashboardView(): HTMLElement {
+    const d = V.dashboard(ix!), pct = (a: number, b: number): string => (b ? Math.round((100 * a) / b) + "%" : "n/a");
+    const card = (k: string, v: string, sub = ""): HTMLElement => h("div", { class: "card" }, h("b", {}, v), h("span", { class: "mut" }, k), sub ? h("div", { class: "mut", style: "font-size:11px" }, sub) : null);
+    const bars = (title: string, rows: Array<[string, number]>): HTMLElement => { const max = Math.max(1, ...rows.map((r) => r[1])); return h("div", {}, h("h3", {}, title), ...rows.slice(0, compact ? 8 : 20).map(([k, n]) => h("div", { style: "display:grid;grid-template-columns:minmax(80px,1fr) 2fr 36px;gap:6px;align-items:center;font-size:12.5px" }, h("span", {}, k), h("div", { class: "bar" }, h("i", { style: `width:${(100 * n) / max}%` })), h("span", { style: "text-align:right" }, String(n))))); };
+    return h("div", {}, h("div", { class: "cards" }, card("notes", String(d.notes), `${d.blocks} with SysML`), card("requirements satisfied", pct(d.requirements.satisfied, d.requirements.total), `${d.requirements.satisfied} of ${d.requirements.total}`), card("requirements verified", pct(d.requirements.verified, d.requirements.total), `${d.requirements.verified} of ${d.requirements.total}`),
+      card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
+      bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
+  }
+  function noteView(): HTMLElement {
+    const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
+    const box = h("div", {});
+    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note")));
+    for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
+    const rel = (edges: ReturnType<typeof outgoing>, dir: "out" | "in"): HTMLElement => {
+      const by = new Map<string, typeof edges>(); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind)!).push(e);
+      if (!by.size) return h("div", { class: "mut" }, "None.");
+      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
+    };
+    box.append(h("h3", {}, "Relates to"), rel(outgoing(ix!, n.path), "out"), h("h3", {}, "Related from"), rel(incoming(ix!, n.path), "in"));
+    if (n.def?.usages.length) box.append(h("h3", {}, "Usages"), tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" }));
+    return box;
+  }
+  const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
+  function scopeBar(): HTMLElement | null {
+    if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
+    return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
+      lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e: Event) => { table = (e.target as HTMLSelectElement).value as typeof table; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]] as const).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
+      lens === "tables" ? h("input", { type: "search", placeholder: "filter", value: text, style: "width:110px", onchange: (e: Event) => { text = (e.target as HTMLInputElement).value; draw(); } }) : null);
+  }
+  function reviewView(): HTMLElement {
+    const items = V.reviewQueue(ix!), cats = new Map<string, number>(); for (const i of items) cats.set(i.category, (cats.get(i.category) ?? 0) + 1);
+    const box = h("div", {});
+    if (ix!.parser !== "passed") box.append(h("div", { class: "callout" }, h("b", {}, "SysML blocks are not parser-checked"), ix!.parser === "failed" ? "The last parser check failed." : "No parser report was found."));
+    box.append(h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "rv-" + opt.mode, checked: !revFilter, onchange: () => { revFilter = ""; draw(); } }), ` all ${items.length}`), ...[...cats].map(([k, n]) => h("label", {}, h("input", { type: "radio", name: "rv-" + opt.mode, checked: revFilter === k, onchange: () => { revFilter = k; draw(); } }), ` ${k} ${n}`))));
+    const rows = items.filter((i) => !revFilter || i.category === revFilter), shown = rows.slice(0, compact ? 40 : 1500);
+    if (!rows.length) { box.append(empty("Nothing to review.")); return box; }
+    const choices = V.statusChoices(ix!);
+    const act = (i: V.ReviewItem): Child => {
+      if (i.flag && host.updateNote) return h("button", { class: "sm", title: "Remove this flag from the note (an engineer's decision)", onclick: () => run(i.path, { kind: "removeFlag", ...i.flag! }) }, "Resolve");
+      if (i.category === "issue" && host.updateNote) return h("select", { "aria-label": "Issue status", onchange: (e: Event) => run(i.path, { kind: "status", value: (e.target as HTMLSelectElement).value }) }, ...[...new Set([i.status ?? "", ...choices])].filter(Boolean).map((s) => h("option", { value: s, selected: s === i.status }, s)));
+      return "";
+    };
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, compact ? null : h("th", {}, "Severity"), h("th", {}, "Category"), h("th", {}, "Note"), h("th", {}, "Detail"), h("th", {}, ""))),
+      h("tbody", {}, ...shown.map((i) => h("tr", {}, compact ? null : h("td", { class: i.severity === "high" ? "gap" : "" }, i.severity), h("td", {}, i.category), h("td", {}, i.path ? link(i.path) : ""), h("td", {}, i.category === "issue" ? "" : i.message), h("td", {}, act(i)))))));
+    if (rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${rows.length - shown.length} more. Open the table in the main window.`));
+    return box;
+  }
+  async function run(path: string, change: NoteChange): Promise<void> {
+    if (!host.updateNote) return;
+    if (change.kind === "removeFlag" && typeof confirm === "function" && !confirm(`Resolve this flag and remove it from the note?\n\n${change.title}`)) return;
+    try { const r = await host.updateNote(path, change); msg = r.message; undo = r.undo; } catch (e) { msg = "Update failed: " + String((e as Error)?.message ?? e); undo = null; }
+    draw();
+  }
+
+  /* ---- canvas settings (compact) ---- */
+  function canvasSettings(): HTMLElement {
+    const prof = V.PROFILES.find((p) => p.name === V.LENS_PROFILE[lens])!, sp: V.ViewSpec = { ...V.defaultSpec(prof), ...spec };
+    const set = (patch: Partial<V.ViewSpec>): void => { spec = { ...spec, ...patch }; draw(); };
+    const types = new Map<string, number>(); for (const n of ix!.notes.values()) types.set(n.type, (types.get(n.type) ?? 0) + 1);
+    const kinds = V.edgeKinds(ix!), flip = (l: string[], v: string, on: boolean): string[] => (on ? l.filter((x) => x !== v) : l.includes(v) ? l : [...l, v]);
+    return h("details", { class: "vsbox" }, h("summary", {}, "Canvas settings"),
+      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: sp.depth, style: "width:48px", onchange: (e: Event) => set({ depth: Math.max(1, +(e.target as HTMLInputElement).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e: Event) => set({ cap: Math.max(5, +(e.target as HTMLInputElement).value || prof.cap) }) })),
+        h("button", { class: "sm", onclick: () => { spec = {}; draw(); } }, "Reset")),
+      h("div", { class: "mut" }, "Note types shown"), h("div", { class: "chips" }, ...[...types].sort().map(([k, n]) => chip(`${k} ${n}`, !sp.hideTypes.includes(k), (on) => { spec = { ...spec, hideTypes: flip(sp.hideTypes, k, on) }; }))),
+      h("div", { class: "mut" }, `Relationships followed (none ticked = the ${prof.name} profile's own)`), h("div", { class: "chips" }, ...kinds.map(([k, n]) => chip(`${k} ${n}`, sp.kinds.includes(k), (on) => { spec = { ...spec, kinds: on ? [...sp.kinds, k] : sp.kinds.filter((x) => x !== k) }; }))),
+      h("div", { class: "chips" }, h("span", { class: "mut" }, "Group similar notes by"), h("select", { "aria-label": "Classifier", onchange: (e: Event) => set({ collapse: (e.target as HTMLSelectElement).value as V.Classifier }) }, ...V.CLASSIFIERS.map(([v, l]) => h("option", { value: v, selected: v === sp.collapse }, l))), h("label", {}, "when more than ", h("input", { type: "number", min: 1, max: 50, value: sp.collapseOver, style: "width:44px", onchange: (e: Event) => set({ collapseOver: Math.max(1, +(e.target as HTMLInputElement).value || 6) }) }))),
+      h("label", { class: "mut" }, h("input", { type: "checkbox", checked: sp.ghosts, onchange: (e: Event) => { spec = { ...spec, ghosts: (e.target as HTMLInputElement).checked }; } }), " show references to notes not in the vault"));
+  }
+
+  /* ---- shell ---- */
+  const busy = (btn: HTMLElement, label: string, job: () => Promise<string>): void => { btn.setAttribute("disabled", ""); btn.textContent = label; job().then((m) => { msg = m; undo = null; }, (e) => { msg = "Failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); };
+  function draw(): void {
+    const n = note(sel);
+    const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
+      ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
+      !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
+    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; draw(); } }, label)));
+    const acts = h("div", { class: "acts" });
+    if (compact && ix) {
+      if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
+      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, spec))); acts.append(b); }
+      if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
+    }
+    const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;
+    const body = h("div", { class: "body" });
+    if (!ix) body.append(empty(loading));
+    else try {
+      if (compact && V.lensHasCanvas(lens) && n) body.append(canvasSettings());
+      const bar = scopeBar(); if (bar) body.append(bar);
+      if (lens === "dashboard") body.append(dashboardView());
+      else if (lens === "note") body.append(noteView());
+      else if (lens === "review") body.append(reviewView());
+      else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
+    } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
+    wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
+  }
+  draw();
+
+  return {
+    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; draw(); },
+    select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
+    setLens(l) { lens = l; draw(); },
+    lens: () => lens, selected: () => sel,
+    destroy() { wrap.remove(); style.remove(); },
+  };
+}

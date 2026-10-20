@@ -190,6 +190,33 @@ const MDSE = (() => {
   /* ---- ZIP (stored, no compression) ------------------------------------------- */
   let CRC = null;
   const crc32 = (b) => { if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+  /* ---- Narrow, human-initiated edits used by the Workbench Review (D-0025). They touch the frontmatter value or one flag
+   * callout in the user zone, never `## Source: EA` or `## SysML v2`, and return the new text; the caller writes it. ---- */
+  const FLAG_RE = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
+  const crlf = (orig, text) => (orig.includes("\r\n") ? text.replace(/\n/g, "\r\n") : text);
+  function setFrontmatterField(text, key, value) {
+    const n = parse(text);
+    if (!/^[A-Za-z][\w-]*$/.test(key)) return { text, changed: false, reason: "BAD_KEY" };
+    const v = String(value).trim();
+    if (/[\n\r]/.test(v)) return { text, changed: false, reason: "BAD_VALUE" };
+    const quoted = v === "" ? "" : /^[\s'"]|[:#]\s|\s$|^[-?!&*|>%@`]/.test(v) ? JSON.stringify(v) : v;
+    const fm = n.text.slice(4, n.fmBlockEnd), re = new RegExp(`^${key}:.*$`, "m");
+    if (!re.test(fm)) return { text, changed: false, reason: "FIELD_MISSING" };
+    const out = n.text.slice(0, 4) + fm.replace(re, quoted === "" ? `${key}:` : `${key}: ${quoted}`) + n.text.slice(n.fmBlockEnd);
+    return { text: crlf(text, out), changed: out !== n.text, reason: "" };
+  }
+  function removeFlag(text, type, title, nth = 0) {
+    const n = parse(text), zoneEnd = managedStart(n), zoneStart = n.fmEnd, zone = n.text.slice(zoneStart, zoneEnd);
+    let i = 0, hit = null;
+    for (const m of zone.matchAll(FLAG_RE)) { if (m[1] === type && m[2].trim() === String(title).trim()) { if (i === nth) { hit = m; break; } i++; } }
+    if (!hit) return { text, removed: false, reason: "FLAG_NOT_FOUND" };
+    let start = zoneStart + hit.index, end = start + hit[0].length;
+    if (n.text.slice(end, end + 1) === "\n" && (start === 0 || n.text.slice(start - 1, start) === "\n")) end++;      // keep one blank line, not two
+    const out = n.text.slice(0, start) + n.text.slice(end);
+    return { text: crlf(text, out), removed: true, reason: "" };
+  }
+
   function zip(entries) { // entries: [[path, Uint8Array]]
     const enc = new TextEncoder(), parts = [], central = []; let off = 0;
     const u16 = (v) => [v & 255, (v >>> 8) & 255], u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
@@ -205,6 +232,6 @@ const MDSE = (() => {
     const all = [...parts, ...central, end], total = all.reduce((s, x) => s + x.length, 0), out = new Uint8Array(total); let p = 0;
     for (const x of all) { out.set(x, p); p += x.length; } return out;
   }
-  return { SYSML_HEADING, SOURCE_HEADING, EA_OWNED_KEYS, parse, extractSysml, qualifiedNames, validate, renderSysmlSection, replaceSysmlBlock, mergeNote, indexByUid, crc32, zip };
+  return { SYSML_HEADING, SOURCE_HEADING, EA_OWNED_KEYS, parse, extractSysml, qualifiedNames, validate, renderSysmlSection, replaceSysmlBlock, mergeNote, indexByUid, crc32, zip, setFrontmatterField, removeFlag };
 })();
 if (typeof module !== "undefined") module.exports = MDSE;

@@ -1,28 +1,32 @@
 # workbench
 
-Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline HTML page and an Obsidian plugin. Phase 1 is read-only; Phase 3 adds editing.
+Viewer for an MDSE vault (read-only except two Review actions, D-0025). One TypeScript core, two shells: an offline HTML page and an Obsidian plugin.
 
-**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.5.0), read-only.** D-0019 records the design.
+**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.6.0); read-only except two Review actions (D-0025).** D-0019 records the design.
 
 ## Run it
 
 - **Page:** `npm run build:workbench`, then open `tools/workbench/dist/mdse_workbench.html`. Choose "Open vault folder" (Chromium browsers), "Choose folder (any browser)", or "Open MDSE.zip", or drop a folder or zip on the page. Nothing leaves the browser.
 - **Obsidian, new or existing vault:** the importer ships this plugin in the base vault and its "Update vault configuration" step installs or upgrades it in an existing vault without a data source (D-0024).
-- **Obsidian, by hand:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
+- **Obsidian, by hand:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench (right panel)". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
 
-## In Obsidian: table and canvas
+## In Obsidian: right panel, main-window table and canvas
 
-- **Table:** the Workbench tab (ribbon icon, or command "Open MDSE Workbench"). The Notes tab is a filterable table of every note; Relationships, Traceability and the parts list are tables too. All export to CSV.
-- **Canvas preview (temporary view):** "Open as Canvas" (Structure, Where used and Graph tabs; also the command "Preview canvas from current note" and the file right-click menu) writes the view to ONE scratch file, `99_System/22_Views/Workbench Preview.canvas`, and opens it. Every preview overwrites that file, it is deleted when the plugin loads or unloads, and Git ignores the folder. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card.
-- **Saved view:** nothing is kept until you choose "Save canvas…" (button on the tab, or the command "Save preview canvas…"). You pick a folder: the default `99_System/23_Saved_Views` (setting "Default folder for saved canvases") is offered first, then the last folder you used, then every other folder, so a project folder is one pick away. The saved file is a copy of the preview as it is now, including anything you rearranged, and never overwrites an existing file (a counter is added). In the browser page the same button downloads a `.canvas` file.
-- **View settings** (Graph tab; the canvas uses the same settings): connections away (hops), max notes, relationships followed (none ticked = the profile's own), note types shown, status shown, limit to a folder, and a classifier. The classifier groups notes that share a type, subtype, status, folder or EA type at the same distance into one card ("Requirement/engineering ×30") once more than N share it, with merged edge counts ("allocatedTo ×30"). On a canvas the group card lists member links. Notes hidden by a filter are not traversed through. Settings are per session; a canvas saved from non-default settings gets a short code in its suggested file name.
-- "Show current note in MDSE Workbench" (command and right-click) jumps straight to a note.
+There is no Workbench browser. Obsidian's file explorer picks the note; the Workbench is a panel in the **right sidebar** that shows the note you have open and follows it as you click through the vault (untick "follow the selected note" in the main-window table to pin one). Tables and canvases open in the **main window** for the selected note and lens.
+
+- **Lenses (buttons at the top of the panel):** Dashboard (vault counts and bars), Note (metadata, flags, relationships, SysML), Tables, Structure trace, Functional trace, Requirements trace, Review.
+- **Table in main window:** opens the lens as a full-width table (Tables: relationships, usages, all notes; Structure trace: part tree, rolled-up parts list, where used; Functional trace: each behavior with its performer, actions, requirements, verification, allocation and gaps; Requirements trace: satisfied-by, verified-by, derivations, gaps). Scope is "around the selected note" or "everything in the vault". All export to CSV.
+- **Canvas in main window (temporary view):** Structure, Functional and Requirements trace and Tables each have a canvas profile. It is written to ONE scratch file, `99_System/22_Views/Workbench Preview.canvas`, and opened in the main area. Every preview overwrites that file, it is deleted when the plugin loads or unloads, and Git ignores the folder. Cards are the real notes; a reference whose note is not in the vault is a red text card. Also the command "Preview canvas from current note" and the file right-click menu.
+- **Saved view:** nothing is kept until you choose "Save canvas…" (panel button, or the command "Save preview canvas…"). The default folder `99_System/23_Saved_Views` (setting "Default folder for saved canvases") is offered first, then the last folder you used, then every other folder. The saved file is a copy of the preview as you left it and never overwrites (a counter is added).
+- **Canvas settings** (in the panel): connections away (hops), max notes, relationships followed, note types and statuses shown, folder, and a classifier that groups notes sharing a type, subtype, status, folder or EA type at the same distance into one card with merged edge counts. Notes hidden by a filter are not traversed through. Settings are per session; a canvas saved from non-default settings gets a short code in its suggested file name.
+- **Review (updates issues):** flags, unresolved links, untyped usages, duplicate ids, parser status, and every Issue note not Retired. Two buttons write to a note, each on your click, each with an Undo: a status picker on an Issue note, and "Resolve" on a flag (removes that one flag callout from the user zone). Nothing else edits a note, and the Workbench never edits the `## SysML v2` block.
+- The index is shared by the panel and the tables and rebuilds a moment after a note is saved, created, renamed or deleted.
 
 ## Rules this tool follows
 
 Agreed 2026-10-19 (D-0023). These are tool documentation; they are not registered in RULESET.md, whose WKB rules stay Unreviewed.
 
-1. **Read-only on the model.** The Workbench never creates, edits, renames or deletes a model note.
+1. **Read-only on the model, with two exceptions (D-0025).** The Workbench never creates, renames or deletes a model note and never touches the `## SysML v2` block. The only edits are in Review, each started by a click, each undoable: set an Issue note's `status`, and resolve (remove) one flag callout in the user zone.
 2. **Disposable index.** It is rebuilt from the files on every load and holds no meaning of its own.
 3. **Relationships come from the SysML v2 text** (D-0003) plus MDSE-only YAML links. It never guesses a link; what it cannot resolve is shown as unresolved and listed in Review.
 4. **A missing end is never invented.** An `allocate` or `dependency` whose source note is absent is kept as an unresolved edge on the note that has it, never as a self-loop. Typed parts whose definition is absent are listed as "not in vault".

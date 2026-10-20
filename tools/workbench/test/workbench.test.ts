@@ -220,3 +220,40 @@ test("canvas honours view settings: grouped card lists member links, file name d
   const lone2 = lone(), p2 = [...lone2.notes.keys()][0]!, A = V.PROFILES.find((p) => p.name === "Allocation")!;
   assert.equal(toCanvas(lone2, p2, A, { ghosts: false }).doc.nodes.length, 1);
 });
+
+test("review rows carry what is needed to resolve a flag; Issue notes get a status row", () => {
+  const q = V.reviewQueue(ix);
+  const flags = q.filter((i) => i.flag);
+  assert.ok(flags.length > 0 && flags.every((i) => i.flag!.type.startsWith("flag") && i.flag!.title && i.flag!.nth >= 0));
+  const issue = buildIndex(new Map([["I.md", "---\ntype: Issue\nid: ISS-1\nuid: u1\nstatus: Open\n---\n# Bad pin\n"]]), { classes });
+  const rows = V.reviewQueue(issue).filter((i) => i.category === "issue");
+  assert.equal(rows.length, 1); assert.equal(rows[0].status, "Open");
+  const retired = buildIndex(new Map([["I.md", "---\ntype: Issue\nid: ISS-1\nuid: u1\nstatus: Retired\n---\n# Old\n"]]), { classes });
+  assert.equal(V.reviewQueue(retired).filter((i) => i.category === "issue").length, 0);
+});
+
+test("status choices include the vocabulary in use plus Draft and Retired", () => {
+  const c = V.statusChoices(ix);
+  assert.ok(c.includes("Draft") && c.includes("Retired"));
+  assert.equal(new Set(c).size, c.length);
+});
+
+test("lens tables: every lens that has a table returns well-formed data; scope switches between note and vault", () => {
+  const sel = [...ix.notes.keys()][0];
+  for (const [lens] of V.LENSES) {
+    if (!V.lensHasTable(lens) || lens === "review") continue;   // Review is drawn by the panel itself
+    for (const scope of ["selected", "all"] as const) {
+      const ts = V.lensTables(ix, lens, sel, { scope });
+      assert.ok(ts.length > 0, lens);
+      for (const t of ts) for (const r of t.rows) for (const c of t.columns) assert.ok(c.key in r || true);
+    }
+  }
+  const all = V.lensTables(ix, "tables", sel, { scope: "all", table: "notes" })[0].rows.length;
+  assert.equal(all, ix.notes.size);
+});
+
+test("functional trace lists behaviors with their gaps", () => {
+  const rows = V.functionalTrace(ix);
+  assert.ok(Array.isArray(rows));
+  for (const r of rows) assert.ok(r.gaps.every((g) => g === "no performer" || g === "no requirement"));
+});

@@ -149,6 +149,9 @@ export const PROFILES: Profile[] = [
   { name: "Allocation", description: "Allocations between elements.", steps: both("allocatedTo"), depth: 2, cap: 80 },
   { name: "Dependencies", description: "Trace, refine, derive, depends-on and uses links.", steps: both("trace", "refines", "derivedFrom", "dependsOn", "uses"), depth: 2, cap: 80 },
   { name: "Documentation", description: "Info and other notes that describe an element.", steps: both("describes"), depth: 2, cap: 80 },
+  { name: "Structure trace", description: "Down: parts, ports, specializations. Up: what owns or specializes it.", steps: both("hasPart", "hasPort", "specializes"), depth: 3, cap: 80 },
+  { name: "Functional trace", description: "Functions with who performs them, what they satisfy, and where they are allocated.", steps: [...both("performs", "hasAction", "allocatedTo"), { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }, { kind: "satisfies", dir: "out" }, { kind: "satisfies", dir: "in" }], depth: 2, cap: 80 },
+  { name: "Requirements trace", description: "Requirements with what derives, refines, satisfies, verifies and is allocated against them.", steps: both("derivedFrom", "refines", "satisfies", "verifies", "allocatedTo"), depth: 2, cap: 80 },
   { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1, cap: 60 },
 ];
 
@@ -280,11 +283,13 @@ export function folderTree(ix: ModelIndex): TreeNode {
 }
 
 /* ---- Review and dashboard ----------------------------------------------------------------------------------------- */
-export interface ReviewItem { severity: "high" | "medium" | "low"; category: string; path: string; message: string }
+export interface ReviewItem { severity: "high" | "medium" | "low"; category: string; path: string; message: string; /** set on flag rows so the flag can be resolved */ flag?: { type: string; title: string; nth: number }; /** set on Issue notes */ status?: string }
 export function reviewQueue(ix: ModelIndex): ReviewItem[] {
   const out: ReviewItem[] = [];
   for (const n of ix.notes.values()) {
-    for (const f of n.flags) out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title });
+    const seenFlag = new Map<string, number>();
+    for (const f of n.flags) { const k = f.type + "\u0000" + f.title, nth = seenFlag.get(k) ?? 0; seenFlag.set(k, nth + 1); out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title, flag: { type: f.type, title: f.title, nth } }); }
+    if (n.type === "Issue" && n.status !== "Retired") out.push({ severity: "medium", category: "issue", path: n.path, message: n.title, status: n.status || "(none)" });
     for (const w of n.warnings) out.push({ severity: "medium", category: "sysml-not-recognized", path: n.path, message: w });
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
     for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
@@ -313,4 +318,90 @@ export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
     if (score >= 0) hits.push([score, n]);
   }
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);
+}
+
+/** Statuses a person can set: the ones already used in the vault plus the two the rules name (Draft is the template default, Retired is how a note ends). */
+export const statusChoices = (ix: ModelIndex): string[] => [...new Set(["Draft", ...[...ix.notes.values()].map((n) => n.status).filter(Boolean), "Retired"])];
+
+/* ---- Functional trace ------------------------------------------------------------------------------------------- */
+export interface FuncRow { path: string; id: string; title: string; subtype: string; status: string; performedBy: string[]; actions: string[]; satisfies: string[]; satisfiesViaPerformer: string[]; verifiedBy: string[]; allocatedTo: string[]; gaps: string[] }
+export function functionalTrace(ix: ModelIndex): FuncRow[] {
+  const rows: FuncRow[] = [];
+  const uniq = (a: string[]): string[] => [...new Set(a)];
+  for (const n of ix.notes.values()) {
+    if (n.type !== "Behavior" && n.def?.keyword !== "action def") continue;
+    const inn = incoming(ix, n.path), out = outgoing(ix, n.path);
+    const performedBy = uniq(inn.filter((e) => (e.kind === "performs" || e.kind === "hasAction") && e.to).map((e) => e.from));
+    const direct = uniq(out.filter((e) => e.kind === "satisfies" && e.to).map((e) => e.to!));
+    const via = uniq(performedBy.flatMap((p) => outgoing(ix, p).filter((e) => e.kind === "satisfies" && e.to).map((e) => e.to!))).filter((r) => !direct.includes(r));
+    const r: FuncRow = { path: n.path, id: n.id, title: n.title, subtype: n.subtype, status: n.status, performedBy,
+      actions: [...(n.def?.usages ?? []).filter((u) => u.kind === "action").map((u) => u.name), ...out.filter((e) => e.kind === "hasAction" && e.to).map((e) => nm(ix, e.to, e.toSymbol))],
+      satisfies: direct, satisfiesViaPerformer: via, verifiedBy: uniq(inn.filter((e) => e.kind === "verifies").map((e) => e.from)),
+      allocatedTo: uniq([...inn.filter((e) => e.kind === "allocatedTo").map((e) => e.from), ...out.filter((e) => e.kind === "allocatedTo" && e.to).map((e) => e.to!)]), gaps: [] };
+    if (!performedBy.length) r.gaps.push("no performer");
+    if (!direct.length && !via.length) r.gaps.push("no requirement");
+    rows.push(r);
+  }
+  return rows.sort((a, b) => a.id.localeCompare(b.id) || a.title.localeCompare(b.title));
+}
+const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.performedBy, r.satisfies, r.satisfiesViaPerformer, r.verifiedBy, r.allocatedTo].some((l) => l.includes(sel));
+const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
+
+/* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "functional" | "requirements" | "review";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure trace"], ["functional", "Functional trace"], ["requirements", "Requirements trace"], ["review", "Review"]];
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", functional: "Functional trace", requirements: "Requirements trace", review: "Everything" };
+export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
+export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note";
+
+export interface Cell { text: string; path?: string | null; cls?: string }
+export type TableCell = Cell | Cell[] | string;
+export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
+const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
+const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
+export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string }
+
+export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
+  const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
+  const out: TableData[] = [];
+  if (lens === "structure") {
+    if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
+    const st = structure(ix, sel), flat: Array<Record<string, TableCell>> = [];
+    const walk = (t: TreeNode, level: number): void => {
+      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
+      for (const c of t.children) walk(c, level + 1);
+    };
+    walk(st.tree, 0);
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no usages.",
+      note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
+    const b = bom(ix, sel);
+    out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(x.qty), depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    const w = whereUsed(ix, sel), up: Array<Record<string, TableCell>> = [];
+    const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); walkUp(c, level + 1); } };
+    walkUp(w.tree, 0);
+    out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+  } else if (lens === "functional") {
+    const all = functionalTrace(ix), rows = scope === "selected" && has ? all.filter((r) => funcRelated(r, sel)) : all;
+    out.push({ id: "functional", title: scope === "selected" && has ? `Functional trace around ${n!.title}` : "Functional trace (all functions)", columns: [{ key: "fn", label: "Function" }, { key: "by", label: "Performed by" }, { key: "sat", label: "Satisfies" }, { key: "ver", label: "Verified by", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "act", label: "Actions", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ fn: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, by: Cs(ix, r.performedBy), sat: [...Cs(ix, r.satisfies), ...Cs(ix, r.satisfiesViaPerformer).map((c) => ({ ...c, text: c.text + " (via performer)" }))], ver: Cs(ix, r.verifiedBy), alloc: Cs(ix, r.allocatedTo), act: r.actions.join(", "), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No functions are related to this note." : "No Behavior notes in the vault.",
+      note: `${all.length} function(s) in the vault; ${all.filter((r) => r.gaps.length).length} with gaps.` });
+  } else if (lens === "requirements") {
+    const t = traceMatrix(ix), rows = scope === "selected" && has ? t.rows.filter((r) => traceRelated(r, sel)) : t.rows;
+    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n!.title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
+      note: `${t.total} requirement(s): ${t.satisfied} satisfied, ${t.verified} verified.` });
+  } else if (lens === "tables") {
+    const which = o.table ?? "relationships";
+    if (which === "notes") {
+      const rows = tableRows(ix, { ...(o.text ? { text: o.text } : {}), sort: "id" });
+      out.push({ id: "notes", title: "Notes", columns: [{ key: "id", label: "Id" }, { key: "title", label: "Title" }, { key: "type", label: "Type" }, { key: "status", label: "Status" }, { key: "folder", label: "Folder", wide: true }, { key: "flags", label: "Flags" }, { key: "dangling", label: "Unresolved", wide: true }], rows: rows.map((r) => ({ id: r.id, title: { text: r.title, path: r.path } as Cell, type: r.type + (r.subtype ? "/" + r.subtype : ""), status: r.status, folder: r.folder, flags: String(r.flags || ""), dangling: String(r.dangling || "") })), empty: "No notes match." });
+    } else if (which === "usages") {
+      const u = n?.def?.usages ?? [];
+      out.push({ id: "usages", title: n ? `Usages in ${n.title}` : "Usages", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "mult", label: "Multiplicity" }], rows: u.map((x) => ({ kind: (x.dir ? x.dir + " " : "") + x.kind, name: x.name, type: x.type ? ({ text: ix.bySymbol.get(x.type) ? nm(ix, ix.bySymbol.get(x.type)!, x.type) : x.type + " (not in vault)", path: ix.bySymbol.get(x.type) ?? null } as Cell) : { text: "untyped", cls: "gap" } as Cell, mult: x.mult ?? "" })), empty: n ? "No usages." : "Select a note." });
+    } else {
+      const rows = relationshipRows(ix, [], o.text ?? "").filter((r) => !sel || scope === "all" || r.from === sel || r.to === sel);
+      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }], rows: rows.map((r) => ({ from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" } as Cell : { text: r.fromTitle, path: r.from } as Cell, kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to } as Cell : { text: r.toTitle + " (not in vault)", cls: "gap" } as Cell, label: r.label })), empty: "No relationships." });
+    }
+  }
+  return out;
 }
