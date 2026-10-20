@@ -312,3 +312,17 @@ Rules: WKB-008, WKB-009, WKB-010.
 7. **Not yet.** Changing a relationship's kind across groups (for example satisfy to allocate), reordering, connections between ports, transitions and flows, members with more than one definition per note (the index reads the first definition of a note, as before).
 
 Rules: WKB-011, WKB-012, WKB-013.
+
+## D-0032 — Importer builds the full vault: plugins, Bootstrap, name prompt, BOM
+
+2026-10-20 · Spencer · Accepted
+
+1. **Vault contents.** The base vault now ships Bootstrap 0.1.0, the Workbench, and unmodified releases of Templater 2.25.0, Advanced Canvas 7.1.0 and Obsidian Git 2.40.0 (files kept in `tools/base-vault/vendor`, hashed in `plugin-lock.yaml`). Fileclass and Breadcrumbs (BOO-001 "provisional") are not shipped.
+2. **Settings.** Templater and Obsidian Git start from the V1 vault's values with two changes: Obsidian Git does not pull on boot (a new vault has no remote, so every start would raise an error), and Templater keeps `trigger_on_file_creation_mode: none` so imported notes are never templated. Advanced Canvas runs on its defaults. The settings are seeded into `data.json` and written into the lock; Bootstrap merges them back at each start. This differs from BOO-005's "data.json is hash-locked": a hash lock would reject any change the person makes through the plugin's own settings page.
+3. **Licences.** Templater is AGPL-3.0 and Advanced Canvas is GPL-3.0. They are shipped unmodified with source links in `99_System/THIRD_PARTY_NOTICES.md`. If a vault is given to other people, those licences apply to what is given.
+4. **Trust.** Obsidian's "Trust author and enable plugins" choice cannot be set by a vault file. The page says so, and Bootstrap acts after it.
+5. **Page.** Name prompt first; stage progress bar; sources (QEAX and/or BOM); destination; build; Obsidian steps. A BOM alone builds a vault with the BOM notes; a QEAX alone behaves as before.
+6. **BOM.** Flat and redline layouts, `.xlsx` (in-page reader that keeps struck-out runs), `.csv`, `.tsv`. Latest revision only (ADR-V2-08). Mapping and findings per BOM-015..017.
+7. **Not yet.** No real BOM workbook has been run; the redline layout is inferred. The EA key for a part number is undecided, so EA to BOM matching is a report. A part number already in the vault is not refreshed from a newer BOM. A replaced part number (struck in a redline) is recorded as text, not as a `supersedes` link, because the old number has no note. The pages and plugins have not been run in a real Obsidian.
+
+Rules: IMP-099, IMP-100, BAS-012, BOO-007, BOO-008, BOM-015, BOM-016, BOM-017.

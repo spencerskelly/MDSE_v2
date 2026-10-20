@@ -1,5 +1,5 @@
 """Drive the single-file HTML importer in a real Chromium: no network, QEAX analysis, vault check."""
-import pathlib, shutil, sqlite3, tempfile, unittest
+import pathlib, shutil, sqlite3, tempfile, unittest, zipfile, io
 
 try:
     from playwright.sync_api import sync_playwright
@@ -47,6 +47,12 @@ class ImporterBrowser(unittest.TestCase):
                 pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
                 pg.goto(HTML.as_uri())
                 self.assertIn("build ", pg.inner_text("#build"))
+                # the page asks for a name first and cannot be used until one is given
+                self.assertTrue(pg.is_visible("#whoDlg"))
+                pg.keyboard.press("Escape"); self.assertTrue(pg.is_visible("#whoDlg"), "cannot be dismissed without a name")
+                pg.fill("#whoName", "Spencer"); pg.click("#whoSave"); self.assertIn("first and a last", pg.inner_text("#whoErr"))
+                pg.fill("#whoName", "Spencer Skelly"); self.assertEqual(pg.inner_text("#whoCode"), "skellyspencer"); pg.click("#whoSave")
+                self.assertFalse(pg.is_visible("#whoDlg")); self.assertIn("skellyspencer", pg.inner_text("#who"))
 
                 pg.set_input_files("#qeax", str(d / "x.eapx"))
                 pg.wait_for_function("document.getElementById('srcStatus').textContent.includes('SQLite')")
@@ -104,6 +110,7 @@ class VaultUpdateBrowser(unittest.TestCase):
             # a file:// page has an opaque origin and no storage, so serve the same bytes from an https origin (nothing leaves the machine)
             pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
             pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
             self.assertTrue(pg.is_disabled("#updPreview"), "needs a folder")
             pg.evaluate(SEED)
             pg.click("#pick")
@@ -134,6 +141,97 @@ class VaultUpdateBrowser(unittest.TestCase):
             self.assertTrue(pg.is_disabled("#updApply"))
             b.close()
         self.assertEqual(errors, [])
+
+
+BOM_TSV = "\n".join(["Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2",
+    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t1\t01191\t-0\t99\tCONNECTOR HOUSING\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t2\tea\t01141-002-N99",
+    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t4\t01798-006-M\t-0\t01\tWIRE 22AWG\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t0.559\tM\t01141-002-N99"]) + "\n"
+
+
+@unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
+class FullVaultBuild(unittest.TestCase):
+    def test_bom_only_build_gives_a_full_bootstrap_vault_zip(self):
+        errors = []
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            f = pathlib.Path(d) / "bom.tsv"; f.write_text(BOM_TSV)
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True)
+            pg.on("pageerror", lambda e: errors.append(str(e))); pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.goto(HTML.as_uri())
+            self.assertTrue(pg.is_disabled("#genNew"))
+            pg.fill("#whoName", "Spencer Skelly"); pg.click("#whoSave")
+            self.assertTrue(pg.is_disabled("#genNew"), "no source yet")
+            pg.set_input_files("#bomFile", str(f))
+            pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom.tsv')")
+            self.assertIn("flat", pg.inner_text("#bomOut"))
+            self.assertFalse(pg.is_disabled("#genNew"))
+            pg.fill("#vname", "Acme Vault")
+            with pg.expect_download() as dl:
+                pg.click("#genNew")
+            z = zipfile.ZipFile(dl.value.path()); names = set(z.namelist())
+            self.assertIn("flat", pg.inner_text("#genOut"))
+            self.assertEqual(pg.get_attribute("#pbar", "aria-valuenow"), "100")
+            for plug in ("mdse-bootstrap", "mdse-workbench", "templater-obsidian", "advanced-canvas", "obsidian-git"):
+                for fn in ("main.js", "manifest.json"):
+                    self.assertIn(".obsidian/plugins/%s/%s" % (plug, fn), names)
+            y = z.read(".vault.yaml").decode()
+            self.assertIn("author: skellyspencer", y); self.assertIn("vault_name: Acme Vault", y); self.assertNotIn("UNINITIALIZED", y)
+            self.assertIn("99_System/04_People/Spencer Skelly.md", names)
+            self.assertIn("skellyspencer", z.read("99_System/04_People/Spencer Skelly.md").decode())
+            self.assertIn("mdse-bootstrap", z.read(".obsidian/community-plugins.json").decode())
+            self.assertIn("99_System/05_Templates", z.read(".obsidian/plugins/templater-obsidian/data.json").decode())
+            parts = [n for n in names if n.startswith("BOM/Parts/")]
+            self.assertEqual(len(parts), 3)
+            self.assertTrue(any(n.startswith("99_System/11_Import/BOM Findings") for n in names))
+            self.assertIn("Trust author and enable plugins", pg.inner_text("#trustBody"))
+            b.close()
+        self.assertEqual(errors, [])
+
+
+def make_redline_xlsx(path):
+    """A small redline workbook, deflate-compressed like Excel writes it: 06991 struck out, 6100148 new, one alternate row."""
+    head = ["0", "1", "Structure", "Number", "Name", "CL1", "CL2", "Manufacturer", "Manufacturer Part Number", "Line Number", "Quantity", "Unit"]
+    rows = [dict(zip("ABCDEFGHIJKL", head)),
+            {"A": "0", "C": "0", "D": "5913538", "E": "BRACKET ASSY", "F": "B", "G": "03"},
+            {"B": "1", "C": "1", "D": ("06991", "6100148"), "E": "SUPPORT AW", "F": "A", "G": "02", "H": "CIRCLE AW", "I": "AW 250", "J": "8", "K": "4.318", "L": "Meter"},
+            {"H": "EATON B-LINE", "I": "AW250"}]
+    sst, xml = [], []
+    for r, row in enumerate(rows, 1):
+        cells = []
+        for col, v in row.items():
+            if isinstance(v, tuple):
+                sst.append('<si><r><rPr><strike/></rPr><t>%s</t></r><r><rPr/><t>%s</t></r></si>' % v)
+            else:
+                sst.append("<si><t>%s</t></si>" % v)
+            cells.append('<c r="%s%d" t="s"><v>%d</v></c>' % (col, r, len(sst) - 1))
+        xml.append('<row r="%d">%s</row>' % (r, "".join(cells)))
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("xl/workbook.xml", '<workbook><sheets><sheet name="Redline" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", '<Relationships><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/></Relationships>')
+        z.writestr("xl/sharedStrings.xml", "<sst>" + "".join(sst) + "</sst>"); z.writestr("xl/worksheets/sheet1.xml", "<worksheet><sheetData>" + "".join(xml) + "</sheetData></worksheet>")
+
+
+@unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
+class RedlineXlsxInBrowser(unittest.TestCase):
+    def test_browser_reads_a_compressed_redline_workbook(self):
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            f = pathlib.Path(d) / "redline.xlsx"; make_redline_xlsx(f)
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True); pg.goto(HTML.as_uri())
+            pg.fill("#whoName", "Spencer Skelly"); pg.click("#whoSave")
+            pg.set_input_files("#bomFile", str(f))
+            pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('redline.xlsx')")
+            self.assertIn("redline", pg.inner_text("#bomOut"))
+            with pg.expect_download() as dl:
+                pg.click("#genNew")
+            z = zipfile.ZipFile(dl.value.path())
+            top = [z.read(n).decode() for n in z.namelist() if n.startswith("BOM/Parts/5913538")][0]
+            self.assertIn("P_6100148", top); self.assertIn("was 06991 before this release", top); self.assertNotIn("P_06991", top)
+            self.assertTrue(any(n.startswith("BOM/Parts/6100148") for n in z.namelist()))
+            alt = [z.read(n).decode() for n in z.namelist() if n.startswith("BOM/Parts/6100148")][0]
+            self.assertIn("EATON B-LINE AW250 (alternate)", alt)
+            b.close()
 
 
 if __name__ == "__main__":

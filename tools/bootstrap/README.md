@@ -2,7 +2,9 @@
 
 Obsidian plugin that makes a released vault ready for a person, every time it opens.
 
-**Rules:** RULESET.md section BOO. **State: not built.** The V1 Bootstrap (0.3.x) is prior art.
+**Rules:** RULESET.md section BOO. **State: 0.1.0 built (D-0032), plain JavaScript in `src/main.js`, tested against a stand-in for Obsidian only; never run in real Obsidian.** The V1 Bootstrap (0.3.x) is prior art.
+
+Does today: lock check (SHA-256), enable verified plugins, merge governed settings into `data.json`, core plugin repair, author prompt when `.vault.yaml` has none, a "Check and repair this vault" command. Not yet: staged startup with a quiet window (BOO-006), `authors.yaml` registration, TypeScript port.
 
 ## Owns
 
@@ -17,9 +19,9 @@ Downloading or updating plugins, model content, engineering edits, Workbench beh
 
 ## Next
 
-1. Review the BOO rules (mostly Unreviewed).
-2. Port the V1 plugin to TypeScript in this folder using `tools/core` for author codes, with unit tests.
-3. First-open acceptance on Windows and macOS (Phase 1, step 4).
+1. First-open acceptance in real Obsidian on Windows and macOS (Phase 1, step 4).
+2. Review the BOO rules (mostly Unreviewed).
+3. Staged startup (BOO-006) and a TypeScript port using `tools/core` for author codes.
 
 ## Prior art (archive, read-only)
 

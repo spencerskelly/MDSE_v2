@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "npm run check:rules && npm run check:language && npm run check:ea-paths && npm run test:core && npm run test:workbench && npm run check:workbench && npm run test:importer && npm run check:importer && npm run test:oracles && npm run test:fixtures",
+    "test": "npm run check:rules && npm run check:language && npm run check:ea-paths && npm run test:core && npm run test:workbench && npm run test:bootstrap && npm run check:workbench && npm run test:importer && npm run check:importer && npm run test:oracles && npm run test:fixtures",
     "check:rules": "node scripts/check-rules.mjs",
     "check:language": "node --no-warnings scripts/build-language.mjs",
     "language:write": "node --no-warnings scripts/build-language.mjs --write",
@@ -17,6 +17,7 @@
     "check:importer": "node tools/importer/build.mjs --check",
     "test:oracles": "python3 -m pytest -q testing/oracles",
     "test:fixtures": "python3 testing/fixtures/golden-charger/extract_sysml.py --check && python3 testing/fixtures/golden-charger/validate_fixture.py && python3 testing/fixtures/golden-charger/test_fixture_pipeline.py",
+    "test:bootstrap": "node --no-warnings --test tools/bootstrap/test/*.test.mjs",
     "test:workbench": "node --no-warnings --test tools/workbench/test/*.test.ts",
     "build:workbench": "node tools/workbench/build.mjs",
     "check:workbench": "node tools/workbench/build.mjs --check",

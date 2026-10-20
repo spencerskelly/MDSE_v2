@@ -2,49 +2,92 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MDSE v2 Importer</title>
 <style>
-:root{--bg:#0f1722;--panel:#162233;--line:#2b3b52;--fg:#e2ecf6;--mut:#9db0c4;--acc:#6db3ff;--ok:#5fd08a;--bad:#ff7b7b;--warn:#f0c060}
-@media (prefers-color-scheme:light){:root{--bg:#f6f8fb;--panel:#fff;--line:#cfd8e3;--fg:#17222f;--mut:#566a80;--acc:#0b63c5;--ok:#17803f;--bad:#b3261e;--warn:#8a5a00}}
+:root{--bg:#0f1722;--panel:#162233;--line:#2b3b52;--fg:#e2ecf6;--mut:#9db0c4;--acc:#6db3ff;--ok:#5fd08a;--bad:#ff7b7b;--warn:#f0c060;--track:#22324a}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fb;--panel:#fff;--line:#cfd8e3;--fg:#17222f;--mut:#566a80;--acc:#0b63c5;--ok:#17803f;--bad:#b3261e;--warn:#8a5a00;--track:#e3eaf2}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:980px;margin:0 auto;padding:20px 16px 60px}h1{font-size:21px;margin:0 0 4px}h2{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin:0 0 10px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}h1{font-size:22px;margin:0 0 2px}h2{font-size:15px;margin:0 0 4px;display:flex;align-items:center;gap:9px}h3{font-size:14px;margin:14px 0 4px}
+.badge{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--acc);color:#fff;font-size:13px;font-weight:700;flex:none}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}.card.off{opacity:.55}
+.lead{color:var(--mut);margin:0 0 10px}
 button,label.btn{font:inherit;background:var(--acc);color:#fff;border:0;border-radius:7px;padding:8px 13px;cursor:pointer;display:inline-block}
-button[disabled]{opacity:.45;cursor:not-allowed}button.alt,label.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
-button:focus-visible,label.btn:focus-within{outline:2px solid var(--acc);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+button[disabled]{opacity:.45;cursor:not-allowed}button.alt,label.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}button.link{background:none;color:var(--acc);padding:0 2px;text-decoration:underline}
+button:focus-visible,label.btn:focus-within,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+input[type=text]{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:760px){.two{grid-template-columns:1fr}}
+.sub{border:1px solid var(--line);border-radius:8px;padding:12px}
 table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;font-size:12.5px}
 .pill{border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:12px;margin-left:6px}
+.who{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 0;color:var(--mut)}
+.steps{list-style:none;display:flex;gap:6px;padding:0;margin:14px 0 0;flex-wrap:wrap}.steps li{flex:1 1 130px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;color:var(--mut);background:var(--panel)}
+.steps li b{color:var(--fg)}.steps li.done{border-color:var(--ok)}.steps li.done b{color:var(--ok)}.steps li.now{border-color:var(--acc)}.steps li.now b{color:var(--acc)}
+.pbar{height:14px;background:var(--track);border-radius:99px;overflow:hidden}.pfill{height:100%;width:0;background:var(--acc);transition:width .2s}
+.pfill.busy{background:repeating-linear-gradient(110deg,var(--acc) 0 14px,#8cc4ff 14px 28px);background-size:56px 100%;animation:slide 1s linear infinite}@keyframes slide{to{background-position:56px 0}}
+@media (prefers-reduced-motion:reduce){.pfill.busy{animation:none}}
+.stages{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:3px;font-size:13.5px}.stages li{display:flex;gap:8px;color:var(--mut)}.stages li.now{color:var(--fg);font-weight:600}.stages li.done{color:var(--ok)}.stages li.fail{color:var(--bad)}
+.stages .mark{width:1.2em;text-align:center}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:460px;width:calc(100% - 32px)}dialog::backdrop{background:rgba(5,10,18,.72)}
+ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
 </style></head><body><main>
-<h1>MDSE v2 Importer</h1>
-<div class="mut">One file. No install, no network. Reads a QEAX in your browser and works on a vault folder you choose. <span id="build" class="pill"></span></div>
+<h1>MDSE v2 Importer <span id="build" class="pill"></span></h1>
+<div class="mut">One file, no install, no network. Turns an EA export (QEAX) and a bill of materials into a complete Obsidian vault with the Workbench, Bootstrap and the working plugins already inside.</div>
+<div class="who" id="who"></div>
+<ol class="steps" aria-label="Steps">
+ <li id="st1"><b>1 · You</b><br>Name and author code</li><li id="st2"><b>2 · Sources</b><br>QEAX and/or BOM</li><li id="st3"><b>3 · Destination</b><br>ZIP or a folder</li><li id="st4"><b>4 · Build</b><br>Generate the vault</li><li id="st5"><b>5 · Obsidian</b><br>Open and trust</li>
+</ol>
 
-<section class="card" aria-labelledby="h-src"><h2 id="h-src">1 · Source (QEAX)</h2>
-<div class="row"><label class="btn">Choose .qeax<input id="qeax" type="file" accept=".qeax,.qea,.sqlite,.db"></label><span id="srcStatus" class="mut">No file chosen.</span></div>
-<div id="srcOut"></div></section>
+<dialog id="whoDlg" aria-labelledby="whoH"><form method="dialog" id="whoForm">
+ <h2 id="whoH">Who is running this import?</h2>
+ <p class="lead">Your full name sets your <b>author code</b>. It is stamped into the uid of every note created in this run and is the vault's author. You enter it once; this browser remembers it.</p>
+ <label>Full name<br><input type="text" id="whoName" autocomplete="name" placeholder="First Last" style="width:100%"></label>
+ <p style="margin:10px 0 4px">Author code: <code id="whoCode">(enter a name)</code></p><p id="whoErr" class="bad" style="margin:0 0 8px"></p>
+ <div class="row" style="justify-content:flex-end"><button type="submit" id="whoSave">Save and continue</button></div>
+</form></dialog>
 
-<section class="card" aria-labelledby="h-vault"><h2 id="h-vault">2 · Target vault</h2>
+<section class="card" id="cSrc" aria-labelledby="h-src"><h2 id="h-src"><span class="badge">2</span>Sources</h2>
+<p class="lead">Choose the EA model, the bill of materials, or both. Everything is read in this page; nothing is uploaded.</p>
+<div class="two">
+ <div class="sub"><h3 style="margin-top:0">EA model (.qeax)</h3>
+  <div class="row"><label class="btn">Choose .qeax<input id="qeax" type="file" accept=".qeax,.qea,.sqlite,.db"></label><span id="srcStatus" class="mut">No file chosen.</span></div><div id="srcOut"></div></div>
+ <div class="sub"><h3 style="margin-top:0">Bill of materials (.xlsx, .csv, .tsv)</h3>
+  <div class="row"><label class="btn">Choose BOM<input id="bomFile" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt"></label><span id="bomStatus" class="mut">No file chosen.</span></div><div id="bomOut"></div>
+  <p class="mut" style="margin:8px 0 0">Two layouts are read: the <b>flat</b> export (one row per parent→child line) and the <b>redline</b> sheet (levels 0–7, struck-out old values; .xlsx only). Only the latest revision of each part is imported.</p></div>
+</div></section>
+
+<section class="card" id="cDst" aria-labelledby="h-vault"><h2 id="h-vault"><span class="badge">3</span>Destination</h2>
+<p class="lead">Leave this alone to get a ZIP of a new vault. Or choose a folder to write into: an empty folder gets the whole vault; a folder that already holds a vault is only added to, and nothing is deleted.</p>
 <div class="row">
- <button id="pick" class="alt">Choose existing vault folder (read &amp; write)</button>
+ <button id="pick" class="alt">Choose a folder (read &amp; write)</button>
  <label class="btn alt">Check a folder (read-only)<input id="scanInput" type="file" webkitdirectory multiple></label>
- <span id="vaultStatus" class="mut">No folder chosen.</span></div>
-<p class="mut" style="margin:8px 0 0">Add-onto mode never deletes. A note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. A changed <code>type</code> is reported, not written.</p>
+ <span id="vaultStatus" class="mut">No folder chosen: a ZIP will be built.</span></div>
+<p class="mut" style="margin:8px 0 0">In an existing vault a note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. Part numbers that already have a BOM note are left as they are.</p>
 <div id="vaultOut"></div></section>
 
-<section class="card" aria-labelledby="h-gen"><h2 id="h-gen">3 · Generate</h2>
-<div class="row"><label>Vault name <input id="vname" value="MDSE Vault"></label><label>Source lineage <input id="lineage" value="EA8647"></label><label>Fallback author code <input id="fallback" value="skellyspencer" size="14" maxlength="13"></label></div>
-<div class="row"><button id="genNew" disabled>Build new vault (ZIP, includes base vault)</button><button id="genAdd" disabled>Write to chosen folder</button></div>
-<p class="mut" style="margin:8px 0 0">A chosen folder with no vault in it (no <code>.vault.yaml</code>, no <code>.obsidian</code>) receives the base vault together with the notes. A folder that already holds a vault is only added to; nothing is deleted.</p>
-<p id="genStatus" style="margin:8px 0 0"></p><div id="genOut"></div></section>
+<section class="card" id="cGen" aria-labelledby="h-gen"><h2 id="h-gen"><span class="badge">4</span>Build the vault</h2>
+<div class="row"><label>Vault name <input type="text" id="vname" value="MDSE Vault"></label><label>Source lineage <input type="text" id="lineage" value="EA8647" size="10"></label></div>
+<div class="row" style="margin-top:10px"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Write to chosen folder</button><span id="genHint" class="mut"></span></div>
+<div id="prog" hidden style="margin-top:14px" role="status" aria-live="polite">
+ <div class="row" style="justify-content:space-between"><b id="plabel">Working…</b><span id="ppct" class="mut"></span></div>
+ <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="pbar"><div class="pfill" id="pfill"></div></div>
+ <ol class="stages" id="pstages"></ol></div>
+<p id="genStatus" style="margin:10px 0 0"></p><div id="genOut"></div></section>
 
-<section class="card" aria-labelledby="h-upd"><h2 id="h-upd">4 · Update vault configuration (no source needed)</h2>
-<p class="mut" style="margin:0 0 8px">Choose a vault folder in step 2, then preview. Brings the Workbench plugin, schemas, templates, AI instructions and governed Obsidian settings up to this importer's release. Your notes, attachments, plugin settings (<code>data.json</code>), <code>README.md</code> and anything else of yours are not touched; <code>.gitignore</code>, the plugin lists and <code>.vault.yaml</code> are merged, not replaced; nothing is deleted. Replaced templates and schemas are copied aside first. A folder with no vault gets the base vault.</p>
+<section class="card off" id="cTrust" aria-labelledby="h-trust"><h2 id="h-trust"><span class="badge">5</span>Open in Obsidian and trust the vault</h2>
+<div id="trustBody"><p class="lead">This unlocks after the vault is built.</p></div></section>
+
+<section class="card" aria-labelledby="h-upd"><h2 id="h-upd">Maintenance · Update vault configuration (no source needed)</h2>
+<p class="lead">Choose a vault folder in step 3, then preview. Brings Bootstrap, the Workbench, Templater, Advanced Canvas, Obsidian Git, their governed settings, schemas, templates and AI instructions up to this importer's release. Your notes, attachments, plugin settings (<code>data.json</code>), <code>README.md</code> and anything else of yours are not touched; <code>.gitignore</code>, the plugin lists and <code>.vault.yaml</code> are merged, not replaced; nothing is deleted. Replaced templates and schemas are copied aside first.</p>
 <div class="row"><button id="updPreview" class="alt" disabled>Preview vault update</button><button id="updApply" disabled>Apply vault update</button></div>
 <p id="updStatus" style="margin:8px 0 0"></p><div id="updOut"></div></section>
 
-<section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
+<section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="off"></pre></section>
 </main>
 <script>
 /*@@READER@@*/
+</script>
+<script>
+/*@@XLSX@@*/
 </script>
 <script>
 /*@@CORE@@*/
@@ -61,9 +104,34 @@ const BUILD = "/*@@BUILD@@*/";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };
+const tick = () => new Promise((r) => setTimeout(r, 0));          // lets the browser repaint between heavy steps
 $("build").textContent = BUILD;
-let source = null, vaultHandle = null;
+let source = null, bom = null, vaultHandle = null, person = null;
 
+/* ---- Step 1: who ------------------------------------------------------------------------------------------------------- */
+const store = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* private window: asked again next time */ } } };
+const validName = (n) => /[A-Za-z]/.test(n) && (n.trim().split(/\s+/).length > 1 || n.includes(","));
+function renderWho() {
+  const w = $("who");
+  w.innerHTML = person ? `Running as <b>${esc(person.name)}</b> · author code <code>${esc(person.code)}</code> <button class="link" id="chWho">Change</button>` : "Name needed before anything can be built.";
+  if ($("chWho")) $("chWho").onclick = askName;
+  $("st1").className = person ? "done" : "now"; refreshButtons();
+}
+function askName() {
+  const dlg = $("whoDlg"); $("whoName").value = person ? person.name : ""; $("whoErr").textContent = ""; showCode();
+  if (!dlg.open) dlg.showModal(); setTimeout(() => $("whoName").focus(), 30);
+}
+function showCode() { const n = $("whoName").value; $("whoCode").textContent = n.trim() ? deriveAuthorCode(n) : "(enter a name)"; }
+$("whoName").addEventListener("input", showCode);
+$("whoDlg").addEventListener("cancel", (e) => { if (!person) e.preventDefault(); });          // cannot be dismissed until a name is saved
+$("whoForm").addEventListener("submit", (e) => {
+  const n = $("whoName").value.trim().replace(/\s+/g, " ");
+  if (!validName(n)) { e.preventDefault(); $("whoErr").textContent = "Enter a first and a last name."; return; }
+  person = { name: n, code: deriveAuthorCode(n) }; store.set("mdse.importer.name", n); log(`author ${person.code}`); renderWho();
+});
+{ const saved = store.get("mdse.importer.name"); if (saved && validName(saved)) { person = { name: saved, code: deriveAuthorCode(saved) }; renderWho(); } else { renderWho(); askName(); } }
+
+/* ---- Step 2: sources --------------------------------------------------------------------------------------------------- */
 $("qeax").addEventListener("change", async (ev) => {
   const f = ev.target.files[0]; if (!f) return;
   $("srcStatus").textContent = "Reading structure…"; $("srcOut").innerHTML = ""; source = null;
@@ -78,10 +146,37 @@ $("qeax").addEventListener("change", async (ev) => {
       `<tr><td><code>${t}</code></td><td class=n>${has ? countOf(x) : "—"}</td><td>${has ? "read" : "<span class=warn>absent</span>"}</td></tr>`).join("") + "</table>" +
       (missing.length ? `<p class="bad">Missing required table(s): ${missing.join(", ")}</p>` : "") + `<p class="mut">EA diagrams are out of scope and are never read (ADR-V2-05).</p>`;
     $("srcStatus").innerHTML = missing.length ? `<span class=bad>${esc(f.name)} is not a usable EA export</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1048576).toFixed(1)} MiB`;
-    source = { file: f, reader: r }; refreshButtons(); log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
+    if (!missing.length) source = { file: f, reader: r }; refreshButtons(); log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
   } catch (e) { $("srcStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("source error: " + e.message); }
 });
 
+async function readBomFile(f) {   // -> {grid, warnings, sheet}
+  const name = f.name.toLowerCase();
+  if (/\.xlsx?m?$/.test(name)) {
+    if (/\.xls$/.test(name)) throw new Error("Old .xls files are not supported. Save the sheet as .xlsx or .csv.");
+    const wb = await XlsxReader.readXlsx(await f.arrayBuffer());
+    for (const s of wb.sheets) if (detectLayout(s.rows).layout) return { grid: s.rows, warnings: wb.warnings, sheet: s.name };
+    throw new Error(`No sheet in ${f.name} has a recognisable BOM header (${wb.sheets.map((s) => s.name).join(", ") || "no sheets"}).`);
+  }
+  const buf = new Uint8Array(await f.arrayBuffer()); let text, warnings = [];
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (_) { text = new TextDecoder("windows-1252").decode(buf); warnings.push("The file is not UTF-8; it was read as Windows-1252."); }
+  return { grid: parseDelimited(text), warnings, sheet: "" };
+}
+$("bomFile").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  $("bomStatus").textContent = "Reading…"; $("bomOut").innerHTML = ""; bom = null;
+  try {
+    const { grid, warnings, sheet } = await readBomFile(f), p = parseBom(grid), errs = p.findings.filter((x) => x.level === "error"), warns = p.findings.filter((x) => x.level !== "error");
+    const pns = new Set(p.usages.flatMap((u) => [u.parent, u.child]));
+    $("bomOut").innerHTML = `<table><tr><td>Layout</td><td><b>${p.layout}</b>${sheet ? ` · sheet “${esc(sheet)}”` : ""}</td></tr><tr><td>Lines</td><td>${p.usages.length}</td></tr><tr><td>Distinct part numbers</td><td>${pns.size}</td></tr></table>` +
+      (errs.length ? `<p class="bad">${errs.map((x) => esc(x.message)).join("<br>")}</p>` : "") + (warnings.length ? `<p class="warn">${warnings.map(esc).join("<br>")}</p>` : "") +
+      (warns.length ? `<p class="mut">${warns.length} note(s) to review; they go into the findings file.</p>` : "");
+    $("bomStatus").innerHTML = errs.length || !p.usages.length ? `<span class=bad>${esc(f.name)} cannot be imported</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1024).toFixed(0)} KiB`;
+    if (!errs.length && p.usages.length) bom = { file: f, grid, warnings }; refreshButtons(); log(`bom ${f.name}: ${p.layout}, ${p.usages.length} lines`);
+  } catch (e) { $("bomStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("bom error: " + e.message); }
+});
+
+/* ---- Step 3: destination ----------------------------------------------------------------------------------------------- */
 function reportVault(files) { // files: [[path, text]]
   const md = files.filter(([p]) => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p));
   const bad = [], seenUid = new Map(), seenId = new Map(); let withFm = 0, noFm = 0;
@@ -104,7 +199,7 @@ $("scanInput").addEventListener("change", async (ev) => {
   $("vaultStatus").textContent = `Reading ${list.length} files…`;
   const files = [];
   for (const f of list) if (/\.md$/i.test(f.name)) files.push([f.webkitRelativePath || f.name, await f.text()]);
-  const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc((list[0].webkitRelativePath || "").split("/")[0] || "folder")}</span> · read-only check`;
+  reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc((list[0].webkitRelativePath || "").split("/")[0] || "folder")}</span> · read-only check`;
 });
 const allPaths = new Set();
 async function walkDir(dir, prefix, out) {
@@ -116,27 +211,52 @@ async function walkDir(dir, prefix, out) {
 }
 const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
 let vaultFiles = null, vaultExists = false;
-function refreshButtons() { $("genNew").disabled = !source; $("genAdd").disabled = !(source && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true; }
+function refreshButtons() {
+  const ready = !!person && (!!source || !!bom);
+  $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true;
+  $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
+  $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
+}
 $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
     allPaths.clear(); const files = []; await walkDir(vaultHandle, "", files);
     vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
-    if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The base vault will be written with the notes.</p>';
+    if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The whole vault will be written into it.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
   } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
 });
 
-/* Failure report: everything needed to find the bug, saved as a file so it can be sent back. */
+/* ---- Progress ---------------------------------------------------------------------------------------------------------- */
+const P = { list: [], at: -1, t0: 0 };
+function progStart(list) {
+  P.list = list; P.at = -1; P.t0 = Date.now(); $("prog").hidden = false; $("genStatus").textContent = ""; $("genOut").innerHTML = "";
+  $("pstages").innerHTML = list.map((s, i) => `<li id="ps${i}"><span class="mark">○</span><span>${esc(s.label)}</span></li>`).join(""); progSet(0, 0, "Starting…");
+}
+function progSet(i, frac, text, busy) {   // stage i, fraction of that stage done (0..1), busy = indeterminate within the stage
+  const total = P.list.reduce((a, s) => a + s.w, 0); let before = 0; for (let k = 0; k < i; k++) before += P.list[k].w;
+  const pct = Math.min(100, Math.round(((before + P.list[i].w * frac) / total) * 100));
+  P.list.forEach((s, k) => { const li = $("ps" + k); li.className = k < i ? "done" : k === i ? "now" : ""; li.firstChild.textContent = k < i ? "✓" : k === i ? "▶" : "○"; });
+  $("pfill").style.width = pct + "%"; $("pfill").classList.toggle("busy", !!busy); $("pbar").setAttribute("aria-valuenow", pct); $("ppct").textContent = pct + "%";
+  $("plabel").textContent = `Step ${i + 1} of ${P.list.length}: ${text || P.list[i].label}`;
+}
+function progDone(msg) {
+  P.list.forEach((s, k) => { const li = $("ps" + k); li.className = "done"; li.firstChild.textContent = "✓"; });
+  $("pfill").style.width = "100%"; $("pfill").classList.remove("busy"); $("pbar").setAttribute("aria-valuenow", 100); $("ppct").textContent = "100%"; $("plabel").textContent = msg + ` (${((Date.now() - P.t0) / 1000).toFixed(1)} s)`;
+}
+function progFail() { if (P.at >= 0) { const li = $("ps" + P.at); if (li) { li.className = "fail"; li.firstChild.textContent = "✗"; } } $("pfill").classList.remove("busy"); $("plabel").textContent = "Stopped"; }
+const stageAt = (i, frac, text, busy) => { P.at = i; progSet(i, frac, text, busy); };
+
+/* ---- Failure report ---------------------------------------------------------------------------------------------------- */
 function failureReport(e, where) {
   const lines = ["MDSE importer failure report", `time: ${new Date().toISOString()}`, `build: ${BUILD}`, `where: ${where}`, `stage: ${e && e.stage ? e.stage : "(unknown)"}`,
-    `source: ${source ? source.file.name + " (" + source.file.size + " bytes)" : "(none)"}`, `vault folder: ${vaultHandle ? vaultHandle.name : "(none)"}${vaultHandle ? (vaultExists ? " existing vault" : " no vault yet") : ""}`,
+    `source: ${source ? source.file.name + " (" + source.file.size + " bytes)" : "(none)"}`, `bom: ${bom ? bom.file.name + " (" + bom.file.size + " bytes)" : "(none)"}`, `vault folder: ${vaultHandle ? vaultHandle.name : "(none)"}${vaultHandle ? (vaultExists ? " existing vault" : " no vault yet") : ""}`,
     `message: ${e && e.message ? e.message : String(e)}`, `detail: ${e && e.detail ? JSON.stringify(e.detail) : ""}`, `browser: ${navigator.userAgent}`, "", "stack:", (e && e.stack) || "(none)", "", "run log:", $("log").textContent];
   return lines.join("\n");
 }
 function reportFailure(e, where) {
-  const text = failureReport(e, where); log("FAILED (" + where + "): " + (e && e.message ? e.message : e));
+  const text = failureReport(e, where); log("FAILED (" + where + "): " + (e && e.message ? e.message : e)); progFail();
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain" })), name = "mdse_importer_failure_" + new Date().toISOString().replace(/[:.]/g, "-") + ".txt";
   $("genStatus").innerHTML = `<span class=bad>${esc(e && e.message ? e.message : String(e))}</span> · stage: ${esc((e && e.stage) || "?")} · <a href="${url}" download="${name}">Save failure report</a>`;
   const a = document.createElement("a"); a.href = url; a.download = name; a.click();
@@ -144,29 +264,76 @@ function reportFailure(e, where) {
 window.addEventListener("error", (ev) => reportFailure(ev.error || ev.message, "uncaught"));
 window.addEventListener("unhandledrejection", (ev) => reportFailure(ev.reason, "unhandled promise"));
 const localIso = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
-async function generate(existing) {
-  $("genStatus").textContent = "Fingerprinting source…";
-  const fingerprint = await fileSha256(source.file);
-  $("genStatus").textContent = "Translating…";
-  const opts = { sourceName: source.file.name, fingerprint, runDate: localIso(), lineage: $("lineage").value.trim() || "EA", vaultName: $("vname").value.trim() || "MDSE Vault",
-    authors: { authorMap: {}, fallbackCode: $("fallback").value.trim().padEnd(13, "-").slice(0, 13), unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"],
-    releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, tags: TAGS, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
-  const res = await runImport(source.reader, opts);
-  const d = res.summary.dispositions;
-  $("genOut").innerHTML = `<table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +
-    `<tr><td>Notes</td><td>${res.summary.notes} (${res.summary.created} new · ${res.summary.updated} updated · ${res.summary.unchanged} unchanged · ${res.summary.conflicts} conflicts)</td></tr>` +
-    `<tr><td>Dispositions</td><td>${Object.entries(d).map(([k, v]) => k + " " + v).join(" · ")}</td></tr><tr><td>SysML v2 blocks</td><td>${res.summary.sysmlBlocks} <span class="warn">not parser-checked</span></td></tr>` +
-    `<tr><td>Base vault</td><td>${res.summary.baseVaultIncluded ? "included" : "not needed"}</td></tr>` + (res.summary.errors ? `<tr><td class=bad>Errors</td><td class=bad>${res.summary.errors} row(s) failed and were skipped; see the Error Log in 99_System/11_Import</td></tr>` : "") + `</table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
-  log(`run ${res.status}: ${JSON.stringify(res.summary)}`);
-  return res;
+const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles"; } catch (_) { return "America/Los_Angeles"; } };
+
+/* ---- Step 4: build ----------------------------------------------------------------------------------------------------- */
+const textOf = (f) => (f.bytes ? null : f.content);
+async function assemble(existing, writeStage) {
+  // stages: fingerprint, EA translate, BOM, assemble, write
+  const runDate = localIso(), vaultName = $("vname").value.trim() || "MDSE Vault", code = person.code;
+  let res = null, files = [], notes = [], summaryHtml = "";
+  if (source) {
+    stageAt(0, 0, "Fingerprinting the QEAX…", true); await tick(); const fingerprint = await fileSha256(source.file);
+    stageAt(1, 0, "Translating the EA model (this is the long step)…", true); await tick();
+    const opts = { sourceName: source.file.name, fingerprint, runDate, lineage: $("lineage").value.trim() || "EA", vaultName,
+      authors: { authorMap: {}, fallbackCode: code, unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"], person: { name: person.name, timezone: tz() },
+      releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, tags: TAGS, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
+    res = await runImport(source.reader, opts);
+    if (res.status === "WRITE_READY") files = res.files.slice();
+    const d = res.summary.dispositions;
+    summaryHtml += `<h3>EA model</h3><table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +
+      `<tr><td>Notes</td><td>${res.summary.notes} (${res.summary.created} new · ${res.summary.updated} updated · ${res.summary.unchanged} unchanged · ${res.summary.conflicts} conflicts)</td></tr>` +
+      `<tr><td>Dispositions</td><td>${Object.entries(d).map(([k, v]) => k + " " + v).join(" · ")}</td></tr><tr><td>SysML v2 blocks</td><td>${res.summary.sysmlBlocks} <span class="warn">not parser-checked</span></td></tr>` +
+      (res.summary.errors ? `<tr><td class=bad>Errors</td><td class=bad>${res.summary.errors} row(s) failed and were skipped; see the Error Log in 99_System/11_Import</td></tr>` : "") + `</table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
+    log(`EA run ${res.status}: ${JSON.stringify(res.summary)}`);
+  } else { stageAt(0, 1, "No QEAX chosen; skipped"); stageAt(1, 1, "No QEAX chosen; skipped"); }
+  if (res && res.status === "FAILED") return { res, files: [], summaryHtml, bomRes: null };
+  let bomRes = null;
+  if (bom) {
+    stageAt(2, 0, "Mapping the bill of materials…", true); await tick();
+    const fp = await fileSha256(bom.file), pend = files.filter((f) => !f.bytes && /\.md$/i.test(f.path)).map((f) => [f.path, f.content]);
+    const eaTitles = files.filter((f) => /\.md$/i.test(f.path) && !/^(99_System|BOM)\//.test(f.path)).map((f) => f.path.split("/").pop().replace(/\.md$/i, ""));
+    bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles });
+    const s = bomRes.summary, errs = bomRes.findings.filter((f) => f.level === "error"), warns = bomRes.findings.filter((f) => f.level === "warn");
+    summaryHtml += `<h3>Bill of materials (${esc(s.layout)})</h3><table><tr><th>Status</th><td>${bomRes.status}</td></tr><tr><td>New part notes</td><td>${s.parts} · ${s.usages} usages · ${s.drawings} drawing references · ${s.alternates} alternate sources</td></tr>` +
+      `<tr><td>Already in the vault</td><td>${s.existing}</td></tr><tr><td>Not imported (latest revision unknown)</td><td>${s.skippedParts}</td></tr><tr><td>Child pinned at an older revision</td><td>${s.conflicts}</td></tr>` +
+      (s.eaMatched || (existing === null && source) ? `<tr><td>Part number found in one EA element name</td><td>${s.eaMatched}</td></tr>` : "") + `<tr><td>Findings</td><td>${errs.length} error · ${warns.length} warning · saved to <code>99_System/11_Import/BOM Findings …</code></td></tr></table>` +
+      (bomRes.problems.length ? `<p class="bad">${bomRes.problems.map(esc).join("<br>")}</p>` : "");
+    if (bomRes.status === "WRITE_READY") files.push(...bomRes.files);
+    log(`BOM ${bomRes.status}: ${JSON.stringify(bomRes.summary)}`);
+  } else stageAt(2, 1, "No BOM chosen; skipped");
+  stageAt(3, 0, "Assembling the vault…", true); await tick();
+  if (!source && !existing) files.push(...initVaultFiles(BASEVAULT, { runDate, vaultName, code, release: "0.0.0-dev", person: { name: person.name, timezone: tz() } }));
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const seen = new Set(); for (const f of files) { const k = f.path.toLowerCase(); if (seen.has(k)) throw Object.assign(new Error("Two output files would have the same path: " + f.path), { stage: "assemble" }); seen.add(k); }
+  return { res, files, summaryHtml, bomRes };
 }
+const STAGES = [{ label: "Fingerprint the QEAX", w: 1 }, { label: "Translate the EA model", w: 10 }, { label: "Map the bill of materials", w: 2 }, { label: "Assemble the vault", w: 1 }, { label: "Write the files", w: 3 }];
+const wasNew = () => !(vaultHandle && vaultExists);
+
+function showTrust(where) {
+  $("cTrust").classList.remove("off"); $("st4").className = "done"; $("st5").className = "now";
+  $("trustBody").innerHTML = `<p class="lead">The vault is ${where}. Four things left, and the first two are yours: Obsidian will not let a file or a program do them.</p>
+  <ol class="how">
+   <li>${where.startsWith("in ") ? "Open Obsidian → <b>Open folder as vault</b> and choose the folder." : "Unzip <code>MDSE.zip</code> into a new empty folder (not inside another vault), then in Obsidian choose <b>Open folder as vault</b> and pick that folder."}</li>
+   <li>Obsidian asks whether you trust the vault's author. Click <b>Trust author and enable plugins</b>. <span class="mut">This click cannot be automated: Obsidian keeps the choice outside the vault on purpose, so a vault cannot grant itself trust.</span></li>
+   <li><b>MDSE Bootstrap</b> starts about two seconds later. It checks every plugin file against <code>.obsidian/plugin-lock.yaml</code>, turns on Workbench, Templater, Advanced Canvas and Obsidian Git, applies their settings, and shows a notice listing anything it changed. A plugin that fails the check stays off and is named in that notice.</li>
+   <li>Confirm: open the command palette and run <b>MDSE Bootstrap: Check and repair this vault</b>. It should say everything is in order. Obsidian Git will offer to create a repository on first use; accept it to get backups.</li>
+  </ol>
+  <p class="mut" style="margin-bottom:0">Plugins in this vault: MDSE Bootstrap, MDSE Workbench, Templater (template folder <code>99_System/05_Templates</code>, no automatic templating of imported files), Advanced Canvas, Obsidian Git (manual commits; no auto-pull). Licences are listed in <code>99_System/THIRD_PARTY_NOTICES.md</code>.</p>`;
+  $("cTrust").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 $("genNew").addEventListener("click", async () => {
   try {
-    const res = await generate(null);
-    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}</span>`; return; }
-    const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, f.bytes || enc.encode(f.content)]));
+    progStart(STAGES); const r = await assemble(null);
+    $("genOut").innerHTML = r.summaryHtml;
+    const blocked = r.res && r.res.status !== "WRITE_READY";
+    if (blocked || !r.files.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${r.res ? r.res.status : "NOTHING_TO_WRITE"}: no ZIP was built</span>`; return; }
+    stageAt(4, 0, "Compressing the ZIP…", true); await tick();
+    const enc = new TextEncoder(), bytes = MDSE.zip(r.files.map((f) => [f.path, f.bytes || enc.encode(f.content)]));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
-    $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${res.files.length} files</span>`;
+    progDone(`MDSE.zip built, ${r.files.length} files`); $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${r.files.length} files. Your browser has saved it.</span>`; showTrust("in MDSE.zip");
   } catch (e) { reportFailure(e, "build ZIP"); }
 });
 async function writeFile(root, path, text) {   // text is a string or a Uint8Array
@@ -174,6 +341,21 @@ async function writeFile(root, path, text) {   // text is a string or a Uint8Arr
   for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
 }
+$("genAdd").addEventListener("click", async () => {
+  try {
+    progStart(STAGES);
+    const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
+    $("genOut").innerHTML = r.summaryHtml;
+    if (r.res && r.res.status !== "WRITE_READY" && r.res.status !== "NO_CHANGES") { progFail(); $("genStatus").innerHTML = `<span class=bad>${r.res.status}: nothing written</span>`; return; }
+    if (!r.files.length) { progDone("Nothing to change"); $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
+    if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
+    let n = 0;
+    for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
+    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`);
+  } catch (e) { reportFailure(e, "write to folder"); }
+});
+
+/* ---- Maintenance: update an existing vault ----------------------------------------------------------------------------- */
 let pendingUpdate = null;
 async function readVaultFile(path) {
   try { let dir = vaultHandle; const parts = path.split("/"); for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p); return await (await (await dir.getFileHandle(parts.at(-1))).getFile()).text(); } catch (_) { return null; }
@@ -197,17 +379,8 @@ $("updApply").addEventListener("click", async () => {
     if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("updStatus").textContent = "Cancelled."; return; }
     for (const f of res.files) await writeFile(vaultHandle, f.path, f.bytes || f.content);
     pendingUpdate = null; $("updApply").disabled = true;
-    $("updStatus").innerHTML = `<span class=ok>Updated: wrote ${res.files.length} file(s). Reload Obsidian (or the plugin) to use the new Workbench.</span>`; log(`vault update applied: ${res.files.length} files`);
+    $("updStatus").innerHTML = `<span class=ok>Updated: wrote ${res.files.length} file(s). In Obsidian, run “MDSE Bootstrap: Check and repair this vault” (or reload the app) to pick up the new plugins.</span>`; log(`vault update applied: ${res.files.length} files`);
   } catch (e) { reportFailure(e, "apply vault update"); }
 });
-$("genAdd").addEventListener("click", async () => {
-  try {
-    const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
-    if (res.status === "NO_CHANGES") { $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
-    if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}: nothing written</span>`; return; }
-    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("genStatus").textContent = "Cancelled."; return; }
-    for (const f of res.files) await writeFile(vaultHandle, f.path, f.bytes || f.content);
-    $("genStatus").innerHTML = `<span class=ok>Wrote ${res.files.length} file(s).</span>`;
-  } catch (e) { reportFailure(e, "write to folder"); }
-});
+refreshButtons();
 </script></body></html>

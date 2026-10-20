@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { planVaultUpdate, classifyBasePath } from "../src/vault_update.ts";
-import { buildBaseVault, workbenchPayload } from "../../base-vault/src/base_vault.ts";
+import { buildBaseVault, allPayloads } from "../../base-vault/src/base_vault.ts";
 import { sha256Text } from "../src/sha256.ts";
 import { readFileSync } from "node:fs";
 import { ROOT } from "./harness.ts";
 
 const classes = JSON.parse(readFileSync(new URL("../../core/src/classes.json", import.meta.url), "utf8"));
 
-const base = buildBaseVault({ root: ROOT, release: "0.0.0-dev", classes, plugins: [workbenchPayload(ROOT)] });
+const base = buildBaseVault({ root: ROOT, release: "0.0.0-dev", classes, plugins: allPayloads(ROOT) });
 const when = "2026-10-19T21:40:00";
 const asRead = (m: Map<string, string>) => async (p: string): Promise<string | null> => m.get(p) ?? null;
 const apply = (m: Map<string, string>, files: Array<{ path: string; content: string }>): void => { for (const f of files) m.set(f.path, f.content); };
@@ -19,10 +19,14 @@ test("an empty folder gets the whole base vault, including the Workbench plugin 
   assert.equal(r.summary.add, Object.keys(base).length);
   const get = (p: string): string => r.files.find((f) => f.path === p)!.content;
   assert.ok(r.files.some((f) => f.path === ".obsidian/plugins/mdse-workbench/main.js"));
-  assert.deepEqual(JSON.parse(get(".obsidian/community-plugins.json")), ["mdse-workbench"]);
+  assert.deepEqual(JSON.parse(get(".obsidian/community-plugins.json")), ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas"]);
   const lock = get(".obsidian/plugin-lock.yaml"), main = get(".obsidian/plugins/mdse-workbench/main.js");
-  assert.match(lock, /status: PARTIAL/); assert.ok(lock.includes(`main.js: sha256:${sha256Text(main)}`), "lock carries the real hash");
-  assert.match(lock, /not_bundled:\n  - bootstrap/);
+  assert.ok(lock.includes(`main.js: ${sha256Text(main)}`), "lock carries the real hash");
+  assert.doesNotMatch(lock, /PARTIAL|not_bundled/);
+  assert.match(lock, /templates_folder":"99_System\/05_Templates"/);
+  assert.match(get(".obsidian/plugins/templater-obsidian/data.json"), /"trigger_on_file_creation_mode": "none"/);
+  assert.match(get("99_System/THIRD_PARTY_NOTICES.md"), /AGPL-3.0/);
+  assert.ok(!JSON.parse(get(".obsidian/core-plugins.json")).includes("templates"));
 });
 
 test("updating an existing vault: controlled files replaced with a saved copy, yours merged or left, identity kept", async () => {
@@ -53,7 +57,7 @@ test("updating an existing vault: controlled files replaced with a saved copy, y
   assert.equal(wrote.get("99_System/11_Import/Update 2026-10-19 21.40/Replaced/99_System/03_Schemas/element-types.yaml"), "old: schema\n");
   assert.ok(![...wrote.keys()].some((k) => k.includes("/Replaced/.obsidian/plugins")));
   assert.equal(r.summary.backups, 2);
-  assert.deepEqual(JSON.parse(wrote.get(".obsidian/community-plugins.json")!), ["templater-obsidian", "mdse-workbench"]);
+  assert.deepEqual(JSON.parse(wrote.get(".obsidian/community-plugins.json")!), ["templater-obsidian", "mdse-bootstrap", "mdse-workbench", "obsidian-git", "advanced-canvas"]);
   assert.deepEqual(JSON.parse(wrote.get(".obsidian/core-plugins.json")!).slice(0, 2), ["file-explorer", "daily-notes"]);
   const app = JSON.parse(wrote.get(".obsidian/app.json")!); assert.equal(app.newLinkFormat, "shortest"); assert.equal(app.vimMode, true);
   const ig = wrote.get(".gitignore")!; assert.ok(ig.startsWith("my-private/\n.DS_Store\n")); assert.match(ig, /99_System\/22_Views\/\*/);

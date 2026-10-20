@@ -39,6 +39,8 @@ export interface ImportOptions {
   lineage: string;                                 // source lineage label, MOD-018 (EA8647)
   authors: AuthorOptions;
   omitRootPackages: string[];                      // package names that are not folders (MOD-096)
+  /** The person running the import; a new vault also gets their note in 99_System/04_People (BOO-003). */
+  person?: { name: string; timezone: string };
   vaultName: string;
   releaseVersion: string;
   classes: ClassTable;
@@ -98,6 +100,18 @@ const MAGIC: Array<[number[], string]> = [[[0x89, 0x50, 0x4e, 0x47], ".png"], [[
 const extOf = (name: string, bytes: Uint8Array): string => /\.[A-Za-z0-9]{1,5}$/.test(name) ? "" : (MAGIC.find(([m]) => m.every((b, i) => bytes[i] === b))?.[1] ?? ".bin");
 
 const stampOf = (iso: string): string => iso.replace(/[-:T]/g, "").slice(0, 14) + "000";
+/** The base vault with this vault's identity filled in: vault_uid, vault_name and author in .vault.yaml, and the person note for the
+ * author (MOD-010, BOO-003) when `person` is given. */
+export function initVaultFiles(base: Record<string, string>, o: { runDate: string; vaultName: string; code: string; release: string; person?: { name: string; timezone: string } }): OutFile[] {
+  const vaultUid = `${stampOf(o.runDate)}${o.code}`;
+  const out: OutFile[] = Object.entries(base).map(([path, text]) => ({ path, content: path === ".vault.yaml"
+    ? text.replace(/^vault_uid:.*$/m, `vault_uid: ${vaultUid}`).replace(/^vault_name:.*$/m, `vault_name: ${o.vaultName}`).replace(/^author:.*$/m, `author: ${o.code}`).replace(/^mdse_release:.*$/m, `mdse_release: ${o.release}`) : text }));
+  if (o.person) {
+    const n = o.person.name.trim();
+    out.push({ path: `99_System/04_People/${n.replace(/[\\/:*?"<>|]/g, "-")}.md`, content: `---\nname: ${JSON.stringify(n)}\nauthorCode: ${o.code}\ntimezone: ${o.person.timezone}\npreviousCodes: []\neaNames: []\ntags: [person]\n---\n# ${n}\n` });
+  }
+  return out;
+}
 const labelOf = (iso: string): string => iso.slice(0, 16).replace("T", " ").replace(":", ".");
 
 export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<ImportResult> {
@@ -542,11 +556,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   let baseIncluded = false;
   if (!existing && o.baseFiles) {
     baseIncluded = true;
-    const stamp = stampOf(o.runDate), vaultUid = `${stamp}${o.authors.fallbackCode}`;
-    for (const [p, text] of Object.entries(o.baseFiles)) {
-      const t = p === ".vault.yaml" ? text.replace(/^vault_uid:.*$/m, `vault_uid: ${vaultUid}`).replace(/^vault_name:.*$/m, `vault_name: ${o.vaultName}`).replace(/^author:.*$/m, `author: ${o.authors.fallbackCode}`).replace(/^mdse_release:.*$/m, `mdse_release: ${o.releaseVersion}`) : text;
-      outFiles.push({ path: p, content: t });
-    }
+    outFiles.push(...initVaultFiles(o.baseFiles, { runDate: o.runDate, vaultName: o.vaultName, code: o.authors.fallbackCode, release: o.releaseVersion, ...(o.person ? { person: o.person } : {}) }));
   }
   outFiles.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const dup = outFiles.map((f) => f.path.toLowerCase()).filter((p, i, a) => a.indexOf(p) !== i);
