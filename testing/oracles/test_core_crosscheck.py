@@ -63,7 +63,11 @@ class CrossCheck(unittest.TestCase):
                 self.assertEqual(got, py.replace_sysml_block(text, sysml.read_text()), name)
 
     def test_embedded_class_table_matches_the_schema(self):
-        want = {n: {"prefix": c["prefix"], "subtype": c.get("subtype") or []} for n, c in py.load_classes().items()}
+        want = {}
+        for n, c in py.load_classes().items():
+            want[n] = {"prefix": c["prefix"], "subtype": c.get("subtype") or []}
+            if c.get("prefix_by_subtype"):
+                want[n]["prefixBySubtype"] = c["prefix_by_subtype"]
         got = json.loads((ROOT / "tools/core/src/classes.json").read_text())
         self.assertEqual(got, want, "regenerate tools/core/src/classes.json from governance/schemas/element-types.yaml")
 

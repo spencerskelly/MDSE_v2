@@ -91,7 +91,10 @@ const MDSE = (() => {
     if ("id" in m) {
       const idm = ID.exec(m.id);
       if (!idm) add("BAD_ID", `id \`${m.id}\` malformed`);
-      else if (cls && idm[1] !== cls.prefix) add("ID_PREFIX", `id prefix \`${idm[1]}\` is not \`${cls.prefix}\``);
+      else if (cls) {
+        const want = (cls.prefixBySubtype && cls.prefixBySubtype[m.subtype || ""]) || cls.prefix;
+        if (idm[1] !== want) add("ID_PREFIX", `id prefix \`${idm[1]}\` is not \`${want}\``);
+      }
       if (m.fixture === "true" && idm && +idm[2] < FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "fixture ids are 99000-99999");
       if (m.fixture !== "true" && idm && +idm[2] >= FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "ids 99000-99999 are reserved for fixtures");
     }

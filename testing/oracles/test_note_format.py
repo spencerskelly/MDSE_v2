@@ -43,6 +43,14 @@ class Validation(unittest.TestCase):
         self.assertIn("BAD_ID", codes(note(FRONT.replace("OBJ-00042", "OBJ-42"))))
         self.assertIn("ID_PREFIX", codes(note(FRONT.replace("OBJ-00042", "REQ-00042"))))
 
+    def test_requirement_prefix_follows_subtype(self):  # D-0015
+        def req(sub, rid):
+            return note(FRONT.replace("type: Object\nsubtype: electrical\nid: OBJ-00042", f"type: Requirement\nsubtype: {sub}\nid: {rid}"))
+        for sub, rid in (("standard", "STD-00042"), ("stakeholder", "STK-00042"), ("functional", "REQ-00042")):
+            self.assertNotIn("ID_PREFIX", codes(req(sub, rid)), rid)
+        for sub, rid in (("standard", "REQ-00042"), ("stakeholder", "STD-00042"), ("functional", "STK-00042")):
+            self.assertIn("ID_PREFIX", codes(req(sub, rid)), rid)
+
     def test_type_and_subtype_are_governed(self):
         self.assertIn("UNKNOWN_TYPE", codes(note(FRONT.replace("type: Object", "type: System"))))
         self.assertIn("BAD_SUBTYPE", codes(note(FRONT.replace("electrical", "gizmo"))))

@@ -206,8 +206,10 @@ def validate(text: str, classes=None, path: str = "") -> list:
         idm = ID.match(m["id"])
         if not idm:
             out.append(Issue("BAD_ID", f"id `{m['id']}` does not match ^[A-Z]+-\\d{{5}}$"))
-        elif cls is not None and idm.group(1) != cls.get("prefix"):
-            out.append(Issue("ID_PREFIX", f"id prefix `{idm.group(1)}` does not match {m['type']} prefix `{cls.get('prefix')}`"))
+        elif cls is not None:
+            want = (cls.get("prefix_by_subtype") or {}).get(m.get("subtype", ""), cls.get("prefix"))
+            if idm.group(1) != want:
+                out.append(Issue("ID_PREFIX", f"id prefix `{idm.group(1)}` does not match {m['type']} prefix `{want}`"))
         if m.get("fixture") == "true" and idm and int(idm.group(2)) < FIXTURE_ID_MIN:
             out.append(Issue("FIXTURE_ID_RANGE", f"fixture notes must use ids {FIXTURE_ID_MIN}-99999"))
         if m.get("fixture") != "true" and idm and int(idm.group(2)) >= FIXTURE_ID_MIN:

@@ -118,3 +118,14 @@ test("indexByUid finds notes that were moved", () => {
 });
 
 test("crc32 known vector", () => assert.equal(M.crc32(new TextEncoder().encode("123456789")), 0xCBF43926));
+
+// D-0015: standard requirements take STD, stakeholder requirements STK, other subtypes keep REQ.
+const req = (subtype, id) => `---\ntype: Requirement\nsubtype: ${subtype}\nid: ${id}\nuid: 20261018230000001skellyspencer\nstatus: Draft\neaType: Requirement\ntags: []\n---\n# R\n\n## SysML v2\n\n`;
+test("requirement id prefix follows subtype (STD, STK, REQ)", () => {
+  assert.ok(!codes(req("standard", "STD-00042")).includes("ID_PREFIX"));
+  assert.ok(!codes(req("stakeholder", "STK-00042")).includes("ID_PREFIX"));
+  assert.ok(!codes(req("functional", "REQ-00042")).includes("ID_PREFIX"));
+  assert.ok(codes(req("standard", "REQ-00042")).includes("ID_PREFIX"));
+  assert.ok(codes(req("stakeholder", "STD-00042")).includes("ID_PREFIX"));
+  assert.ok(codes(req("functional", "STK-00042")).includes("ID_PREFIX"));
+});

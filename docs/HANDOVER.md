@@ -35,11 +35,11 @@ npm test                    # must be green before you push
 
 | # | Task | Blocked by | Folder |
 |---|---|---|---|
-| 1 | Owner decides OD-01 (relationship split), OD-03 (usage identity), OD-05/06 (license, visibility), OD-07 (STD/STK schema) | Owner | governance |
+| 1 | Owner decides OD-01 (relationship split), OD-03 (usage identity), OD-05/06 (license, visibility) | Owner | governance |
 | 2 | Owner reviews Unreviewed P1 rules in MOD and IMP | Owner | governance |
 | 3 | Port `tools/core` to TypeScript; tests stay green; importer build consumes the compiled output | — | tools/core, tools/importer |
 | 4 | Change `mergeNote` to the approval-only merge rules; one test per merge rule | — | tools/core |
-| 5 | UID/id allocation, flag callouts, changelog model in core | 1 (OD-07) | tools/core |
+| 5 | UID/id allocation, flag callouts, changelog model in core | — | tools/core |
 | 6 | Importer M2: QEAX to notes with ledger and changelog; Python oracle for the expected notes | 1, 2 | tools/importer, testing |
 | 7 | Importer M3: SysML v2 writer; wire the parser job to run on generated output | 1 (OD-01, OD-03) | tools/importer, testing |
 | 8 | Base Vault build and release manifest | Folder skeleton and templates decided | tools/base-vault |

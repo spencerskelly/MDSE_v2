@@ -29,6 +29,9 @@ classes:
 - name: Requirement
   prefix: REQ
   subtype: ["functional", "design", "standard", "stakeholder", "engineering"]
+  # D-0015: standard = regulatory/standards requirement (STD); stakeholder = customer or internal business need (STK).
+  # Every other subtype keeps the class prefix.
+  prefix_by_subtype: {standard: STD, stakeholder: STK}
 - name: Use Case
   prefix: UC
   subtype: ["what", "where", "why", "when", "who"]

@@ -4,7 +4,7 @@ Machine-readable model contract. Tools read these files; they never copy their c
 
 | File | Defines | Read by | State |
 |---|---|---|---|
-| `element-types.yaml` | Classes, id prefixes, subtypes, property order, governed optional properties | core (via generated `tools/core/src/classes.json`), importer, oracle | Active. STD/STK prefixes to add (OD-07, D-0009) |
+| `element-types.yaml` | Classes, id prefixes, subtypes, property order, governed optional properties | core (via generated `tools/core/src/classes.json`), importer, oracle | Active. STD/STK via `prefix_by_subtype` (D-0015) |
 | `relationships.yaml` | Relationship fields stored in YAML, with endpoint rules | importer, Workbench | **Under revision.** SysML-defined fields leave this file (D-0003, OD-01) |
 | `authors.yaml` | Default time zone, AI author codes, unmapped-author fallback | core, Bootstrap, AI tools | Active |
 | `ea-family-mapping.json` | Disposition of each of the 60 EA element families and 26 connector families: native SysML construct, MDSE note, folder, or review | importer only (not shipped into vaults) | Approved mapping; `emission_enabled` false until the parser gate passes per family. Some `approved_source` and `approved_description` fields cite archived Test_Vault_ paths; the Boundary description is stale (disposition `aggregate_boundary_note` is current) |

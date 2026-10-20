@@ -573,7 +573,10 @@ const MDSE = (() => {
     if ("id" in m) {
       const idm = ID.exec(m.id);
       if (!idm) add("BAD_ID", `id \`${m.id}\` malformed`);
-      else if (cls && idm[1] !== cls.prefix) add("ID_PREFIX", `id prefix \`${idm[1]}\` is not \`${cls.prefix}\``);
+      else if (cls) {
+        const want = (cls.prefixBySubtype && cls.prefixBySubtype[m.subtype || ""]) || cls.prefix;
+        if (idm[1] !== want) add("ID_PREFIX", `id prefix \`${idm[1]}\` is not \`${want}\``);
+      }
       if (m.fixture === "true" && idm && +idm[2] < FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "fixture ids are 99000-99999");
       if (m.fixture !== "true" && idm && +idm[2] >= FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "ids 99000-99999 are reserved for fixtures");
     }
@@ -689,8 +692,8 @@ const MDSE = (() => {
 
 </script>
 <script>
-const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"]},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
-const BUILD = "build 3a8dacda21";
+const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
+const BUILD = "build 56fd8a0d83";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };

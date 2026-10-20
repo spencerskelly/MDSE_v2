@@ -10,7 +10,7 @@ Work in this order. Each step lists the ruleset rules it implements; filter `rul
 
 | Step | Work | Rules | Done when |
 |---|---|---|---|
-| 0 | Owner decisions that block P1 | [OPEN_DECISIONS.md](OPEN_DECISIONS.md) items marked P1, first OD-01, OD-03, OD-07 | Each decided and recorded in DECISIONS.md |
+| 0 | Owner decisions that block P1 | [OPEN_DECISIONS.md](OPEN_DECISIONS.md) items marked P1, first OD-01, OD-03 | Each decided and recorded in DECISIONS.md |
 | 0 | Owner review of Unreviewed P1 rules | MOD and IMP sections, status Unreviewed | P1 rules are Active, Check or retired |
 | 1 | Model contract in `tools/core` (TypeScript) | MOD | Core library implements note format, identity, flags, SysML block handling; oracle cross-check passes |
 | 2 | EA importer: QEAX to notes (milestone M2) | IMP, MOD | JS/TS output equals the Python oracle on synthetic QEAX; add-onto run twice is a no-op |

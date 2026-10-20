@@ -92,7 +92,7 @@ Rules: +GOV-003.
 
 Standard requirements take `STD-NNNNN`, stakeholder requirements `STK-NNNNN`, other requirements `REQ-NNNNN`. External designators never go in `id`; they are kept as a `Designator` line in `## Source: EA`.
 
-Rules: ~MOD-016, ~MOD-017. −REG-065, −REG-066. Schema change pending (OD-07).
+Rules: ~MOD-016, ~MOD-017. −REG-065, −REG-066. Schema change done in D-0015.
 
 ## D-0010 — flagLink replaces tracesTo
 
@@ -136,3 +136,11 @@ Rules: +MOD-146. ~BAS-002, ~BAS-004, ~MOD-147.
 Import is mechanical and additive. Empty YAML may be filled; changing an existing value needs pre-approval (field selection at Start, for the whole run) or review approval. Conflicts are listed in the body with `flagConflict`; an engineer resolves them. Missing source records get `flagImport` and are never deleted. One dated changelog per run, linking each changed file. Re-importing the same input changes nothing and writes no changelog. A parent pinning an older child revision is flagged; the child body lists that usage. Template fields are always present; empty non-template source fields are not written. Flag types are `flagImport`, `flagConflict`, `flagLink`, `flagNote`; only an engineer removes a flag.
 
 Rules: carried as Active in the IMP (Merge, rerun and conflicts), BOM and MOD (Flags, Note format) sections. Full text: MDSE_DEFINITION.md, Merge rules.
+
+## D-0015 — STD is regulatory, STK is customer or internal business
+
+2026-10-19 · Spencer · Accepted
+
+Requirement subtype `standard` is any regulatory or standards requirement and takes `STD-NNNNN`. Subtype `stakeholder` is any customer or internal business need and takes `STK-NNNNN`. Every other Requirement subtype keeps `REQ-NNNNN`. `element-types.yaml` declares this with `prefix_by_subtype`; core and the Python oracle check the prefix against the subtype. Closes OD-07.
+
+Rules: ~MOD-017.
