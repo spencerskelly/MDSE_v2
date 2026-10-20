@@ -1,0 +1,17 @@
+# Authorship configuration for uid generation.
+# People are not listed here. Each person has a note in 99_System/04_People with their author code, time zone, previous codes and the names they appear under in the EA source (Workspace Decision Log W-25).
+schemaVersion: '2.0'
+# Time zone used for the time in a uid when a person's note has no `timezone`.
+defaultTimezone: America/Los_Angeles
+# AI authors. Used only when an AI creates a note without a user's direct instruction.
+# When a user directs the note, even if an AI writes it, the user's code from their person note is used (W-21).
+# Standard: [tool name][ai][hyphens], always 13 characters. Tool name is lowercase letters only, cut to 11 letters if longer, so "ai" is never lost.
+# New tool: add it here with the same pattern (for example a tool called Copilot becomes copilotai----).
+ai_authors:
+  - {code: claudeai-----, tool: Claude (Anthropic)}
+  - {code: chatgptai----, tool: ChatGPT (OpenAI)}
+  - {code: rovoai-------, tool: Rovo (Atlassian)}
+  - {code: geminiai-----, tool: Gemini (Google)}
+# Generic/historical unmapped-EA-author fallback (W-12).
+# W-316 explicitly overrides this for the EA8647 v0.8 import: missing/unusable author uses skellyspencer for that import only.
+unmapped: {code: sparxeaauthor, ea_names: ['', '7.1.0-2']}

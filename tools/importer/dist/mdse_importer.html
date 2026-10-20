@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MDSE v2 Importer</title>
+<style>
+:root{--bg:#0f1722;--panel:#162233;--line:#2b3b52;--fg:#e2ecf6;--mut:#9db0c4;--acc:#6db3ff;--ok:#5fd08a;--bad:#ff7b7b;--warn:#f0c060}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fb;--panel:#fff;--line:#cfd8e3;--fg:#17222f;--mut:#566a80;--acc:#0b63c5;--ok:#17803f;--bad:#b3261e;--warn:#8a5a00}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}h1{font-size:21px;margin:0 0 4px}h2{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin:0 0 10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+button,label.btn{font:inherit;background:var(--acc);color:#fff;border:0;border-radius:7px;padding:8px 13px;cursor:pointer;display:inline-block}
+button[disabled]{opacity:.45;cursor:not-allowed}button.alt,label.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:focus-visible,label.btn:focus-within{outline:2px solid var(--acc);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;font-size:12.5px}
+.pill{border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:12px;margin-left:6px}
+</style></head><body><main>
+<h1>MDSE v2 Importer</h1>
+<div class="mut">One file. No install, no network. Reads a QEAX in your browser and works on a vault folder you choose. <span id="build" class="pill"></span></div>
+
+<section class="card" aria-labelledby="h-src"><h2 id="h-src">1 · Source (QEAX)</h2>
+<div class="row"><label class="btn">Choose .qeax<input id="qeax" type="file" accept=".qeax,.qea,.sqlite,.db"></label><span id="srcStatus" class="mut">No file chosen.</span></div>
+<div id="srcOut"></div></section>
+
+<section class="card" aria-labelledby="h-vault"><h2 id="h-vault">2 · Target vault</h2>
+<div class="row">
+ <button id="pick" class="alt">Choose existing vault folder (read &amp; write)</button>
+ <label class="btn alt">Check a folder (read-only)<input id="scanInput" type="file" webkitdirectory multiple></label>
+ <span id="vaultStatus" class="mut">No folder chosen.</span></div>
+<p class="mut" style="margin:8px 0 0">Add-onto mode never deletes. A note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. A changed <code>type</code> is reported, not written.</p>
+<div id="vaultOut"></div></section>
+
+<section class="card" aria-labelledby="h-gen"><h2 id="h-gen">3 · Generate</h2>
+<div class="row"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Add to chosen vault</button></div>
+<p id="genStatus" class="warn" style="margin:8px 0 0">Translation from QEAX to notes is not implemented in this build (milestone M2). Steps 1 and 2 are working and tested.</p></section>
+
+<section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
+</main>
+<script>
+/* Streaming read-only SQLite reader for .qeax. Extracted unchanged from the V1 importer v0.8.5 (sqlite.js section)
+ * so V2 owns its source; tested by testing/oracles/test_qeax_reader.py. No SQL, no indexes, no writes. */
+/* ===================================================================
+   sqlite.js — read-only streaming SQLite reader.
+
+   A .qeax is a SQLite database. Loading a 500 MB one through sql.js means
+   holding the whole file in an ArrayBuffer and again in the WASM heap, which
+   a browser tab will not survive. This reads B-tree pages on demand through
+   File.slice() with a small LRU cache, so peak memory is the cache, not the
+   file. It also means no CDN and no WASM: the page works offline.
+
+   Only what a full table scan needs is implemented: table B-trees, the record
+   format, and overflow chains. No SQL, no indexes, no writes.
+   =================================================================== */
+
+const SQLITE_MAGIC = "SQLite format 3\u0000";
+
+class Blocks {
+  constructor(file, chunkBits = 20, maxChunks = 192) {
+    this.file = file;
+    this.size = file.size;
+    this.chunkBits = chunkBits;
+    this.chunkSize = 1 << chunkBits;
+    this.maxChunks = maxChunks;
+    this.cache = new Map();
+    this.bytesRead = 0;
+  }
+  async chunk(index) {
+    const hit = this.cache.get(index);
+    if (hit) {                       // refresh LRU position
+      this.cache.delete(index);
+      this.cache.set(index, hit);
+      return hit;
+    }
+    const start = index * this.chunkSize;
+    const end = Math.min(start + this.chunkSize, this.size);
+    if (start >= this.size) return new Uint8Array(0);
+    const buf = new Uint8Array(await this.file.slice(start, end).arrayBuffer());
+    this.bytesRead += buf.length;
+    this.cache.set(index, buf);
+    if (this.cache.size > this.maxChunks) {
+      this.cache.delete(this.cache.keys().next().value);
+    }
+    return buf;
+  }
+  async read(offset, length) {
+    const first = offset >> this.chunkBits;
+    const last = (offset + length - 1) >> this.chunkBits;
+    if (first === last) {
+      const c = await this.chunk(first);
+      const o = offset - (first << this.chunkBits);
+      return c.subarray(o, o + length);
+    }
+    const out = new Uint8Array(length);
+    let done = 0;
+    for (let i = first; i <= last; i++) {
+      const c = await this.chunk(i);
+      const base = i << this.chunkBits;
+      const from = Math.max(0, offset - base);
+      const take = Math.min(c.length - from, length - done);
+      if (take <= 0) break;
+      out.set(c.subarray(from, from + take), done);
+      done += take;
+    }
+    return out;
+  }
+}
+
+const be16 = (b, o) => (b[o] << 8) | b[o + 1];
+const be32 = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+
+function varint(b, o) {
+  let value = 0n;
+  for (let i = 0; i < 8; i++) {
+    const byte = b[o + i];
+    value = (value << 7n) | BigInt(byte & 0x7f);
+    if (!(byte & 0x80)) return [value, i + 1];
+  }
+  value = (value << 8n) | BigInt(b[o + 8]);
+  return [BigInt.asIntN(64, value), 9];
+}
+const varintNum = (b, o) => { const [v, n] = varint(b, o); return [Number(v), n]; };
+
+class SQLiteReader {
+  constructor(blocks) { this.blocks = blocks; }
+
+  static async open(file) {
+    const blocks = new Blocks(file);
+    const head = await blocks.read(0, 100);
+    let magic = "";
+    for (let i = 0; i < 16; i++) magic += String.fromCharCode(head[i]);
+    if (magic !== SQLITE_MAGIC) {
+      throw new Error(
+        "This file is not a SQLite database. Enterprise Architect .eap and " +
+        ".eapx files are not — use Project Transfer in EA to produce a .qea " +
+        "or .qeax first.");
+    }
+    const r = new SQLiteReader(blocks);
+    r.pageSize = be16(head, 16) === 1 ? 65536 : be16(head, 16);
+    r.reserved = head[20];
+    r.usable = r.pageSize - r.reserved;
+    r.encoding = be32(head, 56) || 1;
+    r.pageCount = Math.floor(blocks.size / r.pageSize);
+    r.writeVersion = head[18];
+    r.walMode = head[18] === 2 || head[19] === 2;
+    r.decoder = new TextDecoder(r.encoding === 2 ? "utf-16le"
+      : r.encoding === 3 ? "utf-16be" : "utf-8", { fatal: false });
+    r.maxLocal = r.usable - 35;
+    r.minLocal = (((r.usable - 12) * 32 / 255) | 0) - 23;
+    await r.loadSchema();
+    return r;
+  }
+
+  page(n) { return this.blocks.read((n - 1) * this.pageSize, this.pageSize); }
+
+  /* ---- record format ------------------------------------------------ */
+  decodeRecord(payload, columns, want, rowid) {
+    const [headerSize, hsLen] = varintNum(payload, 0);
+    const serials = [];
+    let p = hsLen;
+    while (p < headerSize) {
+      const [s, n] = varintNum(payload, p);
+      serials.push(s);
+      p += n;
+    }
+    const out = {};
+    let body = headerSize;
+    for (let i = 0; i < serials.length; i++) {
+      const s = serials[i];
+      const name = columns[i];
+      let size = 0;
+      if (s === 0 || s === 8 || s === 9) size = 0;
+      else if (s <= 4) size = s;
+      else if (s === 5) size = 6;
+      else if (s === 6 || s === 7) size = 8;
+      else size = ((s - (s % 2 === 0 ? 12 : 13)) / 2) | 0;
+
+      if (name && (!want || want.has(name))) {
+        out[name] = this.decodeValue(s, payload, body, size);
+      }
+      body += size;
+    }
+    // An INTEGER PRIMARY KEY column is stored as NULL; its value is the rowid.
+    const alias = this.rowidAlias;
+    if (alias && rowid !== undefined && (out[alias] === null || out[alias] === undefined)
+        && (!want || want.has(alias))) {
+      out[alias] = rowid;
+    }
+    return out;
+  }
+
+  decodeValue(serial, b, o, size) {
+    switch (serial) {
+      case 0: return null;
+      case 8: return 0;
+      case 9: return 1;
+      case 7: return new DataView(b.buffer, b.byteOffset + o, 8).getFloat64(0);
+      default: break;
+    }
+    if (serial >= 1 && serial <= 6) {
+      let v = 0n;
+      for (let i = 0; i < size; i++) v = (v << 8n) | BigInt(b[o + i]);
+      v = BigInt.asIntN(size * 8, v);
+      const n = Number(v);
+      return Number.isSafeInteger(n) ? n : v.toString();
+    }
+    const slice = b.subarray(o, o + size);
+    if (serial % 2 === 1) return this.decoder.decode(slice);   // text
+    return slice;                                              // blob
+  }
+
+  /* ---- payload assembly, following overflow chains ------------------ */
+  async payload(pageBytes, cellOffset) {
+    let p = cellOffset;
+    const [total, n1] = varintNum(pageBytes, p); p += n1;
+    const [rowid, n2] = varintNum(pageBytes, p); p += n2;
+
+    let local = total;
+    if (total > this.maxLocal) {
+      const k = this.minLocal + ((total - this.minLocal) % (this.usable - 4));
+      local = k <= this.maxLocal ? k : this.minLocal;
+    }
+    if (local === total) {
+      return [pageBytes.subarray(p, p + local), rowid];
+    }
+    const buf = new Uint8Array(total);
+    buf.set(pageBytes.subarray(p, p + local), 0);
+    let filled = local;
+    let next = be32(pageBytes, p + local);
+    let guard = 0;
+    while (next && filled < total && guard++ < 1e6) {
+      const ov = await this.page(next);
+      const take = Math.min(this.usable - 4, total - filled);
+      buf.set(ov.subarray(4, 4 + take), filled);
+      filled += take;
+      next = be32(ov, 0);
+    }
+    return [buf, rowid];
+  }
+
+  /* ---- B-tree walk --------------------------------------------------- */
+  async *walk(rootPage, columns, want, onPage) {
+    const stack = [rootPage];
+    const seen = new Set();
+    while (stack.length) {
+      const pageNo = stack.pop();
+      if (!pageNo || pageNo > this.pageCount || seen.has(pageNo)) continue;
+      seen.add(pageNo);
+      const b = await this.page(pageNo);
+      if (onPage) onPage(seen.size);
+      const base = pageNo === 1 ? 100 : 0;
+      const type = b[base];
+      const cells = be16(b, base + 3);
+      if (type === 5) {                                   // interior table
+        const rightmost = be32(b, base + 8);
+        const ptrs = base + 12;
+        for (let i = 0; i < cells; i++) {
+          const off = be16(b, ptrs + i * 2);
+          stack.push(be32(b, off));
+        }
+        stack.push(rightmost);
+      } else if (type === 13) {                           // leaf table
+        const ptrs = base + 8;
+        for (let i = 0; i < cells; i++) {
+          const off = be16(b, ptrs + i * 2);
+          if (!off || off >= b.length) continue;
+          const [payload, rowid] = await this.payload(b, off);
+          yield this.decodeRecord(payload, columns, want, rowid);
+        }
+      }
+      // index pages (2/10) never appear in a table B-tree walk
+    }
+  }
+
+  /* ---- schema -------------------------------------------------------- */
+  async loadSchema() {
+    const cols = ["type", "name", "tbl_name", "rootpage", "sql"];
+    this.tables = new Map();
+    for await (const row of this.walk(1, cols, new Set(cols))) {
+      if (row.type !== "table" || !row.name) continue;
+      const parsed = parseColumns(row.sql || "");
+      this.tables.set(String(row.name).toLowerCase(), {
+        name: row.name, rootpage: Number(row.rootpage) || 0,
+        columns: parsed.columns, rowidAlias: parsed.rowidAlias, sql: row.sql || "",
+      });
+    }
+  }
+
+  has(table) { return this.tables.has(table.toLowerCase()); }
+
+  /**
+   * Full scan of one table, yielding a plain object per row with every
+   * column present. `want` no longer filters what gets decoded — an earlier
+   * version selected a column subset as a memory optimisation, but that is
+   * exactly the kind of logic that can go quietly wrong for one particular
+   * real-world column combination without ever failing a synthetic test.
+   * Decoding every column costs a little more time and memory and removes
+   * an entire class of risk in exchange, which is the right trade here.
+   */
+  async *scan(table, want, onProgress) {
+    const t = this.tables.get(table.toLowerCase());
+    if (!t || !t.rootpage) return;
+    this.rowidAlias = t.rowidAlias;
+    yield* this.walk(t.rootpage, t.columns, null, onProgress);
+  }
+
+  /**
+   * Row count and true column list per table, from structure alone. Nothing
+   * here decodes a record or follows an overflow chain, so it is safe and
+   * fast to run against the whole file before committing to a full import.
+   */
+  async diagnose(tableNames, onTable) {
+    const out = [];
+    for (const name of tableNames) {
+      const t = this.tables.get(name.toLowerCase());
+      if (!t) { out.push({ name, present: false }); continue; }
+      let rows = 0, leafPages = 0, interiorPages = 0, maxDepthSeen = 0, error = null;
+      const stack = [[t.rootpage, 1]];
+      const seen = new Set();
+      try {
+        while (stack.length) {
+          const [pageNo, depth] = stack.pop();
+          if (!pageNo || pageNo > this.pageCount || seen.has(pageNo)) continue;
+          seen.add(pageNo);
+          if (depth > maxDepthSeen) maxDepthSeen = depth;
+          const b = await this.page(pageNo);
+          const base = pageNo === 1 ? 100 : 0;
+          const type = b[base];
+          const cells = be16(b, base + 3);
+          if (type === 5) {
+            interiorPages++;
+            const rightmost = be32(b, base + 8);
+            const ptrs = base + 12;
+            for (let i = 0; i < cells; i++) stack.push([be32(b, be16(b, ptrs + i * 2)), depth + 1]);
+            stack.push([rightmost, depth + 1]);
+          } else if (type === 13) {
+            leafPages++;
+            rows += cells;
+          } else if (type !== 2 && type !== 10) {
+            error = `page ${pageNo} has an unrecognised type byte (${type}) — file may not be a plain rowid table`;
+            break;
+          }
+        }
+      } catch (e) { error = e.message; }
+      out.push({ name: t.name, present: true, rootpage: t.rootpage, rows, leafPages,
+        interiorPages, depth: maxDepthSeen, columns: t.columns, rowidAlias: t.rowidAlias, error,
+        sql: t.sql });
+      if (onTable) onTable(t.name, rows);
+    }
+    return out;
+  }
+
+  stats() {
+    return { pageSize: this.pageSize, pages: this.pageCount,
+             bytesRead: this.blocks.bytesRead, wal: this.walMode,
+             tables: this.tables.size };
+  }
+}
+
+/**
+ * Column names from a CREATE TABLE statement, in declaration order, plus the
+ * INTEGER PRIMARY KEY column if there is one — SQLite stores that column as
+ * NULL in the record and its real value is the rowid.
+ */
+function stripSqlComments(sql) {
+  // Strip -- line comments and /* block */ comments outside quoted strings.
+  // EA's generated schema documents columns this way, and a comment sitting
+  // between a comma and the next column keyword otherwise breaks the
+  // identifier match for that next column, silently nulling its name.
+  let out = "", quote = null;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (quote) {
+      out += ch;
+      if (ch === quote && sql[i + 1] === quote) { out += sql[++i]; }
+      else if (ch === quote) { quote = null; }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`" || ch === "[") {
+      quote = ch === "[" ? "]" : ch;
+      out += ch;
+      continue;
+    }
+    if (ch === "-" && sql[i + 1] === "-") {
+      const nl = sql.indexOf("\n", i);
+      out += " ";                       // preserve the split point, drop the text
+      i = nl < 0 ? sql.length : nl - 1;
+      continue;
+    }
+    if (ch === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      out += " ";
+      i = end < 0 ? sql.length : end + 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+function parseColumns(rawSql) {
+  const sql = stripSqlComments(rawSql);
+  const open = sql.indexOf("(");
+  const close = sql.lastIndexOf(")");
+  if (open < 0 || close < open) return { columns: [], rowidAlias: null };
+  const body = sql.slice(open + 1, close);
+  const parts = [];
+  let depth = 0, cur = "", quote = null;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (quote) {
+      cur += ch;
+      // doubled quote char is an escaped quote, not the closing one
+      if (ch === quote && body[i + 1] === quote) { cur += body[++i]; }
+      else if (ch === quote) { quote = null; }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`" || ch === "[") {
+      quote = ch === "[" ? "]" : ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { parts.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  parts.push(cur);
+  const skip = /^\s*(constraint|primary|unique|foreign|check)\b/i;
+  const typeOf = {};
+  const out = [];
+  let rowidAlias = null;
+  const tableLevelPk = [];   // resolved after the loop, once every type is known
+  for (const p of parts) {
+    if (skip.test(p)) {
+      // A single-column PRIMARY KEY declared as its own constraint — inline
+      // ("Constraint pk primary key" on the column) or trailing
+      // ("CONSTRAINT pk PRIMARY KEY (Object_ID)") — makes that column a
+      // rowid alias exactly like "col INTEGER PRIMARY KEY" does. Missing
+      // this case leaves the column NULL in every decoded row, because
+      // SQLite always stores it that way once it qualifies, regardless of
+      // which syntax declared it.
+      const pk = /\bprimary\s+key\s*\(([^)]+)\)/i.exec(p);
+      if (pk) {
+        const cols = pk[1].split(",").map(s => s.replace(/["'`[\]]/g, "").trim()).filter(Boolean);
+        if (cols.length === 1) tableLevelPk.push(cols[0]);
+      }
+      continue;
+    }
+    const m = /^\s*(?:\[([^\]]+)\]|"([^"]+)"|`([^`]+)`|([A-Za-z_][\w$]*))/.exec(p);
+    const name = m ? (m[1] || m[2] || m[3] || m[4]) : null;
+    out.push(name);
+    if (name) {
+      typeOf[name.toLowerCase()] = p;
+      // "col INTEGER PRIMARY KEY" makes col a rowid alias — but real DDL
+      // routinely puts other constraints between the type and PRIMARY KEY
+      // ("INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT" is exactly EA's own
+      // schema), so the type and the PRIMARY KEY phrase must be checked
+      // independently rather than requiring them adjacent. "PRIMARY KEY DESC"
+      // is the one documented SQLite exception that does NOT alias the rowid.
+      const afterName = p.slice(m[0].length);
+      const isIntegerType = /^\s+integer\b(?!\w)/i.test(afterName);
+      const pk = /\bprimary\s+key\b(\s+(asc|desc))?/i.exec(p);
+      if (isIntegerType && pk && !/desc/i.test(pk[2] || "")) rowidAlias = name;
+    }
+  }
+  if (!rowidAlias) {
+    for (const colName of tableLevelPk) {
+      const def = typeOf[colName.toLowerCase()];
+      // Only bare INTEGER qualifies for rowid aliasing; INTEGER(n), TEXT,
+      // etc. do not, so check the type token directly rather than assuming.
+      if (def && /^\s*(?:\[[^\]]+\]|"[^"]+"|`[^`]+`|[A-Za-z_][\w$]*)\s+integer\b(?!\w)/i.test(def)) {
+        const real = out.find(c => c && c.toLowerCase() === colName.toLowerCase());
+        if (real) { rowidAlias = real; break; }
+      }
+    }
+  }
+  return { columns: out, rowidAlias };
+}
+
+
+</script>
+<script>
+/* MDSE v2 importer core. Pure functions, no DOM, no network, no dependencies.
+ * Inlined into mdse_v2_importer.html by build_importer_html.mjs and unit-tested under node.
+ * The note rules mirror testing/oracles/mdse_note_format.py (ADR-V2-06); CI cross-checks the two. */
+const MDSE = (() => {
+  const SYSML_HEADING = "## SysML v2", SOURCE_HEADING = "## Source: EA";
+  const SYSML_HINT = "> **Authoritative SysML v2 text.** Write your notes above this section. " +
+    "Change the model through Workbench, or edit this block and re-run the parser check.";
+  const UID = /^\d{17}[a-z-]{13}$/, ID = /^([A-Z]+)-(\d{5})$/;
+  const FIXTURE_ID_MIN = 99000;
+  const PROPERTY_ORDER = ["type", "subtype", "id", "uid", "status", "eaType", "tags"];
+  const FENCE_OPEN = /^```sysml[ \t]*$/;
+  const COMMENT_ONLY = /^\s*(<!--[\s\S]*?-->\s*)*$/;
+  // Keys the importer owns on rerun. Everything else in frontmatter belongs to people.
+  const EA_OWNED_KEYS = ["subtype", "eaType", "sourceRole", "primarySymbol"];
+
+  const scalar = (raw) => { raw = raw.trim(); if (raw.length >= 2 && raw[0] === raw[raw.length - 1] && "\"'".includes(raw[0])) raw = raw.slice(1, -1); return raw; };
+
+  function parse(text) {
+    const norm = text.replace(/\r\n/g, "\n");
+    if (!norm.startsWith("---\n")) throw new Error("MISSING_FRONTMATTER");
+    let end = norm.indexOf("\n---\n", 3);
+    const tailEnd = norm.length;
+    if (end === -1) {
+      const t = norm.replace(/\n+$/, "");
+      if (t.endsWith("\n---")) end = t.lastIndexOf("\n---"); else throw new Error("MISSING_FRONTMATTER");
+    }
+    const keys = [], meta = {};
+    for (const line of norm.slice(4, end).split("\n")) {
+      const m = /^([A-Za-z][\w-]*):(.*)$/.exec(line);
+      if (m) { keys.push(m[1]); meta[m[1]] = scalar(m[2]); }
+    }
+    const fmEnd = Math.min(end + 5, tailEnd);
+    const h2 = []; let inFence = false, pos = 0;
+    for (const line of norm.split("\n")) {
+      if (line.trimStart().startsWith("```")) inFence = !inFence;
+      else if (!inFence && line.startsWith("## ") && pos >= fmEnd) h2.push([pos, line.trimEnd()]);
+      pos += line.length + 1;
+    }
+    return { text: norm, keys, meta, fmEnd, h2, fmBlockEnd: end };
+  }
+  const sectionOffsets = (n, heading) => n.h2.map(([off, h], i) => [i, off, h]).filter((x) => x[2] === heading).map((x) => [x[0], x[1]]);
+  function sectionText(n, heading) {
+    const hits = sectionOffsets(n, heading); if (!hits.length) return null;
+    const [i, off] = hits[0]; const stop = i + 1 < n.h2.length ? n.h2[i + 1][0] : n.text.length;
+    return n.text.slice(off, stop);
+  }
+  function fences(section) {
+    const out = [], lines = section.split("\n"); let i = 0;
+    while (i < lines.length) {
+      if (FENCE_OPEN.test(lines[i])) {
+        let j = i + 1; while (j < lines.length && lines[j].trimEnd() !== "```") j++;
+        const body = lines.slice(i + 1, j).join("\n") + "\n";
+        let k = j + 1; while (k < lines.length && !FENCE_OPEN.test(lines[k])) k++;
+        out.push([body, lines.slice(j + 1, k).join("\n")]);
+        i = Math.max(k, j + 1);
+      } else i++;
+    }
+    return out;
+  }
+  function qualifiedNames(sysml) {
+    const src = sysml.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const tok = /\{|\}|;|\bpackage\s+(\w+)|\b(?:\w+\s+)*?def\s+(\w+)/g;
+    const stack = [], names = new Set(); let pending = null, m;
+    while ((m = tok.exec(src))) {
+      const t = m[0];
+      if (t === "{") { stack.push(pending); pending = null; }
+      else if (t === "}") { if (stack.length) stack.pop(); pending = null; }
+      else if (t === ";") pending = null;
+      else { const name = m[1] || m[2]; names.add([...stack.filter(Boolean), name].join("::")); pending = name; }
+    }
+    return names;
+  }
+  function extractSysml(text) {
+    const sec = sectionText(parse(text), SYSML_HEADING); if (sec === null) return null;
+    const f = fences(sec); return f.length === 1 ? f[0][0] : null;
+  }
+
+  function validate(text, classes) {
+    let n; try { n = parse(text); } catch (e) { return [{ code: e.message, message: "note has no YAML frontmatter" }]; }
+    const out = [], m = n.meta, add = (code, message) => out.push({ code, message });
+    const present = PROPERTY_ORDER.filter((k) => n.keys.includes(k));
+    if (JSON.stringify(n.keys.slice(0, present.length)) !== JSON.stringify(present)) add("PROPERTY_ORDER", `leading keys must be ${present}`);
+    for (const req of ["type", "id", "uid", "status", "tags"]) if (!n.keys.includes(req)) add("MISSING_PROPERTY", `\`${req}\` is required`);
+    const cls = classes[m.type || ""];
+    if ("type" in m && !cls) add("UNKNOWN_TYPE", `type \`${m.type}\` is not a class`);
+    if (cls) {
+      const subs = cls.subtype || [], sub = m.subtype || "";
+      if (subs.length && !subs.includes(sub)) add("BAD_SUBTYPE", `subtype \`${sub}\` not allowed for ${m.type}`);
+      if (!subs.length && sub) add("BAD_SUBTYPE", `${m.type} has no subtypes but subtype is \`${sub}\``);
+    }
+    if ("id" in m) {
+      const idm = ID.exec(m.id);
+      if (!idm) add("BAD_ID", `id \`${m.id}\` malformed`);
+      else if (cls && idm[1] !== cls.prefix) add("ID_PREFIX", `id prefix \`${idm[1]}\` is not \`${cls.prefix}\``);
+      if (m.fixture === "true" && idm && +idm[2] < FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "fixture ids are 99000-99999");
+      if (m.fixture !== "true" && idm && +idm[2] >= FIXTURE_ID_MIN) add("FIXTURE_ID_RANGE", "ids 99000-99999 are reserved for fixtures");
+    }
+    if ("uid" in m && !UID.test(m.uid)) add("BAD_UID", `uid \`${m.uid}\` malformed`);
+    const sysHits = sectionOffsets(n, SYSML_HEADING), srcHits = sectionOffsets(n, SOURCE_HEADING);
+    if (sysHits.length > 1) add("SYSML_SECTION_COUNT", `${sysHits.length} SysML sections`);
+    if (srcHits.length && sysHits.length && srcHits[0][1] > sysHits[0][1]) add("SOURCE_AFTER_SYSML", "Source: EA must precede SysML v2");
+    let block = null;
+    if (sysHits.length) {
+      if (sysHits[0][0] !== n.h2.length - 1) add("SYSML_NOT_LAST", `SysML v2 must be last; found \`${n.h2[n.h2.length - 1][1]}\` after it`);
+      const f = fences(sectionText(n, SYSML_HEADING));
+      if (f.length !== 1) add("SYSML_FENCE_COUNT", `expected one sysml block; found ${f.length}`);
+      else { block = f[0][0]; if (!COMMENT_ONLY.test(f[0][1])) add("SYSML_TRAILING_CONTENT", "text after the sysml block"); }
+    }
+    const upto = sysHits.length ? sysHits[0][1] : n.text.length;
+    const stray = fences(n.text.slice(n.fmEnd, upto)).length;
+    if (stray) add("SYSML_OUTSIDE_FOOTER", `${stray} sysml block(s) above the SysML section`);
+    const role = m.sourceRole, symbol = m.primarySymbol;
+    if (role !== undefined && role !== "authoritative-model") add("BAD_SOURCE_ROLE", `sourceRole \`${role}\``);
+    if ((role || symbol) && block === null) add("MISSING_SYSML_BLOCK", "sourceRole/primarySymbol set without a valid block");
+    if (role === "authoritative-model" && !symbol) add("MISSING_PRIMARY_SYMBOL", "needs primarySymbol");
+    if (symbol && block !== null && !qualifiedNames(block).has(symbol)) add("SYMBOL_NOT_DECLARED", `primarySymbol \`${symbol}\` not declared`);
+    return out;
+  }
+
+  const renderSysmlSection = (sysml, nl = "\n") =>
+    [SYSML_HEADING, "", SYSML_HINT, "", "```sysml", ...sysml.replace(/\r\n/g, "\n").replace(/\n+$/, "").split("\n"), "```"].join(nl) + nl;
+  function replaceSysmlBlock(text, sysml) {
+    const nl = text.includes("\r\n") ? "\r\n" : "\n", n = parse(text), hits = sectionOffsets(n, SYSML_HEADING);
+    const section = renderSysmlSection(sysml, nl);
+    if (hits.length) {
+      const normOff = hits[0][1];
+      const cut = normOff + (nl === "\r\n" ? (n.text.slice(0, normOff).match(/\n/g) || []).length : 0);
+      return text.slice(0, cut) + section;
+    }
+    const hasFooter = n.h2.some(([, h]) => h === SOURCE_HEADING);
+    return text.replace(/[\r\n]+$/, "") + nl.repeat(hasFooter ? 2 : 4) + section;
+  }
+
+  /* ---- rerun / add-onto-existing -------------------------------------------------
+   * Ruleset 16.4: EA-owned content refreshes, human content is preserved.
+   *   user zone       everything before the first managed heading: kept byte-for-byte
+   *   frontmatter     id and uid never change; EA_OWNED_KEYS refresh; all other keys kept
+   *   Source: EA      replaced
+   *   SysML v2        replaced
+   * A different `type` for the same uid is a CONFLICT and nothing is written. */
+  function managedStart(n) {
+    const hits = n.h2.filter(([, h]) => h === SOURCE_HEADING || h === SYSML_HEADING);
+    return hits.length ? hits[0][0] : n.text.length;
+  }
+  function splitNote(text) {
+    const n = parse(text), cut = managedStart(n);
+    const head = n.text.slice(0, cut), footer = n.text.slice(cut);
+    const srcHits = sectionOffsets(n, SOURCE_HEADING), sysHits = sectionOffsets(n, SYSML_HEADING);
+    const srcText = sectionText(n, SOURCE_HEADING);
+    return { n, head, footer, source: srcText ? srcText.replace(/\n+$/, "") : null, hasSysml: sysHits.length > 0, srcHits };
+  }
+  function patchFrontmatter(head, generatedMeta, generatedKeys) {
+    const lines = head.split("\n"), log = [];
+    const fmIdx = (key) => { const close = lines.indexOf("---", 1); for (let i = 1; i < close; i++) if (lines[i].startsWith(key + ":")) return i; return -1; };
+    for (const key of EA_OWNED_KEYS) {
+      if (!(key in generatedMeta)) continue;
+      const line = `${key}: ${generatedMeta[key]}`, i = fmIdx(key);
+      if (i >= 0) {
+        if (lines[i] !== line) { log.push(`${key}: ${lines[i].slice(key.length + 2)} -> ${generatedMeta[key]}`); lines[i] = line; }
+      } else {
+        let at = lines.indexOf("---", 1);               // default: just before the closing fence
+        for (let g = generatedKeys.indexOf(key) - 1; g >= 0; g--) { const j = fmIdx(generatedKeys[g]); if (j >= 0) { at = j + 1; break; } }
+        lines.splice(at, 0, line); log.push(`${key}: (added) ${generatedMeta[key]}`);
+      }
+    }
+    return { text: lines.join("\n"), log };
+  }
+  function mergeNote(existing, generated) {
+    const nlE = existing.includes("\r\n") ? "\r\n" : "\n";
+    const E = splitNote(existing), G = splitNote(generated);
+    if (E.n.meta.uid !== G.n.meta.uid) return { action: "conflict", reason: "UID_MISMATCH", text: existing, log: [] };
+    if (E.n.meta.type !== G.n.meta.type) return { action: "conflict", reason: `TYPE_CHANGED ${E.n.meta.type} -> ${G.n.meta.type}`, text: existing, log: [] };
+    const patched = patchFrontmatter(E.head, G.n.meta, G.n.keys);
+    const head = patched.text, log = patched.log;
+    // Rebuild the footer from the generated note, in the existing note's line endings.
+    const gFooterSrc = G.source, gSysml = extractSysml(generated);
+    let out = head.replace(/\n+$/, "") ;
+    const gap = "\n\n\n\n";
+    if (gFooterSrc) out += gap + gFooterSrc + "\n\n" + renderSysmlSection(gSysml, "\n").replace(/\n$/, "") + "\n";
+    else if (gSysml !== null) out += gap + renderSysmlSection(gSysml, "\n");
+    else out += "\n";
+    if (nlE === "\r\n") out = out.replace(/\n/g, "\r\n");
+    return { action: out === existing ? "unchanged" : "merge", text: out, log };
+  }
+  const indexByUid = (files) => { const m = new Map(); for (const [path, text] of files) { try { const u = parse(text).meta.uid; if (u) m.set(u, path); } catch (_) {} } return m; };
+
+  /* ---- ZIP (stored, no compression) ------------------------------------------- */
+  let CRC = null;
+  const crc32 = (b) => { if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } } let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function zip(entries) { // entries: [[path, Uint8Array]]
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+    const u16 = (v) => [v & 255, (v >>> 8) & 255], u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+    for (const [path, data] of entries) {
+      const name = enc.encode(path), crc = crc32(data);
+      const local = new Uint8Array([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+      parts.push(local, name, data);
+      central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+      off += local.length + name.length + data.length;
+    }
+    const cdSize = central.reduce((s, x) => s + x.length, 0);
+    const end = new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16(entries.length), ...u16(entries.length), ...u32(cdSize), ...u32(off), 0, 0]);
+    const all = [...parts, ...central, end], total = all.reduce((s, x) => s + x.length, 0), out = new Uint8Array(total); let p = 0;
+    for (const x of all) { out.set(x, p); p += x.length; } return out;
+  }
+  return { SYSML_HEADING, SOURCE_HEADING, EA_OWNED_KEYS, parse, extractSysml, qualifiedNames, validate, renderSysmlSection, replaceSysmlBlock, mergeNote, indexByUid, crc32, zip };
+})();
+
+</script>
+<script>
+const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"]},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
+const BUILD = "build 3a8dacda21";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const log = (m) => { $("log").textContent += m + "\n"; };
+$("build").textContent = BUILD;
+let source = null, vaultHandle = null;
+
+$("qeax").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  $("srcStatus").textContent = "Reading structure…"; $("srcOut").innerHTML = ""; source = null;
+  try {
+    const r = await SQLiteReader.open(f); await r.loadSchema();
+    const want = ["t_object", "t_connector", "t_package", "t_document"];   // EA diagrams are never read (ADR-V2-05)
+    const d = await r.diagnose(want), by = Object.fromEntries(d.map((x) => [x.name.toLowerCase(), x]));
+    const rows = want.map((t) => [t, !!by[t]?.present, by[t]]);
+    const countOf = (x) => (x?.error ? "error" : x?.rows ?? "?");
+    const missing = want.filter((t) => !by[t]?.present && t !== "t_document");
+    $("srcOut").innerHTML = "<table><tr><th>Table</th><th class=n>Rows</th><th>Handling</th></tr>" + rows.map(([t, has, x]) =>
+      `<tr><td><code>${t}</code></td><td class=n>${has ? countOf(x) : "—"}</td><td>${has ? "read" : "<span class=warn>absent</span>"}</td></tr>`).join("") + "</table>" +
+      (missing.length ? `<p class="bad">Missing required table(s): ${missing.join(", ")}</p>` : "") + `<p class="mut">EA diagrams are out of scope and are never read (ADR-V2-05).</p>`;
+    $("srcStatus").innerHTML = missing.length ? `<span class=bad>${esc(f.name)} is not a usable EA export</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1048576).toFixed(1)} MiB`;
+    source = { file: f, reader: r }; log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
+  } catch (e) { $("srcStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("source error: " + e.message); }
+});
+
+function reportVault(files) { // files: [[path, text]]
+  const md = files.filter(([p]) => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p));
+  const bad = [], seenUid = new Map(), seenId = new Map(); let withFm = 0, noFm = 0;
+  for (const [p, t] of md) {
+    let meta; try { meta = MDSE.parse(t).meta; withFm++; } catch (_) { noFm++; continue; }
+    if (!meta.type) continue;                       // not a governed engineering note
+    const issues = MDSE.validate(t, CLASSES).map((i) => i.code);
+    for (const [k, seen] of [["uid", seenUid], ["id", seenId]]) if (meta[k]) { if (seen.has(meta[k])) issues.push("DUPLICATE_" + k.toUpperCase()); else seen.set(meta[k], p); }
+    if (issues.length) bad.push([p, issues]);
+  }
+  const governed = seenUid.size;
+  $("vaultOut").innerHTML = `<p>${md.length} Markdown files · ${withFm} with frontmatter · <b>${governed}</b> governed notes (have <code>type</code> and <code>uid</code>) · ` +
+    (bad.length ? `<span class=bad>${bad.length} with issues</span>` : `<span class=ok>no format issues</span>`) + `</p>` +
+    (bad.length ? "<table><tr><th>Note</th><th>Issues</th></tr>" + bad.slice(0, 200).map(([p, i]) => `<tr><td><code>${esc(p)}</code></td><td>${i.join(", ")}</td></tr>`).join("") + "</table>" + (bad.length > 200 ? `<p class=mut>${bad.length - 200} more not shown</p>` : "") : "");
+  log(`vault check: ${md.length} md, ${governed} governed, ${bad.length} with issues`);
+  return { governed, bad: bad.length };
+}
+$("scanInput").addEventListener("change", async (ev) => {
+  const list = [...ev.target.files]; if (!list.length) return;
+  $("vaultStatus").textContent = `Reading ${list.length} files…`;
+  const files = [];
+  for (const f of list) if (/\.md$/i.test(f.name)) files.push([f.webkitRelativePath || f.name, await f.text()]);
+  const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc((list[0].webkitRelativePath || "").split("/")[0] || "folder")}</span> · read-only check`;
+});
+async function walkDir(dir, prefix, out) {
+  for await (const [name, h] of dir.entries()) {
+    if (name === ".git" || name === ".obsidian") continue;
+    if (h.kind === "directory") await walkDir(h, prefix + name + "/", out);
+    else if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]);
+  }
+}
+$("pick").addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
+  try {
+    vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    const files = []; await walkDir(vaultHandle, "", files);
+    const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · read &amp; write`;
+  } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
+});
+</script></body></html>

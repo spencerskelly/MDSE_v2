@@ -1,0 +1,16 @@
+{
+  "name": "mdse",
+  "private": true,
+  "description": "Markdown Systems Engineering: rules, schemas and tools for an Obsidian vault backed by SysML v2 text.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "npm run check:rules && npm run test:core && npm run check:importer && npm run test:oracles && npm run test:fixtures",
+    "check:rules": "node scripts/check-rules.mjs",
+    "rules:write": "node scripts/check-rules.mjs --write",
+    "test:core": "node --test tools/core/test/*.test.mjs",
+    "build:importer": "node tools/importer/build.mjs",
+    "check:importer": "node tools/importer/build.mjs --check",
+    "test:oracles": "python3 -m pytest -q testing/oracles",
+    "test:fixtures": "python3 testing/fixtures/golden-charger/extract_sysml.py --check && python3 testing/fixtures/golden-charger/validate_fixture.py && python3 testing/fixtures/golden-charger/test_fixture_pipeline.py"
+  }
+}

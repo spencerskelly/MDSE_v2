@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+*.tsbuildinfo
+coverage/
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+# Real engineering data never enters this repository (DAT-002). These patterns are a backstop, not the control.
+*.qea
+*.qeax
+*.eap
+*.eapx
+*.xlsx
+*.xlsm
+private/
+evidence/
+# tools/importer/dist/mdse_importer.html IS committed: it is the released single-file importer, checked by CI.

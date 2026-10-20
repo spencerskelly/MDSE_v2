@@ -1,0 +1,110 @@
+name: CI
+
+# One workflow for the whole repository. Every job must pass on main (GOV-001).
+# The parser job is manual until the parser pin is final (see testing/fixtures/golden-charger/parser-pin.json).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      parser:
+        description: Run the pinned independent SysML v2 parser gate
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules-and-core:
+    name: Rules, core library, importer build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Ruleset format and register CSV are current
+        run: npm run check:rules
+      - name: Core library unit tests
+        run: npm run test:core
+      - name: Single-file importer is rebuilt from source
+        run: npm run check:importer
+
+  oracles-and-fixtures:
+    name: Python oracles, fixtures, browser smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest playwright
+          python -m playwright install --with-deps chromium
+      - name: Oracle tests (note format, core cross-check, QEAX reader, importer in a browser)
+        run: npm run test:oracles
+      - name: Golden Charger fixture extraction and regression
+        run: npm run test:fixtures
+
+  data-policy:
+    name: No real engineering data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reject source and spreadsheet files (DAT-002)
+        run: |
+          bad=$(git ls-files | grep -Ei '\.(qea|qeax|eap|eapx|xlsx|xlsm)$' || true)
+          if [ -n "$bad" ]; then echo "Real-data file types are not allowed in this repository:"; echo "$bad"; exit 1; fi
+
+  parser:
+    name: Independent SysML v2 parser (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.parser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Extract and assemble the Golden Charger model
+        run: |
+          python3 testing/fixtures/golden-charger/extract_sysml.py --check
+          python3 testing/fixtures/golden-charger/external_parser_gate.py --output "$RUNNER_TEMP/golden-charger.sysml"
+      - name: Provision the pinned validator
+        run: bash testing/fixtures/golden-charger/provision_parser.sh "$RUNNER_TEMP/sysml-parser"
+      - name: Accept the baseline model
+        working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
+        run: ./validate-sysml "$RUNNER_TEMP/golden-charger.sysml"
+      - name: Reject malformed syntax and unresolved types
+        working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
+        run: python3 "$GITHUB_WORKSPACE/testing/fixtures/golden-charger/semantic_regression.py" --source "$RUNNER_TEMP/golden-charger.sysml" --validator "./validate-sysml {model}"
+      - name: Structural probes (ports, ownership, multiplicity)
+        working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
+        run: python3 "$GITHUB_WORKSPACE/testing/fixtures/golden-charger/structural_checks.py" --source "$RUNNER_TEMP/golden-charger.sysml" --validator "./validate-sysml {model}"
+      - name: Upload parser evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: parser-evidence
+          path: |
+            ${{ runner.temp }}/sysml-parser/parser-provenance.txt
+            ${{ runner.temp }}/sysml-parser/parser-sha256.txt
+            ${{ runner.temp }}/golden-charger.sysml
+          if-no-files-found: warn
+          retention-days: 30

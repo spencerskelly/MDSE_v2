@@ -1,0 +1,55 @@
+# UNDER REVISION (D-0003): fields SysML v2 can define move to the ## SysML v2 block and leave this file.
+# Proposed split: governance/OPEN_DECISIONS.md, OD-01. Until OD-01 is decided, do not build on the SysML-defined fields here.
+schemaVersion: '1.36'
+date: '2026-10-05'
+storage: Author forward/owner-side fields. Inverse fields are persisted in YAML and written with the forward field by the translator, Workbench or the regenerate script (W-275); the forward field wins when they disagree.
+paired:
+- {forward: subtypeOf, inverse: supertypeOf, from: any, to: any, sameClass: true}
+- {forward: hasPart, inverse: partOf, from: [Object], to: [Object]}
+- {forward: hasChild, inverse: childOf, from: any, to: any, excludePairs: [[Object, Object], [Object, Condition]]}
+- {forward: hasState, inverse: stateOf, from: [Object, Condition], to: [Condition]}
+- {forward: includes, inverse: includedIn, from: any, to: any}
+- {forward: copyOf, inverse: hasCopy, from: any, to: any, sameClass: true}
+- {forward: dependsOn, inverse: dependencyOf, from: any, to: any}
+- {forward: derivedFrom, inverse: derivedBy, from: [Requirement], to: [Requirement]}
+- {forward: refines, inverse: refinedBy, from: [Requirement], to: [Requirement]}
+- {forward: drives, inverse: drivenBy, from: any, to: any}
+- {forward: references, inverse: referencedBy, from: [Requirement], to: [Requirement, Document]}
+- {forward: precedes, inverse: follows, from: any, to: any, sameClass: true}
+- {forward: triggeredBy, inverse: triggers, from: [Behavior, Condition], to: [Behavior, Condition, Item Flow]}
+- {forward: supersedes, inverse: supersededBy, from: any, to: any, sameClass: true}
+- {forward: describes, inverse: describedBy, from: [Info, Artifact, Document], to: any}
+- {forward: tracesTo, inverse: tracesFrom, from: any, to: any, provisional: true}
+- {forward: performs, inverse: performedBy, from: [Object], to: [Behavior]}
+- {forward: hasDesign, inverse: designOf, from: [Object, Document], to: [Condition]}
+- {forward: appliesTo, inverse: applies, from: [Requirement], to: any}
+- {forward: satisfies, inverse: satisfiedBy, from: [Behavior, Condition], to: [Requirement]}
+- {forward: verifies, inverse: verifiedBy, from: [Verification], to: [Requirement]}
+- {forward: realizedBy, inverse: realizes, from: [Use Case], to: [Behavior, Condition]}
+- {forward: optionOf, inverse: hasOption, from: [Use Case], to: [Use Case]}
+- {forward: affects, inverse: affectedBy, from: [Issue, Failure Mode, Use Case], to: any}
+temporaryPairs: []
+symmetric:
+- field: conflictsWith
+  between: any
+  meaning: Mutual compatibility conflict; generated mirror is derivative. Kept though nothing writes it yet (W-192).
+oneWay:
+- {field: participants, from: [Use Case], to: [Object, Actor, Behavior, Document]}
+- {field: initialState, from: [Condition], to: [Condition]}
+- {field: finalState, from: [Condition], to: [Condition]}
+guidance:
+  hasState: 'hasState/stateOf: an Object or state-machine Condition may own Condition notes representing states/state machines. Subtype rules determine the precise semantic pairing.'
+  states: 'initialState and finalState are one-way, written on a Condition subtype state machine and pointing at Condition subtype state records. finalState may hold several values.'
+  affects: 'affects/affectedBy: the source has an impact on a target that exists anyway, good or bad (for example an Issue or Failure Mode on the element it harms, or normal use in a Use Case on the parts it loads or wears); written on the source, affectedBy generated. drives is different: the target exists or happens because of the source. To design against an impact, prefer Use Case drives Requirement, applied to the element (W-284).'
+  triggeredBy: 'triggeredBy/triggers: what starts a behavior or condition. The field is written on the triggered Behavior or Condition and may point at another Behavior, Condition or Item Flow.'
+  endpoints: 'Endpoint rules (W-272, W-277): from is the class of the note the field is written on, to is the class of the note it points at; any means every class; sameClass means both notes have the same class; excludePairs lists [from, to] pairs that must use another field. The rules say what a person or AI may create; the translator writes links as drawn in EA and an off-rule link is a Review finding, not an error. A relationship with no from/to has no rule written yet. provisional means every link of it is a Review finding until it is replaced by a stronger relationship; a person, AI or Workbench may create it when no relationship fits yet (W-288, replacing importOnly from W-283).'
+  includes: 'includes/includedIn is membership without ownership: the whole includes a member it does not own, and a member may be included in several wholes. Written on the whole. hasChild is ownership (one parent); hasPart is Object assembly (W-277).'
+  refine: 'refines/refinedBy is between two requirements: the source requirement adds precision to the target (W-165).'
+  drives: 'drives/drivenBy: the element on which it is written gives rise to or causes the other; drives is written on the source, drivenBy generated. First used for Use Case to Requirement (W-165); any to any since W-283 so it also covers causes.'
+  references: 'references/referencedBy: one note mentions another, written on the note that mentions it. First used for requirements that mention other requirements (W-167); general enough for a requirement that cites a standard clause or a document.'
+  participants: 'participants is one-way, written only on the Use Case, listing the Objects, Actors, Behaviors and Documents that take part in it; interface occurrences are represented in Local Model rather than as first-class Port notes.'
+  precedes: 'precedes/follows is the order of steps in a flow: precedes is written on the step before, pointing at the step after; follows is generated. Used for EA ControlFlow (W-174) and StateFlow (W-175); a guard, trigger or effect is a source-section line on the step before.'
+  tracesTo: 'Provisional link: the two notes are related and the relationship is not chosen yet. The translator writes it for EA connectors that fit no rule; a person, AI or Workbench writes it when unsure. Every link is a Review finding until replaced by a stronger relationship (W-288).'
+  composition: 'hasPart/partOf is for Object notes only. hasChild/childOf is generic ownership for remaining first-class notes; state/design semantics use hasState or hasDesign instead of generic containment when applicable.'
+  copy: copyOf/hasCopy says a note is a copy of another first-class element and lets a reader trace back to the original note.
+  supersedes: 'supersedes/supersededBy is for a note that has been replaced by another note: supersedes is written on the replacing note and points at the note it replaces; supersededBy is generated on the replaced note (W-191). Nothing in the import writes it.'

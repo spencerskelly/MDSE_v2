@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MDSE v2 Importer</title>
+<style>
+:root{--bg:#0f1722;--panel:#162233;--line:#2b3b52;--fg:#e2ecf6;--mut:#9db0c4;--acc:#6db3ff;--ok:#5fd08a;--bad:#ff7b7b;--warn:#f0c060}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fb;--panel:#fff;--line:#cfd8e3;--fg:#17222f;--mut:#566a80;--acc:#0b63c5;--ok:#17803f;--bad:#b3261e;--warn:#8a5a00}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}h1{font-size:21px;margin:0 0 4px}h2{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin:0 0 10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0}
+button,label.btn{font:inherit;background:var(--acc);color:#fff;border:0;border-radius:7px;padding:8px 13px;cursor:pointer;display:inline-block}
+button[disabled]{opacity:.45;cursor:not-allowed}button.alt,label.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:focus-visible,label.btn:focus-within{outline:2px solid var(--acc);outline-offset:2px}input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.mut{color:var(--mut)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+code{font:12.5px ui-monospace,Menlo,Consolas,monospace}pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;font-size:12.5px}
+.pill{border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:12px;margin-left:6px}
+</style></head><body><main>
+<h1>MDSE v2 Importer</h1>
+<div class="mut">One file. No install, no network. Reads a QEAX in your browser and works on a vault folder you choose. <span id="build" class="pill"></span></div>
+
+<section class="card" aria-labelledby="h-src"><h2 id="h-src">1 · Source (QEAX)</h2>
+<div class="row"><label class="btn">Choose .qeax<input id="qeax" type="file" accept=".qeax,.qea,.sqlite,.db"></label><span id="srcStatus" class="mut">No file chosen.</span></div>
+<div id="srcOut"></div></section>
+
+<section class="card" aria-labelledby="h-vault"><h2 id="h-vault">2 · Target vault</h2>
+<div class="row">
+ <button id="pick" class="alt">Choose existing vault folder (read &amp; write)</button>
+ <label class="btn alt">Check a folder (read-only)<input id="scanInput" type="file" webkitdirectory multiple></label>
+ <span id="vaultStatus" class="mut">No folder chosen.</span></div>
+<p class="mut" style="margin:8px 0 0">Add-onto mode never deletes. A note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. A changed <code>type</code> is reported, not written.</p>
+<div id="vaultOut"></div></section>
+
+<section class="card" aria-labelledby="h-gen"><h2 id="h-gen">3 · Generate</h2>
+<div class="row"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Add to chosen vault</button></div>
+<p id="genStatus" class="warn" style="margin:8px 0 0">Translation from QEAX to notes is not implemented in this build (milestone M2). Steps 1 and 2 are working and tested.</p></section>
+
+<section class="card" aria-labelledby="h-log"><h2 id="h-log">Run log</h2><pre id="log" aria-live="polite"></pre></section>
+</main>
+<script>
+/*@@READER@@*/
+</script>
+<script>
+/*@@CORE@@*/
+</script>
+<script>
+const CLASSES = /*@@CLASSES@@*/;
+const BUILD = "/*@@BUILD@@*/";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const log = (m) => { $("log").textContent += m + "\n"; };
+$("build").textContent = BUILD;
+let source = null, vaultHandle = null;
+
+$("qeax").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  $("srcStatus").textContent = "Reading structure…"; $("srcOut").innerHTML = ""; source = null;
+  try {
+    const r = await SQLiteReader.open(f); await r.loadSchema();
+    const want = ["t_object", "t_connector", "t_package", "t_document"];   // EA diagrams are never read (ADR-V2-05)
+    const d = await r.diagnose(want), by = Object.fromEntries(d.map((x) => [x.name.toLowerCase(), x]));
+    const rows = want.map((t) => [t, !!by[t]?.present, by[t]]);
+    const countOf = (x) => (x?.error ? "error" : x?.rows ?? "?");
+    const missing = want.filter((t) => !by[t]?.present && t !== "t_document");
+    $("srcOut").innerHTML = "<table><tr><th>Table</th><th class=n>Rows</th><th>Handling</th></tr>" + rows.map(([t, has, x]) =>
+      `<tr><td><code>${t}</code></td><td class=n>${has ? countOf(x) : "—"}</td><td>${has ? "read" : "<span class=warn>absent</span>"}</td></tr>`).join("") + "</table>" +
+      (missing.length ? `<p class="bad">Missing required table(s): ${missing.join(", ")}</p>` : "") + `<p class="mut">EA diagrams are out of scope and are never read (ADR-V2-05).</p>`;
+    $("srcStatus").innerHTML = missing.length ? `<span class=bad>${esc(f.name)} is not a usable EA export</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1048576).toFixed(1)} MiB`;
+    source = { file: f, reader: r }; log(`source ${f.name}: ${rows.map(([t, h, x]) => t + "=" + (h ? countOf(x) : "absent")).join(" ")}`);
+  } catch (e) { $("srcStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("source error: " + e.message); }
+});
+
+function reportVault(files) { // files: [[path, text]]
+  const md = files.filter(([p]) => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p));
+  const bad = [], seenUid = new Map(), seenId = new Map(); let withFm = 0, noFm = 0;
+  for (const [p, t] of md) {
+    let meta; try { meta = MDSE.parse(t).meta; withFm++; } catch (_) { noFm++; continue; }
+    if (!meta.type) continue;                       // not a governed engineering note
+    const issues = MDSE.validate(t, CLASSES).map((i) => i.code);
+    for (const [k, seen] of [["uid", seenUid], ["id", seenId]]) if (meta[k]) { if (seen.has(meta[k])) issues.push("DUPLICATE_" + k.toUpperCase()); else seen.set(meta[k], p); }
+    if (issues.length) bad.push([p, issues]);
+  }
+  const governed = seenUid.size;
+  $("vaultOut").innerHTML = `<p>${md.length} Markdown files · ${withFm} with frontmatter · <b>${governed}</b> governed notes (have <code>type</code> and <code>uid</code>) · ` +
+    (bad.length ? `<span class=bad>${bad.length} with issues</span>` : `<span class=ok>no format issues</span>`) + `</p>` +
+    (bad.length ? "<table><tr><th>Note</th><th>Issues</th></tr>" + bad.slice(0, 200).map(([p, i]) => `<tr><td><code>${esc(p)}</code></td><td>${i.join(", ")}</td></tr>`).join("") + "</table>" + (bad.length > 200 ? `<p class=mut>${bad.length - 200} more not shown</p>` : "") : "");
+  log(`vault check: ${md.length} md, ${governed} governed, ${bad.length} with issues`);
+  return { governed, bad: bad.length };
+}
+$("scanInput").addEventListener("change", async (ev) => {
+  const list = [...ev.target.files]; if (!list.length) return;
+  $("vaultStatus").textContent = `Reading ${list.length} files…`;
+  const files = [];
+  for (const f of list) if (/\.md$/i.test(f.name)) files.push([f.webkitRelativePath || f.name, await f.text()]);
+  const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc((list[0].webkitRelativePath || "").split("/")[0] || "folder")}</span> · read-only check`;
+});
+async function walkDir(dir, prefix, out) {
+  for await (const [name, h] of dir.entries()) {
+    if (name === ".git" || name === ".obsidian") continue;
+    if (h.kind === "directory") await walkDir(h, prefix + name + "/", out);
+    else if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]);
+  }
+}
+$("pick").addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
+  try {
+    vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    const files = []; await walkDir(vaultHandle, "", files);
+    const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · read &amp; write`;
+  } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
+});
+</script></body></html>

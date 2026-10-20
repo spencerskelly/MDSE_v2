@@ -1,0 +1,20 @@
+{
+  "schema": "mdse-v2-parser-pin/1",
+  "standard": "OMG SysML 2.0 / KerML 1.0",
+  "standard_release": "2026-04",
+  "release_repository": "Systems-Modeling/SysML-v2-Release",
+  "release_commit": "9baca5908ca28b53da085de69336fde48420ea8f",
+  "pilot_repository": "Systems-Modeling/SysML-v2-Pilot-Implementation",
+  "pilot_release": "2026-04",
+  "pilot_release_commit": "20897e3",
+  "parser_binary": null,
+  "parser_binary_sha256": null,
+  "parser_command": null,
+  "validation_level": "pending-independent-parser",
+  "notes": [
+    "2026-04 pilot release identifies Eclipse language plugin 0.59.0; exact distributable digest not yet established.",
+    "Do not infer SysML 2.0 compatibility from latest (2026-08) beta-containing parser.",
+    "DeciSym sysmlv2-validator wraps the Pilot Implementation but requires checking its resolved dependency before use.",
+    "Parser must check complete assembled model; syntax-only success does not establish cross-package semantic resolution."
+  ]
+}

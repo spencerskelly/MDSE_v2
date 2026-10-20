@@ -1,0 +1,156 @@
+{
+ "Actor": {
+  "prefix": "ACT",
+  "subtype": []
+ },
+ "Artifact": {
+  "prefix": "ART",
+  "subtype": []
+ },
+ "Behavior": {
+  "prefix": "BEH",
+  "subtype": [
+   "function",
+   "activity",
+   "action",
+   "step"
+  ]
+ },
+ "Condition": {
+  "prefix": "COND",
+  "subtype": [
+   "state",
+   "state machine",
+   "mode",
+   "design"
+  ]
+ },
+ "Diagram": {
+  "prefix": "DIA",
+  "subtype": [
+   "custom",
+   "logical",
+   "use case",
+   "composite structure",
+   "statechart",
+   "activity",
+   "sequence",
+   "package"
+  ]
+ },
+ "Document": {
+  "prefix": "DOC",
+  "subtype": []
+ },
+ "Failure Mode": {
+  "prefix": "FM",
+  "subtype": []
+ },
+ "Functional Flow": {
+  "prefix": "FFLOW",
+  "subtype": []
+ },
+ "Info": {
+  "prefix": "INFO",
+  "subtype": []
+ },
+ "Issue": {
+  "prefix": "ISS",
+  "subtype": [
+   "engineering issue",
+   "lifecycle risk"
+  ]
+ },
+ "Item Flow": {
+  "prefix": "IFLOW",
+  "subtype": [
+   "information",
+   "energy",
+   "material"
+  ]
+ },
+ "Object": {
+  "prefix": "OBJ",
+  "subtype": [
+   "electrical",
+   "circuit",
+   "mechanical",
+   "software",
+   "firmware",
+   "part",
+   "interface"
+  ]
+ },
+ "Plan": {
+  "prefix": "PLAN",
+  "subtype": []
+ },
+ "Procedure": {
+  "prefix": "PROC",
+  "subtype": [
+   "test",
+   "assembly",
+   "configuration",
+   "commissioning",
+   "calibration",
+   "maintenance",
+   "repair",
+   "decommissioning"
+  ]
+ },
+ "Requirement": {
+  "prefix": "REQ",
+  "subtype": [
+   "functional",
+   "design",
+   "standard",
+   "stakeholder",
+   "engineering"
+  ]
+ },
+ "Result": {
+  "prefix": "RES",
+  "subtype": []
+ },
+ "Setup": {
+  "prefix": "SETUP",
+  "subtype": []
+ },
+ "Use Case": {
+  "prefix": "UC",
+  "subtype": [
+   "what",
+   "where",
+   "why",
+   "when",
+   "who"
+  ]
+ },
+ "Verification": {
+  "prefix": "VER",
+  "subtype": [
+   "test",
+   "analysis",
+   "inspection",
+   "demonstration"
+  ]
+ },
+ "modelCheck": {
+  "prefix": "MC",
+  "subtype": [
+   "StateNode",
+   "Change",
+   "Boundary",
+   "Decision",
+   "ActivityPartition",
+   "Trigger",
+   "Synchronization",
+   "Sequence",
+   "ActionPin",
+   "ProxyConnector",
+   "Event",
+   "ActivityParameter",
+   "Package"
+  ]
+ }
+}

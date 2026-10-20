@@ -1,0 +1,1049 @@
+{
+  "schema": "mdse-v2-approved-family-resolver/0.1",
+  "status": "group_approved_execution_candidate_only",
+  "decision_authority": [
+    "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+    "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+    "26_Definitions/STEP_00_APPROVED_MODEL_HANDLING_CLARIFICATIONS_2026-10-18.md",
+    "26_Definitions/STEP_02A_EA_DIAGRAM_DEFERRED_2026-10-18.md"
+  ],
+  "automatic_native_emission": false,
+  "unknown_family": "flag_for_review_no_implicit_fallback",
+  "source_data_tables": [
+    "t_object",
+    "t_connector",
+    "t_package"
+  ],
+  "ea_diagrams_enabled": false,
+  "counts": {
+    "element_families": 60,
+    "relationship_families": 26,
+    "reduced_qeax_connectors": 14688
+  },
+  "elements": [
+    {
+      "family": "Requirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:requirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:designConstraint",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:functionalRequirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:extendedRequirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:Functional",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:Webasto Requirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:performanceRequirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity",
+      "disposition": "native_candidate",
+      "native_kind": "ActionDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ActionDefinition; owning contextual usage when source evidence supports.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity:System Function",
+      "disposition": "native_candidate",
+      "native_kind": "ActionDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ActionDefinition; owning contextual usage when source evidence supports.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity:Hardware Function",
+      "disposition": "native_candidate",
+      "native_kind": "ActionDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ActionDefinition; owning contextual usage when source evidence supports.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity:Software Function",
+      "disposition": "native_candidate",
+      "native_kind": "ActionDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ActionDefinition; owning contextual usage when source evidence supports.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity:Module Function",
+      "disposition": "native_candidate",
+      "native_kind": "ActionDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ActionDefinition; owning contextual usage when source evidence supports.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "UseCase",
+      "disposition": "native_candidate",
+      "native_kind": "UseCaseDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "UseCaseDefinition; actor/case usages local.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "State",
+      "disposition": "native_candidate",
+      "native_kind": "StateDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "StateDefinition; local usages within workflow.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "State:System State",
+      "disposition": "native_candidate",
+      "native_kind": "StateDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "StateDefinition; local usages within workflow.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Hardware Component",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Physical Component",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:block",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Module",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Software Component",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Software Unit",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Platform",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Physical System Variant",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Business Line",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PartDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:System Partner",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [
+        "external_part"
+      ],
+      "approved_description": "external PartDefinition; Actor may have native actor-role usages in cases.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Actor",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [],
+      "review_notes": [
+        "external_part"
+      ],
+      "approved_description": "external PartDefinition; Actor may have native actor-role usages in cases.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Object",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [
+        "OBJECT_CLASSIFIER_SPECIALIZATION_REVIEW"
+      ],
+      "review_notes": [],
+      "approved_description": "PartDefinition. Valid previous instance-classifier reference maps to native specialization (not typing); unresolved/incompatible target flagged. Preserve original classifier in provenance.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Electrical & Material Interface",
+      "disposition": "native_candidate",
+      "native_kind": "InterfaceDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "InterfaceDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Data Interface",
+      "disposition": "native_candidate",
+      "native_kind": "InterfaceDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "InterfaceDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Mechanical Interface",
+      "disposition": "native_candidate",
+      "native_kind": "InterfaceDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "InterfaceDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Generic Physical Interface",
+      "disposition": "native_candidate",
+      "native_kind": "PortDefinition",
+      "conditional_evidence": [
+        "OWNING_PORT_USAGE_REVIEW"
+      ],
+      "review_notes": [],
+      "approved_description": "PortDefinition with typed PortUsage in owner.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Signal:Logical Signal",
+      "disposition": "native_candidate",
+      "native_kind": "ItemDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ItemDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Signal:Physical Signal",
+      "disposition": "native_candidate",
+      "native_kind": "ItemDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ItemDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Signal:Software Parameter",
+      "disposition": "native_candidate",
+      "native_kind": "AttributeDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "AttributeDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Activity:testCase",
+      "disposition": "native_candidate",
+      "native_kind": "VerificationCaseDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "VerificationCaseDefinition with explicit valid verify relationships.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Constraint",
+      "disposition": "native_candidate",
+      "native_kind": "ConstraintDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ConstraintDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Event",
+      "disposition": "native_candidate",
+      "native_kind": "OccurrenceDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "OccurrenceDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Physical Context",
+      "disposition": "native_candidate",
+      "native_kind": "PartDefinition",
+      "conditional_evidence": [
+        "CONTEXT_KIND_EVIDENCE"
+      ],
+      "review_notes": [],
+      "approved_description": "if composite context, native PartDefinition with typed contained PartUsages and MDSE type Context; if a single external referenced part, external PartDefinition. Ambiguous source classification flagged.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Action",
+      "disposition": "native_candidate",
+      "native_kind": "ActionUsage",
+      "conditional_evidence": [],
+      "review_notes": [
+        "UNTYPED_ALLOWED_REVIEW_FLAG"
+      ],
+      "approved_description": "owned ActionUsage, untyped allowed with `UNRESOLVED_ACTION_TYPE`.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Part",
+      "disposition": "native_candidate",
+      "native_kind": "PartUsage",
+      "conditional_evidence": [],
+      "review_notes": [
+        "UNTYPED_ALLOWED_REVIEW_FLAG"
+      ],
+      "approved_description": "owned PartUsage, untyped allowed with `UNRESOLVED_PART_TYPE`.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Port",
+      "disposition": "native_candidate",
+      "native_kind": "PortUsage",
+      "conditional_evidence": [],
+      "review_notes": [
+        "UNTYPED_ALLOWED_REVIEW_FLAG"
+      ],
+      "approved_description": "owned PortUsage, untyped allowed with `UNRESOLVED_PORT_TYPE`.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Part:FlowProperty",
+      "disposition": "native_candidate",
+      "native_kind": "ItemUsage",
+      "conditional_evidence": [
+        "OWNING_PORT_AND_DIRECTION_EVIDENCE"
+      ],
+      "review_notes": [],
+      "approved_description": "ItemUsage owned by port; retain explicit direction, typing when known.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "StateNode",
+      "disposition": "native_candidate",
+      "native_kind": "StateUsage",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "independent StateUsage local to workflow.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Synchronization",
+      "disposition": "conditional_review",
+      "native_kind": null,
+      "conditional_evidence": [
+        "FORK_JOIN_CONTROL_FLOW_EVIDENCE"
+      ],
+      "review_notes": [],
+      "approved_description": "local fork/join workflow construct based on actual incoming/outgoing control-flow evidence.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Trigger",
+      "disposition": "conditional_review",
+      "native_kind": null,
+      "conditional_evidence": [
+        "LEGAL_TRANSITION_CONTEXT"
+      ],
+      "review_notes": [],
+      "approved_description": "local transition trigger.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Package",
+      "disposition": "folder_only",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "folder only.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "InformationItem",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "description-only MDSE note with links; not native ItemDefinition.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Note",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "MDSE note with YAML element links.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Issue",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "MDSE Issue note with source-backed affected-element YAML links.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Change",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "MDSE change note with YAML element links.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Decision",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "descriptive MDSE note, source-backed connections/guards and YAML links; no inferred executable branching.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Text",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "MDSE notes, simplified names, original URL in YAML, YAML links.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Text:NavigationCell",
+      "disposition": "mdse_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "MDSE notes, simplified names, original URL in YAML, YAML links.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Artifact:Image",
+      "disposition": "attachment_link",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "attachments referenced in element YAML.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Artifact:Document",
+      "disposition": "attachment_link",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "attachments referenced in element YAML.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Sequence",
+      "disposition": "reference_only",
+      "native_kind": null,
+      "conditional_evidence": [
+        "NON_DIAGRAM_SOURCE_ONLY"
+      ],
+      "review_notes": [],
+      "approved_description": "reference-only interaction/workflow view, preserving order/participants/messages, no inferred executable succession.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "ProxyConnector",
+      "disposition": "reference_only",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "reference to original connection/endpoints; no invented port/part or separate usage note.",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Boundary",
+      "disposition": "aggregate_boundary_note",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "remove from generated model (still disposition-ledgered).",
+      "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    }
+  ],
+  "relationships": [
+    {
+      "family": "Generalization",
+      "source_count": 3735,
+      "approved_direction": "specialization",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "Specialization",
+      "required_evidence": [
+        "direction_and_endpoint_evidence"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Abstraction:allocate",
+      "source_count": 2605,
+      "approved_direction": "native allocation",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "AllocationUsage",
+      "required_evidence": [
+        "semantic_roles"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Aggregation",
+      "source_count": 2267,
+      "approved_direction": "owned PartUsage where physical containment is evidenced, else review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "TypedOwnedUsage",
+      "required_evidence": [
+        "ownership_and_endpoint_category"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:satisfy",
+      "source_count": 1330,
+      "approved_direction": "native satisfy",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "SatisfyRequirementUsage",
+      "required_evidence": [
+        "requirement_and_objective"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Realisation",
+      "source_count": 883,
+      "approved_direction": "part-to-action perform; part-to-requirement allocate; part-to-part allocate; else review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "ContextualPerformOrAllocate",
+      "required_evidence": [
+        "endpoint_roles"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:refine",
+      "source_count": 596,
+      "approved_direction": "Dependency plus Refinement metadata",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "DependencyWithRefinementEvidence",
+      "required_evidence": [
+        "source_qualifier"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency",
+      "source_count": 429,
+      "approved_direction": "native Dependency",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "Dependency",
+      "required_evidence": [
+        "endpoints_and_roles"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:trace",
+      "source_count": 414,
+      "approved_direction": "Dependency with trace provenance",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "DependencyWithTraceEvidence",
+      "required_evidence": [
+        "source_qualifier"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Association",
+      "source_count": 395,
+      "approved_direction": "ConnectionUsage if connectivity proven; otherwise review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "ConnectionUsage",
+      "required_evidence": [
+        "actual_connectivity"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "UseCase:extend",
+      "source_count": 378,
+      "approved_direction": "conditional optional case usage",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "ConditionalUseCaseUsage",
+      "required_evidence": [
+        "extension_context"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "ControlFlow",
+      "source_count": 271,
+      "approved_direction": "Succession with source guards",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "SuccessionUsage",
+      "required_evidence": [
+        "source_action_occurrences"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:deriveReqt",
+      "source_count": 232,
+      "approved_direction": "requirement derivation",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "RequirementDerivation",
+      "required_evidence": [
+        "requirement_endpoints"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "NoteLink",
+      "source_count": 220,
+      "approved_direction": "MDSE YAML links; no native relationship",
+      "disposition": "reference_only",
+      "native_operation": null,
+      "required_evidence": [
+        "metadata_only"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "UseCase:include",
+      "source_count": 219,
+      "approved_direction": "required nested case usage",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "RequiredUseCaseUsage",
+      "required_evidence": [
+        "owning_use_case"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Sequence",
+      "source_count": 193,
+      "approved_direction": "reference-only interaction",
+      "disposition": "reference_only",
+      "native_operation": null,
+      "required_evidence": [
+        "non_diagram_source_reference_only"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "StateFlow",
+      "source_count": 171,
+      "approved_direction": "state transition",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "TransitionUsage",
+      "required_evidence": [
+        "state_context"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Nesting",
+      "source_count": 137,
+      "approved_direction": "approved nested state/activity/port/requirement usage; else organizational",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "ContextualNestedUsage",
+      "required_evidence": [
+        "native_owner_context"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Usage",
+      "source_count": 128,
+      "approved_direction": "generic Dependency unless independently stronger evidence",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "DependencyUnlessStrongerEvidence",
+      "required_evidence": [
+        "source_intent"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:verify",
+      "source_count": 47,
+      "approved_direction": "verification",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "VerifyRequirementUsage",
+      "required_evidence": [
+        "verification_case_and_requirement"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:RecoveryRequirement",
+      "source_count": 10,
+      "approved_direction": "requirement derivation",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "RequirementDerivation",
+      "required_evidence": [
+        "requirement_endpoints"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Connector",
+      "source_count": 9,
+      "approved_direction": "port-to-port ConnectionUsage",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "ConnectionUsage",
+      "required_evidence": [
+        "port_compatibility"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Abstraction:Derive",
+      "source_count": 6,
+      "approved_direction": "requirement derivation",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "RequirementDerivation",
+      "required_evidence": [
+        "requirement_endpoints"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Abstraction:trace",
+      "source_count": 5,
+      "approved_direction": "Dependency with trace provenance",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "DependencyWithTraceEvidence",
+      "required_evidence": [
+        "source_qualifier"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Usage:Responsibility",
+      "source_count": 4,
+      "approved_direction": "allocation when role is evidenced",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "AllocationUsage",
+      "required_evidence": [
+        "responsibility_roles"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Abstraction:Refine",
+      "source_count": 3,
+      "approved_direction": "Dependency plus Refinement metadata",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "DependencyWithRefinementEvidence",
+      "required_evidence": [
+        "source_qualifier"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Realisation:deriveReqt",
+      "source_count": 1,
+      "approved_direction": "requirement derivation only with compatible requirements/roles, otherwise review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "RequirementDerivation",
+      "required_evidence": [
+        "requirement_endpoints_and_role"
+      ],
+      "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    }
+  ]
+}
