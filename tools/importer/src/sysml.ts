@@ -2,7 +2,9 @@
  * Only constructs the approved family mapping allows are written. Anything else is a flagLink, never guessed (IMP-060). */
 
 export interface UsageDecl {
-  kind: "part" | "port" | "action" | "state";
+  kind: "part" | "port" | "action" | "state" | "item";
+  /** item usages only: flow direction. */
+  dir?: "in" | "out" | "inout";
   name: string;
   /** Qualified symbol of the definition this usage is typed by; absent = untyped (allowed with a review flag, IMP-089). */
   typeSymbol?: string;
@@ -16,6 +18,8 @@ export interface DefDecl {
   name: string;                  // definition identifier
   specializes: string[];         // qualified symbols after :>
   usages: UsageDecl[];
+  /** Whole statements (satisfy, allocate, succession ...), written after the usages. */
+  members?: string[];
   doc?: string;
 }
 
@@ -34,7 +38,8 @@ const docComment = (t: string): string => t.replace(/\r\n/g, "\n").replace(/\*\/
 export function renderBlock(d: DefDecl): string {
   const head = `${d.keyword} ${d.name}` + (d.specializes.length ? ` :> ${d.specializes.join(", ")}` : "");
   const body: string[] = [];
-  for (const u of d.usages) body.push(`        ${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.typeSymbol}` : ""}${u.mult ?? ""};`);
+  for (const u of d.usages) body.push(`        ${u.dir ? u.dir + " " : ""}${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.typeSymbol}` : ""}${u.mult ?? ""};`);
+  for (const m of d.members ?? []) body.push(`        ${m}`);
   if (d.doc && d.doc.trim()) body.push(`        doc /* ${docComment(d.doc).split("\n").join("\n           ")} */`);
   const def = body.length ? `    ${head} {\n${body.map((l) => l.slice(0)).join("\n")}\n    }` : `    ${head};`;
   return `package ${d.pkg} {\n${def}\n}\n`;

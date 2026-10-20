@@ -20,6 +20,7 @@ import type { UsageDecl } from "./sysml.ts";
 import { renderNote, flagCallout } from "./notes.ts";
 import type { NoteModel } from "./notes.ts";
 import { csv } from "./csv.ts";
+import { renderTranslationDoc } from "./translation.ts";
 import { planMerge } from "./merge.ts";
 import type { ExistingVault, OutFile, ChangeEntry } from "./merge.ts";
 
@@ -54,8 +55,16 @@ const LEDGER_COLUMNS: Array<keyof LedgerRow> = ["source_system", "fixture_hash",
 export interface ImportSummary {
   elements: number; connectors: number; packages: number; notes: number;
   dispositions: Record<string, number>; flags: number; sysmlBlocks: number; baseVaultIncluded: boolean;
-  created: number; unchanged: number; updated: number; conflicts: number;
+  created: number; unchanged: number; updated: number; conflicts: number; errors: number;
 }
+export interface ErrorRecord { stage: string; table: string; pk: string; guid: string; name: string; message: string; stack: string }
+
+/** A failure that stops the run. Carries the stage so the report says where it broke. */
+export class ImportFailure extends Error {
+  stage: string; detail: Record<string, unknown>;
+  constructor(stage: string, message: string, detail: Record<string, unknown>, stack?: string) { super(message); this.name = "ImportFailure"; this.stage = stage; this.detail = detail; if (stack) this.stack = stack; }
+}
+
 export interface ImportResult {
   status: "WRITE_READY" | "NO_CHANGES" | "FAILED";
   files: OutFile[];
@@ -63,14 +72,15 @@ export interface ImportResult {
   changes: ChangeEntry[];
   summary: ImportSummary;
   problems: string[];
+  errors: ErrorRecord[];
 }
 
-interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string }
+interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout" }
 interface Draft {
   key: string; o: EaObject; family: string; entry: ElementEntry; type: string; subtype: string; evidence: string[];
   title: string; uid: string; id: string; baseName: string; path: string; ownDir: string | null; parent: Draft | null; children: Draft[];
   keyword: string | null; pkg: string; ident: string; symbol: string; specializes: Draft[]; usages: UsageRef[];
-  flags: string[]; sourceLines: string[]; describes: string[]; existingPath?: string; pkgPath: string[];
+  flags: string[]; sourceLines: string[]; describes: string[]; existingPath?: string; pkgPath: string[]; members: string[]; verifies: string[];
 }
 
 const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
@@ -82,9 +92,29 @@ const stampOf = (iso: string): string => iso.replace(/[-:T]/g, "").slice(0, 14) 
 const labelOf = (iso: string): string => iso.slice(0, 16).replace("T", " ").replace(":", ".");
 
 export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<ImportResult> {
+  const track = { stage: "preflight" };
+  try { return await runImportInner(reader, o, track); }
+  catch (err) {
+    if (err instanceof ImportFailure) throw err;
+    const e = err as Error;
+    throw new ImportFailure(track.stage, e?.message ?? String(err), { sourceName: o.sourceName, fingerprint: o.fingerprint, lineage: o.lineage }, e?.stack);
+  }
+}
+
+async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { stage: string }): Promise<ImportResult> {
   const problems: string[] = [];
+  const errors: ErrorRecord[] = [];
+  const guard = (stage: string, table: string, r: { id: number; guid: string; name?: string }, fn: () => void): void => {
+    try { fn(); } catch (err) {
+      const e = err as Error;
+      errors.push({ stage, table, pk: String(r.id), guid: r.guid, name: r.name ?? "", message: e?.message ?? String(err), stack: (e?.stack ?? "").split("\n").slice(0, 8).join("\n") });
+      for (const l of ledger) if (l.source_table === table && l.source_pk === String(r.id)) { l.disposition = "error"; l.diagnostic_code = "EXCEPTION"; l.evidence = (e?.message ?? "").slice(0, 200); }
+    }
+  };
   if (reader.walMode) throw new Error("SQLITE_WAL_MODE: close the model in EA or checkpoint it first; the WAL is not read (IMP-053)");
+  track.stage = "read source";
   const g = await readSourceGraph(reader);
+  track.stage = "classify elements";
   const resolver = buildResolver(o.mapping);
   const existing = o.existing && o.existing.hasVault ? o.existing : null;
   const idx = existing ? MDSE_INDEX(existing) : null;
@@ -117,29 +147,31 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
   const usageObjs: Array<{ o: EaObject; entry: ElementEntry; row: LedgerRow }> = [];
   const boundaries: Array<{ o: EaObject; row: LedgerRow }> = [];
   const objRow = new Map<number, LedgerRow>();
-  for (const e of g.objects) {
+  for (const e of g.objects) guard("classify", "t_object", e, () => {
     const key = e.stereotype ? `${e.type}:${e.stereotype}` : e.type;
     const r = row("t_object", e.id, e.guid, e.type, e.stereotype, e.packageId, "family:" + key); objRow.set(e.id, r);
-    if (e.type === "Package") { set(r, "native", "Folder"); r.rule_id = "folder_only"; continue; }
+    if (e.type === "Package") { set(r, "native", "Folder"); r.rule_id = "folder_only"; return; }
     const hit = resolver.element(e.type, e.stereotype);
-    if (!hit) { set(r, "deferred_review", "", "UNKNOWN_FAMILY", "Map this family or confirm it is out of scope"); r.confidence = "unmapped"; continue; }
+    if (!hit) { set(r, "deferred_review", "", "UNKNOWN_FAMILY", "Map this family or confirm it is out of scope"); r.confidence = "unmapped"; return; }
     const en = hit.entry;
-    if (isUsageEntry(en)) { usageObjs.push({ o: e, entry: en, row: r }); continue; }
+    if (isUsageEntry(en)) { usageObjs.push({ o: e, entry: en, row: r }); return; }
     if (en.disposition === "native_candidate" && en.native_kind && DEFINITION_KINDS[en.native_kind] || en.disposition === "mdse_note") {
       const cls = classify(en, e, pkgPath(e.packageId));
-      if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); continue; }
+      if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
       const kw = en.native_kind ? DEFINITION_KINDS[en.native_kind] ?? null : null;
       const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
-      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], pkgPath: pkgPath(e.packageId) };
-      drafts.push(d); byObj.set(e.id, d); continue;
+      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
+      for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
+      drafts.push(d); byObj.set(e.id, d); return;
     }
-    if (en.disposition === "attachment_link") { set(r, "deferred_review", "", "ATTACHMENT_NOT_IMPLEMENTED", "Attachments are a later step (IMP-025)"); continue; }
-    if (en.disposition === "reference_only") { set(r, "evidence_only", "", "REFERENCE_ONLY"); continue; }
-    if (en.disposition === "aggregate_boundary_note") { boundaries.push({ o: e, row: r }); continue; }
-    if (en.disposition === "conditional_review") { set(r, "deferred_review", "", en.conditional_evidence[0] ?? "CONDITIONAL_REVIEW", "Needs the evidence named in the diagnostic"); continue; }
+    if (en.disposition === "attachment_link") { set(r, "deferred_review", "", "ATTACHMENT_NOT_IMPLEMENTED", "Attachments are a later step (IMP-025)"); return; }
+    if (en.disposition === "reference_only") { set(r, "evidence_only", "", "REFERENCE_ONLY"); return; }
+    if (en.disposition === "aggregate_boundary_note") { boundaries.push({ o: e, row: r }); return; }
+    if (en.disposition === "conditional_review") { set(r, "deferred_review", "", en.conditional_evidence[0] ?? "CONDITIONAL_REVIEW", "Needs the evidence named in the diagnostic"); return; }
     set(r, "deferred_review", "", "UNHANDLED_DISPOSITION_" + en.disposition);
-  }
+  });
 
+  track.stage = "identity";
   // ---- identity ------------------------------------------------------------------------------------------------------
   const taken = new Set<string>(idx ? idx.uids : []);
   const fresh = drafts.filter((d) => !idx?.byGuid.has(d.o.guid));
@@ -159,6 +191,7 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     d.pkg = d.id.replace("-", "_"); d.symbol = `${d.pkg}::${d.ident}`;
   }
 
+  track.stage = "placement";
   // ---- placement: folders, file names -----------------------------------------------------------------------------
   for (const d of drafts) { const p = byObj.get(d.o.parentId); if (p && p !== d) { d.parent = p; p.children.push(d); } }
   const claimed = new Set<string>(idx ? idx.baseNames : []);
@@ -178,18 +211,37 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     d.path = d.children.length ? `${ownDirOf(d)}/${d.baseName}.md` : `${dir ? dir + "/" : ""}${d.baseName}.md`;
   }
 
+  track.stage = "usages";
   // ---- usages owned by definitions -----------------------------------------------------------------------------------
   const scopes = new Map<Draft, IdentScope>();
   const scopeOf = (d: Draft): IdentScope => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d)!);
   const flagLink = (d: Draft, title: string, detail: string[]): void => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
   const ownerKeyword: Record<string, string> = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def" };
   usageObjs.sort((a, b) => a.o.id - b.o.id);
-  for (const u of usageObjs) {
+  const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
+  const flowItem = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
+    const e = u.o;
+    let ownerDef = byObj.get(e.parentId) ?? null;
+    if (!ownerDef) { const po = g.objectsById.get(e.parentId); if (po && po.type === "Port") ownerDef = byObj.get(po.classifier) ?? null; }   // flow item under a port usage: its port def owns it
+    if (!ownerDef || ownerDef.keyword !== "port def") { set(u.row, "deferred_review", "ItemUsage", "FLOW_OWNER_NOT_PORT_DEF", "Move the flow item under its port definition"); return; }
+    const tag = ((g.tags.get(e.id) ?? []).find(([k]) => /^(flow ?)?direction$/i.test(k.trim()))?.[1] ?? "").trim().toLowerCase();
+    const dir = tag === "in" || tag === "out" || tag === "inout" ? tag : tag === "in/out" || tag === "bidirectional" ? "inout" : null;
+    if (!dir) { set(u.row, "deferred_review", "ItemUsage", "DIRECTION_EVIDENCE_MISSING", "Set the flow direction (in, out, inout)"); return; }
+    const t = byObj.get(e.classifier), typed = t && (t.keyword === "item def" || t.keyword === "attribute def") ? t : null;
+    const name = scopeOf(ownerDef).take(usageIdent(e.name || e.alias, `flow${e.id}`));
+    const ref: UsageRef = { kind: "item", dir, name, typeDraft: typed, objGuid: e.guid, typedBy: typed?.title ?? "" };
+    ownerDef.usages.push(ref); usageByObj.set(e.id, { owner: ownerDef, ref });
+    set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the Classifier to the Signal this flow carries");
+    u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
+    if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as Classifier. It is written without a type.`]);
+    ownerDef.sourceLines.push(`- Flow: ${dir} item ${name}${typed ? ` : [[${typed.baseName}]]` : " (untyped)"} — EA GUID: ${e.guid}`);
+  };
+  for (const u of usageObjs) guard("usage", "t_object", u.o, () => {
     const e = u.o, kind = u.entry.native_kind!;
+    if (kind === "ItemUsage") { flowItem(u); return; }
     const owner = byObj.get(e.parentId);
-    if (kind === "ItemUsage") { set(u.row, "deferred_review", kind, "DIRECTION_EVIDENCE_MISSING", "Port item usage needs owning port and direction evidence"); continue; }
-    if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); continue; }
-    if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); continue; }
+    if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); return; }
+    if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); return; }
     const name = scopeOf(owner).take(usageIdent(e.name || e.alias, `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
     const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
     let diag = "";
@@ -197,21 +249,26 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
       const want = kind === "PartUsage" ? Number(e.pdata1) || 0 : e.classifier;                      // IMP-011: the block comes from PDATA1
       const target = byObj.get(want);
       const okKind = kind === "PartUsage" ? "part def" : kind === "PortUsage" ? "port def" : "action def";
-      if (target && target.keyword === okKind) { ref.typeDraft = target; ref.typedBy = target.title; }
+      if (target && (target.keyword === okKind || (kind === "PortUsage" && target.keyword === "interface def"))) { ref.typeDraft = target; ref.typedBy = target.title; }
+      else if (kind === "ActionUsage" && want === 0) { /* a plain step in an activity has no type; that is not a gap */ }
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
     if (kind === "PartUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
-    owner.usages.push(ref);
+    owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
     if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);
     owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""} — EA GUID: ${e.guid}`);
-  }
+  });
 
+  track.stage = "connectors";
   // ---- connectors ---------------------------------------------------------------------------------------------------
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
-  const aggScopes = new Map<Draft, number>();
-  for (const c of g.connectors) {
+  const addStmt = (d: Draft, text: string, line: string): void => { if (!d.members.includes(text)) d.members.push(text); if (!d.sourceLines.includes(line)) d.sourceLines.push(line); };
+  const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
+  const DERIVE = new Set(["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"]);
+  const ALLOCATE = new Set(["Abstraction:allocate", "Usage:Responsibility"]);
+  for (const c of g.connectors) guard("connector", "t_connector", c, () => {
     const key = connectorKey(c);
     const r = row("t_connector", c.id, c.guid, c.type, c.stereotype, 0, "family:" + key);
     const src = byObj.get(c.sourceId), dst = byObj.get(c.destId);
@@ -223,49 +280,112 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
         flagLink(src, `Unresolved ${key} link to ${dst ? dst.title : (g.objectsById.get(c.destId)?.name ?? "?")}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
       }
     };
+    const done = (owner: Draft, kind: string, diag = "UNVERIFIED_SYNTAX"): void => { set(r, "native", kind, diag); r.target_stable_id = owner.id; r.target_file = owner.path; };
     const hit = resolver.relationship(c.type, c.stereotype);
-    if (!hit) { r.confidence = "unmapped"; defer("UNKNOWN_FAMILY", "Map this connector family or confirm it is out of scope"); continue; }
-    if (!g.objectsById.has(c.sourceId) || !g.objectsById.has(c.destId)) { defer("ENDPOINT_MISSING_IN_SOURCE"); continue; }
+    if (!hit) { r.confidence = "unmapped"; defer("UNKNOWN_FAMILY", "Map this connector family or confirm it is out of scope"); return; }
+    if (!g.objectsById.has(c.sourceId) || !g.objectsById.has(c.destId)) { defer("ENDPOINT_MISSING_IN_SOURCE"); return; }
     const en = hit.entry;
     if (en.disposition === "reference_only") {
       if (c.type === "NoteLink") {
         const info = src?.type === "Info" ? src : dst?.type === "Info" ? dst : null, other = info === src ? dst : src;
         if (info && other) {
           info.describes.push(other.baseName); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
-          info.sourceLines.push(`- Link describes [[${other.baseName}]] — EA GUID: ${c.guid}`); continue;
+          info.sourceLines.push(`- Link describes [[${other.baseName}]] — EA GUID: ${c.guid}`); return;
         }
-        set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); continue;
+        set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); return;
       }
-      set(r, "evidence_only", "", "REFERENCE_ONLY"); continue;
+      set(r, "evidence_only", "", "REFERENCE_ONLY"); return;
     }
-    if (key === "Nesting") { set(r, "evidence_only", "", "ORGANIZATIONAL_ONLY"); continue; }
-    if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); continue; }
+    if (key === "Nesting") { set(r, "evidence_only", "", "ORGANIZATIONAL_ONLY"); return; }
+    if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
+    const kw = (d?: Draft): string => d?.keyword ?? "";
+    const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]] — EA GUID: ${c.guid}`;
     if (key === "Generalization") {
       if (src && dst && src.keyword && src.keyword === dst.keyword && src !== dst) {
         src.specializes.push(dst); set(r, "native", "Specialization"); r.target_stable_id = src.id; r.target_file = src.path;
-        src.sourceLines.push(`- Specializes [[${dst.baseName}]] — EA GUID: ${c.guid}`); continue;
+        src.sourceLines.push(`- Specializes [[${dst.baseName}]] — EA GUID: ${c.guid}`); return;
       }
-      defer("GENERALIZATION_ENDPOINT_KIND"); continue;
+      defer("GENERALIZATION_ENDPOINT_KIND"); return;
     }
     if (key === "Aggregation") {
       const srcWhole = c.sourceIsAggregate === 1 || c.sourceIsAggregate === 2, dstWhole = c.destIsAggregate === 1 || c.destIsAggregate === 2;
-      if (srcWhole === dstWhole) { defer(srcWhole ? "AGGREGATION_BOTH_ENDS_AGGREGATE" : "AGGREGATION_WHOLE_NOT_EVIDENCED"); continue; }
+      if (srcWhole === dstWhole) { defer(srcWhole ? "AGGREGATION_BOTH_ENDS_AGGREGATE" : "AGGREGATION_WHOLE_NOT_EVIDENCED"); return; }
       const whole = srcWhole ? src : dst, part = srcWhole ? dst : src, card = srcWhole ? c.destCard : c.sourceCard;
-      if (!whole || !part || whole.keyword !== "part def" || part.keyword !== "part def") { defer("AGGREGATION_ENDPOINT_KIND"); continue; }
+      if (!whole || !part || whole.keyword !== "part def" || part.keyword !== "part def") { defer("AGGREGATION_ENDPOINT_KIND"); return; }
+      const owned = whole.usages.find((u) => u.kind === "part" && u.typeDraft === part);
+      if (owned) {                                                  // an EA Part usage already says this; the usage wins
+        set(r, "alias_merged", "TypedOwnedUsage", "USAGE_WINS"); r.target_stable_id = whole.id; r.target_file = whole.path; r.evidence = `merged into usage ${owned.name}`;
+        whole.sourceLines.push(`- Aggregation to [[${part.baseName}]] merged into part usage ${owned.name} (the usage wins) — EA GUID: ${c.guid}`); return;
+      }
       const m = parseMultiplicity(card);
       const name = scopeOf(whole).take(usageIdent(part.title, `part${part.o.id}`));
       whole.usages.push({ kind: "part", name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid });
       set(r, "native", "TypedOwnedUsage", m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
-      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""} — EA GUID: ${c.guid}`); aggScopes.set(whole, 1); continue;
+      whole.sourceLines.push(`- Aggregation: part ${name} : [[${part.baseName}]]${m.text ?? ""} — EA GUID: ${c.guid}`); return;
     }
+    if (key === "Dependency:satisfy") {
+      const req = [src, dst].find((d) => kw(d) === "requirement def"), by = req === src ? dst : src;
+      if (!req || !by || !["part def", "action def", "state def"].includes(kw(by))) { defer("SATISFY_ENDPOINT_KIND"); return; }
+      addStmt(by, `satisfy ${req.symbol};`, srcLine("Satisfies", req)); done(by, "SatisfyRequirementUsage"); return;
+    }
+    if (key === "Dependency:verify") {
+      const ver = [src, dst].find((d) => kw(d) === "verification def"), req = [src, dst].find((d) => kw(d) === "requirement def");
+      if (!ver || !req) { defer("VERIFY_ENDPOINT_KIND"); return; }
+      if (!ver.verifies.includes(req.symbol)) ver.verifies.push(req.symbol);
+      ver.sourceLines.push(srcLine("Verifies", req)); done(ver, "VerifyRequirementUsage"); return;
+    }
+    if (ALLOCATE.has(key)) {
+      if (!src || !dst || !src.keyword || !dst.keyword) { defer("ALLOCATE_ENDPOINT_KIND"); return; }
+      addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Allocated to", dst)); done(src, "AllocationUsage"); return;
+    }
+    if (key === "Realisation") {
+      if (src?.keyword === "part def" && dst?.keyword === "action def") {
+        const nm = scopeOf(src).take(usageIdent(dst.title, `action${dst.o.id}`));
+        addStmt(src, `perform action ${nm} : ${dst.symbol};`, srcLine("Performs", dst)); done(src, "PerformActionUsage"); return;
+      }
+      if (src?.keyword === "part def" && dst?.keyword === "requirement def") { addStmt(src, `allocate ${dst.symbol} to ${src.symbol};`, srcLine("Realises", dst)); done(src, "AllocationUsage"); return; }
+      if (src?.keyword === "part def" && dst?.keyword === "part def") { addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Realises", dst)); done(src, "AllocationUsage"); return; }
+      defer("REALISATION_ENDPOINT_KIND"); return;
+    }
+    if (DERIVE.has(key)) {
+      if (src?.keyword !== "requirement def" || dst?.keyword !== "requirement def") { defer("DERIVE_ENDPOINT_KIND"); return; }
+      addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // derivedFrom`, srcLine("Derived from", dst)); done(src, "Dependency"); return;
+    }
+    if (DEP_WORD[key]) {
+      if (!src?.keyword || !dst?.keyword) { defer("DEPENDENCY_ENDPOINT_KIND"); return; }
+      addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst)); done(src, "Dependency"); return;
+    }
+    if (key === "Association") { defer("ASSOCIATION_CONNECTIVITY_NOT_PROVEN", "An association is not a connection; model it as a Connector between ports"); return; }
+    if (key === "Connector") {
+      const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
+      if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer("CONNECTOR_ENDPOINT_NOT_PORT"); return; }
+      if (a.owner !== b.owner) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }
+      addStmt(a.owner, `connect ${a.ref.name} to ${b.ref.name};`, `- Connection ${a.ref.name} to ${b.ref.name} — EA GUID: ${c.guid}`); done(a.owner, "ConnectionUsage"); return;
+    }
+    if (key === "ControlFlow" || key === "StateFlow") {
+      const want = key === "ControlFlow" ? "action" : "state";
+      const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
+      if (!a || !b || a.ref.kind !== want || b.ref.kind !== want) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
+      if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
+      const word = key === "ControlFlow" ? "succession" : "transition";
+      addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name}${c.name ? ` (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : ""} — EA GUID: ${c.guid}`);
+      done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
+    }
+    if (key === "UseCase:include") {
+      if (src?.keyword !== "use case def" || dst?.keyword !== "use case def") { defer("INCLUDE_ENDPOINT_KIND"); return; }
+      const nm = scopeOf(src).take(usageIdent(dst.title, `include${dst.o.id}`));
+      addStmt(src, `include use case ${nm} : ${dst.symbol};`, srcLine("Includes", dst)); done(src, "IncludeUseCaseUsage"); return;
+    }
+    if (key === "UseCase:extend") { defer("EXTEND_NOT_TRANSLATED"); return; }
     defer(`NATIVE_EMISSION_NOT_IMPLEMENTED:${key}`, `Needs: ${en.required_evidence.join(", ")}`);
-  }
+  });
 
+  track.stage = "render notes";
   // ---- render notes -------------------------------------------------------------------------------------------------
   const outFiles: OutFile[] = [];
   let blocks = 0, flagCount = 0;
   const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
-  for (const d of drafts) {
+  for (const d of drafts) guard("render", "t_object", d.o, () => {
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
     if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
     src.push(`- EA type: ${e.type}`);
@@ -277,7 +397,8 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     for (const [k, v] of g.tags.get(e.id) ?? []) if (v.trim() && !DROPPED_TAGS.has(k)) src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
     src.push(...d.sourceLines);
     const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
-      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })) }) : null;
+      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })),
+      members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
     const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: d.describes.length ? [["describes", d.describes]] : [],
@@ -285,7 +406,7 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
     const r = objRow.get(e.id)!;
     set(r, "native", d.keyword ? d.entry.native_kind! : `MdseNote:${d.type}`, d.evidence[0] ?? ""); r.target_stable_id = d.id; r.target_file = d.path; r.evidence = d.evidence.join(";");
-  }
+  });
 
   // aggregate boundary note (MOD-131)
   if (boundaries.length) {
@@ -296,6 +417,7 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     for (const b of boundaries) { set(b.row, "evidence_only", "MdseNote:modelCheck/Boundary", "BOUNDARY_GROUPED"); b.row.target_stable_id = id; b.row.target_file = path; }
   }
 
+  track.stage = "reconcile";
   // ---- reconcile: every source row has exactly one disposition (IMP-059, IMP-064) ---------------------------------------
   const expect: Record<string, number> = { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector };
   for (const t of LEDGER_ORDER) { const n = ledger.filter((l) => l.source_table === t).length; if (n !== expect[t]) problems.push(`ledger rows for ${t}: ${n}, source rows: ${expect[t]}`); }
@@ -313,9 +435,10 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
   const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code"],
     deferredLinks.map(({ c, code, family }) => [c.guid, family, named(c.sourceId), g.objectsById.get(c.sourceId)?.guid ?? "", named(c.destId), g.objectsById.get(c.destId)?.guid ?? "", c.direction, c.name, code]));
   const manifest = { schema: "mdse-run-manifest/0.1", runDate: o.runDate, source: { name: o.sourceName, lineage: o.lineage, sha256: o.fingerprint }, importerRelease: o.releaseVersion, mappingSchema: resolver.version,
-    counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems,
+    counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems, errors: errors.length, translation: "Translation Table.md",
     nativeEmission: o.emitNative ? "ON (owner override of emission_enabled=false, D-0016); blocks not parser-checked" : "OFF", diagrams: "never read (ADR-V2-05)" };
 
+  track.stage = "write plan";
   // ---- merge / write plan --------------------------------------------------------------------------------------------------
   const plan = planMerge({ generated: [...generated.values()].map((x) => ({ path: x.path, text: x.text, guid: x.guid })), existing, preApproved: o.preApproved, sourceLink, runLabel,
     sourceName: o.sourceName, presentGuids: new Set(g.objects.map((x) => x.guid).concat([...g.packages.values()].map((p) => p.guid))) });
@@ -324,8 +447,13 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
     sysFiles.push(sys("Ledger.csv", csv([...LEDGER_COLUMNS], ledger.map((l) => LEDGER_COLUMNS.map((k) => l[k])))), sys("Run Manifest.json", JSON.stringify(manifest, null, 2) + "\n"),
       sys("Review - Deferred Elements.csv", elementsCsv), sys("Review - Deferred Links.csv", linksCsv),
       sys("Parser Check.md", `# Parser Check\n\nStatus: **NOT RUN**. ${blocks} SysML v2 block(s) were generated in this run and none has been checked by the pinned parser.\nThe parser gate runs in CI or on a maintainer's machine, not in the importer page (MOD-139). Workbench must show these blocks as unchecked.\n`));
+    if (!existing) sysFiles.push(sys("Translation Table.md", renderTranslationDoc(o.mapping)));
     if (!existing) sysFiles.push(sys(`Import Run ${runLabel}.md`, runNote(o, g, dispositions, blocks, flagCount, problems, generated.size)));
     else sysFiles.push(sys(`Changelog ${runLabel}.md`, plan.changelog));
+  }
+  if (errors.length) {
+    sysFiles.push(sys(`Error Log ${runLabel}.json`, JSON.stringify({ schema: "mdse-error-log/0.1", runDate: o.runDate, source: o.sourceName, sha256: o.fingerprint, importerRelease: o.releaseVersion, errors }, null, 2) + "\n"),
+      sys(`Error Log ${runLabel}.md`, `# Error Log ${runLabel}\n\n${errors.length} row(s) raised an exception and were skipped (ledger disposition \`error\`, code \`EXCEPTION\`). Everything else in the run completed. Source \`${o.sourceName}\`, SHA-256 \`${o.fingerprint}\`.\n\n| Stage | Table | Row | EA GUID | Name | Message |\n|---|---|---|---|---|---|\n${errors.map((e) => `| ${e.stage} | ${e.table} | ${e.pk} | ${e.guid} | ${e.name.replace(/\|/g, "\\|")} | ${e.message.replace(/\|/g, "\\|").replace(/\n/g, " ")} |`).join("\n")}\n\n## Stacks\n\n${errors.slice(0, 20).map((e) => `### ${e.table} ${e.pk}\n\n\`\`\`text\n${e.stack}\n\`\`\``).join("\n\n")}\n`));
   }
   outFiles.push(...plan.writes, ...sysFiles);
   let baseIncluded = false;
@@ -340,9 +468,9 @@ export async function runImport(reader: ReaderLike, o: ImportOptions): Promise<I
   outFiles.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const dup = outFiles.map((f) => f.path.toLowerCase()).filter((p, i, a) => a.indexOf(p) !== i);
   if (dup.length) problems.push(`duplicate output paths: ${dup.slice(0, 5).join(", ")}`);
-  const status = problems.length ? "FAILED" : existing && !plan.changed ? "NO_CHANGES" : "WRITE_READY";
-  return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems,
-    summary: { elements: g.counts.t_object, connectors: g.counts.t_connector, packages: g.counts.t_package, notes: generated.size, dispositions, flags: flagCount, sysmlBlocks: blocks, baseVaultIncluded: baseIncluded, created: plan.created, unchanged: plan.unchanged, updated: plan.updated, conflicts: plan.conflicts } };
+  const status = problems.length ? "FAILED" : existing && !plan.changed && !errors.length ? "NO_CHANGES" : "WRITE_READY";
+  return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems, errors,
+    summary: { elements: g.counts.t_object, connectors: g.counts.t_connector, packages: g.counts.t_package, notes: generated.size, dispositions, flags: flagCount, sysmlBlocks: blocks, baseVaultIncluded: baseIncluded, created: plan.created, unchanged: plan.unchanged, updated: plan.updated, conflicts: plan.conflicts, errors: errors.length } };
 }
 
 function runNote(o: ImportOptions, g: SourceGraph, disp: Record<string, number>, blocks: number, flags: number, problems: string[], notes: number): string {

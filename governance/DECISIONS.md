@@ -158,3 +158,11 @@ M2 and M3 are built now, before OD-01 (relationship split) and OD-03 (usage iden
 - When the output folder holds no vault, the base vault is written with the notes. The plugin payload is not bundled yet (`plugin-lock.yaml` says `NOT_BUNDLED`).
 
 Rules: none edited. Revisit when OD-01 and OD-03 close.
+
+## D-0017 — Part usage wins over aggregation; relationship translations; error log
+
+2026-10-19 · Spencer · Accepted
+
+An EA Part usage wins over an Aggregation to the same part: when the whole already owns a part usage typed by that part, the aggregation is `alias_merged` (`USAGE_WINS`) and adds nothing. An aggregation with no matching usage still becomes an owned part usage. Flows are translated: FlowProperty to `in`/`out`/`inout` item usages in the port definition (direction from the EA tag `direction`, else `DIRECTION_EVIDENCE_MISSING`); ControlFlow to `succession` and StateFlow to `transition` inside one owner. The remaining relationship families are translated per connector by endpoint kind, or deferred with a named code. `tools/importer/TRANSLATION.md` is generated from the mapping and the code and lists every family and every exception code; CI fails if it is stale. A row that throws is skipped, written to the Error Log in `99_System/11_Import`, and shown in the ledger as `error`; a failure that stops the run produces a downloadable report naming the stage.
+
+Rules: none edited. Statement forms marked `UNVERIFIED_SYNTAX` await the parser gate.

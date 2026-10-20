@@ -97,3 +97,68 @@ test("re-import is additive: engineer edits survive, a differing source value be
   const third = await run({ existing: { hasVault: true, files: new Map([...files, [target, out]]) } });
   assert.equal(third.status, "NO_CHANGES", "flags must be idempotent");
 });
+
+import { ELEMENT_RULES, RELATIONSHIP_RULES, CODES, codeBase, elementRule } from "../src/translation.ts";
+import { ImportFailure } from "../src/run.ts";
+import mapping from "../../../governance/schemas/ea-family-mapping.json" with { type: "json" };
+
+test("translation table covers every family in the mapping file, and nothing else", () => {
+  for (const e of mapping.elements) assert.ok(elementRule(e as never), "no element rule for " + e.family);
+  for (const r of mapping.relationships) assert.ok(RELATIONSHIP_RULES[r.family], "no relationship rule for " + r.family);
+  const fams = new Set(mapping.relationships.map((r) => r.family));
+  for (const k of Object.keys(RELATIONSHIP_RULES)) assert.ok(fams.has(k), "rule for family not in mapping: " + k);
+  const used = new Set(Object.values(ELEMENT_RULES).concat(Object.values(RELATIONSHIP_RULES)).flatMap((r) => r.exceptions.map((x) => codeBase(x))));
+  for (const c of used) assert.ok(CODES[c], "exception code not documented: " + c);
+});
+
+test("every diagnostic code the importer writes is documented", async () => {
+  const res = await run();
+  for (const l of res.ledger) for (const c of [l.diagnostic_code, ...l.evidence.split(";")].filter(Boolean)) { const b = codeBase(c); if (/^(merged into|Unnamed)/.test(c)) continue; assert.ok(CODES[b], `undocumented code ${c} on ${l.source_table} ${l.source_pk}`); }
+});
+
+test("part usage wins over aggregation: one usage, aggregation is alias_merged", async () => {
+  const res = await run();
+  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## SysML v2")[1]!;
+  assert.equal((charger.match(/part controller\b/g) ?? []).length, 1);
+  assert.equal((charger.match(/part modules\b/g) ?? []).length, 1);
+  assert.ok(!/part powerModule\b/.test(charger), "aggregation must not add a second usage when the EA Part already exists");
+  assert.ok(res.ledger.some((l) => l.source_table === "t_connector" && l.disposition === "alias_merged" && l.diagnostic_code === "USAGE_WINS"));
+  assert.match(charger, /part chargeFirmware : /, "an aggregation with no usage still becomes a usage");
+});
+
+test("flows: flow items carry direction and type; missing direction is reported", async () => {
+  const res = await run();
+  const port = res.files.find((f) => f.path.endsWith("Charge Port Interface.md"))!.content;
+  assert.match(port, /in item currentCmd : IFLOW_\d{5}::ChargeCurrentCommand;/);
+  assert.match(port, /out item statusOut : IFLOW_\d{5}::ChargerStatus;/);
+  assert.match(port, /inout item untypedFlow;/);
+  assert.ok(!/noDirection/.test(port.split("## SysML v2")[1]!));
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "DIRECTION_EVIDENCE_MISSING"));
+  const fn = res.files.find((f) => f.path.endsWith("Provide Charge Power.md"))!.content;
+  assert.match(fn, /succession first measure then adjust;/);
+  const st = res.files.find((f) => f.path.endsWith("Charging.md"))!.content;
+  assert.match(st, /transition first idle then running;/);
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "FLOW_ENDPOINT_NOT_USAGE"));
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "PORT_CONNECTION_NEEDS_COMMON_OWNER"));
+});
+
+test("a row that throws is logged, skipped and does not stop the run", async () => {
+  const broken = structuredClone(mapping) as typeof mapping;
+  delete (broken.elements.find((e) => e.family === "Class:Hardware Component") as Record<string, unknown>).conditional_evidence;
+  const res = await run({ mapping: broken });
+  assert.equal(res.status, "WRITE_READY");
+  assert.ok(res.errors.length >= 2, "every Hardware Component row should raise");
+  const e = res.errors[0]!;
+  assert.equal(e.stage, "classify"); assert.equal(e.table, "t_object"); assert.ok(e.guid && e.pk && e.message && e.stack);
+  assert.ok(res.ledger.filter((l) => l.disposition === "error" && l.diagnostic_code === "EXCEPTION").length === res.errors.length);
+  assert.ok(res.files.some((f) => /Error Log .*\.json$/.test(f.path)) && res.files.some((f) => /Error Log .*\.md$/.test(f.path)));
+  assert.ok(res.summary.notes > 5, "other rows still produce notes");
+  assert.equal(res.ledger.length, res.summary.packages + res.summary.elements + res.summary.connectors);
+});
+
+test("a failure that stops the run names the stage and the source", async () => {
+  const r = sqliteReader(qeax);
+  const bad = { has: r.has, scan: async function* (t: string) { if (t === "t_connector") throw new Error("disk image is malformed"); yield* r.scan(t); } };
+  await assert.rejects(runImport(bad, defaultOptions()), (err: unknown) => err instanceof ImportFailure && err.stage === "read source" && /malformed/.test(err.message) && err.detail.sourceName === "synthetic.qeax");
+  r.close();
+});

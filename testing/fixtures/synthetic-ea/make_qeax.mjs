@@ -115,6 +115,40 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   con("Sequence", fn, uc);
   con("Telepathy", fn, uc);                                                                 // unknown family
 
+
+  // Flows and relationships added for translation coverage
+  const sigStatus = obj("Signal", "Charger Status", prod, { stereotype: "Logical Signal" });
+  const gpi = obj("Class", "Charge Port Interface", prod, { stereotype: "Generic Physical Interface" });
+  obj("Part", "currentCmd", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigCmd, tags: { direction: "in" } });
+  obj("Part", "statusOut", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigStatus, tags: { direction: "out" } });
+  obj("Part", "noDirection", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigStatus });
+  obj("Part", "untypedFlow", prod, { parent: gpi, stereotype: "FlowProperty", tags: { direction: "inout" } });
+  const portA = obj("Port", "ctrlIn", prod, { parent: controller, classifier: gpi });
+  const portB = obj("Port", "ctrlOut", prod, { parent: controller, classifier: gpi });
+  const portC = obj("Port", "pmPort", power, { parent: pm, classifier: gpi });
+  con("Connector", portA, portB);                                                            // same owner -> connect
+  con("Connector", portB, portC);                                                            // different owners -> review
+  const a1 = obj("Action", "measure", fns, { parent: fn }), a2 = obj("Action", "adjust", fns, { parent: fn });
+  con("ControlFlow", a1, a2, { name: "if ready" });
+  con("ControlFlow", a1, st);                                                                 // not usages -> review
+  const s1 = obj("StateNode", "Idle", fns, { parent: st }), s2 = obj("StateNode", "Running", fns, { parent: st });
+  con("StateFlow", s1, s2, { name: "start" });
+  const vt = obj("Activity", "Verify Enclosure", fns, { stereotype: "testCase" });
+  con("Dependency", vt, r1, { stereotype: "verify" });
+  con("Dependency", vt, r2, { stereotype: "verify" });
+  con("Dependency", uc, r1, { stereotype: "verify" });                                        // wrong kinds -> review
+  con("Abstraction", charger, controller, { stereotype: "allocate" });
+  con("Realisation", charger, fn);                                                            // part -> action: perform
+  con("Realisation", charger, r1);                                                            // part -> requirement: allocate
+  con("Realisation", r2, r1, { stereotype: "deriveReqt" });
+  con("Dependency", r1, r2, { stereotype: "trace" });
+  con("Dependency", controller, pm);
+  con("Dependency", r1, r2, { stereotype: "refine" });
+  const uc2 = obj("UseCase", "Authenticate", ctx);
+  con("UseCase", uc, uc2, { stereotype: "include" });
+  con("UseCase", uc2, uc, { stereotype: "extend" });
+  con("Aggregation", charger, controller, { srcAgg: 2, dstCard: "1" });                       // controller usage exists: usage wins
+
   // Scale: many extra requirements and parts for volume tests
   for (let i = 0; i < scale; i++) {
     const p = pkg(`Bulk ${i % 20}`, prod);

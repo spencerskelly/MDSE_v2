@@ -121,6 +121,21 @@ $("pick").addEventListener("click", async () => {
   } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
 });
 
+/* Failure report: everything needed to find the bug, saved as a file so it can be sent back. */
+function failureReport(e, where) {
+  const lines = ["MDSE importer failure report", `time: ${new Date().toISOString()}`, `build: ${BUILD}`, `where: ${where}`, `stage: ${e && e.stage ? e.stage : "(unknown)"}`,
+    `source: ${source ? source.file.name + " (" + source.file.size + " bytes)" : "(none)"}`, `vault folder: ${vaultHandle ? vaultHandle.name : "(none)"}${vaultHandle ? (vaultExists ? " existing vault" : " no vault yet") : ""}`,
+    `message: ${e && e.message ? e.message : String(e)}`, `detail: ${e && e.detail ? JSON.stringify(e.detail) : ""}`, `browser: ${navigator.userAgent}`, "", "stack:", (e && e.stack) || "(none)", "", "run log:", $("log").textContent];
+  return lines.join("\n");
+}
+function reportFailure(e, where) {
+  const text = failureReport(e, where); log("FAILED (" + where + "): " + (e && e.message ? e.message : e));
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" })), name = "mdse_importer_failure_" + new Date().toISOString().replace(/[:.]/g, "-") + ".txt";
+  $("genStatus").innerHTML = `<span class=bad>${esc(e && e.message ? e.message : String(e))}</span> · stage: ${esc((e && e.stage) || "?")} · <a href="${url}" download="${name}">Save failure report</a>`;
+  const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+}
+window.addEventListener("error", (ev) => reportFailure(ev.error || ev.message, "uncaught"));
+window.addEventListener("unhandledrejection", (ev) => reportFailure(ev.reason, "unhandled promise"));
 const localIso = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 async function generate(existing) {
   $("genStatus").textContent = "Fingerprinting source…";
@@ -134,7 +149,7 @@ async function generate(existing) {
   $("genOut").innerHTML = `<table><tr><th>Status</th><td>${res.status}</td></tr><tr><td>Source rows</td><td>${res.summary.packages} packages · ${res.summary.elements} elements · ${res.summary.connectors} connectors</td></tr>` +
     `<tr><td>Notes</td><td>${res.summary.notes} (${res.summary.created} new · ${res.summary.updated} updated · ${res.summary.unchanged} unchanged · ${res.summary.conflicts} conflicts)</td></tr>` +
     `<tr><td>Dispositions</td><td>${Object.entries(d).map(([k, v]) => k + " " + v).join(" · ")}</td></tr><tr><td>SysML v2 blocks</td><td>${res.summary.sysmlBlocks} <span class="warn">not parser-checked</span></td></tr>` +
-    `<tr><td>Base vault</td><td>${res.summary.baseVaultIncluded ? "included" : "not needed"}</td></tr></table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
+    `<tr><td>Base vault</td><td>${res.summary.baseVaultIncluded ? "included" : "not needed"}</td></tr>` + (res.summary.errors ? `<tr><td class=bad>Errors</td><td class=bad>${res.summary.errors} row(s) failed and were skipped; see the Error Log in 99_System/11_Import</td></tr>` : "") + `</table>` + (res.problems.length ? `<p class="bad">${res.problems.map(esc).join("<br>")}</p>` : "");
   log(`run ${res.status}: ${JSON.stringify(res.summary)}`);
   return res;
 }
@@ -145,7 +160,7 @@ $("genNew").addEventListener("click", async () => {
     const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, enc.encode(f.content)]));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
     $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${res.files.length} files</span>`;
-  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
+  } catch (e) { reportFailure(e, "build ZIP"); }
 });
 async function writeFile(root, path, text) {
   const parts = path.split("/"); let dir = root;
@@ -160,6 +175,6 @@ $("genAdd").addEventListener("click", async () => {
     if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("genStatus").textContent = "Cancelled."; return; }
     for (const f of res.files) await writeFile(vaultHandle, f.path, f.content);
     $("genStatus").innerHTML = `<span class=ok>Wrote ${res.files.length} file(s).</span>`;
-  } catch (e) { $("genStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("error: " + e.message); }
+  } catch (e) { reportFailure(e, "write to folder"); }
 });
 </script></body></html>
