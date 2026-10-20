@@ -87,6 +87,9 @@ const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
 const DROPPED_TAGS = new Set(["Status", "Object Type", "Applicability Status", "Priority", "Abstraction Layer", "Domain", "Origin"]);   // IMP-029
 const RESERVED_NAME = /^(Template - |Rule - |README_|BASE_|CANVAS_)/;
 const SYSTEM_DIR = "99_System/11_Import";
+const MAX_ATTACH = 25 * 1024 * 1024;
+const MAGIC: Array<[number[], string]> = [[[0x89, 0x50, 0x4e, 0x47], ".png"], [[0xff, 0xd8, 0xff], ".jpg"], [[0x47, 0x49, 0x46, 0x38], ".gif"], [[0x25, 0x50, 0x44, 0x46], ".pdf"], [[0x50, 0x4b, 3, 4], ".zip"], [[0x7b, 0x5c, 0x72, 0x74, 0x66], ".rtf"]];
+const extOf = (name: string, bytes: Uint8Array): string => /\.[A-Za-z0-9]{1,5}$/.test(name) ? "" : (MAGIC.find(([m]) => m.every((b, i) => bytes[i] === b))?.[1] ?? ".bin");
 
 const stampOf = (iso: string): string => iso.replace(/[-:T]/g, "").slice(0, 14) + "000";
 const labelOf = (iso: string): string => iso.slice(0, 16).replace("T", " ").replace(":", ".");
@@ -146,6 +149,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const drafts: Draft[] = [], byObj = new Map<number, Draft>();
   const usageObjs: Array<{ o: EaObject; entry: ElementEntry; row: LedgerRow }> = [];
   const boundaries: Array<{ o: EaObject; row: LedgerRow }> = [];
+  const triggerObjs: Array<{ o: EaObject; row: LedgerRow }> = [];
   const objRow = new Map<number, LedgerRow>();
   for (const e of g.objects) guard("classify", "t_object", e, () => {
     const key = e.stereotype ? `${e.type}:${e.stereotype}` : e.type;
@@ -155,7 +159,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (!hit) { set(r, "deferred_review", "", "UNKNOWN_FAMILY", "Map this family or confirm it is out of scope"); r.confidence = "unmapped"; return; }
     const en = hit.entry;
     if (isUsageEntry(en)) { usageObjs.push({ o: e, entry: en, row: r }); return; }
-    if (en.disposition === "native_candidate" && en.native_kind && DEFINITION_KINDS[en.native_kind] || en.disposition === "mdse_note") {
+    if (en.family === "Synchronization") { usageObjs.push({ o: e, entry: en, row: r }); return; }
+    if (en.family === "Trigger") { triggerObjs.push({ o: e, row: r }); return; }
+    if (en.disposition === "native_candidate" && en.native_kind && DEFINITION_KINDS[en.native_kind] || en.disposition === "mdse_note" || en.disposition === "attachment_link") {
       const cls = classify(en, e, pkgPath(e.packageId));
       if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
       const kw = en.native_kind ? DEFINITION_KINDS[en.native_kind] ?? null : null;
@@ -164,7 +170,6 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
       drafts.push(d); byObj.set(e.id, d); return;
     }
-    if (en.disposition === "attachment_link") { set(r, "deferred_review", "", "ATTACHMENT_NOT_IMPLEMENTED", "Attachments are a later step (IMP-025)"); return; }
     if (en.disposition === "reference_only") { set(r, "evidence_only", "", "REFERENCE_ONLY"); return; }
     if (en.disposition === "aggregate_boundary_note") { boundaries.push({ o: e, row: r }); return; }
     if (en.disposition === "conditional_review") { set(r, "deferred_review", "", en.conditional_evidence[0] ?? "CONDITIONAL_REVIEW", "Needs the evidence named in the diagnostic"); return; }
@@ -216,9 +221,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const scopes = new Map<Draft, IdentScope>();
   const scopeOf = (d: Draft): IdentScope => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d)!);
   const flagLink = (d: Draft, title: string, detail: string[]): void => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
-  const ownerKeyword: Record<string, string> = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def" };
+  const ownerKeyword: Record<string, string> = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def", SyncNode: "action def" };
   usageObjs.sort((a, b) => a.o.id - b.o.id);
   const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
+  const flowIn = new Map<number, number>(), flowOut = new Map<number, number>();
+  for (const c of g.connectors) if (connectorKey(c) === "ControlFlow") { flowOut.set(c.sourceId, (flowOut.get(c.sourceId) ?? 0) + 1); flowIn.set(c.destId, (flowIn.get(c.destId) ?? 0) + 1); }
   const flowItem = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
     const e = u.o;
     let ownerDef = byObj.get(e.parentId) ?? null;
@@ -237,11 +244,21 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     ownerDef.sourceLines.push(`- Flow: ${dir} item ${name}${typed ? ` : [[${typed.baseName}]]` : " (untyped)"} — EA GUID: ${e.guid}`);
   };
   for (const u of usageObjs) guard("usage", "t_object", u.o, () => {
-    const e = u.o, kind = u.entry.native_kind!;
+    const e = u.o, kind = u.entry.native_kind ?? "SyncNode";
     if (kind === "ItemUsage") { flowItem(u); return; }
     const owner = byObj.get(e.parentId);
     if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); return; }
     if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); return; }
+    if (kind === "SyncNode") {                                      // fork or join, decided by how many control flows meet it
+      const nIn = flowIn.get(e.id) ?? 0, nOut = flowOut.get(e.id) ?? 0;
+      const word = nOut > 1 && nIn <= 1 ? "fork" : nIn > 1 && nOut <= 1 ? "join" : null;
+      if (!word) { set(u.row, "deferred_review", "SyncNode", "FORK_JOIN_AMBIGUOUS", `${nIn} in, ${nOut} out: neither a fork nor a join`); return; }
+      const nm = scopeOf(owner).take(usageIdent(e.name || e.alias, `${word}${e.id}`));
+      const sref: UsageRef = { kind: word, name: nm, typeDraft: null, objGuid: e.guid, typedBy: "" };
+      owner.usages.push(sref); usageByObj.set(e.id, { owner, ref: sref });
+      set(u.row, "native", word === "fork" ? "ForkNode" : "JoinNode"); u.row.target_stable_id = owner.id; u.row.target_file = owner.path;
+      owner.sourceLines.push(`- Control node: ${word} ${nm} — EA GUID: ${e.guid}`); return;
+    }
     const name = scopeOf(owner).take(usageIdent(e.name || e.alias, `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
     const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
     let diag = "";
@@ -261,6 +278,14 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     owner.sourceLines.push(`- Usage: ${ref.kind} ${name}${ref.typeDraft ? ` : [[${ref.typeDraft.baseName}]]` : " (untyped)"}${ref.mult ?? ""} — EA GUID: ${e.guid}`);
   });
 
+  for (const t of triggerObjs) guard("trigger", "t_object", t.o, () => {
+    const owner = byObj.get(t.o.parentId);
+    if (owner?.keyword === "state def") {
+      owner.sourceLines.push(`- Trigger: ${t.o.name || "(unnamed)"} — EA GUID: ${t.o.guid}`);
+      set(t.row, "evidence_only", "TriggerLine", "TRIGGER_RECORDED_ON_OWNER"); t.row.target_stable_id = owner.id; t.row.target_file = owner.path; return;
+    }
+    set(t.row, "deferred_review", "", "LEGAL_TRANSITION_CONTEXT", "Trigger is not inside a state definition");
+  });
   track.stage = "connectors";
   // ---- connectors ---------------------------------------------------------------------------------------------------
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
@@ -359,13 +384,19 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "Connector") {
       const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
       if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer("CONNECTOR_ENDPOINT_NOT_PORT"); return; }
-      if (a.owner !== b.owner) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }
+      if (a.owner !== b.owner) {                                     // find the one definition that owns a part of each end's type
+        const ctxs = drafts.filter((w) => w.keyword === "part def" && w.usages.some((u) => u.kind === "part" && u.typeDraft === a.owner) && w.usages.some((u) => u.kind === "part" && u.typeDraft === b.owner));
+        if (!ctxs.length) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }
+        const w = ctxs[0]!, ua = w.usages.filter((u) => u.kind === "part" && u.typeDraft === a.owner), ub = w.usages.filter((u) => u.kind === "part" && u.typeDraft === b.owner);
+        if (ctxs.length > 1 || ua.length !== 1 || ub.length !== 1) { defer("PORT_CONNECTION_AMBIGUOUS_OWNER"); return; }
+        addStmt(w, `connect ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name};`, `- Connection ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name} — EA GUID: ${c.guid}`); done(w, "ConnectionUsage"); return;
+      }
       addStmt(a.owner, `connect ${a.ref.name} to ${b.ref.name};`, `- Connection ${a.ref.name} to ${b.ref.name} — EA GUID: ${c.guid}`); done(a.owner, "ConnectionUsage"); return;
     }
     if (key === "ControlFlow" || key === "StateFlow") {
-      const want = key === "ControlFlow" ? "action" : "state";
+      const okKinds = key === "ControlFlow" ? ["action", "fork", "join"] : ["state"];
       const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
-      if (!a || !b || a.ref.kind !== want || b.ref.kind !== want) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
+      if (!a || !b || !okKinds.includes(a.ref.kind) || !okKinds.includes(b.ref.kind)) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
       if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
       const word = key === "ControlFlow" ? "succession" : "transition";
       addStmt(a.owner, `${word} first ${a.ref.name} then ${b.ref.name};`, `- ${word === "succession" ? "Succession" : "Transition"} ${a.ref.name} to ${b.ref.name}${c.name ? ` (guard/trigger: ${c.name.replace(/\s*\n\s*/g, " ")})` : ""} — EA GUID: ${c.guid}`);
@@ -376,7 +407,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const nm = scopeOf(src).take(usageIdent(dst.title, `include${dst.o.id}`));
       addStmt(src, `include use case ${nm} : ${dst.symbol};`, srcLine("Includes", dst)); done(src, "IncludeUseCaseUsage"); return;
     }
-    if (key === "UseCase:extend") { defer("EXTEND_NOT_TRANSLATED"); return; }
+    if (key === "UseCase:extend") {                                  // extension (source) is an optional case of the base (destination)
+      if (src?.keyword !== "use case def" || dst?.keyword !== "use case def") { defer("EXTEND_ENDPOINT_KIND"); return; }
+      const nm = scopeOf(dst).take(usageIdent(src.title, `extension${src.o.id}`));
+      addStmt(dst, `use case ${nm} : ${src.symbol}[0..1];`, srcLine("Extended by", src)); done(dst, "OptionalUseCaseUsage"); return;
+    }
     defer(`NATIVE_EMISSION_NOT_IMPLEMENTED:${key}`, `Needs: ${en.required_evidence.join(", ")}`);
   });
 
@@ -384,6 +419,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   // ---- render notes -------------------------------------------------------------------------------------------------
   const outFiles: OutFile[] = [];
   let blocks = 0, flagCount = 0;
+  const attachFiles: OutFile[] = [], attachTaken = new Set<string>(existing?.allPaths ? [...existing.allPaths].map((p) => p.toLowerCase()) : []);
+  let attachRows = 0;
   const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
   for (const d of drafts) guard("render", "t_object", d.o, () => {
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
@@ -396,13 +433,29 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (d.pkgPath.length) src.push(`- EA package: ${d.pkgPath.join(" > ")}`);
     for (const [k, v] of g.tags.get(e.id) ?? []) if (v.trim() && !DROPPED_TAGS.has(k)) src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
     src.push(...d.sourceLines);
+    let bodyExtra = "";
+    if (d.entry.disposition === "attachment_link") {
+      const docs = g.documents.get(e.guid) ?? [];
+      if (!docs.length) d.evidence.push("ATTACHMENT_BYTES_NOT_FOUND");
+      for (const doc of docs) {
+        if (doc.bytes.length > MAX_ATTACH) { d.evidence.push("ATTACHMENT_TOO_LARGE"); src.push(`- Attachment skipped (too large): ${doc.name} (${doc.bytes.length} bytes)`); continue; }
+        const base = safeName(doc.name || e.name || `attachment ${e.id}`) + extOf(doc.name || e.name, doc.bytes);
+        let path = `Attachments/${base}`, n = 1;
+        const own = existing?.allPaths?.has(path) && existing.files.get(d.path)?.includes(`[[${path}]]`);          // this element's file from an earlier run
+        while (!own && attachTaken.has(path.toLowerCase())) { n++; path = `Attachments/${base.replace(/(\.[^.]*)?$/, `~${n}$1`)}`; }
+        if (!own) { attachTaken.add(path.toLowerCase()); attachFiles.push({ path, content: "", bytes: doc.bytes }); }
+        attachRows++;
+        src.push(`- Attachment: [[${path}]] (${doc.bytes.length} bytes)`);
+        if (/\.(png|jpe?g|gif|svg|bmp|webp)$/i.test(path)) bodyExtra += `![[${path}]]\n`;
+      }
+    }
     const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
       usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}) })),
       members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
     const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: d.describes.length ? [["describes", d.describes]] : [],
-      bodyText: e.note, flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
+      bodyText: [e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
     const r = objRow.get(e.id)!;
     set(r, "native", d.keyword ? d.entry.native_kind! : `MdseNote:${d.type}`, d.evidence[0] ?? ""); r.target_stable_id = d.id; r.target_file = d.path; r.evidence = d.evidence.join(";");
@@ -435,7 +488,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code"],
     deferredLinks.map(({ c, code, family }) => [c.guid, family, named(c.sourceId), g.objectsById.get(c.sourceId)?.guid ?? "", named(c.destId), g.objectsById.get(c.destId)?.guid ?? "", c.direction, c.name, code]));
   const manifest = { schema: "mdse-run-manifest/0.1", runDate: o.runDate, source: { name: o.sourceName, lineage: o.lineage, sha256: o.fingerprint }, importerRelease: o.releaseVersion, mappingSchema: resolver.version,
-    counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems, errors: errors.length, translation: "Translation Table.md",
+    counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems, errors: errors.length, attachments: attachRows, translation: "Translation Table.md",
     nativeEmission: o.emitNative ? "ON (owner override of emission_enabled=false, D-0016); blocks not parser-checked" : "OFF", diagrams: "never read (ADR-V2-05)" };
 
   track.stage = "write plan";
@@ -455,7 +508,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     sysFiles.push(sys(`Error Log ${runLabel}.json`, JSON.stringify({ schema: "mdse-error-log/0.1", runDate: o.runDate, source: o.sourceName, sha256: o.fingerprint, importerRelease: o.releaseVersion, errors }, null, 2) + "\n"),
       sys(`Error Log ${runLabel}.md`, `# Error Log ${runLabel}\n\n${errors.length} row(s) raised an exception and were skipped (ledger disposition \`error\`, code \`EXCEPTION\`). Everything else in the run completed. Source \`${o.sourceName}\`, SHA-256 \`${o.fingerprint}\`.\n\n| Stage | Table | Row | EA GUID | Name | Message |\n|---|---|---|---|---|---|\n${errors.map((e) => `| ${e.stage} | ${e.table} | ${e.pk} | ${e.guid} | ${e.name.replace(/\|/g, "\\|")} | ${e.message.replace(/\|/g, "\\|").replace(/\n/g, " ")} |`).join("\n")}\n\n## Stacks\n\n${errors.slice(0, 20).map((e) => `### ${e.table} ${e.pk}\n\n\`\`\`text\n${e.stack}\n\`\`\``).join("\n\n")}\n`));
   }
-  outFiles.push(...plan.writes, ...sysFiles);
+  outFiles.push(...plan.writes, ...sysFiles, ...attachFiles);
   let baseIncluded = false;
   if (!existing && o.baseFiles) {
     baseIncluded = true;
@@ -468,7 +521,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   outFiles.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const dup = outFiles.map((f) => f.path.toLowerCase()).filter((p, i, a) => a.indexOf(p) !== i);
   if (dup.length) problems.push(`duplicate output paths: ${dup.slice(0, 5).join(", ")}`);
-  const status = problems.length ? "FAILED" : existing && !plan.changed && !errors.length ? "NO_CHANGES" : "WRITE_READY";
+  const status = problems.length ? "FAILED" : existing && !plan.changed && !errors.length && !attachFiles.length ? "NO_CHANGES" : "WRITE_READY";
   return { status, files: status === "FAILED" ? [] : outFiles, ledger, changes: plan.changes, problems, errors,
     summary: { elements: g.counts.t_object, connectors: g.counts.t_connector, packages: g.counts.t_package, notes: generated.size, dispositions, flags: flagCount, sysmlBlocks: blocks, baseVaultIncluded: baseIncluded, created: plan.created, unchanged: plan.unchanged, updated: plan.updated, conflicts: plan.conflicts, errors: errors.length } };
 }

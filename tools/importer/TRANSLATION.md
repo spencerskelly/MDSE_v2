@@ -53,8 +53,8 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Port` | native_candidate | `port` usage inside the owning definition's block | Typed by the EA Classifier, which must be a port or interface definition. | `USAGE_WITHOUT_NOTE_OWNER`, `USAGE_OWNER_KIND_MISMATCH`, `UNRESOLVED_PORT_TYPE` |
 | `Part:FlowProperty` | native_candidate | `in` / `out` / `inout` `item` usage inside a port def | FlowProperty. Owner is the port definition (directly, or through the port usage it sits under). Direction comes from the EA tag `direction`. Typed by the EA Classifier (a Signal item def). | `DIRECTION_EVIDENCE_MISSING`, `FLOW_OWNER_NOT_PORT_DEF`, `UNRESOLVED_FLOW_TYPE` |
 | `StateNode` | native_candidate | `state` usage inside the owning state def | Untyped. | `USAGE_WITHOUT_NOTE_OWNER`, `USAGE_OWNER_KIND_MISMATCH` |
-| `Synchronization` | conditional_review | Review row; no note | Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists. | `FORK_JOIN_CONTROL_FLOW_EVIDENCE`, `LEGAL_TRANSITION_CONTEXT` |
-| `Trigger` | conditional_review | Review row; no note | Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists. | `FORK_JOIN_CONTROL_FLOW_EVIDENCE`, `LEGAL_TRANSITION_CONTEXT` |
+| `Synchronization` | conditional_review | `fork` or `join` usage in the owning action def | Fork when more than one control flow leaves it and at most one enters; join for the reverse. Control flows then connect to it like to an action. | `FORK_JOIN_AMBIGUOUS`, `USAGE_WITHOUT_NOTE_OWNER`, `USAGE_OWNER_KIND_MISMATCH` |
+| `Trigger` | conditional_review | `- Trigger:` line in the owning state def's Source section | A trigger is recorded on the state definition it sits in. It is not wired to a particular transition (the EA data does not say which); the StateFlow name carries the trigger text. | `TRIGGER_RECORDED_ON_OWNER`, `LEGAL_TRANSITION_CONTEXT` |
 | `Package` | folder_only | Folder | Package becomes a folder; root packages named in the run options are left out of the path. |  |
 | `InformationItem` | mdse_note | Note, no SysML block | Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body. |  |
 | `Note` | mdse_note | Note, no SysML block | Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body. |  |
@@ -63,8 +63,8 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Decision` | mdse_note | Note, no SysML block | Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body. |  |
 | `Text` | mdse_note | Note, no SysML block | Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body. |  |
 | `Text:NavigationCell` | mdse_note | Note, no SysML block | Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body. |  |
-| `Artifact:Image` | attachment_link | Review row (not implemented) | Attachments are out of scope for now; the row and name are kept in the review CSV. | `ATTACHMENT_NOT_IMPLEMENTED` |
-| `Artifact:Document` | attachment_link | Review row (not implemented) | Attachments are out of scope for now; the row and name are kept in the review CSV. | `ATTACHMENT_NOT_IMPLEMENTED` |
+| `Artifact:Image` | attachment_link | Artifact note + file in `Attachments/` | Content is read from t_document (ElementID = the element GUID). Images are embedded in the note body. A file already in the vault is never overwritten. Files over 25 MB are skipped. | `ATTACHMENT_BYTES_NOT_FOUND`, `ATTACHMENT_TOO_LARGE` |
+| `Artifact:Document` | attachment_link | Artifact note + file in `Attachments/` | Content is read from t_document (ElementID = the element GUID). Images are embedded in the note body. A file already in the vault is never overwritten. Files over 25 MB are skipped. | `ATTACHMENT_BYTES_NOT_FOUND`, `ATTACHMENT_TOO_LARGE` |
 | `Sequence` | reference_only | Ledger row only | No note. The row is kept as evidence. | `REFERENCE_ONLY` |
 | `ProxyConnector` | reference_only | Ledger row only | No note. The row is kept as evidence. | `REFERENCE_ONLY` |
 | `Boundary` | aggregate_boundary_note | One shared note `Boundaries` | Every Boundary is a line in one aggregate note. | `BOUNDARY_GROUPED` |
@@ -82,8 +82,8 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Dependency` | conditional_native_candidate | `dependency from a to b; // dependsOn` | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Dependency:trace` | conditional_native_candidate | `dependency from a to b; // trace` | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Association` | conditional_native_candidate | Review row | Connectivity cannot be proven from an association. No ConnectionUsage is written. | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN` |
-| `UseCase:extend` | conditional_native_candidate | Review row | No safe construct without the extension context. | `EXTEND_NOT_TRANSLATED` |
-| `ControlFlow` | conditional_native_candidate | `succession first a then b` in the owning action def | Both ends action usages with the same owner. Guards stay in the Source section. | `FLOW_ENDPOINT_NOT_USAGE`, `FLOW_DIFFERENT_OWNERS` |
+| `UseCase:extend` | conditional_native_candidate | Optional `use case x : Ext[0..1]` in the base use case | Source is the extending case, destination the base. Both use case defs. | `EXTEND_ENDPOINT_KIND` |
+| `ControlFlow` | conditional_native_candidate | `succession first a then b` in the owning action def | Both ends action, fork or join usages with the same owner. Guards stay in the Source section. | `FLOW_ENDPOINT_NOT_USAGE`, `FLOW_DIFFERENT_OWNERS` |
 | `Dependency:deriveReqt` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. | `DERIVE_ENDPOINT_KIND` |
 | `NoteLink` | reference_only | `describes` YAML link on the Info note | One end must be an Info note. | `NOTELINK_ENDPOINT_NOT_INFO_NOTE` |
 | `UseCase:include` | conditional_native_candidate | `include use case` in the including use case | Both ends use case defs. | `INCLUDE_ENDPOINT_KIND` |
@@ -93,12 +93,28 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Usage` | conditional_native_candidate | `dependency from a to b; // uses` | Both ends definitions. Stronger evidence (allocate, satisfy) is not inferred. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Dependency:verify` | conditional_native_candidate | `objective { verify }` in the verification def | One end a verification def, the other a requirement def. | `VERIFY_ENDPOINT_KIND` |
 | `Dependency:RecoveryRequirement` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. | `DERIVE_ENDPOINT_KIND` |
-| `Connector` | conditional_native_candidate | `connect a to b` when both ports belong to one owner | Port-to-port only. Ports on different owners need a common owning context the importer does not infer. | `PORT_CONNECTION_NEEDS_COMMON_OWNER`, `CONNECTOR_ENDPOINT_NOT_PORT` |
+| `Connector` | conditional_native_candidate | `connect a to b` (same owner) or `connect partA.port to partB.port` (in the owning assembly) | Port-to-port only. For ports on different definitions, the one part def that owns exactly one part usage of each end's type holds the connection. | `PORT_CONNECTION_NEEDS_COMMON_OWNER`, `PORT_CONNECTION_AMBIGUOUS_OWNER`, `CONNECTOR_ENDPOINT_NOT_PORT` |
 | `Abstraction:Derive` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. | `DERIVE_ENDPOINT_KIND` |
 | `Abstraction:trace` | conditional_native_candidate | `dependency from a to b; // trace` | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Usage:Responsibility` | conditional_native_candidate | `allocate A to B` in A's block | Same as allocate. | `ALLOCATE_ENDPOINT_KIND` |
 | `Abstraction:Refine` | conditional_native_candidate | `dependency from a to b; // refines` | Same as refine. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Realisation:deriveReqt` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. Provisional until the derivation form is chosen. | `DERIVE_ENDPOINT_KIND` |
+
+## Dependency kinds
+
+These look alike in EA but mean different things. Each keeps its own kind in the model text and in the Source section.
+
+| Kind | EA families | Written as | Direction | Ends | Meaning |
+|---|---|---|---|---|---|
+| derivedFrom | `Realisation:deriveReqt`, `Dependency:deriveReqt`, `Dependency:RecoveryRequirement`, `Abstraction:Derive` | `dependency from new to informing; // derivedFrom` | From the new (derived) requirement to the informing requirement. Written in the new note. | requirement def to requirement def | The new requirement exists because of the informing one. |
+| refines | `Dependency:refine`, `Abstraction:Refine` | `dependency from refining to refined; // refines` | From the refining element to the refined one. Written in the refining note. | any two definitions | Adds precision to the target; the target stays valid on its own. |
+| trace | `Dependency:trace`, `Abstraction:trace` | `dependency from a to b; // trace` | As drawn. Written in the source note. | any two definitions | A related-to link with no stronger meaning. |
+| dependsOn | `Dependency` | `dependency from client to supplier; // dependsOn` | From the dependent (client) to what it depends on (supplier). | any two definitions | A change to the supplier can break the client. |
+| uses | `Usage` | `dependency from user to used; // uses` | From the user to the used element. | any two definitions | Generic use. Stronger evidence (allocate, satisfy) is not inferred from it. |
+| allocate | `Abstraction:allocate`, `Usage:Responsibility` | `allocate A to B;` | From the allocated element to where it is allocated. Written in the source note. | any two definitions | A real SysML allocation, not a dependency. |
+| satisfy | `Dependency:satisfy` | `satisfy Req;` | Written in the satisfier; direction is normalized so the requirement is the target. | requirement def with part, action or state def | A real SysML satisfy, not a dependency. |
+| verify | `Dependency:verify` | `objective { verify Req; }` | Written in the verification def; direction normalized. | verification def with requirement def | A real SysML verify, not a dependency. |
+| realises | `Realisation` | `perform action x : A;` or `allocate` | From the realising part to the action, requirement or part. | part def to action, requirement or part def | By endpoint kind; other pairs are review rows. |
 
 Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, perform, dependency, include, succession, transition, connect, item) are written in the SysML v2 form we expect; the parser gate decides.
 
@@ -108,7 +124,12 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 |---|---|---|
 | `UNKNOWN_FAMILY` | Type/stereotype is not in the mapping file. | Add the family to the mapping or confirm it is out of scope. |
 | `NO_CLASS_FOR_FAMILY` | Family resolves but no MDSE class exists for it. | Fix classify() or classes.json. |
-| `ATTACHMENT_NOT_IMPLEMENTED` | Attachment elements are not imported yet. | None until attachments are built. |
+| `ATTACHMENT_BYTES_NOT_FOUND` | No t_document content for this Artifact element. | The Artifact note exists without a file; attach it in EA or the vault. |
+| `ATTACHMENT_TOO_LARGE` | Attachment over 25 MB was not written. | Add it to the vault by hand. |
+| `FORK_JOIN_AMBIGUOUS` | Synchronization node is neither a fork nor a join by flow count. | Check the control flows in EA. |
+| `TRIGGER_RECORDED_ON_OWNER` | Trigger recorded as a line on its state def. | None. |
+| `PORT_CONNECTION_AMBIGUOUS_OWNER` | More than one assembly (or more than one part of a type) could hold this connection. | Pick the owning assembly by hand. |
+| `EXTEND_ENDPOINT_KIND` | extend needs two use case defs. | Review the EA link. |
 | `REFERENCE_ONLY` | Family is kept as evidence only. | None. |
 | `BOUNDARY_GROUPED` | Boundary is a line in the shared Boundaries note. | None. |
 | `UNHANDLED_DISPOSITION` | Mapping disposition the importer has no code for. | Importer bug or new disposition; fix run.ts. |
@@ -140,12 +161,11 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `DERIVE_ENDPOINT_KIND` | Derivation needs two requirement defs. | Review the EA link. |
 | `DEPENDENCY_ENDPOINT_KIND` | Dependency needs two definition notes. | Review the EA link. |
 | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN` | An association is not evidence of a connection. | Model the connection as a Connector between ports if it is one. |
-| `PORT_CONNECTION_NEEDS_COMMON_OWNER` | Ports belong to different owners. | Needs a common owning context; not inferred. |
+| `PORT_CONNECTION_NEEDS_COMMON_OWNER` | Ports belong to different definitions and no assembly owns a part of each. | Add the assembly or make the connection by hand. |
 | `CONNECTOR_ENDPOINT_NOT_PORT` | Connector end is not a port usage. | Review the EA link. |
 | `FLOW_ENDPOINT_NOT_USAGE` | Flow end is not an action/state usage the importer wrote. | Control nodes and unwritten usages cannot be linked. |
 | `FLOW_DIFFERENT_OWNERS` | Flow ends sit in different owners. | A succession/transition must stay inside one owner. |
 | `INCLUDE_ENDPOINT_KIND` | include needs two use case defs. | Review the EA link. |
-| `EXTEND_NOT_TRANSLATED` | extend has no safe construct yet. | Review manually. |
 | `NATIVE_EMISSION_NOT_IMPLEMENTED` | Relationship family with no translation code. | Importer gap; see TRANSLATION.md. |
 | `EXCEPTION` | The importer threw while handling this row. See Error Log. | Fix the importer; the row was skipped, not lost. |
 | `NO_DISPOSITION` | A source row ended the run with no outcome. | Importer bug. |

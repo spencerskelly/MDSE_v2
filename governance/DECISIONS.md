@@ -166,3 +166,11 @@ Rules: none edited. Revisit when OD-01 and OD-03 close.
 An EA Part usage wins over an Aggregation to the same part: when the whole already owns a part usage typed by that part, the aggregation is `alias_merged` (`USAGE_WINS`) and adds nothing. An aggregation with no matching usage still becomes an owned part usage. Flows are translated: FlowProperty to `in`/`out`/`inout` item usages in the port definition (direction from the EA tag `direction`, else `DIRECTION_EVIDENCE_MISSING`); ControlFlow to `succession` and StateFlow to `transition` inside one owner. The remaining relationship families are translated per connector by endpoint kind, or deferred with a named code. `tools/importer/TRANSLATION.md` is generated from the mapping and the code and lists every family and every exception code; CI fails if it is stale. A row that throws is skipped, written to the Error Log in `99_System/11_Import`, and shown in the ledger as `error`; a failure that stops the run produces a downloadable report naming the stage.
 
 Rules: none edited. Statement forms marked `UNVERIFIED_SYNTAX` await the parser gate.
+
+## D-0018 — Everything except diagrams is translated; dependency kinds are listed; derivedFrom runs new to informing
+
+2026-10-19 · Spencer · Accepted
+
+Added to the importer: attachments (Artifact note plus file in `Attachments/`, read from `t_document`, never overwritten), fork and join nodes, triggers (recorded on the owning state), `extend` as an optional use case, and port connections across parts through the owning assembly. Dependency-like relationships are listed as separate kinds in `tools/importer/TRANSLATION.md` (derivedFrom, refines, trace, dependsOn, uses, allocate, satisfy, verify, realises). `derivedFrom` is written in the new note and points at the informing note. Still not translated: diagrams, Sequence (interaction diagram content), Association (no proof of connectivity), unknown families.
+
+Rules: none edited.

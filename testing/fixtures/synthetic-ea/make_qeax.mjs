@@ -16,6 +16,7 @@ const DDL = [
   `CREATE TABLE t_connector (Connector_ID INTEGER PRIMARY KEY AUTOINCREMENT, Name TEXT, Direction TEXT, Notes TEXT, Connector_Type TEXT, SubType TEXT, SourceCard TEXT, SourceRole TEXT, SourceIsAggregate INTEGER, DestCard TEXT, DestRole TEXT, DestIsAggregate INTEGER, Start_Object_ID INTEGER, End_Object_ID INTEGER, Stereotype TEXT, ea_guid TEXT, PDATA1 TEXT, PDATA2 TEXT, PDATA3 TEXT, SeqNo INTEGER, DiagramID INTEGER)`,
   `CREATE TABLE t_objectproperties (PropertyID INTEGER PRIMARY KEY AUTOINCREMENT, Object_ID INTEGER, Property TEXT, Value TEXT, Notes TEXT, ea_guid TEXT)`,
   `CREATE TABLE t_xref (XrefID TEXT, Name TEXT, Type TEXT, Visibility TEXT, Namespace TEXT, "Requirement" TEXT, "Constraint" TEXT, "Behavior" TEXT, "Partition" TEXT, Description TEXT, Client TEXT, Supplier TEXT, Link TEXT)`,
+  `CREATE TABLE t_document (DocID TEXT, DocName TEXT, Notes TEXT, Style TEXT, ElementID TEXT, ElementType TEXT, StrContent TEXT, BinContent BLOB, DocType TEXT, Author TEXT, DocDate TEXT)`,
   `CREATE TABLE t_diagram (Diagram_ID INTEGER PRIMARY KEY AUTOINCREMENT, Package_ID INTEGER, Name TEXT, Diagram_Type TEXT, ea_guid TEXT)`,
 ];
 
@@ -148,6 +149,17 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   con("UseCase", uc, uc2, { stereotype: "include" });
   con("UseCase", uc2, uc, { stereotype: "extend" });
   con("Aggregation", charger, controller, { srcAgg: 2, dstCard: "1" });                       // controller usage exists: usage wins
+
+  // Control nodes, triggers, attachments
+  const fk = obj("Synchronization", "Split", fns, { parent: fn });
+  const a3 = obj("Action", "branch one", fns, { parent: fn }), a4 = obj("Action", "branch two", fns, { parent: fn });
+  con("ControlFlow", a2, fk); con("ControlFlow", fk, a3); con("ControlFlow", fk, a4);
+  obj("Synchronization", "Odd Node", fns, { parent: fn });                                    // no flows -> ambiguous
+  obj("Trigger", "start button", fns, { parent: st });
+  obj("Trigger", "loose trigger", fns);                                                       // no state owner -> review
+  const pic = obj("Artifact", "Wiring Picture", prod, { stereotype: "Image" });
+  db.prepare("INSERT INTO t_document (DocID,DocName,ElementID,ElementType,BinContent,DocType) VALUES (?,?,?,?,?,?)")
+    .run("D1", "wiring.png", guid("O", pic), "Attachment", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]), "PNG");
 
   // Scale: many extra requirements and parts for volume tests
   for (let i = 0; i < scale; i++) {

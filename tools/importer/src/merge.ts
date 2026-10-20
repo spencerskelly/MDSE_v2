@@ -3,8 +3,8 @@
 import MDSE from "../../core/src/mdse_core.js";
 import { flagCallout } from "./notes.ts";
 
-export interface OutFile { path: string; content: string }
-export interface ExistingVault { hasVault: boolean; files: Map<string, string> }
+export interface OutFile { path: string; content: string; /** binary file (attachment); content is empty */ bytes?: Uint8Array }
+export interface ExistingVault { hasVault: boolean; files: Map<string, string>; /** every file path in the vault, any type; attachments are never overwritten */ allPaths?: Set<string> }
 export interface ChangeEntry { path: string; kind: "created" | "filled" | "changed" | "appended" | "conflict" | "flagged"; field: string; detail: string }
 
 export interface MergeInput {

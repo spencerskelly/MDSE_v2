@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -18,7 +18,7 @@ const qeax = join(dir, "syn.qeax");
 buildSyntheticQeax(qeax);
 const run = async (over = {}): Promise<ImportResult> => { const r = sqliteReader(qeax); try { return await runImport(r, defaultOptions(over)); } finally { r.close(); } };
 const notes = (res: ImportResult) => res.files.filter((f) => f.path.endsWith(".md") && !f.path.startsWith("99_System/") && f.path !== "README.md");
-const asVault = (res: ImportResult) => ({ hasVault: true, files: new Map(res.files.map((f) => [f.path, f.content])) });
+const asVault = (res: ImportResult) => ({ hasVault: true, files: new Map(res.files.filter((f) => !f.bytes).map((f) => [f.path, f.content])), allPaths: new Set(res.files.map((f) => f.path)) });
 
 test("sha256 matches node:crypto", () => {
   for (const s of ["", "abc", "x".repeat(1000)]) { const h = new Sha256(); h.update(new TextEncoder().encode(s)); assert.equal(h.hex(), createHash("sha256").update(s).digest("hex")); }
@@ -90,11 +90,11 @@ test("re-import is additive: engineer edits survive, a differing source value be
   let t = files.get(target)!;
   t = t.replace("status: Draft", "status: Approved").replace("\n\n\n\n## Source: EA", "\n\nEngineer wrote this.\n\n\n\n## Source: EA").replace(/^subtype: .*$/m, "subtype: software");
   files.set(target, t);
-  const second = await run({ existing: { hasVault: true, files } });
+  const second = await run({ existing: { hasVault: true, files, allPaths: new Set(first.files.map((f) => f.path)) } });
   const out = second.files.find((f) => f.path === target)!.content;
   assert.match(out, /status: Approved/); assert.match(out, /Engineer wrote this\./); assert.match(out, /subtype: software/);
   assert.match(out, /\[!flagConflict\] Source differs: subtype/);
-  const third = await run({ existing: { hasVault: true, files: new Map([...files, [target, out]]) } });
+  const third = await run({ existing: { hasVault: true, files: new Map([...files, [target, out]]), allPaths: new Set(first.files.map((f) => f.path)) } });
   assert.equal(third.status, "NO_CHANGES", "flags must be idempotent");
 });
 
@@ -139,7 +139,12 @@ test("flows: flow items carry direction and type; missing direction is reported"
   const st = res.files.find((f) => f.path.endsWith("Charging.md"))!.content;
   assert.match(st, /transition first idle then running;/);
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "FLOW_ENDPOINT_NOT_USAGE"));
-  assert.ok(res.ledger.some((l) => l.diagnostic_code === "PORT_CONNECTION_NEEDS_COMMON_OWNER"));
+  assert.ok(!res.ledger.some((l) => l.diagnostic_code === "PORT_CONNECTION_NEEDS_COMMON_OWNER"), "ports on different parts are connected through the owning assembly");
+  assert.match(res.files.find((f) => f.path === "02 Product/Charger.md")!.content, /connect controller\.ctrlOut to modules\.pmPort;/);
+  assert.match(fn, /fork split;/); assert.match(fn, /succession first adjust then split;/); assert.match(fn, /succession first split then branchOne;/);
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "FORK_JOIN_AMBIGUOUS"));
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "TRIGGER_RECORDED_ON_OWNER"));
+  assert.ok(res.ledger.some((l) => l.diagnostic_code === "LEGAL_TRANSITION_CONTEXT"));
 });
 
 test("a row that throws is logged, skipped and does not stop the run", async () => {
@@ -161,4 +166,26 @@ test("a failure that stops the run names the stage and the source", async () => 
   const bad = { has: r.has, scan: async function* (t: string) { if (t === "t_connector") throw new Error("disk image is malformed"); yield* r.scan(t); } };
   await assert.rejects(runImport(bad, defaultOptions()), (err: unknown) => err instanceof ImportFailure && err.stage === "read source" && /malformed/.test(err.message) && err.detail.sourceName === "synthetic.qeax");
   r.close();
+});
+
+test("attachments: Artifact note, file written once, never overwritten", async () => {
+  const res = await run();
+  const bin = res.files.find((f) => f.path === "Attachments/wiring.png")!;
+  assert.ok(bin && bin.bytes && bin.bytes.length === 12 && bin.bytes[0] === 0x89);
+  const note = res.files.find((f) => f.path.endsWith("Wiring Picture.md"))!.content;
+  assert.match(note, /!\[\[Attachments\/wiring\.png\]\]/); assert.match(note, /^type: Artifact$/m);
+  assert.ok(res.ledger.some((l) => l.evidence.includes("ATTACHMENT_BYTES_NOT_FOUND")), "the Datasheet has no content");
+  const again = await run({ existing: asVault(res) });
+  assert.equal(again.status, "NO_CHANGES"); assert.ok(!again.files.some((f) => f.path.startsWith("Attachments/")));
+});
+
+test("extend becomes an optional use case; dependency kinds stay distinct", async () => {
+  const res = await run();
+  const body = (name: string) => res.files.find((f) => f.path.endsWith(name))!.content.split("## SysML v2")[1]!;
+  assert.match(body("Charge a Vehicle.md"), /use case \w+ : UC_\d{5}::Authenticate\[0\.\.1\];/);
+  assert.match(body("Charge a Vehicle.md"), /include use case authenticate : UC_\d{5}::Authenticate;/);
+  const std = body("UL 2594 5.1 Enclosure.md");
+  assert.match(std, /\/\/ trace/); assert.match(std, /\/\/ refines/);
+  assert.match(body("Charge Current Accuracy.md"), /dependency from REQ_\d{5}::ChargeCurrentAccuracy to STD_\d{5}::UL259451Enclosure; \/\/ derivedFrom/);
+  assert.match(readFileSync(new URL("../TRANSLATION.md", import.meta.url), "utf8"), /## Dependency kinds/);
 });

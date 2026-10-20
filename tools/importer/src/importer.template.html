@@ -100,11 +100,12 @@ $("scanInput").addEventListener("change", async (ev) => {
   for (const f of list) if (/\.md$/i.test(f.name)) files.push([f.webkitRelativePath || f.name, await f.text()]);
   const r = reportVault(files); $("vaultStatus").innerHTML = `<span class=ok>${esc((list[0].webkitRelativePath || "").split("/")[0] || "folder")}</span> · read-only check`;
 });
+const allPaths = new Set();
 async function walkDir(dir, prefix, out) {
   for await (const [name, h] of dir.entries()) {
     if (name === ".git" || name === ".obsidian") continue;
     if (h.kind === "directory") await walkDir(h, prefix + name + "/", out);
-    else if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]);
+    else { allPaths.add(prefix + name); if (/\.md$/i.test(name)) out.push([prefix + name, await (await h.getFile()).text()]); }
   }
 }
 const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
@@ -114,7 +115,7 @@ $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-    const files = []; await walkDir(vaultHandle, "", files);
+    allPaths.clear(); const files = []; await walkDir(vaultHandle, "", files);
     vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
     if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The base vault will be written with the notes.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
@@ -157,23 +158,23 @@ $("genNew").addEventListener("click", async () => {
   try {
     const res = await generate(null);
     if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}</span>`; return; }
-    const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, enc.encode(f.content)]));
+    const enc = new TextEncoder(), bytes = MDSE.zip(res.files.map((f) => [f.path, f.bytes || enc.encode(f.content)]));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
     $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${res.files.length} files</span>`;
   } catch (e) { reportFailure(e, "build ZIP"); }
 });
-async function writeFile(root, path, text) {
+async function writeFile(root, path, text) {   // text is a string or a Uint8Array
   const parts = path.split("/"); let dir = root;
   for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
   const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
 }
 $("genAdd").addEventListener("click", async () => {
   try {
-    const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles) } : null);
+    const res = await generate(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
     if (res.status === "NO_CHANGES") { $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
     if (res.status !== "WRITE_READY") { $("genStatus").innerHTML = `<span class=bad>${res.status}: nothing written</span>`; return; }
     if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("genStatus").textContent = "Cancelled."; return; }
-    for (const f of res.files) await writeFile(vaultHandle, f.path, f.content);
+    for (const f of res.files) await writeFile(vaultHandle, f.path, f.bytes || f.content);
     $("genStatus").innerHTML = `<span class=ok>Wrote ${res.files.length} file(s).</span>`;
   } catch (e) { reportFailure(e, "write to folder"); }
 });

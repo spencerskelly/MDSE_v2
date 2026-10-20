@@ -24,10 +24,12 @@ export const ELEMENT_RULES: Record<string, Rule> = {
   ActionUsage: { outcome: "`action` usage inside the owning action def", how: "Typed by the EA Classifier when it is an action definition.", exceptions: ["USAGE_WITHOUT_NOTE_OWNER", "USAGE_OWNER_KIND_MISMATCH", "UNRESOLVED_ACTION_TYPE"] },
   StateUsage: { outcome: "`state` usage inside the owning state def", how: "Untyped.", exceptions: ["USAGE_WITHOUT_NOTE_OWNER", "USAGE_OWNER_KIND_MISMATCH"] },
   ItemUsage: { outcome: "`in` / `out` / `inout` `item` usage inside a port def", how: "FlowProperty. Owner is the port definition (directly, or through the port usage it sits under). Direction comes from the EA tag `direction`. Typed by the EA Classifier (a Signal item def).", exceptions: ["DIRECTION_EVIDENCE_MISSING", "FLOW_OWNER_NOT_PORT_DEF", "UNRESOLVED_FLOW_TYPE"] },
+  Synchronization: { outcome: "`fork` or `join` usage in the owning action def", how: "Fork when more than one control flow leaves it and at most one enters; join for the reverse. Control flows then connect to it like to an action.", exceptions: ["FORK_JOIN_AMBIGUOUS", "USAGE_WITHOUT_NOTE_OWNER", "USAGE_OWNER_KIND_MISMATCH"] },
+  Trigger: { outcome: "`- Trigger:` line in the owning state def's Source section", how: "A trigger is recorded on the state definition it sits in. It is not wired to a particular transition (the EA data does not say which); the StateFlow name carries the trigger text.", exceptions: ["TRIGGER_RECORDED_ON_OWNER", "LEGAL_TRANSITION_CONTEXT"] },
   conditional_review: { outcome: "Review row; no note", how: "Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists.", exceptions: ["FORK_JOIN_CONTROL_FLOW_EVIDENCE", "LEGAL_TRANSITION_CONTEXT"] },
   mdse_note: { outcome: "Note, no SysML block", how: "Info (Note, Text, InformationItem), Issue, or modelCheck (Change, Decision). Text stays in the body.", exceptions: [] },
   folder_only: { outcome: "Folder", how: "Package becomes a folder; root packages named in the run options are left out of the path.", exceptions: [] },
-  attachment_link: { outcome: "Review row (not implemented)", how: "Attachments are out of scope for now; the row and name are kept in the review CSV.", exceptions: ["ATTACHMENT_NOT_IMPLEMENTED"] },
+  attachment_link: { outcome: "Artifact note + file in `Attachments/`", how: "Content is read from t_document (ElementID = the element GUID). Images are embedded in the note body. A file already in the vault is never overwritten. Files over 25 MB are skipped.", exceptions: ["ATTACHMENT_BYTES_NOT_FOUND", "ATTACHMENT_TOO_LARGE"] },
   reference_only: { outcome: "Ledger row only", how: "No note. The row is kept as evidence.", exceptions: ["REFERENCE_ONLY"] },
   aggregate_boundary_note: { outcome: "One shared note `Boundaries`", how: "Every Boundary is a line in one aggregate note.", exceptions: ["BOUNDARY_GROUPED"] },
 };
@@ -52,11 +54,11 @@ export const RELATIONSHIP_RULES: Record<string, Rule> = {
   Dependency: { outcome: "`dependency from a to b; // dependsOn`", how: "Both ends definitions.", exceptions: ["DEPENDENCY_ENDPOINT_KIND"] },
   Usage: { outcome: "`dependency from a to b; // uses`", how: "Both ends definitions. Stronger evidence (allocate, satisfy) is not inferred.", exceptions: ["DEPENDENCY_ENDPOINT_KIND"] },
   Association: { outcome: "Review row", how: "Connectivity cannot be proven from an association. No ConnectionUsage is written.", exceptions: ["ASSOCIATION_CONNECTIVITY_NOT_PROVEN"] },
-  Connector: { outcome: "`connect a to b` when both ports belong to one owner", how: "Port-to-port only. Ports on different owners need a common owning context the importer does not infer.", exceptions: ["PORT_CONNECTION_NEEDS_COMMON_OWNER", "CONNECTOR_ENDPOINT_NOT_PORT"] },
-  ControlFlow: { outcome: "`succession first a then b` in the owning action def", how: "Both ends action usages with the same owner. Guards stay in the Source section.", exceptions: ["FLOW_ENDPOINT_NOT_USAGE", "FLOW_DIFFERENT_OWNERS"] },
+  Connector: { outcome: "`connect a to b` (same owner) or `connect partA.port to partB.port` (in the owning assembly)", how: "Port-to-port only. For ports on different definitions, the one part def that owns exactly one part usage of each end's type holds the connection.", exceptions: ["PORT_CONNECTION_NEEDS_COMMON_OWNER", "PORT_CONNECTION_AMBIGUOUS_OWNER", "CONNECTOR_ENDPOINT_NOT_PORT"] },
+  ControlFlow: { outcome: "`succession first a then b` in the owning action def", how: "Both ends action, fork or join usages with the same owner. Guards stay in the Source section.", exceptions: ["FLOW_ENDPOINT_NOT_USAGE", "FLOW_DIFFERENT_OWNERS"] },
   StateFlow: { outcome: "`transition first a then b` in the owning state def", how: "Both ends state usages with the same owner. Trigger, guard and effect stay in the Source section.", exceptions: ["FLOW_ENDPOINT_NOT_USAGE", "FLOW_DIFFERENT_OWNERS"] },
   "UseCase:include": { outcome: "`include use case` in the including use case", how: "Both ends use case defs.", exceptions: ["INCLUDE_ENDPOINT_KIND"] },
-  "UseCase:extend": { outcome: "Review row", how: "No safe construct without the extension context.", exceptions: ["EXTEND_NOT_TRANSLATED"] },
+  "UseCase:extend": { outcome: "Optional `use case x : Ext[0..1]` in the base use case", how: "Source is the extending case, destination the base. Both use case defs.", exceptions: ["EXTEND_ENDPOINT_KIND"] },
   Nesting: { outcome: "Evidence only", how: "Nesting is organizational. Ownership of usages comes from the parent id, not this connector.", exceptions: ["ORGANIZATIONAL_ONLY"] },
   NoteLink: { outcome: "`describes` YAML link on the Info note", how: "One end must be an Info note.", exceptions: ["NOTELINK_ENDPOINT_NOT_INFO_NOTE"] },
   Sequence: { outcome: "Ledger row only", how: "Reference only; diagrams are out of scope.", exceptions: ["REFERENCE_ONLY"] },
@@ -66,7 +68,12 @@ export const RELATIONSHIP_RULES: Record<string, Rule> = {
 export const CODES: Record<string, { meaning: string; action: string }> = {
   UNKNOWN_FAMILY: { meaning: "Type/stereotype is not in the mapping file.", action: "Add the family to the mapping or confirm it is out of scope." },
   NO_CLASS_FOR_FAMILY: { meaning: "Family resolves but no MDSE class exists for it.", action: "Fix classify() or classes.json." },
-  ATTACHMENT_NOT_IMPLEMENTED: { meaning: "Attachment elements are not imported yet.", action: "None until attachments are built." },
+  ATTACHMENT_BYTES_NOT_FOUND: { meaning: "No t_document content for this Artifact element.", action: "The Artifact note exists without a file; attach it in EA or the vault." },
+  ATTACHMENT_TOO_LARGE: { meaning: "Attachment over 25 MB was not written.", action: "Add it to the vault by hand." },
+  FORK_JOIN_AMBIGUOUS: { meaning: "Synchronization node is neither a fork nor a join by flow count.", action: "Check the control flows in EA." },
+  TRIGGER_RECORDED_ON_OWNER: { meaning: "Trigger recorded as a line on its state def.", action: "None." },
+  PORT_CONNECTION_AMBIGUOUS_OWNER: { meaning: "More than one assembly (or more than one part of a type) could hold this connection.", action: "Pick the owning assembly by hand." },
+  EXTEND_ENDPOINT_KIND: { meaning: "extend needs two use case defs.", action: "Review the EA link." },
   REFERENCE_ONLY: { meaning: "Family is kept as evidence only.", action: "None." },
   BOUNDARY_GROUPED: { meaning: "Boundary is a line in the shared Boundaries note.", action: "None." },
   UNHANDLED_DISPOSITION: { meaning: "Mapping disposition the importer has no code for.", action: "Importer bug or new disposition; fix run.ts." },
@@ -98,12 +105,11 @@ export const CODES: Record<string, { meaning: string; action: string }> = {
   DERIVE_ENDPOINT_KIND: { meaning: "Derivation needs two requirement defs.", action: "Review the EA link." },
   DEPENDENCY_ENDPOINT_KIND: { meaning: "Dependency needs two definition notes.", action: "Review the EA link." },
   ASSOCIATION_CONNECTIVITY_NOT_PROVEN: { meaning: "An association is not evidence of a connection.", action: "Model the connection as a Connector between ports if it is one." },
-  PORT_CONNECTION_NEEDS_COMMON_OWNER: { meaning: "Ports belong to different owners.", action: "Needs a common owning context; not inferred." },
+  PORT_CONNECTION_NEEDS_COMMON_OWNER: { meaning: "Ports belong to different definitions and no assembly owns a part of each.", action: "Add the assembly or make the connection by hand." },
   CONNECTOR_ENDPOINT_NOT_PORT: { meaning: "Connector end is not a port usage.", action: "Review the EA link." },
   FLOW_ENDPOINT_NOT_USAGE: { meaning: "Flow end is not an action/state usage the importer wrote.", action: "Control nodes and unwritten usages cannot be linked." },
   FLOW_DIFFERENT_OWNERS: { meaning: "Flow ends sit in different owners.", action: "A succession/transition must stay inside one owner." },
   INCLUDE_ENDPOINT_KIND: { meaning: "include needs two use case defs.", action: "Review the EA link." },
-  EXTEND_NOT_TRANSLATED: { meaning: "extend has no safe construct yet.", action: "Review manually." },
   NATIVE_EMISSION_NOT_IMPLEMENTED: { meaning: "Relationship family with no translation code.", action: "Importer gap; see TRANSLATION.md." },
   EXCEPTION: { meaning: "The importer threw while handling this row. See Error Log.", action: "Fix the importer; the row was skipped, not lost." },
   NO_DISPOSITION: { meaning: "A source row ended the run with no outcome.", action: "Importer bug." },
@@ -119,8 +125,22 @@ export const CODES: Record<string, { meaning: string; action: string }> = {
 };
 export const codeBase = (c: string): string => c.split(":")[0]!.replace(/_TARGET_IS$/, "");
 
+/** The dependency-like relationships side by side. They differ in meaning and direction, so each has its own entry. Direction is as drawn in EA: source is where the statement is written. */
+export const DEPENDENCY_KINDS: Array<{ kind: string; families: string[]; written: string; direction: string; ends: string; meaning: string }> = [
+  { kind: "derivedFrom", families: ["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"], written: "`dependency from new to informing; // derivedFrom`", direction: "From the new (derived) requirement to the informing requirement. Written in the new note.", ends: "requirement def to requirement def", meaning: "The new requirement exists because of the informing one." },
+  { kind: "refines", families: ["Dependency:refine", "Abstraction:Refine"], written: "`dependency from refining to refined; // refines`", direction: "From the refining element to the refined one. Written in the refining note.", ends: "any two definitions", meaning: "Adds precision to the target; the target stays valid on its own." },
+  { kind: "trace", families: ["Dependency:trace", "Abstraction:trace"], written: "`dependency from a to b; // trace`", direction: "As drawn. Written in the source note.", ends: "any two definitions", meaning: "A related-to link with no stronger meaning." },
+  { kind: "dependsOn", families: ["Dependency"], written: "`dependency from client to supplier; // dependsOn`", direction: "From the dependent (client) to what it depends on (supplier).", ends: "any two definitions", meaning: "A change to the supplier can break the client." },
+  { kind: "uses", families: ["Usage"], written: "`dependency from user to used; // uses`", direction: "From the user to the used element.", ends: "any two definitions", meaning: "Generic use. Stronger evidence (allocate, satisfy) is not inferred from it." },
+  { kind: "allocate", families: ["Abstraction:allocate", "Usage:Responsibility"], written: "`allocate A to B;`", direction: "From the allocated element to where it is allocated. Written in the source note.", ends: "any two definitions", meaning: "A real SysML allocation, not a dependency." },
+  { kind: "satisfy", families: ["Dependency:satisfy"], written: "`satisfy Req;`", direction: "Written in the satisfier; direction is normalized so the requirement is the target.", ends: "requirement def with part, action or state def", meaning: "A real SysML satisfy, not a dependency." },
+  { kind: "verify", families: ["Dependency:verify"], written: "`objective { verify Req; }`", direction: "Written in the verification def; direction normalized.", ends: "verification def with requirement def", meaning: "A real SysML verify, not a dependency." },
+  { kind: "realises", families: ["Realisation"], written: "`perform action x : A;` or `allocate`", direction: "From the realising part to the action, requirement or part.", ends: "part def to action, requirement or part def", meaning: "By endpoint kind; other pairs are review rows." },
+];
+
 /** Rule for an element entry. */
-export function elementRule(e: { disposition: string; native_kind: string | null }): Rule | null {
+export function elementRule(e: { family?: string; disposition: string; native_kind: string | null }): Rule | null {
+  if (e.family && ELEMENT_RULES[e.family]) return ELEMENT_RULES[e.family]!;
   if (e.native_kind && ELEMENT_RULES[e.native_kind]) return ELEMENT_RULES[e.native_kind]!;
   return ELEMENT_RULES[e.disposition] ?? null;
 }
@@ -133,6 +153,8 @@ export function renderTranslationDoc(m: FamilyMapping): string {
   for (const e of m.elements) { const r = elementRule(e); out.push(`| \`${e.family}\` | ${e.disposition} | ${r?.outcome ?? "**NO RULE**"} | ${r?.how ?? ""} | ${(r?.exceptions ?? []).map((x) => "`" + x + "`").join(", ")} |`); }
   out.push("", "## Relationships", "", "| EA family | Mapping disposition | Becomes | How | Exceptions |", "|---|---|---|---|---|");
   for (const e of m.relationships) { const r = RELATIONSHIP_RULES[e.family]; out.push(`| \`${e.family}\` | ${e.disposition} | ${r?.outcome ?? "**NO RULE**"} | ${r?.how ?? ""} | ${(r?.exceptions ?? []).map((x) => "`" + x + "`").join(", ")} |`); }
+  out.push("", "## Dependency kinds", "", "These look alike in EA but mean different things. Each keeps its own kind in the model text and in the Source section.", "", "| Kind | EA families | Written as | Direction | Ends | Meaning |", "|---|---|---|---|---|---|");
+  for (const d of DEPENDENCY_KINDS) out.push(`| ${d.kind} | ${d.families.map((f) => "`" + f + "`").join(", ")} | ${d.written} | ${d.direction} | ${d.ends} | ${d.meaning} |`);
   out.push("", "Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, perform, dependency, include, succession, transition, connect, item) are written in the SysML v2 form we expect; the parser gate decides.", "", "## Exception codes", "", "| Code | Meaning | What to do |", "|---|---|---|");
   for (const [k, v] of Object.entries(CODES)) out.push(`| \`${k}\` | ${v.meaning} | ${v.action} |`);
   return out.join("\n") + "\n";

@@ -2,7 +2,7 @@
  * Only constructs the approved family mapping allows are written. Anything else is a flagLink, never guessed (IMP-060). */
 
 export interface UsageDecl {
-  kind: "part" | "port" | "action" | "state" | "item";
+  kind: "part" | "port" | "action" | "state" | "item" | "fork" | "join";
   /** item usages only: flow direction. */
   dir?: "in" | "out" | "inout";
   name: string;

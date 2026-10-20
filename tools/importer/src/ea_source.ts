@@ -23,7 +23,8 @@ export interface SourceGraph {
   connectors: EaConnector[];
   tags: Map<number, Array<[string, string]>>;
   objectsById: Map<number, EaObject>;
-  counts: { t_object: number; t_connector: number; t_package: number; t_objectproperties: number };
+  documents: Map<string, Array<{ name: string; type: string; bytes: Uint8Array }>>;   // t_document rows with content, by element GUID
+  counts: { t_object: number; t_connector: number; t_package: number; t_objectproperties: number; t_document: number };
 }
 
 const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
@@ -59,6 +60,17 @@ export async function readSourceGraph(reader: ReaderLike): Promise<SourceGraph> 
       const id = num(r.Object_ID), list = tags.get(id) ?? [];
       list.push([str(r.Property), str(r.Value)]); tags.set(id, list);
     }
+  const documents = new Map<string, Array<{ name: string; type: string; bytes: Uint8Array }>>();
+  let docRows = 0;
+  if (reader.has("t_document"))
+    for await (const r of reader.scan("t_document")) {
+      docRows++;
+      const b = r.BinContent;
+      if (!(b instanceof Uint8Array) || !b.length) continue;
+      const key = str(r.ElementID), list = documents.get(key) ?? [];
+      list.push({ name: str(r.DocName), type: str(r.DocType), bytes: b.slice() });      // copy: the reader's buffer is reused
+      documents.set(key, list);
+    }
   const objectsById = new Map(objects.map((o) => [o.id, o]));
-  return { packages, objects, connectors, tags, objectsById, counts: { t_object: objects.length, t_connector: connectors.length, t_package: packages.size, t_objectproperties: tagRows } };
+  return { packages, objects, connectors, tags, objectsById, documents, counts: { t_object: objects.length, t_connector: connectors.length, t_package: packages.size, t_objectproperties: tagRows, t_document: docRows } };
 }

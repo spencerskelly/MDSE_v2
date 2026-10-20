@@ -73,6 +73,7 @@ export function classify(entry: ElementEntry, o: EaObject, pkgPath: string[]): C
       default: return null;                                    // usages and unknown kinds make no note
     }
   }
+  if (entry.disposition === "attachment_link") return { type: "Artifact", subtype: "", evidence: ev };
   if (entry.disposition === "mdse_note") {
     if (o.type === "Issue") return { type: "Issue", subtype: "engineering issue", evidence: ev };
     if (o.type === "Change" || o.type === "Decision") return { type: "modelCheck", subtype: o.type, evidence: ev };
