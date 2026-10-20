@@ -32,7 +32,7 @@ Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 
 ## Run the checks
 
-Requirements: Node 22 (`.nvmrc`), Python 3.12+ with `pytest`. The browser smoke test also needs `playwright` and Chromium.
+Requirements: Node 22 (`.nvmrc`), Python 3.12+ with `pip install -r testing/requirements.txt`, and Chromium for the browser smoke test (`python -m playwright install chromium`).
 
 ```bash
 npm test                 # everything CI runs, except the manual parser gate

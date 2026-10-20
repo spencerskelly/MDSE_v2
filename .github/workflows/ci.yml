@@ -53,7 +53,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest playwright
+          pip install -r testing/requirements.txt
           python -m playwright install --with-deps chromium
       - name: Oracle tests (note format, core cross-check, QEAX reader, importer in a browser)
         run: npm run test:oracles

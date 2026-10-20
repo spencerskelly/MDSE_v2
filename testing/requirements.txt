@@ -1,0 +1,4 @@
+# Python test dependencies (testing/ only, GOV-002)
+pytest
+pyyaml
+playwright

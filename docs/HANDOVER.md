@@ -19,7 +19,7 @@ MDSE turns an Enterprise Architect SysML v1 model (and later product BOMs) into 
 
 ```bash
 nvm use                     # Node 22
-pip install pytest playwright && python -m playwright install chromium
+pip install -r testing/requirements.txt && python -m playwright install chromium
 npm test                    # must be green before you push
 ```
 

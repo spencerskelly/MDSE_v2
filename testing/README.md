@@ -12,6 +12,7 @@ Proof that the tools follow the rules. Unit tests live next to their tool (`tool
 | `fixtures/sample-instrument/` | One synthetic note used by the note-format tests | via oracles |
 | `fixtures/charger-connections/` | Synthetic connection/interface candidate. Not yet in CI | — |
 | `REAL_DATA_TEST_LOG.md` | Index of private real-data runs that found issues | — |
+| `requirements.txt` | Python test dependencies | `pip install -r testing/requirements.txt` |
 
 ## Data
 
