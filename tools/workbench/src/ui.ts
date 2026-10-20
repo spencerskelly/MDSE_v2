@@ -1,5 +1,7 @@
 /* The Workbench user interface. Plain DOM, no framework, no network. Every string from the vault goes in as text, never
  * as markup. Used unchanged by the standalone page and by the Obsidian plugin; the host supplies what differs. */
+import { toCanvas } from "./canvas.ts";
+import type { CanvasResult } from "./canvas.ts";
 import { buildIndexAsync } from "./index.ts";
 import type { ModelIndex, Note } from "./index.ts";
 import * as V from "./views.ts";
@@ -7,6 +9,8 @@ import * as V from "./views.ts";
 export interface Host {
   /** Open the note in the host's own editor (Obsidian). Absent in the standalone page. */
   openNote?: (path: string) => void;
+  /** Obsidian only: write the canvas into the vault and open it. Resolves to a short message. */
+  makeCanvas?: (r: CanvasResult) => Promise<string>;
   classes?: Record<string, { prefix: string; subtype: string[] }>;
 }
 export interface App { setFiles(files: Map<string, string>): Promise<void>; select(path: string): void; index(): ModelIndex | null; destroy(): void }
@@ -73,7 +77,6 @@ const csvCell = (v: unknown): string => { const t = String(v ?? ""); return /[",
 function download(name: string, text: string): void {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" })); a.download = name; a.click();
 }
-const TYPE_COLOR: Record<string, string> = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
 
 const TABS: Array<[string, string, boolean]> = [
   ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["where", "Where used", true],
@@ -176,7 +179,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const by = new Map<string, typeof edges>();
     for (const x of edges) (by.get(x.e.kind) ?? by.set(x.e.kind, []).get(x.e.kind)!).push(x);
     if (!by.size) return h("div", { class: "mut" }, "None.");
-    return h("div", {}, ...[...by].map(([k, list]) => h("div", {}, h("span", { class: "tag k" }, k), " ", ...list.flatMap((x, i) => [i ? ", " : "", x.other ? lnk(x.other) : h("span", { class: "gap" }, x.sym + " (unresolved)"), x.e.label ? h("span", { class: "mut" }, ` ${x.e.label}`) : null]))));
+    return h("div", {}, ...[...by].map(([k, list]) => h("div", {}, h("span", { class: "tag k" }, k), " ", ...list.flatMap((x, i) => [i ? ", " : "", x.other ? lnk(x.other) : h("span", { class: "gap" }, (x.e.reverse ? "← " : "") + x.sym + (x.e.reverse ? " (source not in vault)" : " (unresolved)")), x.e.label ? h("span", { class: "mut" }, ` ${x.e.label}`) : null]))));
   }
 
   function vNote(): HTMLElement {
@@ -197,9 +200,22 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     return pane;
   }
 
+  function canvasButton(profileName: string, depthOverride = 0): HTMLElement | null {
+    if (!host.makeCanvas || !sel) return null;
+    const btn = h("button", { title: "Generate an Obsidian Canvas of this view in 99_System/12_Views and open it" }, "Open as Canvas");
+    btn.addEventListener("click", async () => {
+      const prof = V.PROFILES.find((p) => p.name === profileName)!;
+      btn.setAttribute("disabled", ""); btn.textContent = "Creating…";
+      try { btn.textContent = await host.makeCanvas!(toCanvas(ix!, sel, prof, depthOverride || prof.depth)); }
+      catch (e) { btn.textContent = "Canvas failed: " + String((e as Error)?.message ?? e); }
+      setTimeout(() => { btn.textContent = "Open as Canvas"; btn.removeAttribute("disabled"); }, 4000);
+    });
+    return btn;
+  }
+
   function vStructure(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.structure(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title));
+    const r = V.structure(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), canvasButton("Structure"));
     if (r.supers.length) pane.append(h("div", {}, "Specializes: ", ...r.supers.flatMap((p, i) => [i ? " → " : "", lnk(p)])));
     if (r.subs.length) pane.append(h("div", {}, "Specialized by: ", ...r.subs.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("This definition owns no typed usages."));
@@ -212,7 +228,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
 
   function vWhere(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.whereUsed(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel)!.title + " is used"));
+    const r = V.whereUsed(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel)!.title + " is used"), canvasButton("Where used"));
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("Nothing owns, specializes or performs this note."));
     if (r.roots.length) pane.append(h("h3", {}, "Top-level assemblies"), h("div", {}, ...r.roots.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     if (r.references.length) pane.append(h("h3", {}, "Other references"), tableOf([["k", "Kind"], ["f", "From"], ["l", "Label"]], r.references.map((x) => [x.kind, lnk(x.path), x.label])));
@@ -286,15 +302,15 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     for (const p of placed) {
       const n = note(p.path); if (!n) continue;
       const title = n.title.length > 22 ? n.title.slice(0, 21) + "…" : n.title;
-      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, style: `border-left:3px solid ${TYPE_COLOR[n.type] ?? "#888"}` }),
-        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
+      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, style: `border-left:3px solid ${V.TYPE_COLOR[n.type] ?? "#888"}` }),
+        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
       grp.addEventListener("click", () => select(p.path, "graph"));
       svg.append(grp);
     }
     return h("div", { class: "pane" }, h("h2", {}, "Graph around " + note(sel)!.title), h("div", { class: "row" },
       h("select", { "aria-label": "View profile", onchange: (e: Event) => { profile = (e.target as HTMLSelectElement).value; gdepth = 0; draw(); } }, ...V.PROFILES.map((p) => h("option", { value: p.name, selected: p.name === profile }, p.name))),
       h("label", {}, "depth ", h("input", { type: "number", min: 1, max: 6, value: depth, style: "width:60px", onchange: (e: Event) => { gdepth = +(e.target as HTMLInputElement).value || 0; draw(); } })),
-      h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped)" : ""} — ${prof.description}`)), g.nodes.length > 1 ? svg : empty("No relationships of this kind from this note."));
+      canvasButton(profile, depth), h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped)" : ""} — ${prof.description}`)), g.nodes.length > 1 ? svg : empty("No relationships of this kind from this note."));
   }
 
   function vRels(): HTMLElement {
@@ -303,7 +319,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       ...kinds.map(([k, n]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: relKinds.includes(k), onchange: (e: Event) => { relKinds = (e.target as HTMLInputElement).checked ? [...relKinds, k] : relKinds.filter((x) => x !== k); draw(); } }), ` ${k} ${n}`))));
     const rows = V.relationshipRows(ix!, relKinds, relText), cap = rows.slice(0, 1500);
     pane.append(h("div", { class: "mut" }, `${rows.length} relationships${rows.length > cap.length ? " (first 1,500 shown)" : ""}`),
-      tableOf([["f", "From"], ["k", "Kind"], ["t", "To"], ["l", "Label"], ["v", "Via"]], cap.map((r) => [lnk(r.from, r.fromTitle), h("span", { class: "tag k" }, r.kind), r.resolved ? lnk(r.to, r.toTitle) : h("span", { class: "gap" }, r.toTitle + " (unresolved)"), r.label, r.via])),
+      tableOf([["f", "From"], ["k", "Kind"], ["t", "To"], ["l", "Label"], ["v", "Via"]], cap.map((r) => [r.from === null ? h("span", { class: "gap" }, r.fromTitle + " (unresolved)") : lnk(r.from, r.fromTitle), h("span", { class: "tag k" }, r.kind), r.resolved || r.from === null ? lnk(r.to, r.toTitle) : h("span", { class: "gap" }, r.toTitle + " (unresolved)"), r.label, r.via])),
       h("button", { onclick: () => download("relationships.csv", ["from,kind,to,label,via", ...rows.map((r) => [r.fromTitle, r.kind, r.toTitle, r.label, r.via].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
     return pane;
   }

@@ -11,7 +11,8 @@ export interface Note {
   title: string; eaType: string; body: string; flags: Flag[]; sourceLines: string[]; guid: string; block: string | null; def: Definition | null; warnings: string[];
   links: Array<{ field: string; target: string }>; issues: string[];
 }
-export interface Edge { from: string; to: string | null; toSymbol: string; kind: string; label: string; via: "sysml" | "yaml"; detail: string }
+/** `reverse` marks an edge whose SOURCE could not be resolved: `from` is the resolved end (the target), `toSymbol` is the unresolved source. */
+export interface Edge { from: string; to: string | null; toSymbol: string; kind: string; label: string; via: "sysml" | "yaml"; detail: string; reverse?: boolean }
 export type ParserStatus = "not-run" | "passed" | "failed";
 
 export interface ModelIndex {
@@ -73,8 +74,12 @@ function resolveAll(ix: ModelIndex): void {
         else if (s.kind === "perform") E("performs", sym(s.b!), s.b!, s.name ?? "");
         else if (s.kind === "include") E("includes", sym(s.b!), s.b!, s.name ?? "");
         else if (s.kind === "optionalUseCase") E("extendedBy", sym(s.b!), s.b!, s.name ?? "", s.tag ?? "");
-        else if (s.kind === "allocate") { const a = sym(s.a!), b = sym(s.b!); E("allocatedTo", b, s.b!, "", "", a ?? n.path); }
-        else if (s.kind === "dependency") { const a = sym(s.a!); E(DEP_KIND[s.tag ?? ""] ?? "dependsOn", sym(s.b!), s.b!, "", "", a ?? n.path); }
+        else if (s.kind === "allocate" || s.kind === "dependency") {
+          const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a!), b = sym(s.b!);
+          if (a) E(kind, b, s.b!, "", "", a);                                              // source known: normal edge, target may dangle
+          else if (b) link(ix, { from: b, to: null, toSymbol: s.a!, kind, label: "", via: "sysml", detail: "", reverse: true });   // source missing: never a self-loop
+          else E(kind, null, s.b!, "", "", n.path);
+        }
       }
     }
     for (const l of n.links) { const t = ix.byName.get(l.target.toLowerCase()) ?? null; link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" }); }

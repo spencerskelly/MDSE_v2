@@ -13,7 +13,10 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const CLASSES = /*@@CLASSES@@*/;
-const app = WB.mountWorkbench($("root"), { classes: CLASSES });
+const app = WB.mountWorkbench($("root"), { classes: CLASSES, makeCanvas: async (r) => {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(r.doc, null, 2)], { type: "application/json" })); a.download = r.fileName; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return "Canvas downloaded: put it in your vault (" + WB.CANVAS_DIR + ")";
+} });
 const say = (t, bad) => { $("msg").textContent = t; $("msg").className = bad ? "bad" : ""; };
 async function load(label, fn) {
   try { say("Reading " + label + "…"); const files = await fn(); if (!files.size) throw new Error("No Markdown notes found."); say(`${label}: ${files.size} Markdown files`); await app.setFiles(files); }

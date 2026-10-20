@@ -10,7 +10,7 @@ const rd = (p) => fs.readFileSync(path.join(here, p), "utf8");
 const strip = (s) => s.replace(/\nif \(typeof module !== "undefined"\)[^\n]*\n?$/, "\n");
 const CORE = strip(rd("../core/src/mdse_core.js"));
 const CLASSES = JSON.stringify(JSON.parse(rd("../core/src/classes.json")));
-const ORDER = ["sysml_scan", "index", "views", "vault_files", "ui"];
+const ORDER = ["sysml_scan", "index", "views", "canvas", "vault_files", "ui"];
 const exportsOf = (code) => [...code.matchAll(/^export (?:async )?(?:function|const|class|interface|type)\s+(\w+)/gm)].map((m) => m[1]);
 function bundle(withPlugin) {
   const names = new Map(); const parts = [];
@@ -24,7 +24,7 @@ function bundle(withPlugin) {
       .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
     parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
   }
-  const api = "{ mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync }";
+  const api = "{ mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PROFILES }";
   return `const WB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 }
 const wb = bundle();

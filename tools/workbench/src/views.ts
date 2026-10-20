@@ -28,8 +28,8 @@ export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent 
     const t = node(p, label || n.title, kind, mult, qtyOf(mult));
     if (stack.includes(p)) { t.cycle = true; return t; }
     if (stack.length >= maxDepth) return t;
-    const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind) && e.to);
-    for (const e of kids.slice(0, perParent)) t.children.push(walk(e.to!, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
+    const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind));
+    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
   };
@@ -133,6 +133,8 @@ export function interfaces(ix: ModelIndex, path: string): InterfaceResult {
   };
 }
 
+export const TYPE_COLOR: Record<string, string> = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
+
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
 export interface Step { kind: string; dir: "out" | "in" }
 export interface Profile { name: string; description: string; steps: Step[]; depth: number; cap: number }
@@ -206,15 +208,16 @@ export function tableRows(ix: ModelIndex, f: TableFilter = {}): TableRow[] {
   return rows;
 }
 
-export interface RelRow { from: string; fromTitle: string; kind: string; to: string | null; toTitle: string; label: string; via: string; resolved: boolean }
+export interface RelRow { from: string | null; fromTitle: string; kind: string; to: string | null; toTitle: string; label: string; via: string; resolved: boolean }
 export function relationshipRows(ix: ModelIndex, kinds: string[] = [], text = ""): RelRow[] {
   const q = text.toLowerCase();
   const rows: RelRow[] = [];
   for (const e of ix.edges) {
     if (kinds.length && !kinds.includes(e.kind)) continue;
-    const fromTitle = nm(ix, e.from, e.from), toTitle = e.to ? nm(ix, e.to, e.to) : e.toSymbol;
+    const fromTitle = e.reverse ? e.toSymbol : nm(ix, e.from, e.from), toTitle = e.reverse ? nm(ix, e.from, e.from) : e.to ? nm(ix, e.to, e.to) : e.toSymbol;
     if (q && !`${fromTitle} ${toTitle} ${e.kind} ${e.label}`.toLowerCase().includes(q)) continue;
-    rows.push({ from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
+    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false }
+      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
   }
   return rows;
 }
@@ -243,7 +246,7 @@ export function reviewQueue(ix: ModelIndex): ReviewItem[] {
     for (const f of n.flags) out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title });
     for (const w of n.warnings) out.push({ severity: "medium", category: "sysml-not-recognized", path: n.path, message: w });
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
-    for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: `${e.kind} → ${e.toSymbol}` });
+    for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }
   for (const d of ix.duplicates) out.push({ severity: "high", category: "duplicate-id", path: "", message: d });
   const rank = { high: 0, medium: 1, low: 2 };

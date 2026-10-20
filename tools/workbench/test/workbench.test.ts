@@ -113,3 +113,59 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
   assert.ok(ms < 8000, `index took ${ms} ms`);
   const t1 = Date.now(); V.traceMatrix(b); V.dashboard(b); V.tableRows(b, { text: "bulk" }); assert.ok(Date.now() - t1 < 3000);
 });
+
+/* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
+import { readFileSync } from "node:fs";
+import { toCanvas, CANVAS_DIR } from "../src/canvas.ts";
+const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
+const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
+
+test("real note PCE25 scans with no warnings and keeps every statement", () => {
+  const ix = lone(), n = [...ix.notes.values()][0]!;
+  assert.equal(n.warnings.length, 0);
+  assert.equal(n.def!.symbol, "OBJ_02334::PCE25");
+  assert.equal(n.def!.usages.filter((u) => u.type).length, 9);
+  assert.equal(n.def!.usages.filter((u) => !u.type).length, 9);
+  assert.equal(n.def!.stmts.filter((s) => s.kind === "allocate").length, 51);
+});
+
+test("an allocate whose source is missing is an unresolved reverse edge, never a self-loop", () => {
+  const ix = lone(), p = [...ix.notes.keys()][0]!;
+  assert.ok(!ix.edges.some((e) => e.to === e.from), "no self-loops");
+  const alloc = ix.edges.filter((e) => e.kind === "allocatedTo");
+  assert.equal(alloc.length, 51);
+  assert.ok(alloc.every((e) => e.reverse && e.to === null && e.from === p));
+  assert.ok(alloc.some((e) => e.toSymbol === "REQ_04044::RemoteControlCompatibility"));
+  const rows = V.relationshipRows(ix, ["allocatedTo"]);
+  assert.equal(rows[0]!.from, null); assert.equal(rows[0]!.to, p);
+  assert.ok(V.reviewQueue(ix).some((i) => i.category === "unresolved-reference" && /source not in vault/.test(i.message)));
+});
+
+test("structure shows typed parts whose definition is not in the vault", () => {
+  const ix = lone(), p = [...ix.notes.keys()][0]!, r = V.structure(ix, p);
+  assert.equal(r.tree.children.length, 9);
+  assert.ok(r.tree.children.every((c) => c.path === null && /not in vault/.test(c.detail)));
+  assert.equal(r.untyped.length, 9);
+});
+
+test("canvas export: valid JSON Canvas, file cards for notes, text cards for missing ones, no dangling edge ids", () => {
+  const ix = lone(), p = [...ix.notes.keys()][0]!;
+  const r = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Structure")!);
+  const ids = new Set(r.doc.nodes.map((n) => n.id));
+  assert.equal(ids.size, r.doc.nodes.length, "unique node ids");
+  assert.equal(r.doc.nodes.filter((n) => n.type === "file").length, 1);
+  assert.ok(r.doc.nodes.some((n) => n.type === "text" && /not in vault/.test(n.text!)));
+  for (const e of r.doc.edges) { assert.ok(ids.has(e.fromNode) && ids.has(e.toNode)); assert.ok(e.fromNode !== e.toNode); }
+  assert.ok(r.doc.nodes.every((n) => Number.isInteger(n.x) && Number.isInteger(n.y) && n.width > 0));
+  assert.match(r.fileName, /\.canvas$/); assert.ok(!/[\\/:*?"<>|]/.test(r.fileName));
+  assert.equal(CANVAS_DIR, "99_System/12_Views");
+  JSON.parse(JSON.stringify(r.doc));
+  const alloc = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Allocation")!);
+  assert.ok(alloc.unresolved === 51 && alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text").length <= 24, "unresolved cards are capped");
+});
+
+test("canvas export on a full imported vault links notes both ways", () => {
+  const r = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((x) => x.name === "Structure")!);
+  assert.ok(r.doc.nodes.filter((n) => n.type === "file").length >= 5 && r.doc.edges.length >= 5);
+  assert.ok(r.doc.nodes.filter((n) => n.type === "file").every((n) => ix.notes.has(n.file!)));
+});

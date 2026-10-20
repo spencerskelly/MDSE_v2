@@ -323,7 +323,8 @@ function scanSysml(block        )             {
                                                                                                                                                                     
                                                                     
  
-                                                                                                                                        
+/** `reverse` marks an edge whose SOURCE could not be resolved: `from` is the resolved end (the target), `toSymbol` is the unresolved source. */
+                                                                                                                                                           
                                                     
 
                       
@@ -385,8 +386,12 @@ function resolveAll(ix            )       {
         else if (s.kind === "perform") E("performs", sym(s.b ), s.b , s.name ?? "");
         else if (s.kind === "include") E("includes", sym(s.b ), s.b , s.name ?? "");
         else if (s.kind === "optionalUseCase") E("extendedBy", sym(s.b ), s.b , s.name ?? "", s.tag ?? "");
-        else if (s.kind === "allocate") { const a = sym(s.a ), b = sym(s.b ); E("allocatedTo", b, s.b , "", "", a ?? n.path); }
-        else if (s.kind === "dependency") { const a = sym(s.a ); E(DEP_KIND[s.tag ?? ""] ?? "dependsOn", sym(s.b ), s.b , "", "", a ?? n.path); }
+        else if (s.kind === "allocate" || s.kind === "dependency") {
+          const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a ), b = sym(s.b );
+          if (a) E(kind, b, s.b , "", "", a);                                              // source known: normal edge, target may dangle
+          else if (b) link(ix, { from: b, to: null, toSymbol: s.a , kind, label: "", via: "sysml", detail: "", reverse: true });   // source missing: never a self-loop
+          else E(kind, null, s.b , "", "", n.path);
+        }
       }
     }
     for (const l of n.links) { const t = ix.byName.get(l.target.toLowerCase()) ?? null; link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" }); }
@@ -467,8 +472,8 @@ function structure(ix            , root        , maxDepth = 6, perParent = 40)  
     const t = node(p, label || n.title, kind, mult, qtyOf(mult));
     if (stack.includes(p)) { t.cycle = true; return t; }
     if (stack.length >= maxDepth) return t;
-    const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind) && e.to);
-    for (const e of kids.slice(0, perParent)) t.children.push(walk(e.to , e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
+    const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind));
+    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
   };
@@ -572,6 +577,8 @@ function interfaces(ix            , path        )                  {
   };
 }
 
+const TYPE_COLOR                         = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
+
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
                                                   
                                                                                                   
@@ -645,15 +652,16 @@ function tableRows(ix            , f              = {})             {
   return rows;
 }
 
-                                                                                                                                                     
+                                                                                                                                                            
 function relationshipRows(ix            , kinds           = [], text = "")           {
   const q = text.toLowerCase();
   const rows           = [];
   for (const e of ix.edges) {
     if (kinds.length && !kinds.includes(e.kind)) continue;
-    const fromTitle = nm(ix, e.from, e.from), toTitle = e.to ? nm(ix, e.to, e.to) : e.toSymbol;
+    const fromTitle = e.reverse ? e.toSymbol : nm(ix, e.from, e.from), toTitle = e.reverse ? nm(ix, e.from, e.from) : e.to ? nm(ix, e.to, e.to) : e.toSymbol;
     if (q && !`${fromTitle} ${toTitle} ${e.kind} ${e.label}`.toLowerCase().includes(q)) continue;
-    rows.push({ from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
+    rows.push(e.reverse ? { from: null, fromTitle, kind: e.kind, to: e.from, toTitle, label: e.label, via: e.via, resolved: false }
+      : { from: e.from, fromTitle, kind: e.kind, to: e.to, toTitle, label: e.label, via: e.via, resolved: !!e.to });
   }
   return rows;
 }
@@ -682,7 +690,7 @@ function reviewQueue(ix            )               {
     for (const f of n.flags) out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title });
     for (const w of n.warnings) out.push({ severity: "medium", category: "sysml-not-recognized", path: n.path, message: w });
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
-    for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: `${e.kind} → ${e.toSymbol}` });
+    for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }
   for (const d of ix.duplicates) out.push({ severity: "high", category: "duplicate-id", path: "", message: d });
   const rank = { high: 0, medium: 1, low: 2 };
@@ -708,6 +716,72 @@ function search(ix            , q        , limit = 50)         {
     if (score >= 0) hits.push([score, n]);
   }
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);
+}
+
+/* canvas.ts */
+/* Obsidian Canvas export (JSON Canvas 1.0). A canvas is a generated, disposable picture of one traversal: file cards for
+ * notes in the vault, text cards for references whose note is not in the vault. It carries no model meaning (D-0003);
+ * regenerate it any time. Layout is layered left to right by distance from the start note. */
+
+
+
+
+                                                                                                                                                             
+                                                                                                                                                                                                                 
+                                                                
+                                                                                                               
+
+const CANVAS_DIR = "99_System/12_Views";
+const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
+const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
+
+function toCanvas(ix            , start        , profile         , depth = profile.depth, cap = profile.cap)               {
+  const note = ix.notes.get(start);
+  if (!note) throw new Error(`Note not in index: ${start}`);
+  const g = traverse(ix, start, profile, depth, cap);
+  const id = new Map                (g.nodes.map((n, i) => [n.path, `n${i}`]));
+  const allow = (e      , dir              )          => !profile.steps.length || profile.steps.some((s) => s.kind === e.kind && s.dir === dir);
+
+  // text cards for references whose note is not in the vault (partial vaults, dangling links)
+  const ghosts                                                                   = [];
+  let unresolved = 0;
+  for (const n of g.nodes) {
+    if (n.depth >= depth) continue;
+    for (const e of outgoing(ix, n.path)) {
+      if (e.to || !allow(e, e.reverse ? "in" : "out")) continue;
+      unresolved++;
+      if (ghosts.length < MAX_UNRESOLVED) ghosts.push({ key: `g${ghosts.length}`, text: e.toSymbol, anchor: n.path, edge: e });
+    }
+  }
+
+  // layered layout: one column per depth, rows stacked and centred
+  const cols = new Map                                                              ();
+  for (const n of g.nodes) (cols.get(n.depth) ?? cols.set(n.depth, []).get(n.depth) ).push({ key: id.get(n.path) , path: n.path });
+  const depthOf = new Map(g.nodes.map((n) => [n.path, n.depth]));
+  for (const x of ghosts) (cols.get((depthOf.get(x.anchor) ?? 0) + 1) ?? cols.set((depthOf.get(x.anchor) ?? 0) + 1, []).get((depthOf.get(x.anchor) ?? 0) + 1) ).push({ key: x.key, text: x.text });
+  const nodes               = [], at = new Map                    ();
+  for (const [d, list] of [...cols].sort((a, b) => a[0] - b[0])) {
+    const top = -((list.length * (H + GY) - GY) / 2);
+    list.forEach((it, i) => {
+      const base = { id: it.key, x: d * (W + GX), y: Math.round(top + i * (H + GY)), width: W, height: H };
+      let cn            ;
+      if (it.path) { const nn = ix.notes.get(it.path) ; const color = TYPE_COLOR[nn.type]; cn = { ...base, type: "file", file: it.path, ...(color ? { color } : {}) }; }
+      else cn = { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
+      nodes.push(cn); at.set(it.key, cn);
+    });
+  }
+
+  const edges               = [];
+  const side = (a            , b            )                                                                     =>
+    b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+  const push = (from        , to        , e      )       => {
+    const a = at.get(from), b = at.get(to); if (!a || !b) return;
+    edges.push({ id: `e${edges.length}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+  };
+  for (const e of g.edges) push(id.get(e.from) , id.get(e.to ) , e);
+  for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
+
+  return { doc: { nodes, edges }, notes: g.nodes.length, unresolved, capped: g.capped || unresolved > ghosts.length, fileName: `${safe(note.title)} - ${safe(profile.name)}.canvas` };
 }
 
 /* vault_files.ts */
@@ -773,10 +847,14 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
  * as markup. Used unchanged by the standalone page and by the Obsidian plugin; the host supplies what differs. */
 
 
-const V = { qtyOf, structure, bom, whereUsed, isRequirement, traceMatrix, behavior, interfaces, PROFILES, traverse, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search };
+
+
+const V = { qtyOf, structure, bom, whereUsed, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, traverse, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search };
                 
                                                                                           
                                     
+                                                                                                 
+                                                    
                                                                   
  
                                                                                                                                               
@@ -843,7 +921,6 @@ const csvCell = (v         )         => { const t = String(v ?? ""); return /[",
 function download(name        , text        )       {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" })); a.download = name; a.click();
 }
-const TYPE_COLOR                         = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
 
 const TABS                                   = [
   ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["where", "Where used", true],
@@ -946,7 +1023,7 @@ function mountWorkbench(root             , host       = {})      {
     const by = new Map                      ();
     for (const x of edges) (by.get(x.e.kind) ?? by.set(x.e.kind, []).get(x.e.kind) ).push(x);
     if (!by.size) return h("div", { class: "mut" }, "None.");
-    return h("div", {}, ...[...by].map(([k, list]) => h("div", {}, h("span", { class: "tag k" }, k), " ", ...list.flatMap((x, i) => [i ? ", " : "", x.other ? lnk(x.other) : h("span", { class: "gap" }, x.sym + " (unresolved)"), x.e.label ? h("span", { class: "mut" }, ` ${x.e.label}`) : null]))));
+    return h("div", {}, ...[...by].map(([k, list]) => h("div", {}, h("span", { class: "tag k" }, k), " ", ...list.flatMap((x, i) => [i ? ", " : "", x.other ? lnk(x.other) : h("span", { class: "gap" }, (x.e.reverse ? "← " : "") + x.sym + (x.e.reverse ? " (source not in vault)" : " (unresolved)")), x.e.label ? h("span", { class: "mut" }, ` ${x.e.label}`) : null]))));
   }
 
   function vNote()              {
@@ -967,9 +1044,22 @@ function mountWorkbench(root             , host       = {})      {
     return pane;
   }
 
+  function canvasButton(profileName        , depthOverride = 0)                     {
+    if (!host.makeCanvas || !sel) return null;
+    const btn = h("button", { title: "Generate an Obsidian Canvas of this view in 99_System/12_Views and open it" }, "Open as Canvas");
+    btn.addEventListener("click", async () => {
+      const prof = V.PROFILES.find((p) => p.name === profileName) ;
+      btn.setAttribute("disabled", ""); btn.textContent = "Creating…";
+      try { btn.textContent = await host.makeCanvas (toCanvas(ix , sel, prof, depthOverride || prof.depth)); }
+      catch (e) { btn.textContent = "Canvas failed: " + String((e         )?.message ?? e); }
+      setTimeout(() => { btn.textContent = "Open as Canvas"; btn.removeAttribute("disabled"); }, 4000);
+    });
+    return btn;
+  }
+
   function vStructure()              {
     const miss = needNote(); if (miss) return miss;
-    const r = V.structure(ix , sel), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel) .title));
+    const r = V.structure(ix , sel), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel) .title), canvasButton("Structure"));
     if (r.supers.length) pane.append(h("div", {}, "Specializes: ", ...r.supers.flatMap((p, i) => [i ? " → " : "", lnk(p)])));
     if (r.subs.length) pane.append(h("div", {}, "Specialized by: ", ...r.subs.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("This definition owns no typed usages."));
@@ -982,7 +1072,7 @@ function mountWorkbench(root             , host       = {})      {
 
   function vWhere()              {
     const miss = needNote(); if (miss) return miss;
-    const r = V.whereUsed(ix , sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel) .title + " is used"));
+    const r = V.whereUsed(ix , sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel) .title + " is used"), canvasButton("Where used"));
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("Nothing owns, specializes or performs this note."));
     if (r.roots.length) pane.append(h("h3", {}, "Top-level assemblies"), h("div", {}, ...r.roots.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
     if (r.references.length) pane.append(h("h3", {}, "Other references"), tableOf([["k", "Kind"], ["f", "From"], ["l", "Label"]], r.references.map((x) => [x.kind, lnk(x.path), x.label])));
@@ -1056,15 +1146,15 @@ function mountWorkbench(root             , host       = {})      {
     for (const p of placed) {
       const n = note(p.path); if (!n) continue;
       const title = n.title.length > 22 ? n.title.slice(0, 21) + "…" : n.title;
-      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, style: `border-left:3px solid ${TYPE_COLOR[n.type] ?? "#888"}` }),
-        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
+      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, style: `border-left:3px solid ${V.TYPE_COLOR[n.type] ?? "#888"}` }),
+        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
       grp.addEventListener("click", () => select(p.path, "graph"));
       svg.append(grp);
     }
     return h("div", { class: "pane" }, h("h2", {}, "Graph around " + note(sel) .title), h("div", { class: "row" },
       h("select", { "aria-label": "View profile", onchange: (e       ) => { profile = (e.target                     ).value; gdepth = 0; draw(); } }, ...V.PROFILES.map((p) => h("option", { value: p.name, selected: p.name === profile }, p.name))),
       h("label", {}, "depth ", h("input", { type: "number", min: 1, max: 6, value: depth, style: "width:60px", onchange: (e       ) => { gdepth = +(e.target                    ).value || 0; draw(); } })),
-      h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped)" : ""} — ${prof.description}`)), g.nodes.length > 1 ? svg : empty("No relationships of this kind from this note."));
+      canvasButton(profile, depth), h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped)" : ""} — ${prof.description}`)), g.nodes.length > 1 ? svg : empty("No relationships of this kind from this note."));
   }
 
   function vRels()              {
@@ -1073,7 +1163,7 @@ function mountWorkbench(root             , host       = {})      {
       ...kinds.map(([k, n]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: relKinds.includes(k), onchange: (e       ) => { relKinds = (e.target                    ).checked ? [...relKinds, k] : relKinds.filter((x) => x !== k); draw(); } }), ` ${k} ${n}`))));
     const rows = V.relationshipRows(ix , relKinds, relText), cap = rows.slice(0, 1500);
     pane.append(h("div", { class: "mut" }, `${rows.length} relationships${rows.length > cap.length ? " (first 1,500 shown)" : ""}`),
-      tableOf([["f", "From"], ["k", "Kind"], ["t", "To"], ["l", "Label"], ["v", "Via"]], cap.map((r) => [lnk(r.from, r.fromTitle), h("span", { class: "tag k" }, r.kind), r.resolved ? lnk(r.to, r.toTitle) : h("span", { class: "gap" }, r.toTitle + " (unresolved)"), r.label, r.via])),
+      tableOf([["f", "From"], ["k", "Kind"], ["t", "To"], ["l", "Label"], ["v", "Via"]], cap.map((r) => [r.from === null ? h("span", { class: "gap" }, r.fromTitle + " (unresolved)") : lnk(r.from, r.fromTitle), h("span", { class: "tag k" }, r.kind), r.resolved || r.from === null ? lnk(r.to, r.toTitle) : h("span", { class: "gap" }, r.toTitle + " (unresolved)"), r.label, r.via])),
       h("button", { onclick: () => download("relationships.csv", ["from,kind,to,label,via", ...rows.map((r) => [r.fromTitle, r.kind, r.toTitle, r.label, r.via].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
     return pane;
   }
@@ -1121,13 +1211,16 @@ function mountWorkbench(root             , host       = {})      {
   };
 }
 
-return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync };
+return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PROFILES };
 })();
 </script>
 <script>
 const $ = (id) => document.getElementById(id);
 const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
-const app = WB.mountWorkbench($("root"), { classes: CLASSES });
+const app = WB.mountWorkbench($("root"), { classes: CLASSES, makeCanvas: async (r) => {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(r.doc, null, 2)], { type: "application/json" })); a.download = r.fileName; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return "Canvas downloaded: put it in your vault (" + WB.CANVAS_DIR + ")";
+} });
 const say = (t, bad) => { $("msg").textContent = t; $("msg").className = bad ? "bad" : ""; };
 async function load(label, fn) {
   try { say("Reading " + label + "…"); const files = await fn(); if (!files.size) throw new Error("No Markdown notes found."); say(`${label}: ${files.size} Markdown files`); await app.setFiles(files); }

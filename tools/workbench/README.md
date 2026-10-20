@@ -2,12 +2,19 @@
 
 Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline HTML page and an Obsidian plugin. Phase 1 is read-only; Phase 3 adds editing.
 
-**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.2.0), read-only.** D-0019 records the design.
+**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.3.0), read-only.** D-0019 records the design.
 
 ## Run it
 
 - **Page:** `npm run build:workbench`, then open `tools/workbench/dist/mdse_workbench.html`. Choose "Open vault folder" (Chromium browsers), "Choose folder (any browser)", or "Open MDSE.zip", or drop a folder or zip on the page. Nothing leaves the browser.
-- **Obsidian:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench". The plugin has not been run in real Obsidian yet; only the page is browser-tested.
+- **Obsidian:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
+
+## In Obsidian: table and canvas
+
+- **Table:** the Workbench tab (ribbon icon, or command "Open MDSE Workbench"). The Notes tab is a filterable table of every note; Relationships, Traceability and the parts list are tables too. All export to CSV.
+- **Canvas:** on the Structure, Where used and Graph tabs, "Open as Canvas" writes an Obsidian Canvas of that view and opens it. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card. Also from the command palette ("Create canvas from current note", pick a profile) and the file right-click menu ("Create MDSE canvas").
+- Canvases are generated and disposable: they go in `99_System/12_Views/`, are overwritten on regeneration, hold no model meaning, and the Workbench indexer ignores them. They are the only files the plugin writes (D-0020). In the browser page the same button downloads the `.canvas` file.
+- "Show current note in MDSE Workbench" (command and right-click) jumps straight to a note.
 
 ## Views
 
@@ -41,4 +48,4 @@ Ported (as concepts, rewritten for SysML text): view profiles, staged startup, w
 
 ## Not done
 
-Editing (Phase 3), saved views, real-Obsidian testing, parser-backed conformance in the viewer.
+Editing (Phase 3), saved views, real-Obsidian testing, parser-backed conformance in the viewer, canvas for a whole folder or query.

@@ -182,3 +182,11 @@ Rules: none edited.
 The V2 Workbench is a single TypeScript core (scanner, index, views, UI) with two shells, an offline HTML page and an Obsidian plugin, both produced by `tools/workbench/build.mjs`. It is read-only (Phase 1). Relationships are derived from the SysML block text plus MDSE-only YAML links such as `describes` (D-0003); the index is disposable. Views: dashboard, notes, note, structure with parts list, where used, traceability, behavior, interfaces, graph with profiles, relationships, review. From V1 it carries the view-profile idea, staged startup and where-used. It does not carry Local Model, editing, the semantic cache or runtime health. This closes OD-09.
 
 Rules: none edited. The plugin is not yet tested in real Obsidian; the base-vault plugin payload stays `NOT_BUNDLED` until it is.
+
+## D-0020 — Workbench shows data as table or Obsidian Canvas; canvases are generated files in 99_System/12_Views
+
+2026-10-19 · Spencer · Accepted
+
+The Obsidian plugin presents the model as tables (Notes, Relationships, Traceability, parts list) and as an Obsidian Canvas generated from any view profile around a note. A canvas has file cards for notes in the vault and text cards for references whose note is missing. Canvases are written to `99_System/12_Views/`, overwritten on regeneration, ignored by the indexer, and carry no model meaning; they are the only files the Workbench writes, and no model note is touched (D-0019 stays read-only). An allocate or dependency whose source note is missing is kept as an unresolved edge on the target note, never a self-loop; Structure lists typed parts whose definition is not in the vault.
+
+Rules: none edited.
