@@ -6,8 +6,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "npm run check:rules && npm run test:core && npm run test:workbench && npm run check:workbench && npm run test:importer && npm run check:importer && npm run test:oracles && npm run test:fixtures",
+    "test": "npm run check:rules && npm run check:language && npm run test:core && npm run test:workbench && npm run check:workbench && npm run test:importer && npm run check:importer && npm run test:oracles && npm run test:fixtures",
     "check:rules": "node scripts/check-rules.mjs",
+    "check:language": "node --no-warnings scripts/build-language.mjs",
+    "language:write": "node --no-warnings scripts/build-language.mjs --write",
     "rules:write": "node scripts/check-rules.mjs --write",
     "test:core": "node --test tools/core/test/*.test.mjs",
     "test:importer": "node --no-warnings --test tools/importer/test/*.test.ts",

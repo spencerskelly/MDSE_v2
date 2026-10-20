@@ -1,0 +1,43 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { scanSysml } from "../src/sysml_scan.ts";
+import { classify } from "../src/sysml_lang.ts";
+
+const catalog = JSON.parse(readFileSync(new URL("../../../governance/language/catalog.json", import.meta.url), "utf8")) as Array<{ id: string; name: string; kind: string; keyword: string; tier: string; example: string; wrap: string; similar: string; description: string; difference: string; from: string[]; to: string[] }>;
+const ids = new Set(catalog.map((c) => c.id));
+
+test("catalog: ids are unique, every entry is complete and every 'similar' resolves", () => {
+  assert.equal(ids.size, catalog.length);
+  for (const c of catalog) {
+    assert.ok(c.description.length > 30 && c.difference.length > 20 && c.example && c.keyword, c.id);
+    assert.ok(c.from.length && c.to.length, `${c.id}: eligible from/to`);
+    assert.ok(ids.has(c.similar) && c.similar !== c.id, `${c.id}: similar ${c.similar}`);
+    assert.ok(["core", "common", "occasional", "rare"].includes(c.tier), c.id);
+  }
+});
+
+test("the scanner recognizes every example in the catalog as that construct, with no warnings", () => {
+  const bad: string[] = [];
+  for (const c of catalog) {
+    const body = /[;}]\s*$/.test(c.example) ? c.example : c.example + ";";
+    const src = c.wrap === "pkg" ? `package P { ${body} }` : `package P { part def Ctx { ${body} } }`;
+    const r = scanSysml(src);
+    if (r.warnings.length) bad.push(`${c.id}: warnings ${r.warnings.join("; ")}`);
+    else if (!r.langs.includes(c.id)) bad.push(`${c.id}: got ${r.langs.join(", ")} for ${c.example}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test("classify names the relationship and structure forms inside a declaration", () => {
+  assert.deepEqual(classify("abstract part def A :> B"), ["modifiers", "part-def", "specialization"]);
+  assert.deepEqual(classify("part x : T[3]"), ["part-usage", "feature-typing", "multiplicity"]);
+  assert.ok(classify("attribute :>> p = 30 [kW]").includes("redefinition"));
+  assert.ok(classify("port p : ~PowerPort").includes("conjugation"));
+});
+
+test("every keyword the SysML v2 grammar defines for a definition is a catalog kind", () => {
+  for (const k of ["part", "attribute", "item", "port", "connection", "interface", "allocation", "flow", "occurrence", "individual", "action", "state", "constraint", "requirement", "concern", "calc", "case", "analysis", "verification", "use-case", "view", "viewpoint", "rendering", "metadata", "enum"]) {
+    assert.ok(ids.has(`${k}-def`) && ids.has(`${k}-usage`), k);
+  }
+});

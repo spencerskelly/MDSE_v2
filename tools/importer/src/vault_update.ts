@@ -15,7 +15,7 @@ export type UpdateKind =
   | "seed";           // written only when missing; the user may edit it
 
 export function classifyBasePath(path: string): UpdateKind {
-  if (/^99_System\/(02_AI|03_Schemas|05_Templates)\//.test(path)) return "controlled";
+  if (/^99_System\/(02_AI|03_Schemas|04_Language|05_Templates)\//.test(path)) return "controlled";
   if (path === ".obsidian/plugin-lock.yaml") return "controlled";
   if (/^\.obsidian\/plugins\/[^/]+\/(main\.js|manifest\.json|styles\.css)$/.test(path)) return "plugin";
   if (path === ".obsidian/community-plugins.json" || path === ".obsidian/core-plugins.json") return "json-union";

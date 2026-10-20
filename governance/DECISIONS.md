@@ -261,3 +261,16 @@ Rules: IMP-093, IMP-094, IMP-095 added (Active). IMP-003 and IMP-005 are now imp
 
 Rules: IMP-096 added (Active).
 
+## D-0028 — The SysML v2 language is defined once, one note per construct, and the Workbench recognizes all of it
+
+2026-10-20 · Spencer · Accepted
+
+1. **Catalog.** `governance/language/catalog.json` lists 108 constructs: 25 definition kinds with their usages, the relationships (specialization, typing, subsetting, redefinition, reference subsetting, cross subsetting, conjugation, dependency, import, alias, allocate, satisfy, verify, perform, exhibit, include, connect, interface, bind, flow, succession flow, message, succession, transition, expose), behaviour statements (accept, send, assign, control nodes, if, loops, terminate, entry/do/exit), annotations (comment, doc, metadata, textual representation), and structure words (package, visibility, modifiers, multiplicity, value, parameters, return, expression, variation). Keywords checked against the Pilot Implementation grammar (`SysML.xtext`).
+2. **Notes.** `node scripts/build-language.mjs --write` writes one note per construct and an index into `governance/language/sysml-v2/`. Each note has: description, eligible from, eligible to, what separates it from the most similar construct, an example, and whether the importer writes it and whether the Workbench draws it. The importer column is measured (the importer runs on the synthetic model), not stated.
+3. **Use levels.** Every construct is available. Each is marked Everyday (28), Common (38), Occasional (27) or Rare (15), so the index leads with the handful engineers use most.
+4. **Shipped.** The notes ship in the base vault under `99_System/04_Language` and are updated by the vault update like schemas and templates. `99_System` is skipped by the Workbench index, so they are not model notes. The AI instructions send AI tools there first and forbid constructs that are not in the notes.
+5. **Integration.** The Workbench scanner classifies every construct in the catalog by keyword (`sysml_lang.ts`) and walks the nested members of any construct. A test scans every catalog example and requires the right construct and no warnings. Constructs the Workbench draws as relationships are marked in each note; the rest are recognized and kept, not drawn.
+6. **Limits.** The scanner classifies by keyword; it is not a parser, and the pinned parser gate remains the conformance check. Eligibility lists are written from the specification's metamodel and are Draft until the owner reviews them.
+
+Rules: MOD-165 and MOD-166 added (Active).
+

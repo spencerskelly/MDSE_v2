@@ -1,0 +1,2133 @@
+[
+ {
+  "id": "part-def",
+  "name": "Part definition",
+  "kind": "definition",
+  "keyword": "part def",
+  "metaclass": "PartDefinition",
+  "tier": "core",
+  "description": "A class of physical or logical system components that has identity and structure and can own parts, ports and behaviour. Use it for anything you would draw as a block.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another part definition (specialization, `:>`)"
+  ],
+  "similar": "item-def",
+  "difference": "An item can be a thing that flows or is carried (material, energy, data) but is not a structural component of the system; a part is the thing that is assembled and decomposed.",
+  "example": "part def Charger;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "part-usage",
+  "name": "Part usage",
+  "kind": "usage",
+  "keyword": "part name : Type",
+  "metaclass": "PartUsage",
+  "tier": "core",
+  "description": "A particular use of a part definition inside an owning context: this assembly contains one of these, in this role.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "part definitions (`:`), or other part usages it subsets (`:>`)"
+  ],
+  "similar": "item-usage",
+  "difference": "A part usage is a structural member of its owner (the controller inside the charger). An item usage is something that moves or is handled and is not decomposed as part of the system.",
+  "example": "part controller : Controller;",
+  "wrap": "def"
+ },
+ {
+  "id": "attribute-def",
+  "name": "Attribute definition",
+  "kind": "definition",
+  "keyword": "attribute def",
+  "metaclass": "AttributeDefinition",
+  "tier": "core",
+  "description": "A definition of a data type: a value with no identity (a number with unit, a record of fields, a quantity kind).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another attribute definition (specialization, `:>`)"
+  ],
+  "similar": "enum-def",
+  "difference": "An enumeration is a closed list of named values. An attribute definition is an open data type.",
+  "example": "attribute def PowerValue;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "attribute-usage",
+  "name": "Attribute usage",
+  "kind": "usage",
+  "keyword": "attribute name : Type",
+  "metaclass": "AttributeUsage",
+  "tier": "core",
+  "description": "A named value held by a definition or usage, typed by an attribute definition (for example `ratedPower : PowerValue`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "attribute definitions (`:`), or other attribute usages it subsets (`:>`)"
+  ],
+  "similar": "reference-usage",
+  "difference": "An attribute usage is a value owned by its parent. A reference usage only points at something owned elsewhere.",
+  "example": "attribute ratedPower : PowerValue;",
+  "wrap": "def"
+ },
+ {
+  "id": "item-def",
+  "name": "Item definition",
+  "kind": "definition",
+  "keyword": "item def",
+  "metaclass": "ItemDefinition",
+  "tier": "common",
+  "description": "A class of things that can flow, be stored, or be handled: material, energy, data, a document, a person as a payload. Not a structural component.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another item definition (specialization, `:>`)"
+  ],
+  "similar": "part-def",
+  "difference": "A part definition is a structural component with ports and parts. An item definition is what moves between or through parts.",
+  "example": "item def Current;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "item-usage",
+  "name": "Item usage",
+  "kind": "usage",
+  "keyword": "item name : Type",
+  "metaclass": "ItemUsage",
+  "tier": "common",
+  "description": "One use of an item definition: a payload on a flow, or something a part carries or stores.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "item definitions (`:`), or other item usages it subsets (`:>`)"
+  ],
+  "similar": "part-usage",
+  "difference": "An item usage is typically the payload of a flow or something held; a part usage is a component in the decomposition.",
+  "example": "item cableAssembly : Cable;",
+  "wrap": "def"
+ },
+ {
+  "id": "port-def",
+  "name": "Port definition",
+  "kind": "definition",
+  "keyword": "port def",
+  "metaclass": "PortDefinition",
+  "tier": "core",
+  "description": "A definition of an interaction point on a part: what can enter or leave through it (directed features, nested ports).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another port definition (specialization, `:>`)"
+  ],
+  "similar": "interface-def",
+  "difference": "An interface definition describes a connection between two ports. A port definition describes one end.",
+  "example": "port def PowerPort;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "port-usage",
+  "name": "Port usage",
+  "kind": "usage",
+  "keyword": "port name : Type",
+  "metaclass": "PortUsage",
+  "tier": "core",
+  "description": "A named interaction point on a part, typed by a port definition. A `~` before the type makes it the conjugate (inputs and outputs reversed).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "port definitions (`:`), or other port usages it subsets (`:>`)"
+  ],
+  "similar": "part-usage",
+  "difference": "A port is a boundary of its owner; a part is a component inside it.",
+  "example": "port acIn : PowerPort;",
+  "wrap": "def"
+ },
+ {
+  "id": "connection-def",
+  "name": "Connection definition",
+  "kind": "definition",
+  "keyword": "connection def",
+  "metaclass": "ConnectionDefinition",
+  "tier": "common",
+  "description": "A definition of a relationship between parts that has its own properties or structure, with two or more ends.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another connection definition (specialization, `:>`)"
+  ],
+  "similar": "interface-def",
+  "difference": "An interface definition constrains connections between ports. A connection definition is a link between any features, with no port requirement.",
+  "example": "connection def CableLink;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "connection-usage",
+  "name": "Connection (connect)",
+  "kind": "relationship",
+  "keyword": "connect a to b;",
+  "metaclass": "ConnectionUsage",
+  "tier": "common",
+  "description": "A particular link between the features of a context, optionally typed by a connection definition (`connect a to b`).",
+  "from": [
+   "any feature (end 1)"
+  ],
+  "to": [
+   "any feature (end 2 and more)"
+  ],
+  "similar": "interface-usage",
+  "difference": "An interface usage connects ports. A connection usage connects any features.",
+  "example": "connect controller.out to module.in;",
+  "wrap": "def"
+ },
+ {
+  "id": "interface-def",
+  "name": "Interface definition",
+  "kind": "definition",
+  "keyword": "interface def",
+  "metaclass": "InterfaceDefinition",
+  "tier": "common",
+  "description": "A definition of a connection between ports that fixes what passes across it (the ends are port definitions).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another interface definition (specialization, `:>`)"
+  ],
+  "similar": "connection-def",
+  "difference": "An interface definition ends on ports and is about what crosses a boundary. A connection definition ends on any feature.",
+  "example": "interface def PowerInterface;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "interface-usage",
+  "name": "Interface usage",
+  "kind": "relationship",
+  "keyword": "interface : Def connect a to b;",
+  "metaclass": "InterfaceUsage",
+  "tier": "common",
+  "description": "A use of an interface definition connecting two ports: `interface : PowerInterface connect charger.out to vehicle.in;`",
+  "from": [
+   "a port (end 1)"
+  ],
+  "to": [
+   "a port (end 2)"
+  ],
+  "similar": "connection-usage",
+  "difference": "An interface usage is a connection restricted to ports and typed by an interface definition.",
+  "example": "interface : PowerInterface connect charger.out to vehicle.in;",
+  "wrap": "def"
+ },
+ {
+  "id": "allocation-def",
+  "name": "Allocation definition",
+  "kind": "definition",
+  "keyword": "allocation def",
+  "metaclass": "AllocationDefinition",
+  "tier": "core",
+  "description": "A definition of an allocation relationship between a source and a target, for example logical to physical, or function to component.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another allocation definition (specialization, `:>`)"
+  ],
+  "similar": "satisfy-requirement-usage",
+  "difference": "Satisfy says a design element meets a requirement. Allocate maps any element (function, requirement, part) onto another and carries no obligation to prove it.",
+  "example": "allocation def LogicalToPhysical;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "allocation-usage",
+  "name": "Allocation (allocate)",
+  "kind": "relationship",
+  "keyword": "allocate a to b;",
+  "metaclass": "AllocationUsage",
+  "tier": "core",
+  "description": "A statement that one element is allocated to another (`allocate a to b;`). Allocation says where something is done or realised; it does not say how.",
+  "from": [
+   "any definition or usage (source): a requirement, function, part"
+  ],
+  "to": [
+   "any definition or usage (target)"
+  ],
+  "similar": "satisfy-requirement-usage",
+  "difference": "Allocate maps any element onto any other and asserts nothing about meeting a need. Satisfy relates a design element to a requirement and says the need is met.",
+  "example": "allocate controlSoftware to ecu;",
+  "wrap": "def"
+ },
+ {
+  "id": "flow-def",
+  "name": "Flow definition",
+  "kind": "definition",
+  "keyword": "flow def",
+  "metaclass": "FlowDefinition",
+  "tier": "common",
+  "description": "A definition of an item flow: what is transferred between two features (a payload type and ends).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another flow definition (specialization, `:>`)"
+  ],
+  "similar": "connection-def",
+  "difference": "A flow definition is about something moving. A connection definition is a link with no direction of travel.",
+  "example": "flow def CurrentFlow;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "flow-usage",
+  "name": "Flow",
+  "kind": "relationship",
+  "keyword": "flow of P from a to b;",
+  "metaclass": "FlowUsage",
+  "tier": "common",
+  "description": "A transfer of a payload from one feature to another (`flow of Current from a.out to b.in;`).",
+  "from": [
+   "a feature that outputs the payload"
+  ],
+  "to": [
+   "a feature that inputs the payload"
+  ],
+  "similar": "succession-flow-usage",
+  "difference": "A flow transfers a payload and implies no order. A succession flow also fixes that the source finishes first.",
+  "example": "flow of Current from a.out to b.in;",
+  "wrap": "def"
+ },
+ {
+  "id": "occurrence-def",
+  "name": "Occurrence definition",
+  "kind": "definition",
+  "keyword": "occurrence def",
+  "metaclass": "OccurrenceDefinition",
+  "tier": "rare",
+  "description": "A definition of anything that exists over time and can have a start and end. Part, item and action definitions are all kinds of occurrence.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another occurrence definition (specialization, `:>`)"
+  ],
+  "similar": "part-def",
+  "difference": "A part definition is an occurrence that is also a structural component. A plain occurrence has time extent only.",
+  "example": "occurrence def Charge;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "occurrence-usage",
+  "name": "Occurrence usage",
+  "kind": "usage",
+  "keyword": "occurrence name : Type",
+  "metaclass": "OccurrenceUsage",
+  "tier": "rare",
+  "description": "A use of an occurrence definition. Prefix forms (`individual`, `snapshot`, `timeslice`) say which slice or particular it is.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "occurrence definitions (`:`), or other occurrence usages it subsets (`:>`)"
+  ],
+  "similar": "part-usage",
+  "difference": "Use the specific usage (part, item, action) when one fits; a plain occurrence is the generic parent.",
+  "example": "occurrence charging : Charge;",
+  "wrap": "def"
+ },
+ {
+  "id": "individual-def",
+  "name": "Individual definition",
+  "kind": "definition",
+  "keyword": "individual def",
+  "metaclass": "IndividualDefinition",
+  "tier": "rare",
+  "description": "A definition of a single, particular thing (this serial number, this vehicle) rather than a class.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another individual definition (specialization, `:>`)"
+  ],
+  "similar": "part-def",
+  "difference": "A part definition is a class of things. An individual definition is one particular thing.",
+  "example": "individual def TestUnit001;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "individual-usage",
+  "name": "Individual usage",
+  "kind": "usage",
+  "keyword": "individual name : Type",
+  "metaclass": "IndividualUsage",
+  "tier": "rare",
+  "description": "A usage that refers to one individual over its life; combine with `snapshot` and `timeslice` for states in time.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "individual definitions (`:`), or other individual usages it subsets (`:>`)"
+  ],
+  "similar": "part-usage",
+  "difference": "Use an individual only when one concrete thing matters (a test article); otherwise model the class.",
+  "example": "individual part unit1 : TestUnit001;",
+  "wrap": "def"
+ },
+ {
+  "id": "action-def",
+  "name": "Action definition",
+  "kind": "definition",
+  "keyword": "action def",
+  "metaclass": "ActionDefinition",
+  "tier": "core",
+  "description": "A definition of behaviour: something that happens, with inputs, outputs and a decomposition into steps.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another action definition (specialization, `:>`)"
+  ],
+  "similar": "state-def",
+  "difference": "A state definition describes what a thing is in over time, with entry, do and exit. An action definition is what happens, step by step.",
+  "example": "action def ChargeVehicle;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "action-usage",
+  "name": "Action usage",
+  "kind": "usage",
+  "keyword": "action name : Type",
+  "metaclass": "ActionUsage",
+  "tier": "core",
+  "description": "A step of behaviour inside another action or a part (`action charge : ChargeVehicle;`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "action definitions (`:`), or other action usages it subsets (`:>`)"
+  ],
+  "similar": "perform-action-usage",
+  "difference": "An action usage is a step owned by its parent. A perform usage says that a part performs an action defined elsewhere.",
+  "example": "action charge : ChargeVehicle;",
+  "wrap": "def"
+ },
+ {
+  "id": "state-def",
+  "name": "State definition",
+  "kind": "definition",
+  "keyword": "state def",
+  "metaclass": "StateDefinition",
+  "tier": "common",
+  "description": "A definition of a condition a thing can be in, with entry, do and exit behaviour and transitions to other states.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another state definition (specialization, `:>`)"
+  ],
+  "similar": "action-def",
+  "difference": "An action definition describes behaviour that finishes. A state definition describes a condition that persists until a transition leaves it.",
+  "example": "state def ChargerStates;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "state-usage",
+  "name": "State usage",
+  "kind": "usage",
+  "keyword": "state name : Type",
+  "metaclass": "StateUsage",
+  "tier": "common",
+  "description": "A state of its owner, possibly with nested states (`state ready;`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "state definitions (`:`), or other state usages it subsets (`:>`)"
+  ],
+  "similar": "exhibit-state-usage",
+  "difference": "A state usage belongs to its owner. An exhibit usage says a part exhibits a state machine defined elsewhere.",
+  "example": "state ready;",
+  "wrap": "def"
+ },
+ {
+  "id": "constraint-def",
+  "name": "Constraint definition",
+  "kind": "definition",
+  "keyword": "constraint def",
+  "metaclass": "ConstraintDefinition",
+  "tier": "common",
+  "description": "A definition of a Boolean condition over features: it holds or does not (`voltage <= 480 [V]`).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another constraint definition (specialization, `:>`)"
+  ],
+  "similar": "calc-def",
+  "difference": "A calculation definition returns a value. A constraint definition returns true or false.",
+  "example": "constraint def MaxVoltage { in v; v <= 480 [V] }",
+  "wrap": "pkg"
+ },
+ {
+  "id": "constraint-usage",
+  "name": "Constraint usage",
+  "kind": "usage",
+  "keyword": "constraint name : Type",
+  "metaclass": "ConstraintUsage",
+  "tier": "common",
+  "description": "A use of a constraint definition, or an inline condition, inside a definition or requirement.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "constraint definitions (`:`), or other constraint usages it subsets (`:>`)"
+  ],
+  "similar": "assert-constraint-usage",
+  "difference": "A constraint usage states a condition. An assert constraint usage asserts it must hold (or not, with `not`).",
+  "example": "constraint maxV : MaxVoltage;",
+  "wrap": "def"
+ },
+ {
+  "id": "requirement-def",
+  "name": "Requirement definition",
+  "kind": "definition",
+  "keyword": "requirement def",
+  "metaclass": "RequirementDefinition",
+  "tier": "core",
+  "description": "A definition of a stated need: a subject, a text and constraints that a design must meet.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another requirement definition (specialization, `:>`)"
+  ],
+  "similar": "constraint-def",
+  "difference": "A requirement definition is a constraint with a subject, an id and a text that stakeholders own. A constraint definition is a pure condition with no stakeholder.",
+  "example": "requirement def RemoteControl { doc /* ... */ }",
+  "wrap": "pkg"
+ },
+ {
+  "id": "requirement-usage",
+  "name": "Requirement usage",
+  "kind": "usage",
+  "keyword": "requirement name : Type",
+  "metaclass": "RequirementUsage",
+  "tier": "core",
+  "description": "A use of a requirement definition at a place in a requirement tree or inside a verification objective.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "requirement definitions (`:`), or other requirement usages it subsets (`:>`)"
+  ],
+  "similar": "satisfy-requirement-usage",
+  "difference": "A requirement usage is the requirement itself in a tree. A satisfy relationship says a design element meets it.",
+  "example": "requirement remote : RemoteControl;",
+  "wrap": "def"
+ },
+ {
+  "id": "concern-def",
+  "name": "Concern definition",
+  "kind": "definition",
+  "keyword": "concern def",
+  "metaclass": "ConcernDefinition",
+  "tier": "occasional",
+  "description": "A definition of a stakeholder interest that views and requirements address (cost, safety, serviceability).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another concern definition (specialization, `:>`)"
+  ],
+  "similar": "requirement-def",
+  "difference": "A requirement states what must hold. A concern states what someone cares about, before it is turned into requirements.",
+  "example": "concern def Serviceability;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "concern-usage",
+  "name": "Concern usage",
+  "kind": "usage",
+  "keyword": "concern name : Type",
+  "metaclass": "ConcernUsage",
+  "tier": "occasional",
+  "description": "A use of a concern, framed by a viewpoint or requirement (`frame concern`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "concern definitions (`:`), or other concern usages it subsets (`:>`)"
+  ],
+  "similar": "framed-concern-usage",
+  "difference": "A concern usage is a standalone interest. A framed concern usage is a concern placed inside a viewpoint or requirement via `frame`.",
+  "example": "concern serviceability : Serviceability;",
+  "wrap": "def"
+ },
+ {
+  "id": "calc-def",
+  "name": "Calculation definition",
+  "kind": "definition",
+  "keyword": "calc def",
+  "metaclass": "CalculationDefinition",
+  "tier": "common",
+  "description": "A definition of a computation that takes inputs and returns a value (a function in the mathematical sense).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another calculation definition (specialization, `:>`)"
+  ],
+  "similar": "constraint-def",
+  "difference": "A constraint definition yields true or false. A calculation definition yields any value.",
+  "example": "calc def Power { in v; in i; return v*i; }",
+  "wrap": "pkg"
+ },
+ {
+  "id": "calc-usage",
+  "name": "Calculation usage",
+  "kind": "usage",
+  "keyword": "calc name : Type",
+  "metaclass": "CalculationUsage",
+  "tier": "common",
+  "description": "A use of a calculation to derive a value inside a definition.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "calculation definitions (`:`), or other calculation usages it subsets (`:>`)"
+  ],
+  "similar": "attribute-usage",
+  "difference": "An attribute usage holds a value. A calculation usage computes it from inputs.",
+  "example": "calc p : Power;",
+  "wrap": "def"
+ },
+ {
+  "id": "case-def",
+  "name": "Case definition",
+  "kind": "definition",
+  "keyword": "case def",
+  "metaclass": "CaseDefinition",
+  "tier": "rare",
+  "description": "A generic definition of an analysis, verification or use case that has a subject, objective and result. The specific kinds below are normally used instead.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another case definition (specialization, `:>`)"
+  ],
+  "similar": "use-case-def",
+  "difference": "A use case definition is a case about actors and a subject using a system. A plain case is the generic parent.",
+  "example": "case def GenericCase;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "case-usage",
+  "name": "Case usage",
+  "kind": "usage",
+  "keyword": "case name : Type",
+  "metaclass": "CaseUsage",
+  "tier": "rare",
+  "description": "A use of a generic case definition in a context, with its subject and objective. Prefer the specific usage kinds.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "case definitions (`:`), or other case usages it subsets (`:>`)"
+  ],
+  "similar": "use-case-usage",
+  "difference": "Prefer use case, analysis or verification; use plain case only for something that fits none.",
+  "example": "case c : GenericCase;",
+  "wrap": "def"
+ },
+ {
+  "id": "analysis-def",
+  "name": "Analysis case definition",
+  "kind": "definition",
+  "keyword": "analysis def",
+  "metaclass": "AnalysisCaseDefinition",
+  "tier": "occasional",
+  "description": "A definition of an analysis that computes results about a subject for an objective (trade study, thermal analysis).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another analysis case definition (specialization, `:>`)"
+  ],
+  "similar": "verification-def",
+  "difference": "A verification case checks a requirement against a subject and produces a verdict. An analysis case computes values and need not judge anything.",
+  "example": "analysis def ThermalAnalysis;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "analysis-usage",
+  "name": "Analysis case usage",
+  "kind": "usage",
+  "keyword": "analysis name : Type",
+  "metaclass": "AnalysisCaseUsage",
+  "tier": "occasional",
+  "description": "A use of an analysis case with its subject and result.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "analysis case definitions (`:`), or other analysis case usages it subsets (`:>`)"
+  ],
+  "similar": "verification-usage",
+  "difference": "An analysis usage computes. A verification usage decides pass or fail against requirements.",
+  "example": "analysis thermal : ThermalAnalysis;",
+  "wrap": "def"
+ },
+ {
+  "id": "verification-def",
+  "name": "Verification case definition",
+  "kind": "definition",
+  "keyword": "verification def",
+  "metaclass": "VerificationCaseDefinition",
+  "tier": "core",
+  "description": "A definition of how requirements are verified: a subject, a method and an objective that verifies requirements and returns a verdict.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another verification case definition (specialization, `:>`)"
+  ],
+  "similar": "analysis-def",
+  "difference": "A verification case ends in a verdict on requirements. An analysis case ends in a computed result.",
+  "example": "verification def TestCharger;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "verification-usage",
+  "name": "Verification case usage",
+  "kind": "usage",
+  "keyword": "verification name : Type",
+  "metaclass": "VerificationCaseUsage",
+  "tier": "core",
+  "description": "A use of a verification case applied to a subject (`verification v : TestCharger;`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "verification case definitions (`:`), or other verification case usages it subsets (`:>`)"
+  ],
+  "similar": "verify-requirement-usage",
+  "difference": "A verification usage is the planned test or inspection. A verify usage inside its objective names the requirement it checks.",
+  "example": "verification test1 : TestCharger;",
+  "wrap": "def"
+ },
+ {
+  "id": "use-case-def",
+  "name": "Use case definition",
+  "kind": "definition",
+  "keyword": "use case def",
+  "metaclass": "UseCaseDefinition",
+  "tier": "common",
+  "description": "A definition of how actors use a subject to get a result, with included and extended behaviour.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another use case definition (specialization, `:>`)"
+  ],
+  "similar": "action-def",
+  "difference": "An action definition is behaviour. A use case definition is the goal of actors using a subject, which then refers to actions.",
+  "example": "use case def ChargeVehicleUseCase;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "use-case-usage",
+  "name": "Use case usage",
+  "kind": "usage",
+  "keyword": "use case name : Type",
+  "metaclass": "UseCaseUsage",
+  "tier": "common",
+  "description": "A use of a use case, in the subject's context (`use case charge : ChargeVehicleUseCase;`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "use case definitions (`:`), or other use case usages it subsets (`:>`)"
+  ],
+  "similar": "include-use-case-usage",
+  "difference": "A use case usage is a goal. An include usage embeds another use case inside it.",
+  "example": "use case charge : ChargeVehicleUseCase;",
+  "wrap": "def"
+ },
+ {
+  "id": "view-def",
+  "name": "View definition",
+  "kind": "definition",
+  "keyword": "view def",
+  "metaclass": "ViewDefinition",
+  "tier": "occasional",
+  "description": "A definition of a rendered selection of model content that answers a viewpoint.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another view definition (specialization, `:>`)"
+  ],
+  "similar": "viewpoint-def",
+  "difference": "A viewpoint definition says what view is needed and for whom. A view definition is the thing that shows it.",
+  "example": "view def PowerView;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "view-usage",
+  "name": "View usage",
+  "kind": "usage",
+  "keyword": "view name : Type",
+  "metaclass": "ViewUsage",
+  "tier": "occasional",
+  "description": "A use of a view that exposes elements and renders them (`view v { expose Charger::*; render asTreeDiagram; }`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "view definitions (`:`), or other view usages it subsets (`:>`)"
+  ],
+  "similar": "viewpoint-usage",
+  "difference": "A view usage selects and renders content. A viewpoint usage states the stakeholder need that the view answers.",
+  "example": "view powerView : PowerView;",
+  "wrap": "def"
+ },
+ {
+  "id": "viewpoint-def",
+  "name": "Viewpoint definition",
+  "kind": "definition",
+  "keyword": "viewpoint def",
+  "metaclass": "ViewpointDefinition",
+  "tier": "occasional",
+  "description": "A definition of the stakeholder concerns a view has to address.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another viewpoint definition (specialization, `:>`)"
+  ],
+  "similar": "view-def",
+  "difference": "A viewpoint holds concerns. A view holds the content.",
+  "example": "viewpoint def SafetyViewpoint;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "viewpoint-usage",
+  "name": "Viewpoint usage",
+  "kind": "usage",
+  "keyword": "viewpoint name : Type",
+  "metaclass": "ViewpointUsage",
+  "tier": "occasional",
+  "description": "A use of a viewpoint that a view conforms to.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "viewpoint definitions (`:`), or other viewpoint usages it subsets (`:>`)"
+  ],
+  "similar": "view-usage",
+  "difference": "A viewpoint holds the concerns; a view holds the content that answers them.",
+  "example": "viewpoint safety : SafetyViewpoint;",
+  "wrap": "def"
+ },
+ {
+  "id": "rendering-def",
+  "name": "Rendering definition",
+  "kind": "definition",
+  "keyword": "rendering def",
+  "metaclass": "RenderingDefinition",
+  "tier": "rare",
+  "description": "A definition of how a view's content is presented (tree, table, diagram).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another rendering definition (specialization, `:>`)"
+  ],
+  "similar": "view-def",
+  "difference": "A view selects content. A rendering decides how it looks.",
+  "example": "rendering def AsTable;",
+  "wrap": "pkg"
+ },
+ {
+  "id": "rendering-usage",
+  "name": "Rendering usage",
+  "kind": "usage",
+  "keyword": "rendering name : Type",
+  "metaclass": "RenderingUsage",
+  "tier": "rare",
+  "description": "A use of a rendering inside a view (`render asTable;`).",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "rendering definitions (`:`), or other rendering usages it subsets (`:>`)"
+  ],
+  "similar": "view-usage",
+  "difference": "A view selects content; a rendering decides how that content looks.",
+  "example": "rendering r : AsTable;",
+  "wrap": "def"
+ },
+ {
+  "id": "metadata-def",
+  "name": "Metadata definition",
+  "kind": "definition",
+  "keyword": "metadata def",
+  "metaclass": "MetadataDefinition",
+  "tier": "occasional",
+  "description": "A definition of an annotation type attached to elements (a tag with typed fields such as `Safety`, `Approved`).",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another metadata definition (specialization, `:>`)"
+  ],
+  "similar": "attribute-def",
+  "difference": "An attribute definition describes data inside the model. A metadata definition describes data about model elements and can be applied to them.",
+  "example": "metadata def Safety { attribute level : Integer; }",
+  "wrap": "pkg"
+ },
+ {
+  "id": "metadata-usage",
+  "name": "Metadata usage",
+  "kind": "usage",
+  "keyword": "metadata name : Type",
+  "metaclass": "MetadataUsage",
+  "tier": "occasional",
+  "description": "A use that attaches metadata to an element: `@Safety { level = 3; }` or `#Safety part x;`.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "metadata definitions (`:`), or other metadata usages it subsets (`:>`)"
+  ],
+  "similar": "attribute-usage",
+  "difference": "Metadata annotates another element; an attribute is a value of its own element.",
+  "example": "metadata safety : Safety;",
+  "wrap": "def"
+ },
+ {
+  "id": "enum-def",
+  "name": "Enumeration definition",
+  "kind": "definition",
+  "keyword": "enum def",
+  "metaclass": "EnumerationDefinition",
+  "tier": "common",
+  "description": "A definition of a closed set of named values.",
+  "from": [
+   "a package",
+   "a library package",
+   "another definition's body (nested definition, rare)"
+  ],
+  "to": [
+   "another enumeration definition (specialization, `:>`)"
+  ],
+  "similar": "attribute-def",
+  "difference": "An attribute definition allows any value of its type. An enumeration allows only its named values.",
+  "example": "enum def Mode { enum on; enum off; }",
+  "wrap": "pkg"
+ },
+ {
+  "id": "enum-usage",
+  "name": "Enumeration usage",
+  "kind": "usage",
+  "keyword": "enum name : Type",
+  "metaclass": "EnumerationUsage",
+  "tier": "common",
+  "description": "A use of an enumeration definition: a feature whose value is one of the named values.",
+  "from": [
+   "a definition body that allows this kind",
+   "another usage body"
+  ],
+  "to": [
+   "enumeration definitions (`:`), or other enumeration usages it subsets (`:>`)"
+  ],
+  "similar": "attribute-usage",
+  "difference": "An attribute usage may hold any value of its type; an enumeration usage holds one of the named values only.",
+  "example": "enum mode : Mode;",
+  "wrap": "def"
+ },
+ {
+  "id": "specialization",
+  "name": "Specialization (definition)",
+  "kind": "relationship",
+  "keyword": "def A :> B",
+  "metaclass": "Subclassification",
+  "tier": "core",
+  "description": "The relationship that makes one definition a more specific kind of another. The specializing definition inherits every feature of the general one and may add or narrow features.",
+  "to": [
+   "a definition of the same kind (a part def specializes a part def)"
+  ],
+  "similar": "feature-typing",
+  "difference": "Specialization relates two definitions (kind of). Typing relates a usage to its definition (instance of). A part def `Charger :> MHECharger` is a kind of MHE charger; a part `c : Charger` is one charger.",
+  "example": "part def Charger :> MHECharger;",
+  "wrap": "pkg",
+  "from": [
+   "a definition"
+  ]
+ },
+ {
+  "id": "feature-typing",
+  "name": "Feature typing",
+  "kind": "relationship",
+  "keyword": "usage : Definition",
+  "metaclass": "FeatureTyping",
+  "tier": "core",
+  "description": "The relationship that says a usage is an instance of a definition (`part c : Charger`). The usage gets the definition's features.",
+  "to": [
+   "one or more definitions of a compatible kind"
+  ],
+  "similar": "specialization",
+  "difference": "Typing is usage to definition (this is one of those). Specialization is definition to definition (this is a kind of that).",
+  "example": "part controller : Controller;",
+  "wrap": "def",
+  "from": [
+   "a usage"
+  ]
+ },
+ {
+  "id": "subsetting",
+  "name": "Subsetting",
+  "kind": "relationship",
+  "keyword": "usage :> otherUsage",
+  "metaclass": "Subsetting",
+  "tier": "common",
+  "description": "The relationship that says the things a usage identifies are a subset of the things another usage identifies (`part leftWheel :> wheels`). The subsetting usage inherits the other's type and multiplicity bounds.",
+  "to": [
+   "another usage of a compatible kind, in an ancestor definition"
+  ],
+  "similar": "redefinition",
+  "difference": "Subsetting adds a narrower usage next to the original, which still exists. Redefinition replaces the original inside this context.",
+  "example": "part leftWheel :> wheels;",
+  "wrap": "def",
+  "from": [
+   "a usage"
+  ]
+ },
+ {
+  "id": "redefinition",
+  "name": "Redefinition",
+  "kind": "relationship",
+  "keyword": "usage :>> inheritedUsage",
+  "metaclass": "Redefinition",
+  "tier": "common",
+  "description": "The relationship that replaces an inherited usage in a specializing definition with a refined one (`:>>` or `redefines`). Use it to narrow a type, fix a value or change a multiplicity in a specialization.",
+  "to": [
+   "an inherited usage of a compatible kind"
+  ],
+  "similar": "subsetting",
+  "difference": "Redefinition replaces; the original is no longer a separate member of the specialization. Subsetting keeps the original and adds a subset of it.",
+  "example": "attribute :>> ratedPower = 30 [kW];",
+  "wrap": "def",
+  "from": [
+   "a usage in a specializing definition"
+  ]
+ },
+ {
+  "id": "reference-subsetting",
+  "name": "Reference subsetting",
+  "kind": "relationship",
+  "keyword": "usage ::> otherFeature",
+  "metaclass": "ReferenceSubsetting",
+  "tier": "occasional",
+  "description": "The relationship that makes a usage refer to another feature rather than own a new one (`::>` or `references`). The usage is a reference to something owned elsewhere.",
+  "to": [
+   "a feature owned elsewhere in the model"
+  ],
+  "similar": "subsetting",
+  "difference": "Subsetting makes a new member that is a subset. Reference subsetting makes the usage point at an existing feature and own nothing.",
+  "example": "ref part primary ::> controller;",
+  "wrap": "def",
+  "from": [
+   "a usage"
+  ]
+ },
+ {
+  "id": "cross-subsetting",
+  "name": "Cross subsetting",
+  "kind": "relationship",
+  "keyword": "end x crosses y",
+  "metaclass": "CrossSubsetting",
+  "tier": "rare",
+  "description": "The relationship that says what a connection end sees from the far end of the connection (`crosses`). It defines the navigation across an association.",
+  "to": [
+   "a feature reachable from the other end"
+  ],
+  "similar": "reference-subsetting",
+  "difference": "Cross subsetting is about navigation across a connection end. Reference subsetting is a plain reference.",
+  "example": "end part a crosses b.c;",
+  "wrap": "def",
+  "from": [
+   "a connection end"
+  ]
+ },
+ {
+  "id": "conjugation",
+  "name": "Conjugation",
+  "kind": "relationship",
+  "keyword": "port p : ~PortDef",
+  "metaclass": "PortConjugation",
+  "tier": "common",
+  "description": "The relationship that makes a port definition the mirror of another: inputs become outputs and outputs become inputs (`~` before the type). It saves writing a second definition for the other end of an interface.",
+  "to": [
+   "a port definition"
+  ],
+  "similar": "feature-typing",
+  "difference": "Typing gives the usage the definition's features as written. Conjugation gives them reversed in direction.",
+  "example": "port acOut : ~PowerPort;",
+  "wrap": "def",
+  "from": [
+   "a port usage, or a conjugated port definition"
+  ]
+ },
+ {
+  "id": "dependency",
+  "name": "Dependency",
+  "kind": "relationship",
+  "keyword": "dependency from A to B",
+  "metaclass": "Dependency",
+  "tier": "common",
+  "description": "A directed relationship stating that the client depends on the supplier, with no further semantics. Use it when no more specific relationship fits, and name the reason in a comment.",
+  "to": [
+   "any element (supplier, one or more)"
+  ],
+  "similar": "allocation-usage",
+  "difference": "A dependency has no semantic and no structure. An allocation says one element is realised by another and is a typed mapping.",
+  "example": "dependency from Controller to PowerModule;",
+  "wrap": "def",
+  "from": [
+   "any element (client, one or more)"
+  ]
+ },
+ {
+  "id": "import-membership",
+  "name": "Import (membership)",
+  "kind": "relationship",
+  "keyword": "import Pkg::Name;",
+  "metaclass": "MembershipImport",
+  "tier": "core",
+  "description": "Makes a member of another namespace visible by its simple name in this one. The imported element stays owned by its original namespace.",
+  "to": [
+   "one element of another namespace"
+  ],
+  "similar": "alias",
+  "difference": "An import makes an element visible without a new name. An alias gives it a second name.",
+  "example": "import Library::PowerPort;",
+  "wrap": "pkg",
+  "from": [
+   "a package or namespace"
+  ]
+ },
+ {
+  "id": "import-namespace",
+  "name": "Import (namespace)",
+  "kind": "relationship",
+  "keyword": "import Pkg::*;  import Pkg::**;",
+  "metaclass": "NamespaceImport",
+  "tier": "common",
+  "description": "Makes every public member of another namespace visible. `::*` brings the direct members, `::**` brings the members of nested namespaces as well.",
+  "to": [
+   "another namespace"
+  ],
+  "similar": "import-membership",
+  "difference": "A namespace import brings in everything; a membership import brings in one named member.",
+  "example": "import Library::*;",
+  "wrap": "pkg",
+  "from": [
+   "a package or namespace"
+  ]
+ },
+ {
+  "id": "alias",
+  "name": "Alias",
+  "kind": "relationship",
+  "keyword": "alias Short for Pkg::LongName;",
+  "metaclass": "Membership",
+  "tier": "occasional",
+  "description": "Gives an existing element another name in a namespace. The element is not copied or owned by the alias.",
+  "to": [
+   "any element"
+  ],
+  "similar": "import-membership",
+  "difference": "An alias adds a second name; an import adds visibility under the existing name.",
+  "example": "alias PC for Charger;",
+  "wrap": "pkg",
+  "from": [
+   "a package or namespace"
+  ]
+ },
+ {
+  "id": "filter",
+  "name": "Filter",
+  "kind": "statement",
+  "keyword": "filter @Safety;",
+  "metaclass": "ElementFilterMembership",
+  "tier": "rare",
+  "description": "A Boolean condition on a package that limits which of its members an import or view sees (`filter @Safety;`).",
+  "to": [
+   "a Boolean expression, often a metadata test"
+  ],
+  "similar": "expose",
+  "difference": "A filter limits what is seen; expose names what a view shows.",
+  "example": "filter @Safety;",
+  "wrap": "pkg",
+  "from": [
+   "a package"
+  ]
+ },
+ {
+  "id": "package",
+  "name": "Package",
+  "kind": "structure",
+  "keyword": "package Name { }",
+  "metaclass": "Package",
+  "tier": "core",
+  "description": "The basic container that groups elements and gives them qualified names. Every model element lives in a package. In MDSE a package is also a note's `package` wrapper and a folder.",
+  "to": [
+   "its members: definitions, usages, imports, annotations"
+  ],
+  "similar": "library-package",
+  "difference": "A package is for your model content. A library package marks reusable library content and is excluded from some checks.",
+  "example": "package Charging { part def Charger; }",
+  "wrap": "pkg",
+  "from": [
+   "the model root",
+   "another package"
+  ]
+ },
+ {
+  "id": "library-package",
+  "name": "Library package",
+  "kind": "structure",
+  "keyword": "library package Name { }",
+  "metaclass": "LibraryPackage",
+  "tier": "occasional",
+  "description": "A package marked as reusable library content, such as units, quantities or a company part catalog.",
+  "to": [
+   "its members"
+  ],
+  "similar": "package",
+  "difference": "Same structure as a package; the `library` marker tells tools it is shared, not project content.",
+  "example": "library package Parts { part def Bolt; }",
+  "wrap": "pkg",
+  "from": [
+   "the model root",
+   "another package"
+  ]
+ },
+ {
+  "id": "comment",
+  "name": "Comment",
+  "kind": "annotation",
+  "keyword": "comment /* text */",
+  "metaclass": "Comment",
+  "tier": "core",
+  "description": "Free text attached to an element or to the enclosing namespace. Unlike `//` or `/* */` that tools drop, a `comment` is a model element that is kept.",
+  "to": [
+   "the annotated element(s) via `about`"
+  ],
+  "similar": "documentation",
+  "difference": "A comment is a note about elements and may be anywhere. Documentation (`doc`) is the description of its owner.",
+  "example": "comment about Charger /* Rated for 480 VAC */",
+  "wrap": "def",
+  "from": [
+   "any element or namespace"
+  ]
+ },
+ {
+  "id": "documentation",
+  "name": "Documentation",
+  "kind": "annotation",
+  "keyword": "doc /* text */",
+  "metaclass": "Documentation",
+  "tier": "core",
+  "description": "The description of the element that owns it. Requirements keep their text here.",
+  "to": [
+   "none (text)"
+  ],
+  "similar": "comment",
+  "difference": "Documentation describes its owner and has no `about`; a comment may annotate others.",
+  "example": "part def Charger { doc /* A 30 kW DC charger. */ }",
+  "wrap": "pkg",
+  "from": [
+   "any element (owner)"
+  ]
+ },
+ {
+  "id": "textual-representation",
+  "name": "Textual representation",
+  "kind": "annotation",
+  "keyword": "rep language \"x\" /* code */",
+  "metaclass": "TextualRepresentation",
+  "tier": "rare",
+  "description": "Embeds code in another language (a formula, a script) as the body of a model element.",
+  "to": [
+   "code text"
+  ],
+  "similar": "documentation",
+  "difference": "Documentation is human text; a textual representation is executable or parseable in the named language.",
+  "example": "calc c { language \"Python\" /* return 1 */ }",
+  "wrap": "def",
+  "from": [
+   "any element"
+  ]
+ },
+ {
+  "id": "prefix-metadata",
+  "name": "Prefix metadata",
+  "kind": "annotation",
+  "keyword": "#Tag part x;",
+  "metaclass": "MetadataUsage",
+  "tier": "occasional",
+  "description": "Applies a metadata definition to an element with `#` in front of its declaration.",
+  "to": [
+   "a metadata definition"
+  ],
+  "similar": "metadata-feature",
+  "difference": "A prefix is shorthand for the same annotation written as `@Tag` in the body.",
+  "example": "#Safety part brake;",
+  "wrap": "def",
+  "from": [
+   "any element declaration"
+  ]
+ },
+ {
+  "id": "metadata-feature",
+  "name": "Metadata annotation",
+  "kind": "annotation",
+  "keyword": "@Tag { field = v; }",
+  "metaclass": "MetadataUsage",
+  "tier": "occasional",
+  "description": "Attaches a metadata value to an element in its body (`@Safety { level = 3; }`) or to others with `about`.",
+  "to": [
+   "a metadata definition"
+  ],
+  "similar": "prefix-metadata",
+  "difference": "Same meaning as `#Tag`; the body form can set fields.",
+  "example": "@Safety { level = 3; }",
+  "wrap": "def",
+  "from": [
+   "any element"
+  ]
+ },
+ {
+  "id": "visibility",
+  "name": "Visibility",
+  "kind": "structure",
+  "keyword": "public | protected | private",
+  "metaclass": "VisibilityKind",
+  "tier": "occasional",
+  "description": "Controls whether a member is visible from outside its namespace.",
+  "to": [
+   "none"
+  ],
+  "similar": "import-membership",
+  "difference": "Visibility limits what can be seen; an import chooses what to bring in.",
+  "example": "private part hidden;",
+  "wrap": "def",
+  "from": [
+   "a member declaration"
+  ]
+ },
+ {
+  "id": "modifiers",
+  "name": "Feature modifiers",
+  "kind": "structure",
+  "keyword": "abstract | variation | ref | readonly | derived | end | constant | ordered | nonunique",
+  "metaclass": "Feature",
+  "tier": "common",
+  "description": "Prefix and suffix words that change how a definition or usage behaves: `abstract` (cannot be instantiated), `variation` (choose one variant), `ref` (reference only), `derived`, `ordered`, `nonunique`, `end` (a connection end).",
+  "to": [
+   "none"
+  ],
+  "similar": "multiplicity",
+  "difference": "Modifiers change kind and behaviour. Multiplicity changes how many.",
+  "example": "abstract part def Vehicle;",
+  "wrap": "pkg",
+  "from": [
+   "a definition or usage declaration"
+  ]
+ },
+ {
+  "id": "multiplicity",
+  "name": "Multiplicity",
+  "kind": "structure",
+  "keyword": "[n]  [lo..hi]  [*]",
+  "metaclass": "MultiplicityRange",
+  "tier": "core",
+  "description": "How many of a usage may exist: `[3]`, `[0..1]`, `[1..*]`. This is how quantities live in the model.",
+  "to": [
+   "none"
+  ],
+  "similar": "modifiers",
+  "difference": "Multiplicity changes how many; modifiers change what kind.",
+  "example": "part modules : PowerModule[3];",
+  "wrap": "def",
+  "from": [
+   "a usage declaration"
+  ]
+ },
+ {
+  "id": "value",
+  "name": "Value binding",
+  "kind": "structure",
+  "keyword": "= expr  :=  default = expr",
+  "metaclass": "FeatureValue",
+  "tier": "common",
+  "description": "Gives a usage a value or a default value (`ratedPower = 30 [kW]`). `:=` is an initial value, `default =` can be overridden.",
+  "to": [
+   "an expression"
+  ],
+  "similar": "redefinition",
+  "difference": "A value binds the usage's value; redefinition changes the usage itself.",
+  "example": "attribute ratedPower : PowerValue = 30 [kW];",
+  "wrap": "def",
+  "from": [
+   "an attribute or reference usage"
+  ]
+ },
+ {
+  "id": "variation",
+  "name": "Variation and variant",
+  "kind": "structure",
+  "keyword": "variation part def V { variant part a; }",
+  "metaclass": "VariantMembership",
+  "tier": "occasional",
+  "description": "Declares a variation point whose members are the allowed choices (variants). A configuration picks one.",
+  "to": [
+   "variant usages"
+  ],
+  "similar": "specialization",
+  "difference": "Variants live inside one variation point and are chosen per configuration; specialization creates a permanent subtype.",
+  "example": "variation part def Cable { variant part short : ShortCable; variant part long : LongCable; }",
+  "wrap": "pkg",
+  "from": [
+   "a definition or usage marked `variation`"
+  ]
+ },
+ {
+  "id": "reference-usage",
+  "name": "Reference usage",
+  "kind": "usage",
+  "keyword": "ref x : Type;",
+  "metaclass": "ReferenceUsage",
+  "tier": "common",
+  "description": "A usage that points at something owned elsewhere, such as a parameter, a subject or an end. It owns nothing.",
+  "to": [
+   "any definition"
+  ],
+  "similar": "attribute-usage",
+  "difference": "A reference does not own its value; an attribute usage owns it.",
+  "example": "ref part primary : Controller;",
+  "wrap": "def",
+  "from": [
+   "a definition or usage body"
+  ]
+ },
+ {
+  "id": "parameter",
+  "name": "Parameter direction",
+  "kind": "structure",
+  "keyword": "in x; out y; inout z",
+  "metaclass": "Feature",
+  "tier": "core",
+  "description": "The direction keywords on a usage declare whether it is an input, an output or both of its owner (`in`, `out`, `inout`). They apply to action, calc, constraint and port members.",
+  "to": [
+   "none"
+  ],
+  "similar": "return",
+  "difference": "`in`/`out` declare typed parameters; `return` declares the single result of a calc.",
+  "example": "action a { in x : Real; out y : Real; }",
+  "wrap": "def",
+  "from": [
+   "a usage in an action, calc, constraint, case or port"
+  ]
+ },
+ {
+  "id": "return",
+  "name": "Return",
+  "kind": "structure",
+  "keyword": "return r : Type;",
+  "metaclass": "ReturnParameterMembership",
+  "tier": "common",
+  "description": "Declares the result of a calculation or expression-bearing definition.",
+  "to": [
+   "none"
+  ],
+  "similar": "parameter",
+  "difference": "`return` names the one result; `out` can be any number of outputs.",
+  "example": "calc def Double { in x : Real; return : Real = x*2; }",
+  "wrap": "pkg",
+  "from": [
+   "a calc, case or expression"
+  ]
+ },
+ {
+  "id": "event-occurrence-usage",
+  "name": "Event occurrence",
+  "kind": "usage",
+  "keyword": "event occurrence e;  event a.b;",
+  "metaclass": "EventOccurrenceUsage",
+  "tier": "occasional",
+  "description": "Marks an occurrence that happens at a point in time within a context, such as a message being received. It can reference an existing occurrence.",
+  "to": [
+   "an occurrence"
+  ],
+  "similar": "snapshot-usage",
+  "difference": "An event is a moment; a snapshot is the state of a thing at a moment.",
+  "example": "event occurrence started;",
+  "wrap": "def",
+  "from": [
+   "an occurrence, part, state or action body"
+  ]
+ },
+ {
+  "id": "snapshot-usage",
+  "name": "Snapshot",
+  "kind": "usage",
+  "keyword": "snapshot name : Type;",
+  "metaclass": "OccurrenceUsage",
+  "tier": "rare",
+  "description": "A part or occurrence frozen at one moment in time.",
+  "to": [
+   "an occurrence definition"
+  ],
+  "similar": "timeslice-usage",
+  "difference": "A snapshot has no duration; a timeslice does.",
+  "example": "snapshot s : Charger;",
+  "wrap": "def",
+  "from": [
+   "an individual or occurrence body"
+  ]
+ },
+ {
+  "id": "timeslice-usage",
+  "name": "Timeslice",
+  "kind": "usage",
+  "keyword": "timeslice name : Type;",
+  "metaclass": "OccurrenceUsage",
+  "tier": "rare",
+  "description": "A part or occurrence over a span of its life, such as the time a charger is in service.",
+  "to": [
+   "an occurrence definition"
+  ],
+  "similar": "snapshot-usage",
+  "difference": "A timeslice has duration; a snapshot is one instant.",
+  "example": "timeslice inService : Charger;",
+  "wrap": "def",
+  "from": [
+   "an individual or occurrence body"
+  ]
+ },
+ {
+  "id": "actor-usage",
+  "name": "Actor",
+  "kind": "usage",
+  "keyword": "actor name : PartDef;",
+  "metaclass": "ActorMembership",
+  "tier": "common",
+  "description": "A part that interacts with the subject of a case or requirement: the driver, the service engineer, an external system.",
+  "to": [
+   "a part definition"
+  ],
+  "similar": "stakeholder-usage",
+  "difference": "An actor takes part in the interaction. A stakeholder has an interest in the outcome and may never interact.",
+  "example": "actor driver : Operator;",
+  "wrap": "def",
+  "from": [
+   "a use case, requirement, verification or analysis body"
+  ]
+ },
+ {
+  "id": "stakeholder-usage",
+  "name": "Stakeholder",
+  "kind": "usage",
+  "keyword": "stakeholder name : PartDef;",
+  "metaclass": "StakeholderMembership",
+  "tier": "occasional",
+  "description": "A party with an interest in a requirement or viewpoint.",
+  "to": [
+   "a part definition"
+  ],
+  "similar": "actor-usage",
+  "difference": "A stakeholder cares about the outcome; an actor performs in the scenario.",
+  "example": "stakeholder owner : Owner;",
+  "wrap": "def",
+  "from": [
+   "a requirement or viewpoint body"
+  ]
+ },
+ {
+  "id": "subject-usage",
+  "name": "Subject",
+  "kind": "usage",
+  "keyword": "subject s : Type;",
+  "metaclass": "SubjectMembership",
+  "tier": "core",
+  "description": "The thing a requirement, case or analysis is about. In a requirement the subject is what must satisfy it.",
+  "to": [
+   "a definition"
+  ],
+  "similar": "reference-usage",
+  "difference": "The subject is a special reference with a role; a plain reference has none.",
+  "example": "requirement def R { subject c : Charger; }",
+  "wrap": "pkg",
+  "from": [
+   "a requirement, case or view body"
+  ]
+ },
+ {
+  "id": "objective-usage",
+  "name": "Objective",
+  "kind": "usage",
+  "keyword": "objective { }",
+  "metaclass": "ObjectiveMembership",
+  "tier": "common",
+  "description": "The goal of a case: the requirement(s) a verification must show, or what an analysis must answer.",
+  "to": [
+   "a requirement usage"
+  ],
+  "similar": "requirement-usage",
+  "difference": "An objective is the requirement owned by a case; a requirement usage stands on its own in a tree.",
+  "example": "verification def V { objective { verify r; } }",
+  "wrap": "pkg",
+  "from": [
+   "a case, analysis or verification body"
+  ]
+ },
+ {
+  "id": "assert-constraint-usage",
+  "name": "Assert constraint",
+  "kind": "usage",
+  "keyword": "assert constraint c { }",
+  "metaclass": "AssertConstraintUsage",
+  "tier": "occasional",
+  "description": "States that a constraint holds (or, with `not`, does not hold) within the owner.",
+  "to": [
+   "a constraint definition or expression"
+  ],
+  "similar": "constraint-usage",
+  "difference": "A plain constraint usage names a condition. An assertion makes the owner claim it.",
+  "example": "assert constraint c { v <= 480 }",
+  "wrap": "def",
+  "from": [
+   "a definition or usage body"
+  ]
+ },
+ {
+  "id": "require-constraint-usage",
+  "name": "Assume and require constraint",
+  "kind": "usage",
+  "keyword": "assume constraint c { } / require constraint c { }",
+  "metaclass": "RequirementConstraintUsage",
+  "tier": "common",
+  "description": "The parts of a requirement: `assume` is what must hold for the requirement to apply, `require` is what the subject must meet.",
+  "to": [
+   "a constraint"
+  ],
+  "similar": "constraint-usage",
+  "difference": "They live inside a requirement and have a role; a free constraint usage has none.",
+  "example": "requirement def R { require constraint { v <= 480 } }",
+  "wrap": "pkg",
+  "from": [
+   "a requirement definition or usage"
+  ]
+ },
+ {
+  "id": "framed-concern-usage",
+  "name": "Frame",
+  "kind": "usage",
+  "keyword": "frame concern c;",
+  "metaclass": "FramedConcernMembership",
+  "tier": "occasional",
+  "description": "Names a concern that a requirement or viewpoint addresses.",
+  "to": [
+   "a concern"
+  ],
+  "similar": "concern-usage",
+  "difference": "`frame` puts the concern into the requirement or viewpoint; a concern usage on its own is a standalone interest.",
+  "example": "viewpoint def V { frame concern safety : Safety; }",
+  "wrap": "pkg",
+  "from": [
+   "a requirement or viewpoint body"
+  ]
+ },
+ {
+  "id": "expose",
+  "name": "Expose",
+  "kind": "relationship",
+  "keyword": "expose Pkg::**;",
+  "metaclass": "Expose",
+  "tier": "occasional",
+  "description": "Names the model content a view shows.",
+  "to": [
+   "a namespace or element"
+  ],
+  "similar": "filter",
+  "difference": "Expose selects what a view displays; a filter narrows an import or package.",
+  "example": "view v { expose Charging::*; }",
+  "wrap": "def",
+  "from": [
+   "a view usage"
+  ]
+ },
+ {
+  "id": "render",
+  "name": "Render",
+  "kind": "statement",
+  "keyword": "render asTree;",
+  "metaclass": "ViewRenderingMembership",
+  "tier": "rare",
+  "description": "Selects how a view is displayed.",
+  "to": [
+   "a rendering"
+  ],
+  "similar": "rendering-usage",
+  "difference": "`render` is the statement inside a view; a rendering usage is the thing named.",
+  "example": "view v { render asTree; }",
+  "wrap": "def",
+  "from": [
+   "a view usage"
+  ]
+ },
+ {
+  "id": "perform-action-usage",
+  "name": "Perform",
+  "kind": "relationship",
+  "keyword": "perform action name : ActionDef;",
+  "metaclass": "PerformActionUsage",
+  "tier": "core",
+  "description": "States that a part performs an action: the link from structure to behaviour. The action may be declared there or referenced.",
+  "to": [
+   "an action definition or action usage"
+  ],
+  "similar": "action-usage",
+  "difference": "`perform` binds an action to the part that does it. An action usage on its own is just a step with no performer.",
+  "example": "perform action charge : ChargeVehicle;",
+  "wrap": "def",
+  "from": [
+   "a part definition or part usage (the performer)"
+  ]
+ },
+ {
+  "id": "exhibit-state-usage",
+  "name": "Exhibit",
+  "kind": "relationship",
+  "keyword": "exhibit state name : StateDef;",
+  "metaclass": "ExhibitStateUsage",
+  "tier": "common",
+  "description": "States that a part exhibits a state machine: the link from structure to states.",
+  "to": [
+   "a state definition or usage"
+  ],
+  "similar": "state-usage",
+  "difference": "`exhibit` ties a state machine to the part that shows it; a state usage alone belongs to a state or action context.",
+  "example": "exhibit state charging : ChargerStates;",
+  "wrap": "def",
+  "from": [
+   "a part definition or usage (the exhibitor)"
+  ]
+ },
+ {
+  "id": "include-use-case-usage",
+  "name": "Include",
+  "kind": "relationship",
+  "keyword": "include use case u : UseCase;",
+  "metaclass": "IncludeUseCaseUsage",
+  "tier": "common",
+  "description": "States that one use case always runs another as part of itself.",
+  "to": [
+   "a use case"
+  ],
+  "similar": "use-case-usage",
+  "difference": "An include is mandatory reuse inside a use case. A plain use case usage `[0..1]` is optional (the MDSE extend form).",
+  "example": "include use case pay : Pay;",
+  "wrap": "def",
+  "from": [
+   "a use case"
+  ]
+ },
+ {
+  "id": "satisfy-requirement-usage",
+  "name": "Satisfy",
+  "kind": "relationship",
+  "keyword": "satisfy Req by Element;",
+  "metaclass": "SatisfyRequirementUsage",
+  "tier": "core",
+  "description": "States that a design element (a part, action or state) satisfies a requirement. It does not prove it; verification does.",
+  "to": [
+   "a requirement definition or usage"
+  ],
+  "similar": "verify-requirement-usage",
+  "difference": "Satisfy says the design meets the requirement. Verify says a test or analysis shows it does.",
+  "example": "satisfy RemoteControl by Charger;",
+  "wrap": "def",
+  "from": [
+   "a part, action, state or other definition or usage (the satisfier)"
+  ]
+ },
+ {
+  "id": "verify-requirement-usage",
+  "name": "Verify",
+  "kind": "relationship",
+  "keyword": "verify Req;",
+  "metaclass": "RequirementVerificationUsage",
+  "tier": "core",
+  "description": "Inside a verification objective, names a requirement the case verifies.",
+  "to": [
+   "a requirement definition or usage"
+  ],
+  "similar": "satisfy-requirement-usage",
+  "difference": "Verify belongs to a verification case and records how a requirement is checked. Satisfy belongs to the design and says it is met.",
+  "example": "verification def V { objective { verify RemoteControl; } }",
+  "wrap": "pkg",
+  "from": [
+   "a verification case objective"
+  ]
+ },
+ {
+  "id": "bind",
+  "name": "Binding connector",
+  "kind": "relationship",
+  "keyword": "bind a = b;",
+  "metaclass": "BindingConnectorAsUsage",
+  "tier": "common",
+  "description": "States that two features always have the same value or identify the same thing.",
+  "to": [
+   "a feature of a compatible type"
+  ],
+  "similar": "connection-usage",
+  "difference": "Binding says two features are equal. A connection says they are linked and may be distinct.",
+  "example": "bind controller.id = id;",
+  "wrap": "def",
+  "from": [
+   "a feature"
+  ]
+ },
+ {
+  "id": "succession",
+  "name": "Succession",
+  "kind": "relationship",
+  "keyword": "first a then b;",
+  "metaclass": "SuccessionAsUsage",
+  "tier": "core",
+  "description": "States that one occurrence (action, state, event) ends before another starts.",
+  "to": [
+   "an action, state or other occurrence usage"
+  ],
+  "similar": "transition-usage",
+  "difference": "A succession orders two occurrences with no trigger or guard. A transition moves between states and can carry a trigger, guard and effect.",
+  "example": "first start then charge;",
+  "wrap": "def",
+  "from": [
+   "an action, state or other occurrence usage"
+  ]
+ },
+ {
+  "id": "transition-usage",
+  "name": "Transition",
+  "kind": "relationship",
+  "keyword": "transition first a accept sig if g do act then b;",
+  "metaclass": "TransitionUsage",
+  "tier": "common",
+  "description": "A move from one state (or action) to the next, with an optional trigger (`accept`), guard (`if`) and effect (`do`).",
+  "to": [
+   "a state (the target)"
+  ],
+  "similar": "succession",
+  "difference": "A transition has a trigger, guard and effect and applies between states. A succession only orders.",
+  "example": "transition first idle accept start then charging;",
+  "wrap": "def",
+  "from": [
+   "a state (the source)"
+  ]
+ },
+ {
+  "id": "succession-flow-usage",
+  "name": "Succession flow",
+  "kind": "relationship",
+  "keyword": "succession flow of P from a to b;",
+  "metaclass": "SuccessionFlowUsage",
+  "tier": "occasional",
+  "description": "A flow whose source must finish before the target starts.",
+  "to": [
+   "an input of an occurrence"
+  ],
+  "similar": "flow-usage",
+  "difference": "A succession flow adds ordering. A flow only transfers.",
+  "example": "succession flow of Current from a.out to b.in;",
+  "wrap": "def",
+  "from": [
+   "an output of an occurrence"
+  ]
+ },
+ {
+  "id": "message",
+  "name": "Message",
+  "kind": "relationship",
+  "keyword": "message m of P from a to b;",
+  "metaclass": "FlowUsage",
+  "tier": "occasional",
+  "description": "A transfer of a payload shown between occurrences without saying which features carry it. Used in interaction (sequence) descriptions.",
+  "to": [
+   "an event occurrence (receiver)"
+  ],
+  "similar": "flow-usage",
+  "difference": "A message is described between events in time. A flow is between features.",
+  "example": "message m of Request from a.send to b.receive;",
+  "wrap": "def",
+  "from": [
+   "an event occurrence (sender)"
+  ]
+ },
+ {
+  "id": "accept-action-usage",
+  "name": "Accept",
+  "kind": "statement",
+  "keyword": "accept p : Payload;",
+  "metaclass": "AcceptActionUsage",
+  "tier": "common",
+  "description": "An action that waits to receive a payload (a signal, an item) and then proceeds.",
+  "to": [
+   "a payload type"
+  ],
+  "similar": "send-action-usage",
+  "difference": "Accept receives; send transmits.",
+  "example": "action a { accept s : Start; }",
+  "wrap": "def",
+  "from": [
+   "an action or state body"
+  ]
+ },
+ {
+  "id": "send-action-usage",
+  "name": "Send",
+  "kind": "statement",
+  "keyword": "send p via port;",
+  "metaclass": "SendActionUsage",
+  "tier": "common",
+  "description": "An action that sends a payload through a port or to a target.",
+  "to": [
+   "a payload and a target"
+  ],
+  "similar": "accept-action-usage",
+  "difference": "Send transmits; accept receives.",
+  "example": "action a { send s via out1; }",
+  "wrap": "def",
+  "from": [
+   "an action or state body"
+  ]
+ },
+ {
+  "id": "assign-action-usage",
+  "name": "Assign",
+  "kind": "statement",
+  "keyword": "assign x := expr;",
+  "metaclass": "AssignmentActionUsage",
+  "tier": "occasional",
+  "description": "An action that sets the value of a feature.",
+  "to": [
+   "a feature and an expression"
+  ],
+  "similar": "value",
+  "difference": "Assign changes a value at a point in behaviour. A value binding gives the value as a definition.",
+  "example": "action a { assign counter := counter + 1; }",
+  "wrap": "def",
+  "from": [
+   "an action body"
+  ]
+ },
+ {
+  "id": "decision-node",
+  "name": "Decide, merge, fork, join",
+  "kind": "statement",
+  "keyword": "decide; merge; fork; join;",
+  "metaclass": "ControlNode",
+  "tier": "common",
+  "description": "Control nodes in an action: `decide` chooses one branch, `merge` rejoins branches, `fork` starts parallel branches, `join` waits for all.",
+  "to": [
+   "successions to and from them"
+  ],
+  "similar": "succession",
+  "difference": "A control node is a point in the flow; a succession is the arrow between points.",
+  "example": "action a { fork f; join j; }",
+  "wrap": "def",
+  "from": [
+   "an action body"
+  ]
+ },
+ {
+  "id": "if-action-usage",
+  "name": "If",
+  "kind": "statement",
+  "keyword": "if cond { } else { }",
+  "metaclass": "IfActionUsage",
+  "tier": "occasional",
+  "description": "Runs one block of actions or another depending on a condition.",
+  "to": [
+   "a Boolean expression and action blocks"
+  ],
+  "similar": "decision-node",
+  "difference": "`if` is structured and inline; `decide` draws the branch as a node with successions.",
+  "example": "action a { if ok { action x; } }",
+  "wrap": "def",
+  "from": [
+   "an action body"
+  ]
+ },
+ {
+  "id": "loop-action-usage",
+  "name": "While, loop, for",
+  "kind": "statement",
+  "keyword": "while c { } / loop { } until c; / for x in xs { }",
+  "metaclass": "LoopActionUsage",
+  "tier": "occasional",
+  "description": "Repeats a block of actions while a condition holds, until one does, or for each item.",
+  "to": [
+   "a Boolean expression, a collection and an action block"
+  ],
+  "similar": "if-action-usage",
+  "difference": "Loops repeat; `if` runs once.",
+  "example": "action a { while more { action step; } }",
+  "wrap": "def",
+  "from": [
+   "an action body"
+  ]
+ },
+ {
+  "id": "terminate-action-usage",
+  "name": "Terminate",
+  "kind": "statement",
+  "keyword": "terminate;",
+  "metaclass": "TerminateActionUsage",
+  "tier": "rare",
+  "description": "Ends the enclosing occurrence early, before its normal end, and everything it contains.",
+  "to": [
+   "the occurrence to end"
+  ],
+  "similar": "decision-node",
+  "difference": "Terminate stops; a control node steers.",
+  "example": "action a { terminate; }",
+  "wrap": "def",
+  "from": [
+   "an action body"
+  ]
+ },
+ {
+  "id": "state-action",
+  "name": "Entry, do, exit",
+  "kind": "statement",
+  "keyword": "entry action a; do action b; exit action c;",
+  "metaclass": "StateSubactionMembership",
+  "tier": "common",
+  "description": "The actions a state runs when entered, while in it, and when left.",
+  "to": [
+   "an action"
+  ],
+  "similar": "transition-usage",
+  "difference": "State actions run inside a state. A transition's effect runs while moving between states.",
+  "example": "state s { entry action init; do action run; exit action stop; }",
+  "wrap": "def",
+  "from": [
+   "a state body"
+  ]
+ },
+ {
+  "id": "expression",
+  "name": "Expression",
+  "kind": "structure",
+  "keyword": "a + b;  v <= 480 [V];  x.y.z;  x ? a : b",
+  "metaclass": "Expression",
+  "tier": "core",
+  "description": "Operators, feature chains and units that compute or compare values. They appear in constraints, calculations, values, guards and requirement conditions.",
+  "to": [
+   "features, literals with units, and other expressions"
+  ],
+  "similar": "value",
+  "difference": "An expression computes or tests. A value binding attaches the result to a usage.",
+  "example": "constraint c { v <= 480 [V] }",
+  "wrap": "def",
+  "from": [
+   "a constraint, calc, value binding, guard or condition"
+  ]
+ }
+]

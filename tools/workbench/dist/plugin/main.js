@@ -238,6 +238,97 @@ const MDSE = (() => {
 
 const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
 const WB = (() => {
+/* sysml_lang.ts */
+/* Recognizes the SysML v2 textual notation by the language catalog (governance/language/catalog.json): which construct a
+ * statement is, from its leading keywords. Not a parser: it classifies a statement head so nothing valid is reported as
+ * unknown. Conformance is the pinned parser's job. Ids are the catalog's ids. */
+
+const KINDS                          = [["part", "part"], ["attribute", "attribute"], ["item", "item"], ["port", "port"], ["connection", "connection"], ["interface", "interface"], ["allocation", "allocation"], ["flow", "flow"], ["occurrence", "occurrence"], ["individual", "individual"], ["action", "action"], ["state", "state"], ["constraint", "constraint"], ["requirement", "requirement"], ["concern", "concern"], ["calc", "calc"], ["case", "case"], ["analysis", "analysis"], ["verification", "verification"], ["use case", "use-case"], ["viewpoint", "viewpoint"], ["view", "view"], ["rendering", "rendering"], ["metadata", "metadata"], ["enum", "enum"]];
+const KIND_RE = KINDS.map(([k]) => k).sort((a, b) => b.length - a.length).join("|");
+const KIND_ID = new Map(KINDS);
+
+const DEF_RE = new RegExp(`^(${KIND_RE})\\s+def\\b`);
+const USAGE_RE = new RegExp(`^(${KIND_RE})\\b`);
+const MOD_WORDS = /^(public|private|protected|abstract|variation|variant|readonly|derived|constant|ordered|nonunique|end|all)\b\s*/;
+
+/** Construct ids a statement head belongs to (a head can be several: `abstract part def A :> B[1]` is a part-def, modifiers, specialization, multiplicity). */
+function classify(head        )           {
+  const ids           = [];
+  const add = (id        )       => { if (!ids.includes(id)) ids.push(id); };
+  let h = head.trim();
+  if (!h) return ids;
+  let m                        ;
+  // prefix metadata, then visibility and modifiers
+  while ((m = /^#[A-Za-z_][\w:]*\s*/.exec(h))) { add("prefix-metadata"); h = h.slice(m[0].length); }
+  while ((m = MOD_WORDS.exec(h))) {
+    if (/^(public|private|protected)$/.test(m[1] )) add("visibility"); else if (m[1] === "variation" || m[1] === "variant") add("variation"); else add("modifiers");
+    h = h.slice(m[0].length);
+  }
+  if (/^@[A-Za-z_]/.test(h)) { add("metadata-feature"); return ids; }
+  if ((m = /^(import)\s+(.+)$/.exec(h))) { add(/::\*{1,2}$/.test(m[2] ) ? "import-namespace" : "import-membership"); return ids; }
+  if (/^alias\b/.test(h)) { add("alias"); return ids; }
+  if (/^filter\b/.test(h)) { add("filter"); return ids; }
+  if (/^comment\b/.test(h) || /^\/\*/.test(h)) { add("comment"); return ids; }
+  if (/^doc\b/.test(h)) { add("documentation"); return ids; }
+  if (/^rep\b/.test(h) || /^language\b/.test(h)) { add("textual-representation"); return ids; }
+  if ((m = /^(library\s+)?package\b/.exec(h))) { add(m[1] ? "library-package" : "package"); return ids; }
+  if (/^dependency\b/.test(h)) { add("dependency"); return ids; }
+  if (/^expose\b/.test(h)) { add("expose"); return ids; }
+  if (/^render\b/.test(h)) { add("render"); return ids; }
+  if (/^frame\b/.test(h)) { add("framed-concern-usage"); return ids; }
+  if (/^perform\b/.test(h)) { add("perform-action-usage"); return ids; }
+  if (/^exhibit\b/.test(h)) { add("exhibit-state-usage"); return ids; }
+  if (/^include\b/.test(h)) { add("include-use-case-usage"); return ids; }
+  if (/^satisfy\b/.test(h)) { add("satisfy-requirement-usage"); return ids; }
+  if (/^verify\b/.test(h)) { add("verify-requirement-usage"); return ids; }
+  if (/^assert\b/.test(h)) { add("assert-constraint-usage"); return ids; }
+  if (/^(assume|require)\b/.test(h)) { add("require-constraint-usage"); return ids; }
+  if (/^allocate\b/.test(h)) { add("allocation-usage"); return ids; }
+  if (/^connect\b/.test(h)) { add("connection-usage"); return ids; }
+  if (/^bind\b/.test(h)) { add("bind"); return ids; }
+  if (/^succession\s+flow\b/.test(h)) { add("succession-flow-usage"); return ids; }
+  if (/^succession\b|^first\b/.test(h)) { add("succession"); return ids; }
+  if (/^transition\b|^then\b|^accept\b.*\bthen\b/.test(h)) { if (/^transition\b/.test(h)) add("transition-usage"); else add("succession"); return ids; }
+  if (/^message\b/.test(h)) { add("message"); return ids; }
+  if (/^accept\b/.test(h)) { add("accept-action-usage"); return ids; }
+  if (/^send\b/.test(h)) { add("send-action-usage"); return ids; }
+  if (/^assign\b/.test(h)) { add("assign-action-usage"); return ids; }
+  if (/^(decide|merge|fork|join)\b/.test(h)) { add("decision-node"); return ids; }
+  if (/^if\b/.test(h)) { add("if-action-usage"); return ids; }
+  if (/^(while|loop|for)\b/.test(h)) { add("loop-action-usage"); return ids; }
+  if (/^terminate\b/.test(h)) { add("terminate-action-usage"); return ids; }
+  if (/^(entry|do|exit)\b/.test(h)) { add("state-action"); return ids; }
+  if (/^return\b/.test(h)) { add("return"); relations(h, add); return ids; }
+  if (/^objective\b/.test(h)) { add("objective-usage"); return ids; }
+  if (/^subject\b/.test(h)) { add("subject-usage"); relations(h, add); return ids; }
+  if (/^actor\b/.test(h)) { add("actor-usage"); relations(h, add); return ids; }
+  if (/^stakeholder\b/.test(h)) { add("stakeholder-usage"); relations(h, add); return ids; }
+  if (/^event\b/.test(h)) { add("event-occurrence-usage"); return ids; }
+  if (/^snapshot\b/.test(h)) { add("snapshot-usage"); relations(h, add); return ids; }
+  if (/^timeslice\b/.test(h)) { add("timeslice-usage"); relations(h, add); return ids; }
+  let dir = false;
+  if ((m = /^(in|out|inout)\b\s*/.exec(h))) { add("parameter"); dir = true; h = h.slice(m[0].length); }
+  if ((m = /^ref\b\s*/.exec(h))) { h = h.slice(m[0].length); if (!USAGE_RE.test(h)) { add("reference-usage"); relations(h, add); return ids; } add("reference-usage"); }
+  if ((m = DEF_RE.exec(h))) { add(`${KIND_ID.get(m[1] ) }-def`); relations(h, add, true); return ids; }
+  if ((m = USAGE_RE.exec(h))) { add(`${KIND_ID.get(m[1] ) }-usage`); relations(h, add); return ids; }
+  if (dir) { relations(h, add); return ids; }
+  if (/^(end\s+)?[A-Za-z_]\w*\s*(:|:>|:>>|::>|=|\[)/.test(h)) { relations(h, add); return ids; }   // a usage with no keyword: redefinition or short form
+  if (/<=|>=|==|!=|&&|\|\||[-+*\/?<>]|\b(not|and|or|xor|implies)\b|\[[^\]]*\]|[A-Za-z_]\w*\.[A-Za-z_]/.test(h)) { add("expression"); return ids; }
+  return ids;
+}
+
+/** The relationship, multiplicity and value forms inside a declaration. */
+function relations(h        , add                      , isDef = false)       {
+  if (/:>>|\bredefines\b/.test(h)) add("redefinition");
+  if (/::>|\breferences\b/.test(h)) add("reference-subsetting");
+  if (/(^|[^:>]):>(?![>:])|\bspecializes\b|\bsubsets\b/.test(h)) add(isDef ? "specialization" : "subsetting");
+  if (/\bcrosses\b/.test(h)) add("cross-subsetting");
+  if (/:\s*~/.test(h)) add("conjugation");
+  if (/(^|[^:>]):(?![>:=])\s*[A-Za-z_~]|\bdefined by\b/.test(h) && !isDef) add("feature-typing");
+  if (/\[[^\]]*\]/.test(h)) add("multiplicity");
+  if (/(^|[^:<>=!])(:=|=)(?!=)/.test(h)) add("value");
+}
+
 /* sysml_scan.ts */
 /* A recognizer for the SysML v2 subset the vault uses. It is NOT a SysML parser: it finds definitions, usages and the
  * statements the importer writes, and keeps anything else as `raw` so nothing is silently dropped. Conformance is the
@@ -245,8 +336,8 @@ const WB = (() => {
 
                                                                                           
                                                                                                   
-                                                                                                                                                         
-                                                               
+                                                                                                                                                                                                                                                               
+                                                                                                                                   
 
                                                                  
 
@@ -273,7 +364,7 @@ function parseItems(s        , start        , close         )                   
   };
   while (i < s.length) {
     const c = s[i] ;
-    if (c === "}") { if (close) { return { items, end: i + 1 }; } i++; continue; }
+    if (c === "}") { if (close) { if (head.trim()) flush(null, false); return { items, end: i + 1 }; } i++; continue; }
     if (c === ";") { i++; flush(null, true); continue; }
     if (c === "{") { const inner = parseItems(s, i + 1, true); i = inner.end; flush(inner.items, false); continue; }
     head += c; i++;
@@ -282,52 +373,69 @@ function parseItems(s        , start        , close         )                   
   return { items, end: i };
 }
 
-const DEF = /^(?:abstract\s+)?(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
+const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
 const USAGE = /^(?:(in|out|inout)\s+)?(part|port|action|state|item|attribute|fork|join|ref part|ref item)\s+([A-Za-z_]\w*)\s*(?::\s*([A-Za-z_][\w:]*))?\s*(\[[^\]]*\])?$/;
 const QN = "([A-Za-z_][\\w:.]*)";
 
 function interpret(it      , d            )       {
+  const handled = interpretOne(it, d);
+  if (!handled) { if (it.head) d.raw.push(it.head); return; }
+  if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) interpret(c, d);          // nested members of any construct
+}
+
+/** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
+function interpretOne(it      , d            )          {
   const h = it.head;
+  for (const i of classify(h)) if (!d.langs.includes(i)) d.langs.push(i);
   let m                        ;
   const st = (s      )       => { d.stmts.push(s); };
   if (it.body && /^objective\b/.test(h)) {
-    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) st({ kind: "verify", a: v[1] , text: c.head }); else d.raw.push(c.head); }
-    return;
+    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1] , text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
+    return true;
   }
-  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2] .replace("ref ", ""), name: m[3] , ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}) }); return; }
-  if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1] , ...(m[2] ? { b: m[2] } : {}), text: h }); return; }
-  if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return; }
-  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return; }
-  if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1] , b: m[2] , tag: it.tag || "dependsOn", text: h }); return; }
-  if ((m = /^succession\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[2] , text: h }); return; }
-  if ((m = /^transition\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[2] , text: h }); return; }
-  if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1] , b: m[2] , text: h }); return; }
-  if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1] , b: m[2] , text: h }); return; }
-  if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1] , b: m[2] , tag: m[3] ?? "", text: h }); return; }
-  if (h) d.raw.push(h);
+  if ((m = USAGE.exec(h))) { d.usages.push({ kind: m[2] .replace("ref ", ""), name: m[3] , ...(m[4] ? { type: m[4] } : {}), ...(m[5] ? { mult: m[5] } : {}), ...(m[1] ? { dir: m[1] } : {}) }); return true; }
+  if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1] , ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
+  if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1] , b: m[2] , tag: it.tag || "dependsOn", text: h }); return true; }
+  if ((m = /^succession\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = /^transition\s+first\s+([\w.]+)\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = /^connect\s+([\w.]+)\s+to\s+([\w.]+)$/.exec(h))) { st({ kind: "connect", a: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1] , b: m[2] , tag: m[3] ?? "", text: h }); return true; }
+  return classify(h).length > 0;
 }
 
 function scanSysml(block        )             {
   const warnings           = [];
   const defs               = [];
   const { items } = parseItems(stripComments(block), 0, false);
+  const langs           = [];
+  const note = (ids          )       => { for (const i of ids) if (!langs.includes(i)) langs.push(i); };
   const walkPkg = (pkg        , kids        )       => {
     for (const k of kids) {
       const m = DEF.exec(k.head);
       if (!m) {
-        const p = /^package\s+([A-Za-z_]\w*)$/.exec(k.head);
-        if (p && k.body) { walkPkg(pkg ? `${pkg}::${p[1]}` : p[1] , k.body); continue; }
+        const p = /^(?:library\s+)?(?:standard\s+)?package\s+([A-Za-z_]\w*)$/.exec(k.head);
+        if (p && k.body) { note(classify(k.head)); walkPkg(pkg ? `${pkg}::${p[1]}` : p[1] , k.body); continue; }
+        const ids = classify(k.head);
+        if (ids.length) {                                            // a valid construct the vault has no view for yet: classified, kept, not reported
+          note(ids);
+          if (k.body) { const holder             = { keyword: "", pkg, name: "", symbol: "", specializes: [], usages: [], stmts: [], raw: [], langs: [] }; for (const c of k.body) interpret(c, holder); note(holder.langs); for (const r of holder.raw) warnings.push(`not recognized: ${r.slice(0, 80)}`); }
+          continue;
+        }
         if (k.head) warnings.push(`not recognized: ${k.head.slice(0, 80)}`);
         continue;
       }
-      const d             = { keyword: `${m[1]} def`, pkg, name: m[2] , symbol: pkg ? `${pkg}::${m[2]}` : m[2] , specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [] };
+      const d             = { keyword: `${m[1]} def`, pkg, name: m[2] , symbol: pkg ? `${pkg}::${m[2]}` : m[2] , specializes: m[3] ? m[3].split(",").map((x) => x.trim()).filter(Boolean) : [], usages: [], stmts: [], raw: [], langs: classify(k.head) };
       for (const c of k.body ?? []) interpret(c, d);
       for (const r of d.raw) warnings.push(`${d.symbol}: not recognized: ${r.slice(0, 80)}`);
+      note(d.langs);
       defs.push(d);
     }
   };
   walkPkg("", items);
-  return { defs, warnings };
+  return { defs, warnings, langs };
 }
 
 /* index.ts */

@@ -10,7 +10,7 @@ const rd = (p) => fs.readFileSync(path.join(here, p), "utf8");
 const strip = (s) => s.replace(/\nif \(typeof module !== "undefined"\)[^\n]*\n?$/, "\n");
 const CORE = strip(rd("../core/src/mdse_core.js"));
 const CLASSES = JSON.stringify(JSON.parse(rd("../core/src/classes.json")));
-const ORDER = ["sysml_scan", "index", "views", "canvas", "vault_files", "ui", "panel"];
+const ORDER = ["sysml_lang","sysml_scan", "index", "views", "canvas", "vault_files", "ui", "panel"];
 const exportsOf = (code) => [...code.matchAll(/^export (?:async )?(?:function|const|class|interface|type)\s+(\w+)/gm)].map((m) => m[1]);
 function bundle(withPlugin) {
   const names = new Map(); const parts = [];

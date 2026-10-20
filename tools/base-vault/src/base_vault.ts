@@ -43,6 +43,7 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     }
   };
   copyTree("governance/ai", "99_System/02_AI");
+  copyTree("governance/language/sysml-v2", "99_System/04_Language");           // D-0028: one note per SysML v2 construct
   copyTree("governance/schemas", "99_System/03_Schemas", (rel) => rel === "ea-family-mapping.json");
 
   put(".vault.yaml", [

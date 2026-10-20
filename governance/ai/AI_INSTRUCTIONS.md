@@ -16,6 +16,7 @@ Before substantial work, read `99_System/03_Schemas/element-types.yaml`, `99_Sys
 
 ## Where things go in a note
 
+- **Look the construct up first.** `99_System/04_Language/` has one note per SysML v2 construct: what it is, what it can connect from and to, and how it differs from the most similar one. Start at `SysML v2 Language.md`; the Everyday set covers most modelling. Do not use a construct that is not in those notes.
 - **Anything SysML v2 can define** (structure, parts, ports, connections, specialization, satisfy, verify, derive, allocate, and other SysML relationships) goes only in the note's `## SysML v2` block. Never copy it into YAML.
 - **Everything else** (class, identity, status, tags, provenance, MDSE-only links such as `describes`, `references`, `affects`) goes in YAML frontmatter, as defined in `relationships.yaml`.
 - `## SysML v2` is always the last section and holds exactly one fenced `sysml` block. Do not edit it by hand unless you can run the parser check; otherwise leave a `flagNote` describing the change you propose.
