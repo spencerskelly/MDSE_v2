@@ -198,3 +198,11 @@ Rules: none edited.
 The Graph tab and the canvas share one set of view settings: connections away, max notes, relationships followed, note types and statuses shown, a folder limit, and a classifier. A classifier (type, subtype, status, folder or EA type) groups notes that share a class at the same distance from the selected note into one card once more than N do; edges between groups are merged with a count. Filters hide a note and do not traverse through it. Settings are presentation only and not stored in the model. Interpretation of "classifier" is mine; the owner may redefine it (for example as a stored tag or a named view).
 
 Rules: none edited.
+
+## D-0022 — Canvas views are transient previews; a canvas is kept only when the user saves it
+
+2026-10-19 · Spencer · Accepted
+
+Replaces the file-per-view behaviour of D-0020. The Workbench writes a canvas preview to one scratch file (`99_System/12_Views/Preview/Workbench Preview.canvas`) that each preview overwrites and that is deleted when the plugin loads or unloads. Obsidian can only open a canvas that is a file, so one scratch file is the smallest footprint. A canvas is kept only when the user chooses Save: the folder is the configured default (`99_System/12_Views` unless changed), the last folder used, or any project folder picked from the vault's folders. Saving copies the preview as the user left it and never overwrites. The indexer ignores `99_System`, so previews and saved canvases in it are not model notes; a canvas saved to a project folder is not a note either (the indexer reads only `.md`).
+
+Rules: none edited. Caveat: if the vault is synced or committed while a preview is open, the scratch file may be captured; it is overwritten or removed on the next load.

@@ -11,6 +11,8 @@ export interface Host {
   openNote?: (path: string) => void;
   /** Obsidian only: write the canvas into the vault and open it. Resolves to a short message. */
   makeCanvas?: (r: CanvasResult) => Promise<string>;
+  /** Obsidian only: copy the current preview canvas to a folder the person picks. Resolves to a short message. */
+  saveCanvas?: () => Promise<string>;
   classes?: Record<string, { prefix: string; subtype: string[] }>;
 }
 export interface App { setFiles(files: Map<string, string>): Promise<void>; select(path: string): void; index(): ModelIndex | null; destroy(): void }
@@ -86,7 +88,7 @@ const TABS: Array<[string, string, boolean]> = [
 export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
-  let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "";
+  let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "";
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
 
@@ -200,17 +202,18 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     return pane;
   }
 
+  /** "Open as Canvas" makes a transient preview; "Save canvas…" appears once a preview exists and keeps it. */
   function canvasButton(profileName: string, spec?: Partial<V.ViewSpec>): HTMLElement | null {
     if (!host.makeCanvas || !sel) return null;
-    const btn = h("button", { title: "Generate an Obsidian Canvas of this view in 99_System/12_Views and open it" }, "Open as Canvas");
-    btn.addEventListener("click", async () => {
-      const prof = V.PROFILES.find((p) => p.name === profileName)!;
-      btn.setAttribute("disabled", ""); btn.textContent = "Creating…";
-      try { btn.textContent = await host.makeCanvas!(toCanvas(ix!, sel, prof, spec)); }
-      catch (e) { btn.textContent = "Canvas failed: " + String((e as Error)?.message ?? e); }
-      setTimeout(() => { btn.textContent = "Open as Canvas"; btn.removeAttribute("disabled"); }, 4000);
-    });
-    return btn;
+    const busy = (btn: HTMLElement, label: string, job: () => Promise<string>, after?: () => void): void => {
+      btn.setAttribute("disabled", ""); btn.textContent = label;
+      job().then((m) => { canvasMsg = m; after?.(); }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
+    };
+    const open = h("button", { title: "Preview this view as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Open as Canvas");
+    open.addEventListener("click", () => busy(open, "Creating…", () => host.makeCanvas!(toCanvas(ix!, sel, V.PROFILES.find((p) => p.name === profileName)!, spec)), () => { hasPreview = true; }));
+    const kids: HTMLElement[] = [open];
+    if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => busy(save, "Saving…", () => host.saveCanvas!())); kids.push(save); }
+    return h("span", { class: "row", style: "display:inline-flex;margin:0" }, ...kids, canvasMsg ? h("span", { class: "mut" }, canvasMsg) : null);
   }
 
   function vStructure(): HTMLElement {

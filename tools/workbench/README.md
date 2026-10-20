@@ -2,7 +2,7 @@
 
 Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline HTML page and an Obsidian plugin. Phase 1 is read-only; Phase 3 adds editing.
 
-**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.4.0), read-only.** D-0019 records the design.
+**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.5.0), read-only.** D-0019 records the design.
 
 ## Run it
 
@@ -12,9 +12,9 @@ Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline 
 ## In Obsidian: table and canvas
 
 - **Table:** the Workbench tab (ribbon icon, or command "Open MDSE Workbench"). The Notes tab is a filterable table of every note; Relationships, Traceability and the parts list are tables too. All export to CSV.
-- **Canvas:** on the Structure, Where used and Graph tabs, "Open as Canvas" writes an Obsidian Canvas of that view and opens it. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card. Also from the command palette ("Create canvas from current note", pick a profile) and the file right-click menu ("Create MDSE canvas").
-- Canvases are generated and disposable: they go in `99_System/12_Views/`, are overwritten on regeneration, hold no model meaning, and the Workbench indexer ignores them. They are the only files the plugin writes (D-0020). In the browser page the same button downloads the `.canvas` file.
-- **View settings** (Graph tab; the canvas uses the same settings): connections away (hops), max notes, relationships followed (none ticked = the profile's own), note types shown, status shown, limit to a folder, and a classifier. The classifier groups notes that share a type, subtype, status, folder or EA type at the same distance into one card ("Requirement/engineering ×30") once more than N share it, with merged edge counts ("allocatedTo ×30"). On a canvas the group card lists member links. Notes hidden by a filter are not traversed through. Settings are per session; a canvas generated with non-default settings gets a short code in its file name so it does not overwrite the default one.
+- **Canvas preview:** "Open as Canvas" (Structure, Where used and Graph tabs; also the command "Preview canvas from current note" and the file right-click menu) writes the view to ONE scratch file, `99_System/12_Views/Preview/Workbench Preview.canvas`, and opens it. Every preview overwrites that file, and it is deleted when the plugin loads or unloads, so previews never pile up. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card.
+- **Saving:** nothing is kept until you choose "Save canvas…" (button on the tab, or the command "Save preview canvas…"). You pick a folder: the default (setting "Default folder for saved canvases", initially `99_System/12_Views`) is offered first, then the last folder you used, then every other folder, so a project folder is one pick away. The saved file is a copy of the preview as it is now, including anything you rearranged, and never overwrites an existing file (a counter is added). In the browser page the same button downloads a `.canvas` file.
+- **View settings** (Graph tab; the canvas uses the same settings): connections away (hops), max notes, relationships followed (none ticked = the profile's own), note types shown, status shown, limit to a folder, and a classifier. The classifier groups notes that share a type, subtype, status, folder or EA type at the same distance into one card ("Requirement/engineering ×30") once more than N share it, with merged edge counts ("allocatedTo ×30"). On a canvas the group card lists member links. Notes hidden by a filter are not traversed through. Settings are per session; a canvas saved from non-default settings gets a short code in its suggested file name.
 - "Show current note in MDSE Workbench" (command and right-click) jumps straight to a note.
 
 ## Views

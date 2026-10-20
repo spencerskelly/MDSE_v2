@@ -773,6 +773,8 @@ function search(ix            , q        , limit = 50)         {
                                                                                                                                                
 
 const CANVAS_DIR = "99_System/12_Views";
+/** The one scratch file a preview is written to. It is overwritten by every preview and deleted when the plugin loads or unloads. */
+const PREVIEW_PATH = `${CANVAS_DIR}/Preview/Workbench Preview.canvas`;
 const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
 const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 
@@ -905,6 +907,8 @@ const V = { qtyOf, structure, bom, whereUsed, isRequirement, traceMatrix, behavi
                                     
                                                                                                  
                                                     
+                                                                                                                  
+                                     
                                                                   
  
                                                                                                                                               
@@ -980,7 +984,7 @@ const TABS                                   = [
 function mountWorkbench(root             , host       = {})      {
   const style = h("style"); style.textContent = STYLE;
   let ix                    = null, sel = "", tab = "dashboard", sidebar                       = "folders", query = "";
-  let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "";
+  let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "";
   const wrap = h("div", { class: "mdw" + (typeof (globalThis                     ).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
 
@@ -1094,17 +1098,18 @@ function mountWorkbench(root             , host       = {})      {
     return pane;
   }
 
+  /** "Open as Canvas" makes a transient preview; "Save canvas…" appears once a preview exists and keeps it. */
   function canvasButton(profileName        , spec                      )                     {
     if (!host.makeCanvas || !sel) return null;
-    const btn = h("button", { title: "Generate an Obsidian Canvas of this view in 99_System/12_Views and open it" }, "Open as Canvas");
-    btn.addEventListener("click", async () => {
-      const prof = V.PROFILES.find((p) => p.name === profileName) ;
-      btn.setAttribute("disabled", ""); btn.textContent = "Creating…";
-      try { btn.textContent = await host.makeCanvas (toCanvas(ix , sel, prof, spec)); }
-      catch (e) { btn.textContent = "Canvas failed: " + String((e         )?.message ?? e); }
-      setTimeout(() => { btn.textContent = "Open as Canvas"; btn.removeAttribute("disabled"); }, 4000);
-    });
-    return btn;
+    const busy = (btn             , label        , job                       , after             )       => {
+      btn.setAttribute("disabled", ""); btn.textContent = label;
+      job().then((m) => { canvasMsg = m; after?.(); }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw());
+    };
+    const open = h("button", { title: "Preview this view as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Open as Canvas");
+    open.addEventListener("click", () => busy(open, "Creating…", () => host.makeCanvas (toCanvas(ix , sel, V.PROFILES.find((p) => p.name === profileName) , spec)), () => { hasPreview = true; }));
+    const kids                = [open];
+    if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => busy(save, "Saving…", () => host.saveCanvas ())); kids.push(save); }
+    return h("span", { class: "row", style: "display:inline-flex;margin:0" }, ...kids, canvasMsg ? h("span", { class: "mut" }, canvasMsg) : null);
   }
 
   function vStructure()              {
@@ -1293,7 +1298,7 @@ function mountWorkbench(root             , host       = {})      {
   };
 }
 
-return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PROFILES };
+return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PREVIEW_PATH, PROFILES };
 })();
 </script>
 <script>
