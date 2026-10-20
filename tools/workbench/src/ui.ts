@@ -48,7 +48,7 @@ export const STYLE = `
 .mdw .pane{padding:14px 16px 40px}.mdw h2{margin:0 0 8px;font-size:17px}.mdw h3{margin:18px 0 6px;font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .mdw a.lnk{color:var(--acc);cursor:pointer;text-decoration:none}.mdw a.lnk:hover{text-decoration:underline}.mdw .mut{color:var(--mut)}.mdw .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 .mdw table{border-collapse:collapse;width:100%}.mdw th,.mdw td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top}.mdw th{font-weight:600;color:var(--mut);white-space:nowrap}.mdw th.sort{cursor:pointer}.mdw td.n,.mdw th.n{text-align:right}
-.mdw .tree ul{list-style:none;margin:0;padding-left:16px;border-left:1px dotted var(--line)}.mdw .tree>ul{border:0;padding-left:0}.mdw .tree li{padding:1px 0}.mdw .tree summary{cursor:pointer}.mdw .tree .sel{background:color-mix(in srgb,var(--acc) 18%,transparent);border-radius:4px}
+.mdw .vsbox{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:8px 0}.mdw .vsbox summary{cursor:pointer;font-weight:600}.mdw fieldset.vs{border:0;margin:6px 0;padding:0;display:flex;flex-wrap:wrap;gap:4px;align-items:center}.mdw fieldset.vs legend{font-size:12px;color:var(--mut);padding:0;float:left;margin-right:8px}.mdw .tree ul{list-style:none;margin:0;padding-left:16px;border-left:1px dotted var(--line)}.mdw .tree>ul{border:0;padding-left:0}.mdw .tree li{padding:1px 0}.mdw .tree summary{cursor:pointer}.mdw .tree .sel{background:color-mix(in srgb,var(--acc) 18%,transparent);border-radius:4px}
 .mdw .tag{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--mut);margin-left:6px}.mdw .tag.k{color:var(--acc);border-color:var(--acc)}
 .mdw .callout{border-left:4px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);padding:6px 10px;margin:6px 0;border-radius:0 6px 6px 0}.mdw .callout.flagConflict{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent)}.mdw .callout.flagNote{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,transparent)}.mdw .callout b{display:block}
 .mdw pre{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;margin:6px 0}.mdw pre .kw{color:var(--acc);font-weight:600}.mdw pre .sym{color:var(--ok)}.mdw pre .cm{color:var(--mut)}
@@ -86,7 +86,7 @@ const TABS: Array<[string, string, boolean]> = [
 export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
-  let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gdepth = 0, loading = "";
+  let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "";
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
 
@@ -200,13 +200,13 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     return pane;
   }
 
-  function canvasButton(profileName: string, depthOverride = 0): HTMLElement | null {
+  function canvasButton(profileName: string, spec?: Partial<V.ViewSpec>): HTMLElement | null {
     if (!host.makeCanvas || !sel) return null;
     const btn = h("button", { title: "Generate an Obsidian Canvas of this view in 99_System/12_Views and open it" }, "Open as Canvas");
     btn.addEventListener("click", async () => {
       const prof = V.PROFILES.find((p) => p.name === profileName)!;
       btn.setAttribute("disabled", ""); btn.textContent = "Creating…";
-      try { btn.textContent = await host.makeCanvas!(toCanvas(ix!, sel, prof, depthOverride || prof.depth)); }
+      try { btn.textContent = await host.makeCanvas!(toCanvas(ix!, sel, prof, spec)); }
       catch (e) { btn.textContent = "Canvas failed: " + String((e as Error)?.message ?? e); }
       setTimeout(() => { btn.textContent = "Open as Canvas"; btn.removeAttribute("disabled"); }, 4000);
     });
@@ -287,30 +287,62 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     return pane;
   }
 
+  /* Graph and canvas share one set of view settings (filters, hops, relationship kinds, grouping). Presentation only. */
+  function checkGroup(title: string, options: Array<[string, string]>, on: (v: string) => boolean, toggle: (v: string, checked: boolean) => void): HTMLElement {
+    return h("fieldset", { class: "vs" }, h("legend", {}, title), ...options.map(([v, label]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: on(v), onchange: (e: Event) => { toggle(v, (e.target as HTMLInputElement).checked); draw(); } }), " " + label)));
+  }
+  const num = (v: string, d: number): number => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : d; };
+
+  function viewSettings(prof: V.Profile, spec: V.ViewSpec, g: V.GraphResult): HTMLElement {
+    const kinds = V.edgeKinds(ix!), types = new Map<string, number>(), statuses = new Map<string, number>();
+    for (const n of ix!.notes.values()) { types.set(n.type, (types.get(n.type) ?? 0) + 1); const st = n.status || "no status"; statuses.set(st, (statuses.get(st) ?? 0) + 1); }
+    const set = (patch: Partial<V.ViewSpec>): void => { gspec = { ...gspec, ...patch }; };
+    const flip = (list: string[], v: string, on: boolean): string[] => (on ? list.filter((x) => x !== v) : list.includes(v) ? list : [...list, v]);
+    return h("details", { class: "vsbox", open: true }, h("summary", {}, "View settings ", h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped: raise max notes or filter)" : ""}${g.hidden ? `, ${g.hidden} hidden by filters` : ""}${g.groups.size ? `, ${g.groups.size} groups` : ""}`)),
+      h("div", { class: "row" },
+        h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: spec.depth, style: "width:56px", title: "How many relationship hops from the selected note", onchange: (e: Event) => { set({ depth: num((e.target as HTMLInputElement).value, prof.depth) }); draw(); } })),
+        h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: spec.cap, style: "width:64px", onchange: (e: Event) => { set({ cap: num((e.target as HTMLInputElement).value, prof.cap) }); draw(); } })),
+        h("label", {}, "folder ", h("input", { type: "search", value: spec.folder, placeholder: "limit to folder", style: "width:170px", onchange: (e: Event) => { set({ folder: (e.target as HTMLInputElement).value.trim() }); draw(); } })),
+        h("label", { class: "pill" }, h("input", { type: "checkbox", checked: spec.ghosts, onchange: (e: Event) => { set({ ghosts: (e.target as HTMLInputElement).checked }); } }), " canvas: show references to notes not in the vault"),
+        h("button", { onclick: () => { gspec = {}; draw(); } }, "Reset view")),
+      checkGroup("Note types shown", [...types].sort().map(([k, n]) => [k, `${k} ${n}`]), (v) => !spec.hideTypes.includes(v), (v, on) => set({ hideTypes: flip(spec.hideTypes, v, on) })),
+      checkGroup("Status shown", [...statuses].sort().map(([k, n]) => [k, `${k} ${n}`]), (v) => !spec.hideStatuses.includes(v), (v, on) => set({ hideStatuses: flip(spec.hideStatuses, v, on) })),
+      checkGroup(`Relationships followed (none ticked = the ${prof.name} profile's own)`, kinds.map(([k, n]) => [k, `${k} ${n}`]), (v) => spec.kinds.includes(v), (v, on) => set({ kinds: on ? [...spec.kinds, v] : spec.kinds.filter((x) => x !== v) })),
+      h("div", { class: "row" }, h("b", {}, "Group similar notes by "),
+        h("select", { "aria-label": "Classifier", onchange: (e: Event) => { set({ collapse: (e.target as HTMLSelectElement).value as V.Classifier }); draw(); } }, ...V.CLASSIFIERS.map(([v, l]) => h("option", { value: v, selected: v === spec.collapse }, l))),
+        h("label", {}, " when more than ", h("input", { type: "number", min: 1, max: 50, value: spec.collapseOver, style: "width:56px", onchange: (e: Event) => { set({ collapseOver: num((e.target as HTMLInputElement).value, 6) }); draw(); } }), " share a class at the same distance")));
+  }
+
   function vGraph(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const prof = V.PROFILES.find((p) => p.name === profile)!, depth = gdepth || prof.depth;
-    const g = V.traverse(ix!, sel, prof, depth), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
+    const prof = V.PROFILES.find((p) => p.name === profile)!, spec: V.ViewSpec = { ...V.defaultSpec(prof), ...gspec };
+    const g = V.traverse(ix!, sel, prof, spec.depth, spec.cap, spec), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
     const xs = placed.map((p) => p.x), ys = placed.map((p) => p.y), pad = 110;
     const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - 40, w = Math.max(...xs) - Math.min(...xs) + pad * 2, hh = Math.max(...ys) - Math.min(...ys) + 100;
     const svg = s("svg", { class: "g", viewBox: `${minX} ${minY} ${Math.max(w, 400)} ${Math.max(hh, 260)}`, role: "img", "aria-label": "Relationship graph" });
     svg.append(s("defs", {}, s("marker", { id: "ag", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" }, s("path", { d: "M0 0L10 5L0 10z", fill: "currentColor" }))));
     for (const e of g.edges) {
       const a = pos.get(e.from), b = pos.get(e.to!); if (!a || !b) continue;
-      svg.append(s("line", { class: "edge", x1: a.x, y1: a.y, x2: b.x, y2: b.y, "marker-end": "url(#ag)", style: "color:var(--mut)" }), s("text", { class: "elabel", x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 3, "text-anchor": "middle" }, e.kind));
+      svg.append(s("line", { class: "edge", x1: a.x, y1: a.y, x2: b.x, y2: b.y, "marker-end": "url(#ag)", style: "color:var(--mut)" }), s("text", { class: "elabel", x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 3, "text-anchor": "middle" }, e.kind + (/×\d+/.exec(e.label)?.[0] ? " " + /×\d+/.exec(e.label)![0] : "")));
     }
     for (const p of placed) {
-      const n = note(p.path); if (!n) continue;
+      const grpInfo = g.groups.get(p.path), n = note(p.path);
+      if (grpInfo) {
+        const grp = s("g", {}, s("title", {}, grpInfo.members.map((m) => note(m)?.title ?? m).join("\n")), s("rect", { class: "box", x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, "stroke-dasharray": "4 3" }),
+          s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[grpInfo.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, `${grpInfo.label.length > 18 ? grpInfo.label.slice(0, 17) + "…" : grpInfo.label}`), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, `×${grpInfo.members.length} notes`));
+        svg.append(grp); continue;
+      }
+      if (!n) continue;
       const title = n.title.length > 22 ? n.title.slice(0, 21) + "…" : n.title;
-      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8, style: `border-left:3px solid ${V.TYPE_COLOR[n.type] ?? "#888"}` }),
+      const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8 }),
         s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
       grp.addEventListener("click", () => select(p.path, "graph"));
       svg.append(grp);
     }
     return h("div", { class: "pane" }, h("h2", {}, "Graph around " + note(sel)!.title), h("div", { class: "row" },
-      h("select", { "aria-label": "View profile", onchange: (e: Event) => { profile = (e.target as HTMLSelectElement).value; gdepth = 0; draw(); } }, ...V.PROFILES.map((p) => h("option", { value: p.name, selected: p.name === profile }, p.name))),
-      h("label", {}, "depth ", h("input", { type: "number", min: 1, max: 6, value: depth, style: "width:60px", onchange: (e: Event) => { gdepth = +(e.target as HTMLInputElement).value || 0; draw(); } })),
-      canvasButton(profile, depth), h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped)" : ""} — ${prof.description}`)), g.nodes.length > 1 ? svg : empty("No relationships of this kind from this note."));
+      h("select", { "aria-label": "View profile", onchange: (e: Event) => { profile = (e.target as HTMLSelectElement).value; const { depth: _d, cap: _c, ...rest } = gspec; gspec = rest; draw(); } }, ...V.PROFILES.map((p) => h("option", { value: p.name, selected: p.name === profile }, p.name))),
+      canvasButton(profile, spec), h("span", { class: "mut" }, prof.description)),
+      viewSettings(prof, spec, g), g.nodes.length > 1 ? svg : empty("Nothing to show with these settings. Widen the relationships, types or connections-away."));
   }
 
   function vRels(): HTMLElement {

@@ -169,3 +169,54 @@ test("canvas export on a full imported vault links notes both ways", () => {
   assert.ok(r.doc.nodes.filter((n) => n.type === "file").length >= 5 && r.doc.edges.length >= 5);
   assert.ok(r.doc.nodes.filter((n) => n.type === "file").every((n) => ix.notes.has(n.file!)));
 });
+
+/* ---- view settings: filters, hops, relationship kinds, classifier grouping ---- */
+const note = (type: string, id: string, title: string, sym: string, sysml: string, status = "Draft", folder = "10_Model", sub = ""): [string, string] =>
+  [`${folder}/${title}.md`, `---\ntype: ${type}\n${sub ? `subtype: ${sub}\n` : ""}id: ${id}\nuid: 2025${id.replace(/\W/g, "")}x\nstatus: ${status}\nprimarySymbol: ${sym}\n---\n# ${title}\n\n## SysML v2\n\n\`\`\`sysml\n${sysml}\n\`\`\`\n`];
+function wide(n = 20): ReturnType<typeof buildIndex> {
+  const f = new Map<string, string>();
+  const reqs = Array.from({ length: n }, (_, i) => i);
+  const put = ([p, t]: [string, string]): void => { f.set(p, t); };
+  put(note("Object", "OBJ-1", "Unit", "OBJ_1::Unit", `package OBJ_1 {\n  part def Unit {\n    part sub : OBJ_2::Sub;\n${reqs.map((i) => `    allocate REQ_${i}::R${i} to OBJ_1::Unit;`).join("\n")}\n  }\n}`, "Draft", "10_Model", "part"));
+  put(note("Object", "OBJ-2", "Sub", "OBJ_2::Sub", `package OBJ_2 {\n  part def Sub {\n  }\n}`));
+  for (const i of reqs) put(note("Requirement", `REQ-${i}`, `Req ${i}`, `REQ_${i}::R${i}`, `package REQ_${i} {\n  requirement def R${i} {\n  }\n}`, i % 2 ? "Approved" : "Draft", i < 10 ? "20_Reqs/Power" : "20_Reqs/Safety", i < 15 ? "engineering" : "standard"));
+  return buildIndex(f);
+}
+
+test("view settings: hops, relationship kinds, hidden types and statuses, folder", () => {
+  const w = wide(), start = [...w.notes.values()].find((n) => n.title === "Unit")!.path, P = V.PROFILES.find((p) => p.name === "Everything")!;
+  const all = V.traverse(w, start, P, 1, 100);
+  assert.equal(all.nodes.length, 22);
+  assert.equal(V.traverse(w, start, P, 1, 100, { hideTypes: ["Requirement"] }).nodes.length, 2);
+  assert.equal(V.traverse(w, start, P, 1, 100, { kinds: ["hasPart"] }).nodes.length, 2);
+  assert.equal(V.traverse(w, start, P, 1, 100, { hideStatuses: ["Approved"] }).nodes.length, 12);
+  assert.equal(V.traverse(w, start, P, 1, 100, { folder: "20_Reqs/Power" }).nodes.length, 11);
+  assert.equal(V.traverse(w, start, P, 1, 5).capped, true);
+  assert.equal(V.traverse(w, start, P, 1, 100, { hideTypes: ["Requirement"] }).hidden, 20);
+});
+
+test("classifier grouping collapses many similar notes into one card and keeps edge counts", () => {
+  const w = wide(), start = [...w.notes.values()].find((n) => n.title === "Unit")!.path, P = V.PROFILES.find((p) => p.name === "Everything")!;
+  const g = V.traverse(w, start, P, 1, 100, { collapse: "subtype", collapseOver: 6 });
+  assert.equal(g.groups.size, 1);                                              // engineering (15) groups; standard (5) stays under the threshold
+  const grp = [...g.groups.values()][0]!;
+  assert.equal(grp.members.length, 15);
+  assert.ok(g.nodes.length < 22 && g.edges.some((e) => /×15/.test(e.label)));
+  assert.ok(g.nodes.every((n) => g.groups.has(n.path) || w.notes.has(n.path)));
+  assert.equal(V.traverse(w, start, P, 1, 100, { collapse: "type", collapseOver: 30 }).groups.size, 0);
+});
+
+test("canvas honours view settings: grouped card lists member links, file name differs, ghosts can be hidden", () => {
+  const w = wide(), start = [...w.notes.values()].find((n) => n.title === "Unit")!.path, P = V.PROFILES.find((p) => p.name === "Everything")!;
+  const plain = toCanvas(w, start, P, { depth: 1 }), grouped = toCanvas(w, start, P, { depth: 1, collapse: "subtype", collapseOver: 6 });
+  assert.notEqual(plain.fileName, grouped.fileName);
+  assert.ok(grouped.doc.nodes.length < plain.doc.nodes.length && grouped.groups === 1);
+  const card = grouped.doc.nodes.find((n) => n.type === "text" && /×15/.test(n.text!))!;
+  assert.ok(card && /\[\[20_Reqs\/Power\/Req 0\|Req 0\]\]|\[\[20_Reqs\/Safety/.test(card.text!) && /… 3 more/.test(card.text!));
+  const boxes = grouped.doc.nodes.filter((n) => n.x === card.x);
+  for (let i = 1; i < boxes.length; i++) { const a = boxes.slice().sort((p, q) => p.y - q.y); assert.ok(a[i]!.y >= a[i - 1]!.y + a[i - 1]!.height, "no overlap in a column"); }
+  const hidden = toCanvas(w, start, P, { depth: 1, hideTypes: ["Requirement"] });
+  assert.equal(hidden.doc.nodes.filter((n) => n.type === "file").length, 2);
+  const lone2 = lone(), p2 = [...lone2.notes.keys()][0]!, A = V.PROFILES.find((p) => p.name === "Allocation")!;
+  assert.equal(toCanvas(lone2, p2, A, { ghosts: false }).doc.nodes.length, 1);
+});

@@ -190,3 +190,11 @@ Rules: none edited. The plugin is not yet tested in real Obsidian; the base-vaul
 The Obsidian plugin presents the model as tables (Notes, Relationships, Traceability, parts list) and as an Obsidian Canvas generated from any view profile around a note. A canvas has file cards for notes in the vault and text cards for references whose note is missing. Canvases are written to `99_System/12_Views/`, overwritten on regeneration, ignored by the indexer, and carry no model meaning; they are the only files the Workbench writes, and no model note is touched (D-0019 stays read-only). An allocate or dependency whose source note is missing is kept as an unresolved edge on the target note, never a self-loop; Structure lists typed parts whose definition is not in the vault.
 
 Rules: none edited.
+
+## D-0021 — Workbench view settings and classifier grouping
+
+2026-10-19 · Spencer · Accepted
+
+The Graph tab and the canvas share one set of view settings: connections away, max notes, relationships followed, note types and statuses shown, a folder limit, and a classifier. A classifier (type, subtype, status, folder or EA type) groups notes that share a class at the same distance from the selected note into one card once more than N do; edges between groups are merged with a count. Filters hide a note and do not traverse through it. Settings are presentation only and not stored in the model. Interpretation of "classifier" is mine; the owner may redefine it (for example as a stored tag or a named view).
+
+Rules: none edited.

@@ -152,11 +152,23 @@ export const PROFILES: Profile[] = [
   { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1, cap: 60 },
 ];
 
-export interface GraphResult { nodes: Array<{ path: string; depth: number }>; edges: Edge[]; capped: boolean }
-export function traverse(ix: ModelIndex, start: string, p: Profile, depth = p.depth, cap = p.cap): GraphResult {
+/** What the person chose to see. Empty lists mean "no restriction". Presentation only: it never changes the model. */
+export type Classifier = "" | "type" | "subtype" | "status" | "folder" | "eaType";
+export interface ViewSpec { kinds: string[]; hideTypes: string[]; hideStatuses: string[]; folder: string; depth: number; cap: number; collapse: Classifier; collapseOver: number; ghosts: boolean }
+export const defaultSpec = (p?: Profile): ViewSpec => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, cap: p?.cap ?? 80, collapse: "", collapseOver: 6, ghosts: true });
+export const specIsDefault = (s: Partial<ViewSpec> | undefined, p: Profile): boolean => !s || JSON.stringify({ ...defaultSpec(p), ...s }) === JSON.stringify(defaultSpec(p));
+export const CLASSIFIERS: Array<[Classifier, string]> = [["", "Don't group"], ["type", "Note type"], ["subtype", "Type and subtype"], ["status", "Status"], ["folder", "Folder"], ["eaType", "EA type"]];
+export const classOf = (n: Note, by: Classifier): string => by === "type" ? n.type : by === "subtype" ? (n.subtype ? `${n.type}/${n.subtype}` : n.type) : by === "status" ? n.status || "no status" : by === "folder" ? n.folder || "(root)" : by === "eaType" ? n.eaType || "no EA type" : "";
+
+export interface GroupInfo { label: string; members: string[]; type: string }
+export interface GraphResult { nodes: Array<{ path: string; depth: number }>; edges: Edge[]; capped: boolean; groups: Map<string, GroupInfo>; hidden: number }
+
+export function traverse(ix: ModelIndex, start: string, p: Profile, depth = p.depth, cap = p.cap, spec?: Partial<ViewSpec>): GraphResult {
+  const sp = { ...defaultSpec(p), ...spec };
   const seen = new Map<string, number>([[start, 0]]), edges: Edge[] = [], used = new Set<Edge>();
-  let frontier = [start], capped = false;
-  const allow = (e: Edge, dir: "out" | "in"): boolean => !p.steps.length || p.steps.some((s) => s.kind === e.kind && s.dir === dir);
+  let frontier = [start], capped = false, hidden = 0;
+  const allow = (e: Edge, dir: "out" | "in"): boolean => sp.kinds.length ? sp.kinds.includes(e.kind) : !p.steps.length || p.steps.some((s) => s.kind === e.kind && s.dir === dir);
+  const visible = (path: string): boolean => { const n = ix.notes.get(path); return !!n && !sp.hideTypes.includes(n.type) && !sp.hideStatuses.includes(n.status || "no status") && (!sp.folder || n.folder === sp.folder || n.folder.startsWith(sp.folder.replace(/\/$/, "") + "/")); };
   for (let d = 1; d <= depth && frontier.length; d++) {
     const next: string[] = [];
     for (const cur of frontier) {
@@ -164,14 +176,43 @@ export function traverse(ix: ModelIndex, start: string, p: Profile, depth = p.de
         for (const e of list) {
           if (!allow(e, dir) || !e.to || used.has(e)) continue;
           const other = dir === "out" ? e.to : e.from;
-          if (!seen.has(other)) { if (seen.size >= cap) { capped = true; continue; } seen.set(other, d); next.push(other); }
+          if (!seen.has(other)) {
+            if (!visible(other)) { hidden++; continue; }
+            if (seen.size >= cap) { capped = true; continue; }
+            seen.set(other, d); next.push(other);
+          }
           used.add(e); edges.push(e);
         }
       }
     }
     frontier = next;
   }
-  return { nodes: [...seen].map(([path, depth]) => ({ path, depth })), edges, capped };
+  return collapseGraph(ix, { nodes: [...seen].map(([path, depth]) => ({ path, depth })), edges, capped, groups: new Map(), hidden }, sp);
+}
+
+/** Classifier grouping: at each distance from the start, notes that share a class collapse into one card once there are more than `collapseOver` of them. */
+export function collapseGraph(ix: ModelIndex, g: GraphResult, sp: ViewSpec): GraphResult {
+  if (!sp.collapse) return g;
+  const buckets = new Map<string, string[]>();
+  for (const n of g.nodes) { if (n.depth === 0) continue; const note = ix.notes.get(n.path); if (!note) continue; const k = `${n.depth}\u0000${classOf(note, sp.collapse)}`; (buckets.get(k) ?? buckets.set(k, []).get(k)!).push(n.path); }
+  const into = new Map<string, string>(), groups = new Map<string, GroupInfo>();
+  for (const [k, members] of buckets) {
+    if (members.length <= Math.max(1, sp.collapseOver)) continue;
+    const [d, label] = k.split("\u0000") as [string, string], id = `group:${d}:${label}`;
+    groups.set(id, { label, members, type: ix.notes.get(members[0]!)?.type ?? "" });
+    for (const m of members) into.set(m, id);
+  }
+  if (!groups.size) return g;
+  const nodes = g.nodes.filter((n) => !into.has(n.path)).concat([...groups].map(([id]) => ({ path: id, depth: +id.split(":")[1]! })));
+  const merged = new Map<string, { e: Edge; n: number }>(), map = (p: string): string => into.get(p) ?? p;
+  for (const e of g.edges) {
+    const from = map(e.from), to = map(e.to!);
+    if (from === to) continue;
+    const key = `${from}\u0000${to}\u0000${e.kind}`, cur = merged.get(key);
+    if (cur) cur.n++; else merged.set(key, { e: { ...e, from, to }, n: 1 });
+  }
+  const edges = [...merged.values()].map(({ e, n }) => (n > 1 ? { ...e, label: `${e.label ? e.label + " " : ""}×${n}` } : e));
+  return { ...g, nodes, edges, groups };
 }
 
 export interface Placed { path: string; x: number; y: number; depth: number }
