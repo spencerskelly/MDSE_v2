@@ -7,6 +7,24 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+# Local-only working files
+.env
+.env.*
+*.log
+tmp/
+scratch/
+.claude/settings.local.json
+# A vault opened from inside this repository for testing keeps its per-user Obsidian state and temporary views local.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/workspaces.json
+.obsidian/appearance.json
+.obsidian/hotkeys.json
+.obsidian/graph.json
+.obsidian/cache
+.obsidian/plugins/*/data.json
+99_System/22_Views/*
+!99_System/22_Views/README.md
 # OS and editor
 .DS_Store
 Thumbs.db
@@ -22,4 +40,5 @@ Thumbs.db
 *.xlsm
 private/
 evidence/
+# tools/importer/dist/mdse_importer.html and tools/workbench/dist/ ARE committed: they are the released builds, checked by CI (check:importer, check:workbench).
 # tools/importer/dist/mdse_importer.html IS committed: it is the released single-file importer, checked by CI.

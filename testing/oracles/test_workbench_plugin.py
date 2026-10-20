@@ -54,7 +54,7 @@ class WorkbenchPlugin(unittest.TestCase):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md")}
         notes[PCE_PATH] = PCE.read_text()
         errors = []
-        PREVIEW = "99_System/12_Views/Preview/Workbench Preview.canvas"
+        PREVIEW = "99_System/22_Views/Workbench Preview.canvas"
         with sync_playwright() as pw:
             b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
             pg = b.new_page(viewport={"width": 1300, "height": 850})
@@ -64,7 +64,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("n => { window.__notes = n; window.__active = null; }", notes)
             pg.evaluate(FAKE)
             # a stale preview left by an earlier session is removed when the plugin loads
-            pg.evaluate("p => { window.__files[p] = '{}'; window.__dirs['99_System/12_Views/Preview'] = 1; }", PREVIEW)
+            pg.evaluate("p => { window.__files[p] = '{}'; window.__dirs['99_System/22_Views'] = 1; }", PREVIEW)
             pg.evaluate("code => window.__run(code)", MAIN.read_text())
             pg.wait_for_function("p => !(p in window.__files)", arg=PREVIEW)
             cmds = set(pg.evaluate("Object.keys(window.__cmds)"))
@@ -93,15 +93,15 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertTrue(pg.evaluate("window.__cmds['save-canvas'].checkCallback(true)"))
             pg.click("button:has-text('Save canvas')")
             choices = pg.evaluate("window.__modal.getItems()")
-            self.assertEqual(choices[0], "99_System/12_Views", "default folder first")
-            self.assertNotIn("99_System/12_Views/Preview", choices)
+            self.assertEqual(choices[0], "99_System/23_Saved_Views", "default folder first")
+            self.assertNotIn("99_System/22_Views", choices, "scratch folder is never offered")
             pg.evaluate("window.__modal.close(); window.__modal.onChooseItem('00 Product Definition/MHE')")
             pg.wait_for_selector("text=/Saved to 00 Product Definition\\/MHE\\/PCE25 - Structure/")
             saved = [k for k in pg.evaluate("Object.keys(window.__files)") if k != PREVIEW]
             self.assertEqual(len(saved), 1); self.assertTrue(saved[0].startswith("00 Product Definition/MHE/PCE25 - ") and saved[0].endswith(".canvas"))
             self.assertEqual(pg.evaluate("p => window.__files[p]", saved[0]), pg.evaluate("p => window.__files[p]", PREVIEW))
             pg.click("button:has-text('Save canvas')")
-            self.assertEqual(pg.evaluate("window.__modal.getItems()")[:2], ["99_System/12_Views", "00 Product Definition/MHE"], "last folder second")
+            self.assertEqual(pg.evaluate("window.__modal.getItems()")[:2], ["99_System/23_Saved_Views", "00 Product Definition/MHE"], "last folder second")
             pg.evaluate("window.__modal.close(); window.__modal.onChooseItem('00 Product Definition/MHE')")
             pg.wait_for_function("Object.keys(window.__files).length === 3")
             self.assertTrue(any(k.endswith("(2).canvas") for k in pg.evaluate("Object.keys(window.__files)")))

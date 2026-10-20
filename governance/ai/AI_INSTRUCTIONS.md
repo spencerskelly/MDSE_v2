@@ -51,6 +51,7 @@ uid: 20260928101530123claudeai-----   (Claude created it on its own)
 ## Do not
 
 - Edit generated release files: `.obsidian/plugin-lock.yaml`, `.obsidian/community-plugins.json`, any plugin `data.json`, or `99_System/03_Schemas/`. Never add, update or remove plugins.
+- Treat `99_System/22_Views/` (temporary Workbench views) or `99_System/23_Saved_Views/` (saved canvases) as model content, cite them as sources, or edit them. They are pictures of the model.
 - Change an existing note's `uid` or `id`.
 - Stamp `uid` or `id` on material brought in from outside (standards, external documents).
 - Add an EA GUID to a new note. It appears only in `## Source: EA` of translated notes.

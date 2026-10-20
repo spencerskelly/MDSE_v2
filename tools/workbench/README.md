@@ -12,10 +12,27 @@ Read-only viewer for an MDSE vault. One TypeScript core, two shells: an offline 
 ## In Obsidian: table and canvas
 
 - **Table:** the Workbench tab (ribbon icon, or command "Open MDSE Workbench"). The Notes tab is a filterable table of every note; Relationships, Traceability and the parts list are tables too. All export to CSV.
-- **Canvas preview:** "Open as Canvas" (Structure, Where used and Graph tabs; also the command "Preview canvas from current note" and the file right-click menu) writes the view to ONE scratch file, `99_System/12_Views/Preview/Workbench Preview.canvas`, and opens it. Every preview overwrites that file, and it is deleted when the plugin loads or unloads, so previews never pile up. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card.
-- **Saving:** nothing is kept until you choose "Save canvas…" (button on the tab, or the command "Save preview canvas…"). You pick a folder: the default (setting "Default folder for saved canvases", initially `99_System/12_Views`) is offered first, then the last folder you used, then every other folder, so a project folder is one pick away. The saved file is a copy of the preview as it is now, including anything you rearranged, and never overwrites an existing file (a counter is added). In the browser page the same button downloads a `.canvas` file.
+- **Canvas preview (temporary view):** "Open as Canvas" (Structure, Where used and Graph tabs; also the command "Preview canvas from current note" and the file right-click menu) writes the view to ONE scratch file, `99_System/22_Views/Workbench Preview.canvas`, and opens it. Every preview overwrites that file, it is deleted when the plugin loads or unloads, and Git ignores the folder. Cards are the real notes (click through, hover to preview); a reference whose note is not in the vault becomes a red text card.
+- **Saved view:** nothing is kept until you choose "Save canvas…" (button on the tab, or the command "Save preview canvas…"). You pick a folder: the default `99_System/23_Saved_Views` (setting "Default folder for saved canvases") is offered first, then the last folder you used, then every other folder, so a project folder is one pick away. The saved file is a copy of the preview as it is now, including anything you rearranged, and never overwrites an existing file (a counter is added). In the browser page the same button downloads a `.canvas` file.
 - **View settings** (Graph tab; the canvas uses the same settings): connections away (hops), max notes, relationships followed (none ticked = the profile's own), note types shown, status shown, limit to a folder, and a classifier. The classifier groups notes that share a type, subtype, status, folder or EA type at the same distance into one card ("Requirement/engineering ×30") once more than N share it, with merged edge counts ("allocatedTo ×30"). On a canvas the group card lists member links. Notes hidden by a filter are not traversed through. Settings are per session; a canvas saved from non-default settings gets a short code in its suggested file name.
 - "Show current note in MDSE Workbench" (command and right-click) jumps straight to a note.
+
+## Rules this tool follows
+
+Agreed 2026-10-19 (D-0023). These are tool documentation; they are not registered in RULESET.md, whose WKB rules stay Unreviewed.
+
+1. **Read-only on the model.** The Workbench never creates, edits, renames or deletes a model note.
+2. **Disposable index.** It is rebuilt from the files on every load and holds no meaning of its own.
+3. **Relationships come from the SysML v2 text** (D-0003) plus MDSE-only YAML links. It never guesses a link; what it cannot resolve is shown as unresolved and listed in Review.
+4. **A missing end is never invented.** An `allocate` or `dependency` whose source note is absent is kept as an unresolved edge on the note that has it, never as a self-loop. Typed parts whose definition is absent are listed as "not in vault".
+5. **Views hold no model meaning.** Graphs, canvases and tables are pictures; deleting one loses nothing and regenerating it gives the same picture.
+6. **Temporary views are temporary.** A canvas preview is one scratch file in `99_System/22_Views/`, overwritten by each preview, deleted on load and unload, and ignored by Git. Previews never accumulate.
+7. **A view is kept only when the user saves it.** Saving is always the user's action, writes exactly one named file, goes to `99_System/23_Saved_Views/` by default or any folder the user picks, copies the preview as the user left it, and never overwrites an existing file. There is no auto-save.
+8. **Filters hide, they do not connect through.** A note hidden by a type, status or folder filter is not traversed through. Caps are always reported ("capped"). Grouping (the classifier) merges notes and edges and shows counts.
+9. **The indexer reads only `.md` notes** and skips `99_System/` and `.obsidian`, so views and system files are never mistaken for model notes.
+10. **Per-user settings stay local.** The default and last save folders live in the plugin's `data.json`, which Git ignores and AI tools never edit.
+11. **Honest parser status.** SysML blocks show "unchecked" unless `99_System/11_Import/Parser Check.md` says `Status: **PASSED**` or `**FAILED**`.
+12. **Staged startup.** Nothing touches the model until Obsidian's layout is ready; indexing yields so the window stays usable.
 
 ## Views
 

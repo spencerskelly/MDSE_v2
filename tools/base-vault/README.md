@@ -6,7 +6,7 @@ Builds the Obsidian vault that users receive, and the release manifest that pins
 
 ## Owns
 
-- Vault skeleton: folders, class templates, `99_System/` content copied from `governance/` (see ARCHITECTURE.md, "What ships into a vault").
+- Vault skeleton: folders (including `99_System/22_Views/` for temporary Workbench views and `99_System/23_Saved_Views/` for saved ones), a vault `.gitignore` for files that stay local (Obsidian workspace and per-user settings, plugin `data.json`, temporary views, OS leftovers; D-0023), class templates, `99_System/` content copied from `governance/` (see ARCHITECTURE.md, "What ships into a vault").
 - The controlled plugin payload: community plugins plus Bootstrap and Workbench builds, each pinned and hashed in `.obsidian/plugin-lock.yaml`, with governed settings hashed too.
 - `.vault.yaml` with `mdse_release` and an uninitialized vault identity (the importer initializes it).
 - The release manifest: the only place exact versions and hashes appear (MOD-146).

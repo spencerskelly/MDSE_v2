@@ -75,6 +75,15 @@ test("base vault included when output has no vault, not when it has one", async 
   assert.ok(!again.files.some((f) => f.path === ".vault.yaml"));
 });
 
+test("base vault ships the vault .gitignore and the two view folders (D-0023)", async () => {
+  const fresh = await run(), get = (p: string): string | undefined => fresh.files.find((f) => f.path === p)?.content;
+  const ig = get(".gitignore") ?? "";
+  for (const line of [".obsidian/workspace.json", ".obsidian/plugins/*/data.json", "99_System/22_Views/*", "!99_System/22_Views/README.md", ".DS_Store"]) assert.ok(ig.split("\n").includes(line), line);
+  for (const line of ["99_System/23_Saved_Views", "plugin-lock.yaml", "99_System/11_Import", ".obsidian/app.json"]) assert.ok(!ig.split("\n").some((l) => l.trim() === line || l.trim() === line + "/*"), `${line} must stay committed`);
+  assert.match(get("99_System/22_Views/README.md") ?? "", /Git ignores this folder/);
+  assert.match(get("99_System/23_Saved_Views/README.md") ?? "", /Saved views/);
+});
+
 test("identical re-import changes nothing", async () => {
   const first = await run();
   const second = await run({ existing: asVault(first) });

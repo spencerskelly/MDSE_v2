@@ -765,9 +765,11 @@ function search(ix            , q        , limit = 50)         {
                                                                 
                                                                                                                                                
 
-const CANVAS_DIR = "99_System/12_Views";
-/** The one scratch file a preview is written to. It is overwritten by every preview and deleted when the plugin loads or unloads. */
-const PREVIEW_PATH = `${CANVAS_DIR}/Preview/Workbench Preview.canvas`;
+/** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
+const PREVIEW_DIR = "99_System/22_Views";
+const PREVIEW_PATH = `${PREVIEW_DIR}/Workbench Preview.canvas`;
+/** Saved views: where Save canvas offers to put a canvas first (the person can pick any folder). Committed like any other file. */
+const SAVED_DIR = "99_System/23_Saved_Views";
 const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
 const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 
@@ -1291,7 +1293,7 @@ function mountWorkbench(root             , host       = {})      {
   };
 }
 
-return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PREVIEW_PATH, PROFILES };
+return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES };
 })();
 /* Obsidian shell. Everything of substance is in ui.ts / views.ts / index.ts / canvas.ts; this file only supplies the vault's
  * files, the open-note action and the canvas writer. Startup does no model work until Obsidian's layout is ready, and
@@ -1299,7 +1301,7 @@ return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex
  * overwrites and that is deleted when the plugin loads or unloads; a canvas is kept only when the person saves it. */
                                            
                            
-                                                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                                                                                                          
 const obsidian = require("obsidian");
 const VIEW = "mdse-workbench";
 const PARSER_REPORT = "99_System/11_Import/Parser Check.md";
@@ -1371,7 +1373,7 @@ class MdseSettingTab extends obsidian.PluginSettingTab {
   display() {
     this.containerEl.empty();
     new obsidian.Setting(this.containerEl).setName("Default folder for saved canvases").setDesc("Canvas previews are never kept automatically. Save canvas offers this folder first, then your recent and project folders.")
-      .addText((t     ) => t.setPlaceholder(WB.CANVAS_DIR).setValue(this.plugin.settings.defaultFolder).onChange(async (v        ) => { this.plugin.settings.defaultFolder = v.trim().replace(/\/+$/, "") || WB.CANVAS_DIR; await this.plugin.saveSettings(); }));
+      .addText((t     ) => t.setPlaceholder(WB.SAVED_DIR).setValue(this.plugin.settings.defaultFolder).onChange(async (v        ) => { this.plugin.settings.defaultFolder = v.trim().replace(/\/+$/, "") || WB.SAVED_DIR; await this.plugin.saveSettings(); }));
   }
 }
 
@@ -1405,7 +1407,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async saveSettings() { await this.saveData(this.settings); }
   /** Folder choices: default first, then the last one used, then every other folder (project folders). The scratch folder is never offered. */
   folderChoices()           {
-    const def = this.settings.defaultFolder || WB.CANVAS_DIR, skip = (f        ) => f === "" || f === "/" || f.startsWith(".") || f.startsWith(WB.CANVAS_DIR + "/Preview");
+    const def = this.settings.defaultFolder || WB.SAVED_DIR, skip = (f        ) => f === "" || f === "/" || f.startsWith(".") || f === WB.PREVIEW_DIR || f.startsWith(WB.PREVIEW_DIR + "/");
     const all = this.app.vault.getAllLoadedFiles().filter((f     ) => f.children !== undefined).map((f     ) => String(f.path)).filter((f        ) => !skip(f)).sort();
     return [...new Set([def, ...(this.settings.lastFolder ? [this.settings.lastFolder] : []), ...all])];
   }
@@ -1420,7 +1422,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
   async onload() {
     const saved = (await this.loadData()) ?? {};
-    this.settings = { defaultFolder: String(saved.defaultFolder || WB.CANVAS_DIR), lastFolder: String(saved.lastFolder || "") };
+    this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || "") };
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.app.workspace.onLayoutReady(() => { removePreview(this.app).catch(() => {}); });      // a stale preview from an earlier session
     this.registerView(VIEW, (leaf     ) => new WorkbenchView(leaf, this));
@@ -1436,7 +1438,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       menu.addItem((i     ) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => this.canvasFor(f.path)));
     }));
     const later = () => { if (!this.view) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.view?.refresh(), 3000); };
-    this.app.workspace.onLayoutReady(() => { for (const ev of ["modify", "create", "delete", "rename"]) this.registerEvent(this.app.vault.on(ev, (f     ) => { if (!String(f?.path ?? "").startsWith(WB.CANVAS_DIR)) later(); })); });
+    this.app.workspace.onLayoutReady(() => { for (const ev of ["modify", "create", "delete", "rename"]) this.registerEvent(this.app.vault.on(ev, (f     ) => { if (/\.md$/i.test(String(f?.path ?? ""))) later(); })); });
   }
   async open(path = "") {
     let leaf = this.app.workspace.getLeavesOfType(VIEW)[0];

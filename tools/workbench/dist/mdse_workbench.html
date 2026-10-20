@@ -772,9 +772,11 @@ function search(ix            , q        , limit = 50)         {
                                                                 
                                                                                                                                                
 
-const CANVAS_DIR = "99_System/12_Views";
-/** The one scratch file a preview is written to. It is overwritten by every preview and deleted when the plugin loads or unloads. */
-const PREVIEW_PATH = `${CANVAS_DIR}/Preview/Workbench Preview.canvas`;
+/** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
+const PREVIEW_DIR = "99_System/22_Views";
+const PREVIEW_PATH = `${PREVIEW_DIR}/Workbench Preview.canvas`;
+/** Saved views: where Save canvas offers to put a canvas first (the person can pick any folder). Committed like any other file. */
+const SAVED_DIR = "99_System/23_Saved_Views";
 const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
 const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 
@@ -1298,7 +1300,7 @@ function mountWorkbench(root             , host       = {})      {
   };
 }
 
-return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PREVIEW_PATH, PROFILES };
+return { mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES };
 })();
 </script>
 <script>

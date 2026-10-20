@@ -116,7 +116,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
-import { toCanvas, CANVAS_DIR } from "../src/canvas.ts";
+import { toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -158,7 +158,7 @@ test("canvas export: valid JSON Canvas, file cards for notes, text cards for mis
   for (const e of r.doc.edges) { assert.ok(ids.has(e.fromNode) && ids.has(e.toNode)); assert.ok(e.fromNode !== e.toNode); }
   assert.ok(r.doc.nodes.every((n) => Number.isInteger(n.x) && Number.isInteger(n.y) && n.width > 0));
   assert.match(r.fileName, /\.canvas$/); assert.ok(!/[\\/:*?"<>|]/.test(r.fileName));
-  assert.equal(CANVAS_DIR, "99_System/12_Views");
+  assert.equal(PREVIEW_DIR, "99_System/22_Views"); assert.equal(SAVED_DIR, "99_System/23_Saved_Views"); assert.equal(PREVIEW_PATH, "99_System/22_Views/Workbench Preview.canvas");
   JSON.parse(JSON.stringify(r.doc));
   const alloc = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Allocation")!);
   assert.ok(alloc.unresolved === 51 && alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text").length <= 24, "unresolved cards are capped");

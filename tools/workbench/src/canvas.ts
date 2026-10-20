@@ -11,9 +11,11 @@ export interface CanvasEdge { id: string; fromNode: string; toNode: string; from
 export interface CanvasDoc { nodes: CanvasNode[]; edges: CanvasEdge[] }
 export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number }
 
-export const CANVAS_DIR = "99_System/12_Views";
-/** The one scratch file a preview is written to. It is overwritten by every preview and deleted when the plugin loads or unloads. */
-export const PREVIEW_PATH = `${CANVAS_DIR}/Preview/Workbench Preview.canvas`;
+/** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
+export const PREVIEW_DIR = "99_System/22_Views";
+export const PREVIEW_PATH = `${PREVIEW_DIR}/Workbench Preview.canvas`;
+/** Saved views: where Save canvas offers to put a canvas first (the person can pick any folder). Committed like any other file. */
+export const SAVED_DIR = "99_System/23_Saved_Views";
 const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
 const safe = (s: string): string => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 

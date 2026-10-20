@@ -24,7 +24,7 @@ function bundle(withPlugin) {
       .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
     parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
   }
-  const api = "{ mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, CANVAS_DIR, PREVIEW_PATH, PROFILES }";
+  const api = "{ mountWorkbench, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES }";
   return `const WB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 }
 const wb = bundle();
