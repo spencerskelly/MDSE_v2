@@ -15,7 +15,7 @@ export interface EaObject {
 }
 export interface EaConnector {
   id: number; type: string; stereotype: string; name: string; notes: string; direction: string; guid: string;
-  sourceId: number; destId: number; sourceCard: string; destCard: string; sourceIsAggregate: number; destIsAggregate: number;
+  sourceId: number; destId: number; sourceCard: string; destCard: string; sourceRole: string; destRole: string; sourceIsAggregate: number; destIsAggregate: number;
   /** UML transition fields: PDATA1 trigger, PDATA2 guard, PDATA3 effect (V1 decisions) */ pdata1: string; pdata2: string; pdata3: string;
 }
 export interface SourceGraph {
@@ -50,7 +50,7 @@ export async function readSourceGraph(reader: ReaderLike): Promise<SourceGraph> 
   for await (const r of reader.scan("t_connector"))
     connectors.push({
       id: num(r.Connector_ID), type: str(r.Connector_Type), stereotype: str(r.Stereotype), name: str(r.Name), notes: str(r.Notes), direction: str(r.Direction),
-      guid: str(r.ea_guid), sourceId: num(r.Start_Object_ID), destId: num(r.End_Object_ID), sourceCard: str(r.SourceCard), destCard: str(r.DestCard),
+      guid: str(r.ea_guid), sourceId: num(r.Start_Object_ID), destId: num(r.End_Object_ID), sourceCard: str(r.SourceCard), destCard: str(r.DestCard), sourceRole: str(r.SourceRole), destRole: str(r.DestRole),
       sourceIsAggregate: num(r.SourceIsAggregate), destIsAggregate: num(r.DestIsAggregate), pdata1: str(r.PDATA1), pdata2: str(r.PDATA2), pdata3: str(r.PDATA3),
     });
   const tags = new Map<number, Array<[string, string]>>();

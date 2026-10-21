@@ -74,21 +74,21 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | EA family | Mapping disposition | Becomes | How | Exceptions |
 |---|---|---|---|---|
 | `Generalization` | conditional_native_candidate | `:>` on the specific definition | Both ends must be the same kind of definition. | `GENERALIZATION_ENDPOINT_KIND` |
-| `Abstraction:allocate` | conditional_native_candidate | `allocate A to B` in A's block | Both ends definitions. | `ALLOCATE_ENDPOINT_KIND` |
-| `Aggregation` | conditional_native_candidate | Owned `part` usage in the whole | Whole is the end marked composite or shared; both must be part defs. A part usage already owned by the whole and typed by the same part wins, and the aggregation becomes alias_merged. | `USAGE_WINS`, `AGGREGATION_BOTH_ENDS_AGGREGATE`, `AGGREGATION_WHOLE_NOT_EVIDENCED`, `AGGREGATION_ENDPOINT_KIND` |
+| `Abstraction:allocate` | conditional_native_candidate | `allocate A to B` in A's block; YAML link when an end is a note | Both ends definitions. A note end (Issue, Change, Info, Artifact) becomes `describes` (Info, Artifact, Document) or the provisional `tracesTo`. | `ALLOCATE_ENDPOINT_KIND` |
+| `Aggregation` | conditional_native_candidate | Owned usage in the whole: `part`, `action`, `state`, `item`, `requirement`, `port` or `use case`, by the kinds of the two definitions; `hasChild` YAML link when an end is a note | Whole is the end marked composite or shared. Every connector is its own usage (named from the end role, else the child, with _2 suffixes); an EA Part or nested element of the same type is matched to one connector and not duplicated (alias_merged). Role names and multiplicity come from the child end; no multiplicity is invented. A connector in an ownership cycle is left out. | `USAGE_WINS`, `AGGREGATION_BOTH_ENDS_AGGREGATE`, `AGGREGATION_WHOLE_NOT_EVIDENCED`, `AGGREGATION_ENDPOINT_KIND`, `AGGREGATION_PART_IN_INTERFACE`, `OWNERSHIP_CYCLE` |
 | `Dependency:satisfy` | conditional_native_candidate | `satisfy` in the satisfier's block | One end a requirement def; the other a part, action or state def. Direction is normalized. | `SATISFY_ENDPOINT_KIND` |
-| `Realisation` | conditional_native_candidate | `perform` (part to action), `allocate` (part to requirement or part to part) | By endpoint kind; any other pair is a review row. | `REALISATION_ENDPOINT_KIND` |
+| `Realisation` | conditional_native_candidate | `perform` (part to action), `allocate` (requirement to part, or part to part) | The part is found by element type, not by arrow direction. A note end becomes a YAML link. Any other pair is a review row. | `REALISATION_ENDPOINT_KIND` |
 | `Dependency:refine` | conditional_native_candidate | `dependency from a to b; // refines` | Both ends definitions. The kind is carried by the trailing comment until a metadata form is chosen. | `DEPENDENCY_ENDPOINT_KIND` |
-| `Dependency` | conditional_native_candidate | `dependency from a to b; // dependsOn` | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
-| `Dependency:trace` | conditional_native_candidate | `dependency from a to b; // trace` | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
-| `Association` | conditional_native_candidate | Review row | Connectivity cannot be proven from an association. No ConnectionUsage is written. | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN` |
+| `Dependency` | conditional_native_candidate | `dependency from a to b; // dependsOn`; `dependsOn` YAML link when an end is a note | Both ends definitions. | `DEPENDENCY_ENDPOINT_KIND` |
+| `Dependency:trace` | conditional_native_candidate | `dependency from a to b; // trace`; YAML link when an end is a note | Both ends definitions. A note end becomes `describes` (Info, Artifact, Document) or the provisional `tracesTo`. | `DEPENDENCY_ENDPOINT_KIND` |
+| `Association` | conditional_native_candidate | `actor` usage in the use case (Actor), `participants` YAML link on the use case (other part def), otherwise a review row | An association between a use case and a part is participation. Between anything else it is not evidence of a connection, so no ConnectionUsage is written. | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN`, `USAGE_WINS` |
 | `UseCase:extend` | conditional_native_candidate | Optional `use case x : Ext[0..1]` in the base use case | Source is the extending case, destination the base. Both use case defs. | `EXTEND_ENDPOINT_KIND` |
-| `ControlFlow` | conditional_native_candidate | `succession first a then b` in the owning action def | Both ends action, fork or join usages with the same owner. Guards stay in the Source section. | `FLOW_ENDPOINT_NOT_USAGE`, `FLOW_DIFFERENT_OWNERS` |
+| `ControlFlow` | conditional_native_candidate | `succession first a then b` in the owning definition; `precedes` YAML link between notes with no shared owner | Both ends action, fork or join usages (or definitions nested in the same owner) give a succession. Two notes that share no owner give a `precedes` link with the guard as a Source line. | `FLOW_ENDPOINT_NOT_USAGE` |
 | `Dependency:deriveReqt` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. | `DERIVE_ENDPOINT_KIND` |
 | `NoteLink` | reference_only | `describes` YAML link on the Info note | One end must be an Info note. | `NOTELINK_ENDPOINT_NOT_INFO_NOTE` |
 | `UseCase:include` | conditional_native_candidate | `include use case` in the including use case | Both ends use case defs. | `INCLUDE_ENDPOINT_KIND` |
 | `Sequence` | reference_only | Ledger row only | Reference only; diagrams are out of scope. | `REFERENCE_ONLY` |
-| `StateFlow` | conditional_native_candidate | `transition first a then b` in the owning state def | Both ends state usages with the same owner. Trigger, guard and effect stay in the Source section. | `FLOW_ENDPOINT_NOT_USAGE`, `FLOW_DIFFERENT_OWNERS` |
+| `StateFlow` | conditional_native_candidate | `transition first a then b` in the owning state def; `precedes` YAML link between notes with no shared owner | Both ends state usages (or state definitions nested in the same owner) give a transition. Two notes that share no owner give a `precedes` link with trigger, guard and effect as a Source line. | `FLOW_ENDPOINT_NOT_USAGE` |
 | `Nesting` | conditional_native_candidate | Evidence only | Nesting is organizational. Ownership of usages comes from the parent id, not this connector. | `ORGANIZATIONAL_ONLY` |
 | `Usage` | conditional_native_candidate | `dependency from a to b; // uses` | Both ends definitions. Stronger evidence (allocate, satisfy) is not inferred. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Dependency:verify` | conditional_native_candidate | `objective { verify }` in the verification def | One end a verification def, the other a requirement def. | `VERIFY_ENDPOINT_KIND` |
@@ -152,10 +152,13 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `ORGANIZATIONAL_ONLY` | Nesting connector carries no model meaning. | None. |
 | `NATIVE_EMISSION_DISABLED` | Run option turned native SysML off. | Re-run with native emission on. |
 | `GENERALIZATION_ENDPOINT_KIND` | Generalization ends are not the same kind of definition. | Review the EA link. |
-| `USAGE_WINS` | An owned part usage already covers this aggregation; aggregation merged into it. | None. |
+| `USAGE_WINS` | An EA Part, nested element or actor already covers this connector; the connector is merged into that usage. | None. |
+| `OWNERSHIP_CYCLE` | Whole and part own each other through the aggregation and the usages already written. | Resolve the cycle in EA; the connector is left out of the model. |
+| `AGGREGATION_PART_IN_INTERFACE` | A part is the child of an interface. Approved as an exception, not as a mapping. | Inspect the EA source and decide the construct. |
+| `PROVISIONAL_LINK` | tracesTo is written because the connector fits no stronger relationship (W-288). | Replace tracesTo with the right relationship. |
 | `AGGREGATION_BOTH_ENDS_AGGREGATE` | Both ends are marked as the whole. | Fix the EA aggregation kind. |
 | `AGGREGATION_WHOLE_NOT_EVIDENCED` | Neither end is marked as the whole. | Fix the EA aggregation kind. |
-| `AGGREGATION_ENDPOINT_KIND` | Aggregation ends are not both part defs. | Review the EA link. |
+| `AGGREGATION_ENDPOINT_KIND` | Aggregation ends are not the same kind of definition (part/part, action/action, state/state, item/item, use case/use case, requirement/requirement, part/port). | Review the EA link. |
 | `SATISFY_ENDPOINT_KIND` | satisfy needs a requirement on one end and a part, action or state def on the other. | Review the EA link. |
 | `VERIFY_ENDPOINT_KIND` | verify needs a verification def and a requirement def. | Review the EA link. |
 | `ALLOCATE_ENDPOINT_KIND` | allocate needs two definitions. | Review the EA link. |
@@ -166,7 +169,7 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `PORT_CONNECTION_NEEDS_COMMON_OWNER` | Ports belong to different definitions and no assembly owns a part of each. | Add the assembly or make the connection by hand. |
 | `CONNECTOR_ENDPOINT_NOT_PORT` | Connector end is not a port usage. | Review the EA link. |
 | `FLOW_ENDPOINT_NOT_USAGE` | Flow end is not an action/state usage the importer wrote. | Control nodes and unwritten usages cannot be linked. |
-| `FLOW_DIFFERENT_OWNERS` | Flow ends sit in different owners. | A succession/transition must stay inside one owner. |
+| `FLOW_DIFFERENT_OWNERS` | No longer written: flow ends in different owners now become a precedes link. | None. |
 | `INCLUDE_ENDPOINT_KIND` | include needs two use case defs. | Review the EA link. |
 | `NATIVE_EMISSION_NOT_IMPLEMENTED` | Relationship family with no translation code. | Importer gap; see TRANSLATION.md. |
 | `EXCEPTION` | The importer threw while handling this row. See Error Log. | Fix the importer; the row was skipped, not lost. |

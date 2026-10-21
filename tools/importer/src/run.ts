@@ -84,12 +84,12 @@ export interface ImportResult {
   errors: ErrorRecord[];
 }
 
-interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout"; conj?: boolean }
+interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout"; conj?: boolean; conn?: boolean }
 interface Draft {
   key: string; o: EaObject; family: string; entry: ElementEntry; type: string; subtype: string; evidence: string[];
   title: string; uid: string; id: string; baseName: string; path: string; ownDir: string | null; parent: Draft | null; children: Draft[];
   keyword: string | null; pkg: string; ident: string; symbol: string; specializes: Draft[]; usages: UsageRef[];
-  flags: string[]; sourceLines: string[]; describes: string[]; existingPath?: string; pkgPath: string[]; members: string[]; verifies: string[];
+  flags: string[]; sourceLines: string[]; describes: string[]; links: Array<[string, Draft]>; existingPath?: string; pkgPath: string[]; members: string[]; verifies: string[];
 }
 
 const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
@@ -186,7 +186,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
       const kw = en.native_kind ? (en.native_kind === "InterfaceDefinition" ? "port def" : DEFINITION_KINDS[en.native_kind] ?? null) : null;   // IMP-104: an EA interface Class is what ports are typed by, so it is a port def
       const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
-      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
+      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], links: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
       for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
       drafts.push(d); byObj.set(e.id, d); return;
     }
@@ -245,7 +245,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const scopes = new Map<Draft, IdentScope>();
   const scopeOf = (d: Draft): IdentScope => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d)!);
   const flagLink = (d: Draft, title: string, detail: string[]): void => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
-  const ownerKeyword: Record<string, string> = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def", SyncNode: "action def" };
+  const ownerKeyword: Record<string, string[]> = { PartUsage: ["part def"], PortUsage: ["part def"], ActionUsage: ["action def", "verification def", "state def"], StateUsage: ["state def"], SyncNode: ["action def", "verification def", "state def"] };   // a verification case is an action; a state owns actions (entry, do, exit)
   // IMP-105: PDATA1/2/3 hold the GUID of another element ({...}); a plain number is accepted too.
   const byGuid = new Map<string, EaObject>(g.objects.map((x) => [x.guid.toLowerCase(), x] as const));
   const refObj = (s: string): EaObject | undefined => { const t = s.trim(); if (!t) return undefined; return t.startsWith("{") ? byGuid.get(t.toLowerCase()) : /^\d+$/.test(t) ? g.objectsById.get(Number(t)) : undefined; };
@@ -316,7 +316,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const partTarget = kind === "PartUsage" ? refDraft(e.pdata1) : null;
     if (kind === "PartUsage" && owner.keyword === "action def" && partTarget?.keyword === "action def") kind = "ActionUsage";
     else if (kind === "PartUsage" && owner.keyword === "state def" && partTarget?.keyword === "state def") kind = "StateUsage";
-    if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); return; }
+    if (!ownerKeyword[kind]?.includes(owner.keyword)) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); return; }
     if (kind === "SyncNode") {                                      // fork or join, decided by how many control flows meet it
       const nIn = flowIn.get(e.id) ?? 0, nOut = flowOut.get(e.id) ?? 0;
       const word = nOut > 1 && nIn <= 1 ? "fork" : nIn > 1 && nOut <= 1 ? "join" : null;
@@ -360,6 +360,16 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     set(t.row, "deferred_review", "", "LEGAL_TRANSITION_CONTEXT", "Trigger is not inside a state definition");
   });
+  // IMP-114 (approved: nested states, activities, requirements): an element nested under one of its own kind is a usage of it in the owner.
+  // No folder or note changes; the nested element keeps its own note and the owner gains `action x : X;` / `state x : X;` / `requirement x : X;`.
+  const nestedRef = new Map<string, UsageRef>();                     // `${owner id}|${child id}`
+  const NESTED: Array<[string, string[], UsageRef["kind"]]> = [["action def", ["action def", "verification def", "state def"], "action"], ["state def", ["state def"], "state"], ["requirement def", ["requirement def"], "requirement"]];
+  for (const d of order) {
+    const p = d.parent; if (!p || !d.keyword || !p.keyword) continue;
+    const rule = NESTED.find(([ck, owners]) => ck === d.keyword && owners.includes(p.keyword!)); if (!rule) continue;
+    const ref: UsageRef = { kind: rule[2], name: scopeOf(p).take(usageIdent(d.title, `${rule[2]}${d.o.id}`)), typeDraft: d, objGuid: d.o.guid, typedBy: d.title };
+    p.usages.push(ref); nestedRef.set(`${p.o.id}|${d.o.id}`, ref);
+  }
   track.stage = "connectors";
   // ---- connectors ---------------------------------------------------------------------------------------------------
   // IMP-108 (V1 W-136/REG-113): a Part is a carrier for the block it points at (PDATA1); a connector on a Part acts on that block, not on the usage.
@@ -373,6 +383,51 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
   const DERIVE = new Set(["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"]);
   const ALLOCATE = new Set(["Abstraction:allocate", "Usage:Responsibility"]);
+  // IMP-113 (Test_Vault_ approved aggregation docs): the child of an Aggregation is a usage in the whole, of the kind its definitions are.
+  const AGG: Record<string, UsageRef["kind"] | "use case"> = { "part def|part def": "part", "action def|action def": "action", "verification def|action def": "action", "state def|state def": "state", "item def|item def": "item", "use case def|use case def": "use case", "requirement def|requirement def": "requirement", "part def|port def": "port" };
+  const KIND_NAME: Record<string, string> = { part: "TypedOwnedUsage", action: "ActionUsage", state: "StateUsage", item: "ItemUsage", requirement: "RequirementUsage", port: "PortUsage", "use case": "NestedUseCaseUsage" };
+  interface AggEnds { whole: Draft | undefined; part: Draft | undefined; card: string; role: string }
+  const aggEnds = (c: EaConnector): AggEnds | { code: string } => {
+    const sw = c.sourceIsAggregate === 1 || c.sourceIsAggregate === 2, dw = c.destIsAggregate === 1 || c.destIsAggregate === 2;
+    if (sw === dw) return { code: sw ? "AGGREGATION_BOTH_ENDS_AGGREGATE" : "AGGREGATION_WHOLE_NOT_EVIDENCED" };
+    return sw ? { whole: endDraft(c.sourceId), part: endDraft(c.destId), card: c.destCard, role: c.destRole } : { whole: endDraft(c.destId), part: endDraft(c.sourceId), card: c.sourceCard, role: c.sourceRole };
+  };
+  // Ownership cycles (approved): an aggregation whose whole and part sit in one cycle of ownership is left out, with its source evidence. Existing usages count as edges.
+  const aggCycle = new Set<number>();
+  {
+    const edges = new Map<Draft, Draft[]>(), add = (a: Draft, b: Draft): void => { (edges.get(a) ?? edges.set(a, []).get(a)!).push(b); };
+    for (const d of drafts) for (const u of d.usages) if (u.typeDraft && u.kind !== "port") add(d, u.typeDraft);
+    const cand: Array<{ c: EaConnector; w: Draft; p: Draft }> = [];
+    for (const c of g.connectors) if (connectorKey(c) === "Aggregation") { const e = aggEnds(c); if ("code" in e || !e.whole || !e.part || !AGG[`${e.whole.keyword}|${e.part.keyword}`]) continue; cand.push({ c, w: e.whole, p: e.part }); add(e.whole, e.part); }
+    const index = new Map<Draft, number>(), low = new Map<Draft, number>(), onStack = new Set<Draft>(), stack: Draft[] = [], comp = new Map<Draft, number>(); let counter = 0, comps = 0;
+    for (const root of edges.keys()) {
+      if (index.has(root)) continue;
+      const work: Array<[Draft, number]> = [[root, 0]]; index.set(root, counter); low.set(root, counter++); stack.push(root); onStack.add(root);
+      while (work.length) {
+        const top = work[work.length - 1]!, v = top[0], outs = edges.get(v) ?? [];
+        if (top[1] < outs.length) {
+          const w = outs[top[1]++]!;
+          if (!index.has(w)) { index.set(w, counter); low.set(w, counter++); stack.push(w); onStack.add(w); work.push([w, 0]); }
+          else if (onStack.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+        } else {
+          work.pop();
+          if (work.length) { const par = work[work.length - 1]![0]; low.set(par, Math.min(low.get(par)!, low.get(v)!)); }
+          if (low.get(v) === index.get(v)) { let w: Draft; do { w = stack.pop()!; onStack.delete(w); comp.set(w, comps); } while (w !== v); comps++; }
+        }
+      }
+    }
+    const size = new Map<number, number>(); for (const k of comp.values()) size.set(k, (size.get(k) ?? 0) + 1);
+    for (const { c, w, p } of cand) if (w === p || (comp.get(w) !== undefined && comp.get(w) === comp.get(p) && (size.get(comp.get(w)!) ?? 0) > 1)) aggCycle.add(c.id);
+  }
+  const matched = new Set<UsageRef>();                                // EA usages (Part, nested element) already matched to one aggregation connector
+  const actorSeen = new Set<string>();
+  // a flow end: a usage the importer wrote, or the usage of a nested definition in its owner (IMP-114)
+  const endUsage = (id: number): { owner: Draft; ref: UsageRef } | undefined => {
+    const u = usageByObj.get(id); if (u) return u;
+    const dd = byObj.get(id), pr = dd?.parent; const nr = dd && pr ? nestedRef.get(`${pr.o.id}|${dd.o.id}`) : undefined;
+    return nr && pr ? { owner: pr, ref: nr } : undefined;
+  };
+  const DESCRIBER = new Set(["Info", "Artifact", "Document"]);
   for (const c of g.connectors) guard("connector", "t_connector", c, () => {
     const key = connectorKey(c);
     const r = row("t_connector", c.id, c.guid, c.type, c.stereotype, 0, "family:" + key);
@@ -405,6 +460,16 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
     const kw = (d?: Draft): string => d?.keyword ?? "";
     const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]]`;
+    // IMP-115 (REG-291; Test_Vault_ element policy): an end that is an MDSE note (Issue, Change, Info, Artifact, Decision...) has no SysML form, so the link is YAML.
+    // Info, Artifact and Document notes describe the element; Dependency/Usage is dependsOn; anything else is the provisional tracesTo (a Review finding, W-288).
+    const noteLink = (): boolean => {
+      if (!src || !dst || src === dst || (src.keyword && dst.keyword)) return false;
+      const field = !src.keyword && DESCRIBER.has(src.type) ? "describes" : !dst.keyword && DESCRIBER.has(dst.type) ? "describes" : key === "Dependency" || key === "Usage" ? "dependsOn" : "tracesTo";
+      const from = field === "describes" && !(!src.keyword && DESCRIBER.has(src.type)) ? dst : src, to = from === src ? dst : src;
+      from.links.push([field, to]);                                  // the YAML says it; Source: EA does not repeat it (IMP-096)
+      set(r, "native", `MdseLink:${field}`, field === "tracesTo" ? "PROVISIONAL_LINK" : "", field === "tracesTo" ? "Replace tracesTo with a stronger relationship" : ""); r.target_stable_id = from.id; r.target_file = from.path;
+      return true;
+    };
     if (key === "Generalization") {
       if (src && dst && src.keyword && src.keyword === dst.keyword && src !== dst) {
         src.specializes.push(dst); set(r, "native", "Specialization"); r.target_stable_id = src.id; r.target_file = src.path;
@@ -413,54 +478,79 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       defer("GENERALIZATION_ENDPOINT_KIND"); return;
     }
     if (key === "Aggregation") {
-      const srcWhole = c.sourceIsAggregate === 1 || c.sourceIsAggregate === 2, dstWhole = c.destIsAggregate === 1 || c.destIsAggregate === 2;
-      if (srcWhole === dstWhole) { defer(srcWhole ? "AGGREGATION_BOTH_ENDS_AGGREGATE" : "AGGREGATION_WHOLE_NOT_EVIDENCED"); return; }
-      const whole = srcWhole ? src : dst, part = srcWhole ? dst : src, card = srcWhole ? c.destCard : c.sourceCard;
-      if (!whole || !part || whole.keyword !== "part def" || part.keyword !== "part def") { defer("AGGREGATION_ENDPOINT_KIND"); return; }
-      const owned = whole.usages.find((u) => u.kind === "part" && u.typeDraft === part);
-      if (owned) {                                                  // an EA Part usage already says this; the usage wins
-        set(r, "alias_merged", "TypedOwnedUsage", "USAGE_WINS"); r.target_stable_id = whole.id; r.target_file = whole.path; r.evidence = `merged into usage ${owned.name}`;
+      const e = aggEnds(c);
+      if ("code" in e) { defer(e.code); return; }
+      const { whole, part } = e;
+      if (whole && part && (!whole.keyword || !part.keyword)) {         // MDSE hierarchy between notes (Change to Change and the like, approved): descriptive, not native ownership
+        whole.links.push(["hasChild", part]);
+        set(r, "native", "MdseLink:hasChild"); r.target_stable_id = whole.id; r.target_file = whole.path; return;
+      }
+      if (whole?.keyword === "port def" && part?.keyword === "part def") { defer("AGGREGATION_PART_IN_INTERFACE", "Approved as an exception: inspect the source before choosing a construct"); return; }
+      const kind = whole && part ? AGG[`${whole.keyword}|${part.keyword}`] : undefined;
+      if (!whole || !part || !kind) { defer("AGGREGATION_ENDPOINT_KIND"); return; }
+      if (aggCycle.has(c.id)) { defer("OWNERSHIP_CYCLE", "Whole and part own each other through other links; resolve the cycle in EA"); return; }
+      const owned = kind === "use case" ? undefined : whole.usages.find((u) => u.kind === kind && u.typeDraft === part && !u.conn && !matched.has(u));
+      if (owned) {                                                  // the EA Part (or nested element) already says this; it is that connector's usage, once
+        matched.add(owned); { const mm = parseMultiplicity(e.card); if (!owned.mult && mm.text) owned.mult = mm.text; }          // the connector's multiplicity fills a usage that has none
+        set(r, "alias_merged", KIND_NAME[kind]!, "USAGE_WINS"); r.target_stable_id = whole.id; r.target_file = whole.path; r.evidence = `merged into usage ${owned.name}`;
         return;
       }
-      const m = parseMultiplicity(card);
-      const name = scopeOf(whole).take(usageIdent(part.title, `part${part.o.id}`));
-      whole.usages.push({ kind: "part", name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid });
-      set(r, "native", "TypedOwnedUsage", m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
+      const m = parseMultiplicity(e.card), role = e.role.trim();
+      const name = scopeOf(whole).take(usageIdent(role || part.title, `${kind.replace(" ", "")}${part.o.id}`));
+      if (kind === "use case") { addStmt(whole, `use case ${name} : ${part.symbol}${m.text ?? ""};`, srcLine("Contains use case", part)); done(whole, KIND_NAME[kind]!, m.ok ? "UNVERIFIED_SYNTAX" : "MULTIPLICITY_UNPARSED"); return; }
+      whole.usages.push({ kind, name, typeDraft: part, typedBy: part.title, ...(m.text ? { mult: m.text } : {}), objGuid: c.guid, conn: true });
+      set(r, "native", KIND_NAME[kind]!, m.ok ? "" : "MULTIPLICITY_UNPARSED"); r.target_stable_id = whole.id; r.target_file = whole.path;
       return;
     }
     if (key === "Dependency:satisfy") {
       const req = [src, dst].find((d) => kw(d) === "requirement def"), by = req === src ? dst : src;
-      if (!req || !by || !["part def", "action def", "state def"].includes(kw(by))) { defer("SATISFY_ENDPOINT_KIND"); return; }
+      if (!req || !by || !["part def", "action def", "state def"].includes(kw(by))) { if (noteLink()) return; defer("SATISFY_ENDPOINT_KIND"); return; }
       addStmt(by, `satisfy ${req.symbol};`, srcLine("Satisfies", req)); done(by, "SatisfyRequirementUsage"); return;
     }
     if (key === "Dependency:verify") {
       const ver = [src, dst].find((d) => kw(d) === "verification def"), req = [src, dst].find((d) => kw(d) === "requirement def");
-      if (!ver || !req) { defer("VERIFY_ENDPOINT_KIND"); return; }
+      if (!ver || !req) { if (noteLink()) return; defer("VERIFY_ENDPOINT_KIND"); return; }
       if (!ver.verifies.includes(req.symbol)) ver.verifies.push(req.symbol);
       done(ver, "VerifyRequirementUsage"); return;
     }
     if (ALLOCATE.has(key)) {
-      if (!src || !dst || !src.keyword || !dst.keyword) { defer("ALLOCATE_ENDPOINT_KIND"); return; }
+      if (!src || !dst || !src.keyword || !dst.keyword) { if (noteLink()) return; defer("ALLOCATE_ENDPOINT_KIND"); return; }
       addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Allocated to", dst)); done(src, "AllocationUsage"); return;
     }
     if (key === "Realisation") {
-      if (src?.keyword === "part def" && dst?.keyword === "action def") {
-        const nm = scopeOf(src).take(usageIdent(dst.title, `action${dst.o.id}`));
-        addStmt(src, `perform action ${nm} : ${dst.symbol};`, srcLine("Performs", dst)); done(src, "PerformActionUsage"); return;
+      // IMP-117: the part is found by element type, not by arrow direction (Test_Vault_ Object/Requirement realization decision)
+      const pd = src?.keyword === "part def" ? src : dst?.keyword === "part def" ? dst : undefined, other = pd === src ? dst : src;
+      if (pd && other?.keyword === "action def") {
+        const nm = scopeOf(pd).take(usageIdent(other.title, `action${other.o.id}`));
+        addStmt(pd, `perform action ${nm} : ${other.symbol};`, srcLine("Performs", other)); done(pd, "PerformActionUsage"); return;
       }
-      if (src?.keyword === "part def" && dst?.keyword === "requirement def") { addStmt(src, `allocate ${dst.symbol} to ${src.symbol};`, srcLine("Realises", dst)); done(src, "AllocationUsage"); return; }
+      if (pd && other?.keyword === "requirement def") { addStmt(pd, `allocate ${other.symbol} to ${pd.symbol};`, srcLine("Realises", other)); done(pd, "AllocationUsage"); return; }
       if (src?.keyword === "part def" && dst?.keyword === "part def") { addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Realises", dst)); done(src, "AllocationUsage"); return; }
+      if (noteLink()) return;
       defer("REALISATION_ENDPOINT_KIND"); return;
     }
     if (DERIVE.has(key)) {
-      if (src?.keyword !== "requirement def" || dst?.keyword !== "requirement def") { defer("DERIVE_ENDPOINT_KIND"); return; }
+      if (src?.keyword !== "requirement def" || dst?.keyword !== "requirement def") { if (noteLink()) return; defer("DERIVE_ENDPOINT_KIND"); return; }
       addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // derivedFrom`, srcLine("Derived from", dst)); done(src, "Dependency"); return;
     }
     if (DEP_WORD[key]) {
-      if (!src?.keyword || !dst?.keyword) { defer("DEPENDENCY_ENDPOINT_KIND"); return; }
+      if (!src?.keyword || !dst?.keyword) { if (noteLink()) return; defer("DEPENDENCY_ENDPOINT_KIND"); return; }
       addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst)); done(src, "Dependency"); return;
     }
-    if (key === "Association") { defer("ASSOCIATION_CONNECTIVITY_NOT_PROVEN", "An association is not a connection; model it as a Connector between ports"); return; }
+    if (key === "Association") {
+      // IMP-118: an Actor or Object associated with a Use Case takes part in it. An Actor is an `actor` of the use case (native); another Object goes to the `participants` link. Anything else is not proven to connect.
+      const uc = src?.keyword === "use case def" ? src : dst?.keyword === "use case def" ? dst : undefined, who = uc === src ? dst : src;
+      if (uc && who?.keyword === "part def") {
+        if (who.o.type === "Actor") {
+          const seen = `${uc.o.id}|${who.o.id}`;
+          if (actorSeen.has(seen)) { set(r, "alias_merged", "ActorUsage", "USAGE_WINS"); r.target_stable_id = uc.id; r.target_file = uc.path; r.evidence = "merged into the actor already on the use case"; return; }
+          actorSeen.add(seen);
+          addStmt(uc, `actor ${scopeOf(uc).take(usageIdent(who.title, `actor${who.o.id}`))} : ${who.symbol};`, srcLine("Actor", who)); done(uc, "ActorUsage"); return;
+        }
+        uc.links.push(["participants", who]); set(r, "native", "MdseLink:participants"); r.target_stable_id = uc.id; r.target_file = uc.path; return;
+      }
+      defer("ASSOCIATION_CONNECTIVITY_NOT_PROVEN", "An association is not a connection; model it as a Connector between ports"); return;
+    }
     if (key === "Connector") {
       const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
       if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer("CONNECTOR_ENDPOINT_NOT_PORT"); return; }
@@ -482,9 +572,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     if (key === "ControlFlow" || key === "StateFlow") {
       const okKinds = key === "ControlFlow" ? ["action", "fork", "join"] : ["state"];
-      const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
-      if (!a || !b || !okKinds.includes(a.ref.kind) || !okKinds.includes(b.ref.kind)) { defer("FLOW_ENDPOINT_NOT_USAGE"); return; }
-      if (a.owner !== b.owner) { defer("FLOW_DIFFERENT_OWNERS"); return; }
+      const a = endUsage(c.sourceId), b = endUsage(c.destId);
       const word = key === "ControlFlow" ? "succession" : "transition";
       // Guard, trigger and effect follow SysML v2 (IMP-098): `transition first a accept t if g do e then b;` / `succession first a if g then b;`.
       // Free text cannot be an expression, so each is a small named helper usage that carries the wording in `doc`.
@@ -492,18 +580,28 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       let trig = isPlaceholder(c.pdata1) ? "" : clean(c.pdata1), grd = isPlaceholder(c.pdata2) ? "" : clean(c.pdata2), eff = isPlaceholder(c.pdata3) ? "" : clean(c.pdata3);
       const label = clean(c.name);
       if (label && !trig && !grd && !eff) { if (key === "ControlFlow") grd = label; else trig = label; }          // an unstructured label: guard on a control flow, trigger on a state flow
-      const helper = (kw: string, pre: string, text: string): string => {
-        const nm = scopeOf(a.owner).take(usageIdent(`${pre} ${text.slice(0, 40)}`, `${pre}${c.id}`));
-        const stmt = `${kw} ${nm} { doc /* ${text.replace(/\*\//g, "* /")} */ }`;
-        if (!a.owner.members.includes(stmt)) a.owner.members.push(stmt);
-        return nm;
-      };
-      const parts: string[] = [];
-      if (key === "StateFlow" && trig) { const nm = helper("item", "trigger", trig); parts.push(`accept ${nm}`); }
-      if (grd) { const nm = helper("constraint", "guard", grd); parts.push(`if ${nm}`); }
-      if (key === "StateFlow" && eff) { const nm = helper("action", "effect", eff); parts.push(`do ${nm}`); }
-      addStmt(a.owner, `${word} first ${a.ref.name}${parts.length ? " " + parts.join(" ") : ""} then ${b.ref.name};`);
-      done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
+      if (a && b && okKinds.includes(a.ref.kind) && okKinds.includes(b.ref.kind) && a.owner === b.owner) {
+        const helper = (kw: string, pre: string, text: string): string => {
+          const nm = scopeOf(a.owner).take(usageIdent(`${pre} ${text.slice(0, 40)}`, `${pre}${c.id}`));
+          const stmt = `${kw} ${nm} { doc /* ${text.replace(/\*\//g, "* /")} */ }`;
+          if (!a.owner.members.includes(stmt)) a.owner.members.push(stmt);
+          return nm;
+        };
+        const parts: string[] = [];
+        if (key === "StateFlow" && trig) { const nm = helper("item", "trigger", trig); parts.push(`accept ${nm}`); }
+        if (grd) { const nm = helper("constraint", "guard", grd); parts.push(`if ${nm}`); }
+        if (key === "StateFlow" && eff) { const nm = helper("action", "effect", eff); parts.push(`do ${nm}`); }
+        addStmt(a.owner, `${word} first ${a.ref.name}${parts.length ? " " + parts.join(" ") : ""} then ${b.ref.name};`);
+        done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
+      }
+      // IMP-116 (V1 W-174/175): a flow between two notes that do not share an owning definition is the `precedes` link; guard, trigger and effect stay as a line on the step before.
+      const dA = byObj.get(c.sourceId), dB = byObj.get(c.destId);
+      if (dA && dB && dA !== dB) {
+        const extra = [trig && `trigger: ${trig}`, grd && `guard: ${grd}`, eff && `effect: ${eff}`].filter(Boolean).join("; ");
+        dA.links.push(["precedes", dB]); if (extra) dA.sourceLines.push(`- ${key === "ControlFlow" ? "Succession" : "Transition"} to [[${dB.baseName}]] (${extra})`);
+        set(r, "native", "MdseLink:precedes"); r.target_stable_id = dA.id; r.target_file = dA.path; return;
+      }
+      defer("FLOW_ENDPOINT_NOT_USAGE"); return;
     }
     if (key === "UseCase:include") {
       if (src?.keyword !== "use case def" || dst?.keyword !== "use case def") { defer("INCLUDE_ENDPOINT_KIND"); return; }
@@ -521,6 +619,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   track.stage = "render notes";
   // ---- render notes -------------------------------------------------------------------------------------------------
   const outFiles: OutFile[] = [];
+  const relFieldsOf = (d: Draft): Array<[string, string[]]> => {
+    const f = new Map<string, string[]>(); if (d.describes.length) f.set("describes", [...d.describes]);
+    for (const [k, t] of d.links) { const l = f.get(k) ?? []; if (!l.includes(t.baseName)) l.push(t.baseName); f.set(k, l); }
+    return [...f].map(([k, v]) => [k, [...new Set(v)]] as [string, string[]]);
+  };
   let blocks = 0, flagCount = 0;
   const tagDisp = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const)), unlistedTags = new Map<string, number>();
   const attachFiles: OutFile[] = [], attachTaken = new Set<string>(existing?.allPaths ? [...existing.allPaths].map((p) => p.toLowerCase()) : []);
@@ -562,7 +665,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       ...(reqText ? { doc: reqText } : {}), members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
-    const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: d.describes.length ? [["describes", d.describes]] : [],
+    const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: relFieldsOf(d),
       bodyText: [isReq ? "" : e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
     const r = objRow.get(e.id)!;

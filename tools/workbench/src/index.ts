@@ -78,6 +78,7 @@ function resolveAll(ix: ModelIndex): void {
         else if (s.kind === "perform") E("performs", sym(s.b!), s.b!, s.name ?? "");
         else if (s.kind === "include") E("includes", sym(s.b!), s.b!, s.name ?? "");
         else if (s.kind === "optionalUseCase") E("extendedBy", sym(s.b!), s.b!, s.name ?? "", s.tag ?? "");
+        else if (s.kind === "nestedUseCase") E("has", sym(s.b!), s.b!, s.name ?? "", s.tag ?? "");
         else if (s.kind === "allocate" || s.kind === "dependency") {
           const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a!), b = sym(s.b!);
           if (a) E(kind, b, s.b!, "", "", a);                                              // source known: normal edge, target may dangle

@@ -120,7 +120,7 @@ function interpretOne(it: Item, d: Definition): boolean {
   if ((m = new RegExp(`^flow(?:\\s+(${SNAME}))?(?:\\s+of\\s+(${SPATH}))?\\s+from\\s+([\\w.]+)\\s+to\\s+([\\w.]+)$`).exec(h))) { st({ kind: "flow", a: m[3]!, b: m[4]!, ...(m[1] ? { name: m[1] } : {}), ...(m[2] ? { type: m[2] } : {}), text: h }); return true; }
   if ((m = /^bind\s+([\w.]+)\s*=\s*([\w.]+)$/.exec(h))) { st({ kind: "bind", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^include\\s+use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "include", name: m[1]!, b: m[2]!, text: h }); return true; }
-  if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: "optionalUseCase", name: m[1]!, b: m[2]!, tag: m[3] ?? "", text: h }); return true; }
+  if ((m = new RegExp(`^use case\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}\\s*(\\[[^\\]]*\\])?$`).exec(h))) { st({ kind: /^\[\s*0\s*\.\.\s*1\s*\]$/.test(m[3] ?? "") ? "optionalUseCase" : "nestedUseCase", name: m[1]!, b: m[2]!, tag: m[3] ?? "", text: h }); return true; }   // `[0..1]` is an extension; any other multiplicity is a nested use case (IMP-113)
   return classify(h).length > 0;
 }
 

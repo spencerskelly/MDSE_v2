@@ -309,3 +309,48 @@ test("a Part in a function that points at another function is an action there; a
   assert.match(blockOf(res, "Provide Charge Power"), /action monitorOutput : BEH_\d+::MonitorOutput;/);
   assert.match(blockOf(res, "Module Unit 7"), /part def ModuleUnit7 :> OBJ_\d+::GenericModule/);
 });
+
+test("aggregation follows the kinds of its ends; every connector is its own usage; cycles are left out (IMP-113, IMP-114)", async () => {
+  const res = await run();
+  const pipe = blockOf(res, "Pipeline");
+  assert.match(pipe, /action stageOne : BEH_\d+::StageOne;/, "a nested activity is an action usage in its owner (IMP-114)");
+  assert.match(pipe, /action secondStep : BEH_\d+::FreeB\[1\.\.2\];/, "role name and multiplicity come from the child end");
+  assert.match(pipe, /action freeB : BEH_\d+::FreeB;/, "the same two ends again are a second usage, not merged");
+  assert.match(blockOf(res, "Charging"), /state chargingPhase : COND_\d+::ChargingPhase;/, "state in state");
+  assert.match(blockOf(res, "Charge a Vehicle"), /use case authenticate_3 : UC_\d+::Authenticate;/, "use case in use case");
+  assert.match(blockOf(res, "Charger Status"), /item chargeCurrentCommand : IFLOW_\d+::ChargeCurrentCommand\[2\];/, "signal in signal");
+  const conn = (code: string) => res.ledger.filter((l) => l.source_table === "t_connector" && l.diagnostic_code === code);
+  assert.equal(conn("OWNERSHIP_CYCLE").length, 2, "both edges of the cycle");
+  assert.equal(conn("AGGREGATION_PART_IN_INTERFACE").length, 1);
+  const r1 = blockOf(res, "UL 2594 5.1 Enclosure");
+  assert.match(r1, /requirement nestedRequirement : STD_\d+::NestedRequirement;/, "requirement in requirement (IMP-114)");
+});
+
+test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
+  const res = await run();
+  const text = (name: string) => res.files.find((x) => !x.bytes && x.path.endsWith(`/${name}.md`))!.content;
+  assert.match(text("Loose Cable"), /^tracesTo: \["\[\[Provide Charge Power\]\]"\]$/m);
+  assert.match(text("Loose Cable"), /^dependsOn: \["\[\[Charger\]\]"\]$/m);
+  assert.match(text("Wiring Diagram"), /^describes: \["\[\[Charger\]\]"\]$/m, "an Image artifact describes the element");
+  assert.match(text("Design remark"), /^describes: .*\[\[Charger\]\]/m, "an Info note describes the element");
+  assert.match(text("Change A"), /^hasChild: \["\[\[Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
+  assert.doesNotMatch(text("Change A"), /^- Aggregation/m, "Source: EA does not repeat the YAML");
+  const prov = res.ledger.filter((l) => l.diagnostic_code === "PROVISIONAL_LINK");
+  assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "native" && l.operator_action));
+});
+
+test("flows: a succession inside a shared owner, otherwise a precedes link (IMP-116)", async () => {
+  const res = await run();
+  assert.match(blockOf(res, "Pipeline"), /succession first stageOne if guardWhenDone then stageTwo;/);
+  const a = res.files.find((x) => !x.bytes && x.path.endsWith("/Free A.md"))!.content;
+  assert.match(a, /^precedes: \["\[\[Free B\]\]"\]$/m);
+  assert.match(a, /^- Succession to \[\[Free B\]\] \(guard: go\)$/m, "the guard stays as a Source line");
+});
+
+test("Realisation roles come from element types, not arrow direction (IMP-117); associations with use cases (IMP-118)", async () => {
+  const res = await run();
+  assert.match(blockOf(res, "Power Module"), /allocate REQ_\d+::ChargeCurrentAccuracy to OBJ_\d+::PowerModule;/, "requirement drawn as the source still allocates to the part");
+  const uc = blockOf(res, "Charge a Vehicle");
+  assert.equal((uc.match(/actor mechanic/g) ?? []).length, 1, "the same actor associated twice is one actor usage");
+  assert.match(res.files.find((x) => !x.bytes && x.path.endsWith("/Authenticate.md"))!.content, /^participants: \["\[\[Power Module\]\]"\]$/m, "a non-actor part takes part through the YAML link");
+});

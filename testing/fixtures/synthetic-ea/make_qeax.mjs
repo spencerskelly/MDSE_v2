@@ -52,9 +52,9 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   };
   const con = (type, src, dst, o = {}) => {
     const id = ++ck;
-    db.prepare(`INSERT INTO t_connector (Connector_ID,Name,Direction,Notes,Connector_Type,SourceCard,DestCard,SourceIsAggregate,DestIsAggregate,Start_Object_ID,End_Object_ID,Stereotype,ea_guid,PDATA1,PDATA2,PDATA3)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, o.name ?? null, o.direction ?? "Source -> Destination", o.notes ?? null, type, o.srcCard ?? null, o.dstCard ?? null,
-      o.srcAgg ?? 0, o.dstAgg ?? 0, src, dst, o.stereotype ?? null, guid("C", id), o.p1 ?? null, o.p2 ?? null, o.p3 ?? null);
+    db.prepare(`INSERT INTO t_connector (Connector_ID,Name,Direction,Notes,Connector_Type,SourceCard,DestCard,SourceIsAggregate,DestIsAggregate,Start_Object_ID,End_Object_ID,Stereotype,ea_guid,PDATA1,PDATA2,PDATA3,SourceRole,DestRole)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, o.name ?? null, o.direction ?? "Source -> Destination", o.notes ?? null, type, o.srcCard ?? null, o.dstCard ?? null,
+      o.srcAgg ?? 0, o.dstAgg ?? 0, src, dst, o.stereotype ?? null, guid("C", id), o.p1 ?? null, o.p2 ?? null, o.p3 ?? null, o.srcRole ?? null, o.dstRole ?? null);
     return id;
   };
 
@@ -163,6 +163,34 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   con("UseCase", uc, uc2, { stereotype: "include" });
   con("UseCase", uc2, uc, { stereotype: "extend" });
   con("Aggregation", charger, controller, { srcAgg: 2, dstCard: "1" });                       // controller usage exists: usage wins
+
+  // Aggregation by kind, notes as link ends, flows between definitions, associations with use cases (IMP-113..118)
+  const phase = obj("State", "Charging Phase", fns, { stereotype: "System State" });
+  con("Aggregation", st, phase, { srcAgg: 1 });                                                // state in state
+  con("Aggregation", uc, uc2, { srcAgg: 2 });                                                  // use case in use case
+  con("Aggregation", sigStatus, sigCmd, { srcAgg: 2, dstCard: "2" });                          // signal in signal: item usage
+  con("Aggregation", twinA, controller, { srcAgg: 2 }); con("Aggregation", controller, twinA, { srcAgg: 2 });   // a cycle: neither is written
+  con("Aggregation", controller, gpi, { srcAgg: 2 });                                          // interface child of a part: port usage
+  con("Aggregation", gpi, pm, { srcAgg: 2 });                                                  // part child of an interface: review (exception)
+  const chA = obj("Change", "Change A", ctx), chB = obj("Change", "Change B", ctx);
+  con("Aggregation", chA, chB, { srcAgg: 2 });                                                 // Change hierarchy: hasChild
+  const issue = obj("Issue", "Loose Cable", ctx);
+  con("Abstraction", issue, fn, { stereotype: "allocate" });                                  // note end: provisional tracesTo
+  con("Usage", issue, charger);                                                               // note end: dependsOn
+  con("Dependency", note, charger, { stereotype: "trace" });                                  // Info end: describes
+  const pic2 = obj("Artifact", "Wiring Diagram", prod, { stereotype: "Image" });
+  con("Dependency", pic2, charger, { stereotype: "trace" });                                  // Artifact end: describes
+  con("Realisation", r2, pm);                                                                  // requirement drawn first: still allocate requirement to the part
+  const pipe = obj("Activity", "Pipeline", fns, { stereotype: "System Function" });
+  const stg1 = obj("Activity", "Stage One", fns, { stereotype: "System Function", parent: pipe }), stg2 = obj("Activity", "Stage Two", fns, { stereotype: "System Function", parent: pipe });
+  con("ControlFlow", stg1, stg2, { name: "when done" });                                      // nested definitions: a succession in the owner
+  const freeA = obj("Activity", "Free A", fns, { stereotype: "System Function" }), freeB = obj("Activity", "Free B", fns, { stereotype: "System Function" });
+  con("Aggregation", pipe, freeB, { srcAgg: 2, dstCard: "1..2", dstRole: "second step" });     // activity in activity: action usage with role name and multiplicity
+  con("Aggregation", pipe, freeB, { srcAgg: 2 });                                              // same ends again: a distinct usage (no merging by endpoints)
+  con("ControlFlow", freeA, freeB, { p2: "go" });                                             // no shared owner: precedes
+  const operator = obj("Actor", "Mechanic", ctx);
+  con("Association", uc, operator); con("Association", operator, uc);                          // actor of the use case, once
+  con("Association", uc2, pm);                                                                // participant
 
   // Control nodes, triggers, attachments
   const fk = obj("Synchronization", "Split", fns, { parent: fn });
