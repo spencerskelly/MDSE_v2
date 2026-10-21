@@ -17,7 +17,17 @@ export interface PreflightInput {
   existingDiffers: number;                          // BOM parts already in the vault that the sheet describes differently
   badPaths: string[];                               // names the browser or Windows would refuse
 }
+/** What becomes of the source rows. `nonStandard` rows are imported, but a value did not follow the standard (a subtype or author that had to be defaulted, a type
+ *  that did not resolve, a link only provisionally placed): nothing is lost, something is a guess. `mayBeLost` rows are not in the model at all: only a flag or the
+ *  holding note keeps them, so they are lost if nobody resolves the flag. */
+export interface Fate {
+  clean: number; merged: number;
+  nonStandard: { total: number; codes: Array<{ code: string; count: number }> };
+  mayBeLost: { total: number; deferred: number; skippedByError: number };
+  textOnly: number; excludedByPolicy: number;
+}
 export interface Preflight {
+  fate: Fate;
   verdict: "BLOCKED" | "REVIEW" | "FLAGS" | "CLEAN";
   reasons: string[];
   flagTotal: number;
@@ -27,6 +37,8 @@ export interface Preflight {
   rows: Array<{ type: string; title: string; path: string }>;
 }
 
+/** Diagnostic codes on a native row that mean a value was defaulted, guessed or left unresolved. Others on native rows (UNVERIFIED_SYNTAX, AUTHOR_DERIVED, ...) are bookkeeping. */
+export const NON_STANDARD = /^(SUBTYPE_DEFAULTED_|AUTHOR_FALLBACK|UNRESOLVED_|MULTIPLICITY_UNPARSED|PROVISIONAL_LINK|REVIEW$|PORT_ADDED_TO_BLOCK|DIRECTION_)/;
 const FLAG = /^> \[!(flag\w+)\] (.*)$/gm;
 /** The same kind of flag with a different name in it is one group: names in backticks and numbers are blanked. */
 export const flagShape = (title: string): string => title.replace(/`[^`]*`/g, "`…`").replace(/^(Unresolved \S+ link) to .*$/, "$1").replace(/\d+/g, "#").trim();
@@ -47,6 +59,18 @@ export function preflight(i: PreflightInput): Preflight {
     const code = r.diagnostic_code || "(no code)", k = code + "|" + r.ea_type, cur = def.get(k);
     if (cur) cur.count++; else def.set(k, { code, kind: r.ea_type, count: 1 });
   }
+  const fate: Fate = { clean: 0, merged: 0, nonStandard: { total: 0, codes: [] }, mayBeLost: { total: 0, deferred: 0, skippedByError: 0 }, textOnly: 0, excludedByPolicy: 0 }, ns = new Map<string, number>();
+  for (const r of i.ledger) {
+    const code = (r.diagnostic_code || "").split(":")[0]!;
+    if (r.disposition === "deferred_review") { fate.mayBeLost.deferred++; fate.mayBeLost.total++; }
+    else if (r.disposition === "error") { fate.mayBeLost.skippedByError++; fate.mayBeLost.total++; }
+    else if (r.disposition === "evidence_only") fate.textOnly++;
+    else if (r.disposition === "excluded_by_policy") fate.excludedByPolicy++;
+    else if (r.disposition === "alias_merged") fate.merged++;
+    else if (NON_STANDARD.test(code)) { fate.nonStandard.total++; ns.set(code, (ns.get(code) ?? 0) + 1); }
+    else fate.clean++;
+  }
+  fate.nonStandard.codes = [...ns].map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count);
   const deferred = [...def.values()].sort((a, b) => b.count - a.count);
   const deferredTotal = deferred.reduce((a, d) => a + d.count, 0);
   const reasons: string[] = [], block: string[] = [], review: string[] = [];
@@ -62,7 +86,7 @@ export function preflight(i: PreflightInput): Preflight {
   if (i.bomWarnings > 50) review.push(`${i.bomWarnings} BOM warnings; open the findings list before importing.`);
   reasons.push(...block, ...review);
   const verdict = block.length ? "BLOCKED" : review.length ? "REVIEW" : rows.length || deferredTotal ? "FLAGS" : "CLEAN";
-  return { verdict, reasons, flagTotal: rows.length, byType, groups: [...groups.values()].sort((a, b) => b.count - a.count), deferred, rows };
+  return { fate, verdict, reasons, flagTotal: rows.length, byType, groups: [...groups.values()].sort((a, b) => b.count - a.count), deferred, rows };
 }
 
 /** CSV of every flag the run would write, for review before the import. */

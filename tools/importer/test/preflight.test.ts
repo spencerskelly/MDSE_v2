@@ -38,6 +38,13 @@ test("IMP-125: preflight groups the flags a run would write and gives a verdict"
   assert.equal(p.verdict, "FLAGS");
   assert.match(preflightCsv(p), /^flag,title,note\nNote,/);
   assert.equal(preflight(base).verdict, "CLEAN");
+  const f = preflight({ ...base, ledger: [
+    ...Array.from({ length: 4 }, () => ({ disposition: "native", diagnostic_code: "", ea_type: "Class" })), { disposition: "native", diagnostic_code: "UNVERIFIED_SYNTAX", ea_type: "Class" },
+    { disposition: "native", diagnostic_code: "SUBTYPE_DEFAULTED_PART", ea_type: "Class" }, { disposition: "native", diagnostic_code: "UNRESOLVED_PORT_TYPE:TARGET_IS_X", ea_type: "Port" },
+    { disposition: "deferred_review", diagnostic_code: "X", ea_type: "Part" }, { disposition: "error", diagnostic_code: "EXCEPTION", ea_type: "Part" },
+    { disposition: "evidence_only", diagnostic_code: "REFERENCE_ONLY", ea_type: "Note" }, { disposition: "alias_merged", diagnostic_code: "USAGE_WINS", ea_type: "Part" }] }).fate;
+  assert.deepEqual([f.clean, f.nonStandard.total, f.mayBeLost.total, f.mayBeLost.deferred, f.mayBeLost.skippedByError, f.textOnly, f.merged], [5, 2, 2, 1, 1, 1, 1]);
+  assert.equal(f.nonStandard.codes.map((c) => c.code).sort().join(), "SUBTYPE_DEFAULTED_PART,UNRESOLVED_PORT_TYPE");
 });
 
 test("IMP-125: errors, bad names and a heavy deferral change the verdict", () => {
