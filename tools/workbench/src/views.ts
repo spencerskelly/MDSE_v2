@@ -22,13 +22,13 @@ const CONTAIN = ["hasPart", "hasPort", "hasAction", "hasState", "specializes"];
 
 /* ---- Structure ------------------------------------------------------------------------------------------------ */
 export interface StructureResult { tree: TreeNode; supers: string[]; subs: string[]; untyped: string[] }
-export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent = 40): StructureResult {
+export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent = 40, kinds: string[] = OWNED): StructureResult {
   const walk = (p: string, label: string, kind: string, mult: string, stack: string[]): TreeNode => {
     const n = ix.notes.get(p)!;
     const t = node(p, label || n.title, kind, mult, qtyOf(mult));
     if (stack.includes(p)) { t.cycle = true; return t; }
     if (stack.length >= maxDepth) return t;
-    const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind));
+    const kids = outgoing(ix, p).filter((e) => kinds.includes(e.kind));
     for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [measuredText(e.detail)])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
@@ -50,7 +50,7 @@ export function measuredOf(detail: string): { qty: number; unit: string } | null
 }
 
 /** "[1.5 Meter]" for a usage that carries a measured quantity, else "". Shown where a count would be. */
-const measuredText = (detail: string): string => { const m = measuredOf(detail); return m ? `[${Math.round(m.qty * 1000) / 1000}${m.unit ?  + m.unit : ""}]` : ""; };
+const measuredText = (detail: string): string => { const m = measuredOf(detail); return m ? `[${Math.round(m.qty * 1000) / 1000}${m.unit ? " " + m.unit : ""}]` : ""; };
 
 /** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. Whole counts and measured amounts
  *  (4.318 Meter) are kept apart by unit, never added together. A quantity of 0 is a document line and adds nothing. */
@@ -117,10 +117,10 @@ export function traceMatrix(ix: ModelIndex): { rows: TraceRow[]; total: number; 
 /* ---- Behavior and states ---------------------------------------------------------------------------------------- */
 export interface FlowNode { name: string; kind: string; type: string; path: string | null; layer: number }
 export interface FlowResult { kind: "actions" | "states" | "none"; nodes: FlowNode[]; edges: Array<{ from: string; to: string; kind: string }>; unresolved: string[]; triggers: string[]; /** transitions and guarded successions with their SysML trigger, guard and effect wording */ guards: Array<{ from: string; to: string; kind: string; trigger: string; guard: string; effect: string }> }
-export function behavior(ix: ModelIndex, path: string): FlowResult {
+export function behavior(ix: ModelIndex, path: string, only?: "actions" | "states"): FlowResult {
   const n = ix.notes.get(path), d = n?.def;
   if (!n || !d) return { kind: "none", nodes: [], edges: [], unresolved: [], triggers: [], guards: [] };
-  const flowKinds = new Set(["action", "state", "fork", "join"]);
+  const flowKinds = new Set(only === "states" ? ["state"] : only === "actions" ? ["action", "fork", "join"] : ["action", "state", "fork", "join"]);
   const nodes: FlowNode[] = d.usages.filter((u) => flowKinds.has(u.kind)).map((u) => ({ name: u.name, kind: u.kind, type: u.type ?? "", path: u.type ? ix.bySymbol.get(u.type) ?? null : null, layer: 0 }));
   const names = new Set(nodes.map((x) => x.name));
   const edges: FlowResult["edges"] = [], unresolved: string[] = [];
@@ -135,6 +135,71 @@ export function behavior(ix: ModelIndex, path: string): FlowResult {
     .map((s) => ({ from: s.a!, to: s.b!, kind: s.kind, trigger: words(s.trigger), guard: words(s.guard), effect: words(s.effect) }));
   const kind = nodes.some((x) => x.kind === "state") ? "states" : nodes.length ? "actions" : "none";
   return { kind, nodes, edges, unresolved, triggers, guards };
+}
+
+/* ---- Design types: the specialization hierarchy, apart from composition and behavior ------------------------------- */
+export interface DesignTypesResult { chain: string[]; tree: TreeNode; siblings: string[]; total: number }
+/** What a definition specializes (root first), and the designs that specialize it, each with what it owns. */
+export function designTypes(ix: ModelIndex, root: string, maxDepth = 8, cap = 400): DesignTypesResult {
+  const chain: string[] = [], seen = new Set<string>([root]);
+  for (let cur = root, guard = 0; guard < 30; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; chain.unshift(e.to!); seen.add(e.to!); cur = e.to!; }
+  const owns = (p: string): string => {
+    const u = ix.notes.get(p)?.def?.usages ?? [], c = (k: string): number => u.filter((x) => x.kind === k).length;
+    return [c("part") ? `${c("part")} parts` : "", c("port") ? `${c("port")} ports` : "", c("action") ? `${c("action")} actions` : "", c("state") ? `${c("state")} states` : ""].filter(Boolean).join(", ");
+  };
+  let count = 0;
+  const walk = (p: string, stack: string[]): TreeNode => {
+    const t = node(p, nm(ix, p, p), p === root ? "root" : "specializes", owns(p));
+    if (stack.includes(p)) { t.cycle = true; return t; }
+    if (stack.length >= maxDepth) return t;
+    const subs = incoming(ix, p).filter((e) => e.kind === "specializes").map((e) => e.from).filter((x, i, a) => a.indexOf(x) === i).sort((a, b) => nm(ix, a, a).localeCompare(nm(ix, b, b)));
+    for (const c of subs) { if (count++ >= cap) { t.more = (t.more ?? 0) + 1; continue; } t.children.push(walk(c, [...stack, p])); }
+    return t;
+  };
+  const parent = chain[chain.length - 1];
+  const siblings = parent ? incoming(ix, parent).filter((e) => e.kind === "specializes" && e.from !== root).map((e) => e.from) : [];
+  const tree = walk(root, []);
+  return { chain, tree, siblings, total: count };
+}
+
+/* ---- Internal structure: parts, their ports, and how they are wired ------------------------------------------------ */
+export interface InternalEnd { text: string; type: string; path: string | null; ok: boolean }
+export interface InternalResult {
+  parts: Array<{ name: string; type: string; path: string | null; mult: string; ref: boolean; ports: Array<{ name: string; type: string; path: string | null; conj: boolean }> }>;
+  boundary: Array<{ name: string; type: string; path: string | null; conj: boolean; mult: string }>;
+  links: Array<{ kind: string; name: string; via: string; viaPath: string | null; a: InternalEnd; b: InternalEnd }>;
+  untyped: string[];
+}
+/** The definition's parts with the ports each part's type offers (inherited ones included), its own boundary ports, and every
+ *  connect, bind and flow with both ends resolved. An end that names a part or port that does not exist is marked, so a broken wire shows. */
+export function internalStructure(ix: ModelIndex, path: string): InternalResult {
+  const d = ix.notes.get(path)?.def, res = (s?: string): string | null => (s ? ix.bySymbol.get(s) ?? null : null);
+  const out: InternalResult = { parts: [], boundary: [], links: [], untyped: [] };
+  if (!d) return out;
+  const portsOf = (p: string | null): Array<{ name: string; type: string; path: string | null; conj: boolean }> => {
+    const got: Array<{ name: string; type: string; path: string | null; conj: boolean }> = [], seen = new Set<string>();
+    for (let cur: string | null = p, guard = 0; cur && guard < 20 && !seen.has(cur); guard++) {
+      seen.add(cur);
+      for (const u of ix.notes.get(cur)?.def?.usages ?? []) if (u.kind === "port" && !u.end && !got.some((g) => g.name === u.name)) got.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj });
+      cur = outgoing(ix, cur).find((e) => e.kind === "specializes" && e.to)?.to ?? null;
+    }
+    return got;
+  };
+  const partUsages = d.usages.filter((u) => u.kind === "part"), own = d.usages.filter((u) => u.kind === "port" && !u.end);
+  for (const u of partUsages) { const tp = res(u.type); out.parts.push({ name: u.name, type: u.type ?? "", path: tp, mult: u.mult ?? "", ref: !!u.ref, ports: portsOf(tp) }); if (!u.type) out.untyped.push(`part ${u.name}`); }
+  for (const u of own) { out.boundary.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "" }); if (!u.type) out.untyped.push(`port ${u.name}`); }
+  const end = (ref: string): InternalEnd => {
+    const segs = ref.split(".");
+    if (segs.length === 1) { const p = own.find((x) => x.name === segs[0]); return p ? { text: ref, type: p.type ?? "", path: res(p.type), ok: true } : { text: ref, type: "", path: null, ok: !!partUsages.find((x) => x.name === segs[0]) }; }
+    const part = partUsages.find((x) => x.name === segs[0]); if (!part) return { text: ref, type: "", path: null, ok: false };
+    const port = portsOf(res(part.type)).find((x) => x.name === segs[1]);
+    return port ? { text: ref, type: port.type, path: port.path, ok: segs.length === 2 } : { text: ref, type: "", path: null, ok: false };
+  };
+  for (const s of d.stmts) {
+    if (s.kind !== "connect" && s.kind !== "bind" && s.kind !== "flow") continue;
+    out.links.push({ kind: s.kind === "connect" ? s.form && s.form !== "plain" ? s.form : "connect" : s.kind, name: s.name ?? "", via: s.type ?? "", viaPath: res(s.type), a: end(s.a!), b: end(s.b!) });
+  }
+  return out;
 }
 
 /* ---- Interfaces ------------------------------------------------------------------------------------------------- */
@@ -393,9 +458,9 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "functional" | "requirements" | "review" | "edit";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure trace"], ["functional", "Functional trace"], ["requirements", "Requirements trace"], ["review", "Review"], ["edit", "Edit"]];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", functional: "Functional trace", requirements: "Requirements trace", review: "Everything", edit: "Everything" };
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "edit";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["edit", "Edit"]];
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", edit: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
 export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit";
 
@@ -411,13 +476,13 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
   const out: TableData[] = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
-    const st = structure(ix, sel), flat: Array<Record<string, TableCell>> = [];
+    const st = structure(ix, sel, 6, 40, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
     const walk = (t: TreeNode, level: number): void => {
       flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no usages.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const b = bom(ix, sel);
     out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
@@ -425,6 +490,32 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+  } else if (lens === "design") {
+    if (!n) return [{ id: "design", title: "Design types", columns: [], rows: [], empty: "Select a note in Obsidian to see its design types." }];
+    const dt = designTypes(ix, sel), flat: Array<Record<string, TableCell>> = [];
+    dt.chain.forEach((p, i) => flat.push({ name: { text: "  ".repeat(i) + nm(ix, p, p), path: p }, role: "specialized by the next row", owns: "" }));
+    const walk = (t: TreeNode, level: number): void => { flat.push({ name: { text: "  ".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : "design type", owns: t.detail }); for (const c of t.children) walk(c, level + 1); if (t.more) flat.push({ name: "  ".repeat(level + 1) + `… ${t.more} more`, role: "", owns: "" }); };
+    walk(dt.tree, dt.chain.length);
+    out.push({ id: "design", title: `Design types of ${n.title}`, columns: [{ key: "name", label: "Definition" }, { key: "role", label: "Role" }, { key: "owns", label: "Owns", wide: true }], rows: flat, empty: "This definition neither specializes nor is specialized.",
+      note: dt.siblings.length ? `Siblings: ${dt.siblings.map((p) => nm(ix, p, p)).slice(0, 12).join(", ")}${dt.siblings.length > 12 ? ` … +${dt.siblings.length - 12}` : ""}` : "" });
+  } else if (lens === "internal") {
+    if (!n) return [{ id: "internal", title: "Internal structure", columns: [], rows: [], empty: "Select a note in Obsidian to see its internal structure." }];
+    const r = internalStructure(ix, sel), typ = (type: string, path: string | null): Cell => (type ? { text: path ? nm(ix, path, type) : type + " (not in vault)", path, cls: path ? "" : "gap" } : { text: "untyped", cls: "gap" });
+    out.push({ id: "parts", title: `Parts of ${n.title} and the ports they offer`, columns: [{ key: "part", label: "Part" }, { key: "type", label: "Type" }, { key: "qty", label: "Qty" }, { key: "ports", label: "Ports of that type", wide: true }],
+      rows: r.parts.map((x) => ({ part: (x.ref ? "ref " : "") + x.name, type: typ(x.type, x.path), qty: x.mult, ports: x.ports.map((q) => q.name + (q.type ? " : " + (q.conj ? "~" : "") + (q.path ? nm(ix, q.path, q.type) : q.type) : "")).join(", ") })), empty: "This definition has no parts." });
+    out.push({ id: "boundary", title: "Boundary ports", columns: [{ key: "port", label: "Port" }, { key: "type", label: "Type" }, { key: "conj", label: "Conjugated" }, { key: "qty", label: "Qty" }],
+      rows: r.boundary.map((x) => ({ port: x.name, type: typ(x.type, x.path), conj: x.conj ? "~ yes" : "", qty: x.mult })), empty: "This definition has no ports of its own." });
+    const endCell = (e: InternalEnd): Cell => ({ text: e.text + (e.type ? " : " + (e.path ? nm(ix, e.path, e.type) : e.type) : "") + (e.ok ? "" : " (not found)"), path: e.path, cls: e.ok ? "" : "gap" });
+    out.push({ id: "links", title: "Connections, bindings and flows", columns: [{ key: "kind", label: "Kind" }, { key: "a", label: "From" }, { key: "b", label: "To" }, { key: "via", label: "Through", wide: true }],
+      rows: r.links.map((x) => ({ kind: x.kind, a: endCell(x.a), b: endCell(x.b), via: x.via ? ({ text: x.viaPath ? nm(ix, x.viaPath, x.via) : x.via, path: x.viaPath } as Cell) : x.name })), empty: "No connections, bindings or flows.",
+      note: r.untyped.length ? "Untyped: " + r.untyped.join(", ") : "" });
+  } else if (lens === "states") {
+    if (!n) return [{ id: "states", title: "States", columns: [], rows: [], empty: "Select a note in Obsidian to see its states." }];
+    const f = behavior(ix, sel, "states");
+    out.push({ id: "states", title: `States of ${n.title}`, columns: [{ key: "state", label: "State" }, { key: "type", label: "Type" }, { key: "layer", label: "Step" }],
+      rows: f.nodes.map((x) => ({ state: x.name, type: x.path ? ({ text: nm(ix, x.path, x.type), path: x.path } as Cell) : x.type, layer: String(x.layer) })), empty: "This definition has no states.", note: f.triggers.length ? f.triggers.join("; ") : "" });
+    out.push({ id: "transitions", title: "Transitions", columns: [{ key: "from", label: "From" }, { key: "to", label: "To" }, { key: "trigger", label: "Trigger (accept)", wide: true }, { key: "guard", label: "Guard (if)", wide: true }, { key: "effect", label: "Effect (do)", wide: true }],
+      rows: f.edges.map((e) => { const g = f.guards.find((x) => x.from === e.from && x.to === e.to); return { from: e.from, to: e.to, trigger: g?.trigger ?? "", guard: g?.guard ?? "", effect: g?.effect ?? "" }; }), empty: "No transitions.", note: f.unresolved.length ? "Not drawn: " + f.unresolved.join("; ") : "" });
   } else if (lens === "functional") {
     const all = functionalTrace(ix), rows = scope === "selected" && has ? all.filter((r) => funcRelated(r, sel)) : all;
     out.push({ id: "functional", title: scope === "selected" && has ? `Functional trace around ${n!.title}` : "Functional trace (all functions)", columns: [{ key: "fn", label: "Function" }, { key: "by", label: "Performed by" }, { key: "sat", label: "Satisfies" }, { key: "ver", label: "Verified by", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "act", label: "Actions", wide: true }, { key: "gaps", label: "Gaps" }],

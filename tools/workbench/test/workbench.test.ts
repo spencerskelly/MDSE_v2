@@ -277,3 +277,37 @@ test("a BOM parent that lists a child in YAML and in SysML counts it once, and m
   const foam = b.filter((x) => x.path === "Foam.md");
   assert.equal(foam.length, 1); assert.equal(foam[0]!.unit, "Meter"); assert.equal(foam[0]!.qty, 2.5, "1.5 on top plus 0.5 in each of 2 mids");
 });
+
+test("design types, internal structure and the state machine are separate views of one definition", () => {
+  const sub = ix.edges.find((e) => e.kind === "specializes" && e.to);
+  assert.ok(sub, "the fixture has a specialization");
+  const up = V.designTypes(ix, sub!.from), down = V.designTypes(ix, sub!.to!);
+  assert.ok(up.chain.includes(sub!.to!), "the chain lists what it specializes");
+  assert.ok(down.tree.children.some((c) => c.path === sub!.from), "the supertype lists its design");
+  const c = V.internalStructure(ix, byTitle("Charger"));
+  assert.ok(c.parts.length > 0 && c.links.length > 0);
+  assert.ok(c.parts.every((p) => !p.path || p.ports.every((q) => q.name)), "each typed part lists the ports its type offers");
+  assert.ok(c.links.every((l) => typeof l.a.ok === "boolean"));
+  const st = V.behavior(ix, byTitle("Charging"), "states"), no = V.behavior(ix, byTitle("Charging"), "actions");
+  assert.equal(st.kind, "states"); assert.ok(no.nodes.every((n) => n.kind !== "state") && st.nodes.every((n) => n.kind === "state"), "each view keeps only its own kind");
+  const parts = V.structure(ix, byTitle("Charger"), 6, 40, ["hasPart"]);
+  assert.ok(parts.tree.children.every((x) => x.kind === "hasPart"), "the Structure view holds parts only");
+});
+
+test("internal structure marks a wire to a part or port that does not exist", () => {
+  const f = (id: string, extra: string, body: string): string => `---\ntype: Object\nsubtype: part\nid: ${id}\nuid: u${id}\nstatus: Draft\neaType: Class\nsourceRole: authoritative-model\nprimarySymbol: ${id.replace("-", "_")}::P\n${extra}---\n# ${id}\n\n## SysML v2\n\n\`\`\`sysml\n${body}\n\`\`\`\n`;
+  const v = buildIndex(new Map([
+    ["A.md", f("OBJ-1", "", "package OBJ_1 {\n part def P {\n  part b : OBJ_2::P;\n  port out1 : OBJ_3::Q;\n  bind out1 = b.x;\n  bind out1 = b.missing;\n  bind out1 = nobody.x;\n }\n}")],
+    ["B.md", f("OBJ-2", "", "package OBJ_2 {\n part def P {\n  port x : OBJ_3::Q;\n }\n}")], ["Q.md", f("OBJ-3", "", "package OBJ_3 {\n port def Q;\n}")],
+  ]), { classes });
+  const r = V.internalStructure(v, "A.md");
+  assert.deepEqual(r.links.map((l) => l.b.ok), [true, false, false]);
+  assert.equal(r.parts[0]!.ports[0]!.name, "x");
+});
+
+test("a measured quantity prints its unit, never NaN", () => {
+  const f = (id: string, extra: string, body: string): string => `---\ntype: Object\nsubtype: part\nid: ${id}\nuid: u${id}\nstatus: Draft\neaType: BOM\nsourceRole: authoritative-model\nprimarySymbol: ${id.replace("-", "_")}::P\n${extra}---\n# ${id}\n\n## SysML v2\n\n\`\`\`sysml\n${body}\n\`\`\`\n`;
+  const v = buildIndex(new Map([["T.md", f("OBJ-1", 'hasPart: ["[[F]]"]\n', 'package OBJ_1 {\n part def P {\n  part foam : OBJ_2::P {\n   attribute quantity = 1.5;\n   attribute unit = "Meter";\n  }\n }\n}')], ["F.md", f("OBJ-2", "", "package OBJ_2 {\n part def P;\n}")]]), { classes });
+  const t = V.structure(v, "T.md", 6, 40, ["hasPart"]);
+  assert.equal(t.tree.children[0]!.detail, "[1.5 Meter]");
+});

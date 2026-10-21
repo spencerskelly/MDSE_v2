@@ -418,3 +418,18 @@ What the assembly is missing: nothing joins the BOM to the EA product structure.
 Open for the owner: the PN for each EA product and major assembly; whether BOM parts should become the leaf definitions under the EA blocks or stay a separate manufacturing structure that is only linked at the top; and whether the 3 remaining BOMs and the full Ampure_all_BoMs history (172,454 lines, 16,472 part numbers, 95,773 lines archived) are in scope.
 
 Rules: BOM-015, BOM-017, WKB-020, WKB-021.
+
+## D-0041 — Workbench views, import checks, toolset version, usage naming
+
+2026-10-21 · Spencer · Accepted (code changes); open items are his
+
+Workbench: structure, design types, internal structure, function, states and requirements are separate views, so a state machine is not mixed into a parts tree and design subtypes are not mixed into composition (WKB-022). Sections and list groups fold (WKB-023). A measured quantity printed `NaN` for its unit because of a stray `+`; fixed.
+
+Importer: a check that runs the whole translation in memory and lists the flags before anything is written (IMP-125); a version table of the vault's toolset against the importer's, with a tick box to update or not (IMP-126). The repo had no version, so every vault said `0.0.0-dev`; the release is now `0.9.0` and the Workbench `0.9.0`.
+
+Naming, from reading the MDSE_v2_02git output: `+3.3VDC` and `3.3VDC` both became `_33VDC`, an unnamed `1` became `_1`, and the two ports called `a` on a wire became `a` and `a_2` with nothing to say which was the jacket and which the conductor (IMP-124). Quoted SysML names (`'+3.3VDC'`) would keep the name exactly but every Workbench reader and edit form matches plain identifiers, so they were not used.
+
+Open for the owner: PDATA2 redefinitions (about 20 on the PT4 circuit alone) are still written as a second port beside the inherited one, because IMP-060 says redefinition is never inferred. The EA data is explicit, not inferred, so `port x :> parent.port` could be written where PDATA2 names the redefined port; that reverses IMP-060 and IMP-121 for this one case and is his decision.
+
+Rules: IMP-124, IMP-125, IMP-126, WKB-022, WKB-023.
+

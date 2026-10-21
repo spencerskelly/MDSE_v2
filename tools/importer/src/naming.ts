@@ -37,6 +37,12 @@ export class NameRegistry {
 
 const SYSML_KEYWORDS = new Set(["about", "abstract", "accept", "action", "actor", "after", "alias", "all", "allocate", "allocation", "analysis", "and", "as", "assert", "assign", "assume", "at", "attribute", "bind", "binding", "by", "calc", "case", "comment", "concern", "connect", "connection", "constant", "constraint", "crosses", "decide", "def", "default", "defined", "dependency", "derived", "do", "doc", "else", "end", "entry", "enum", "event", "exhibit", "exit", "expose", "false", "filter", "first", "flow", "for", "fork", "frame", "from", "hastype", "if", "implies", "import", "in", "include", "individual", "inout", "interface", "istype", "item", "join", "language", "loop", "merge", "message", "meta", "metadata", "nonunique", "not", "null", "objective", "occurrence", "of", "or", "ordered", "out", "package", "parallel", "part", "perform", "port", "private", "protected", "public", "redefines", "ref", "references", "render", "rendering", "rep", "require", "requirement", "return", "satisfy", "send", "snapshot", "specializes", "stakeholder", "standard", "state", "subject", "subsets", "succession", "then", "timeslice", "to", "transition", "true", "until", "use", "variant", "variation", "verification", "verify", "via", "view", "viewpoint", "when", "while", "xor"]);
 
+/** Spell out the characters an identifier cannot hold, so `+3.3VDC` and `3.3VDC` stay different names (IMP-124): a leading `+` is Plus, a leading `-` Minus,
+ *  a point between digits `p`, `%` Pct, `&` And, `#` No, and a `+` inside a name Plus. A hyphen or slash between words still just separates them. */
+export function spellOut(raw: string): string {
+  return raw.trim().replace(/^\+/, "Plus ").replace(/^-(?=[A-Za-z0-9])/, "Minus ").replace(/(\d)\.(?=\d)/g, "$1p").replace(/\+/g, " Plus ").replace(/%/g, " Pct ").replace(/&/g, " And ").replace(/#/g, " No ");
+}
+
 /** A plain SysML identifier (letters, digits, underscore). The engineering name stays in the note title. */
 export function sysmlIdent(raw: string, fallback = "Unnamed"): string {
   let s = raw.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, " ").trim()
@@ -46,11 +52,14 @@ export function sysmlIdent(raw: string, fallback = "Unnamed"): string {
   return SYSML_KEYWORDS.has(s) ? s + "_" : s;
 }
 
+/** True when the identifier is not just the EA name in other letters: characters were spelled out or dropped. The EA name is then recorded beside it. */
+export const identLosesName = (raw: string, ident: string): boolean => raw.trim().toLowerCase().replace(/[^a-z0-9]/g, "") !== ident.toLowerCase().replace(/[^a-z0-9]/g, "");
+
 export const lowerFirst = (s: string): string => (s ? s[0]!.toLowerCase() + s.slice(1) : s);
 
 /** Identifier for a usage (part, port, action ...): camelCase, never a SysML keyword. */
 export function usageIdent(raw: string, fallback = "unnamed"): string {
-  const id = sysmlIdent(raw, fallback);
+  const id = sysmlIdent(spellOut(raw), fallback);
   const s = /^[A-Z]{2}/.test(id) ? id : lowerFirst(id);                       // an acronym keeps its case: `CAN0`, `USBC`, not `cAN0`, `uSBC` (IMP-112)
   return SYSML_KEYWORDS.has(s) ? s + "_" : s;
 }
@@ -58,7 +67,9 @@ export function usageIdent(raw: string, fallback = "unnamed"): string {
 /** Unique usage names inside one owner. */
 export class IdentScope {
   private used = new Set<string>();
-  take(want: string): string {
+  /** A repeat of a name takes the name of its type (`a`, then `a_IConductor`) so two ports called `a` can be told apart; the same type again, or no type, takes `_2`, `_3` (IMP-124). */
+  take(want: string, hint = ""): string {
+    if (this.used.has(want) && hint) { const alt = `${want}_${sysmlIdent(hint)}`; if (!this.used.has(alt)) { this.used.add(alt); return alt; } }
     let n = 1, name = want;
     while (this.used.has(name)) { n++; name = `${want}_${n}`; }
     this.used.add(name);

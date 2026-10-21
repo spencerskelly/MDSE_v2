@@ -99,8 +99,8 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertIn("PCE25", pg.inner_text("header"))
 
             # table: opens in the main window for the selected note
-            for lens in ("Tables", "Structure trace"):
-                pg.click(f"button:has-text('{lens}')")
+            for lens in ("Tables", "Structure"):
+                pg.click(f"button[role=tab]:text-is('{lens}')")
             pg.click("button:has-text('Table in main window')")
             pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
             self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")

@@ -14,7 +14,7 @@ import { buildResolver, classify, isUsageEntry, connectorKey, DEFINITION_KINDS }
 import type { FamilyMapping, ElementEntry } from "./ea_mapping.ts";
 import { allocateUids, allocateIds } from "./identity.ts";
 import type { AuthorOptions } from "./identity.ts";
-import { safeName, sysmlIdent, usageIdent, IdentScope } from "./naming.ts";
+import { safeName, sysmlIdent, spellOut, usageIdent, identLosesName, IdentScope } from "./naming.ts";
 import { renderBlock, parseMultiplicity } from "./sysml.ts";
 import type { UsageDecl } from "./sysml.ts";
 import { renderNote, flagCallout } from "./notes.ts";
@@ -186,7 +186,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
       const kw = en.native_kind ? (en.native_kind === "InterfaceDefinition" ? "port def" : DEFINITION_KINDS[en.native_kind] ?? null) : null;   // IMP-104: an EA interface Class is what ports are typed by, so it is a port def
       const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
-      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], links: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
+      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(spellOut(title)), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], links: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
       for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
       drafts.push(d); byObj.set(e.id, d); return;
     }
@@ -294,7 +294,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       ref = eaName ? addedPorts.get(key) : undefined;
       if (ref) how = "SAME_NAME_ADDED";
       else {
-        const name = scopeOf(block).take(usageIdent(eaName || typePort?.title || "", `port${e.id}`));
+        const name = scopeOf(block).take(usageIdent(/^\d+$/.test(eaName) && typePort ? `${typePort.title} ${eaName}` : eaName || typePort?.title || "", `port${e.id}`), typePort?.title ?? "");
         ref = { kind: "port", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
         block.usages.push(ref); if (eaName) addedPorts.set(key, ref); added = true; how = "ADDED";
         flagLink(block, `Port \`${name}\` added from an assembly`, [`The EA Port \`${eaName || "(unnamed)"}\` sits on a Part of this block and no port on the block matches it (no PDATA3 target, no unique same name). It is written on the block as its own port. Review it.`]);
@@ -343,8 +343,10 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
-    const name = scopeOf(owner).take(usageIdent(e.name || e.alias || ref.typeDraft?.title || "", `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
+    const rawName = (e.name || e.alias || "").trim(), wantRaw = /^\d+$/.test(rawName) && ref.typeDraft ? `${ref.typeDraft.title} ${rawName}` : rawName || ref.typeDraft?.title || "";   // IMP-124: a bare number is named after its type (`wire1`), not `_1`
+    const wantId = usageIdent(wantRaw, `${kind.replace("Usage", "").toLowerCase()}${e.id}`), name = scopeOf(owner).take(wantId, ref.typeDraft?.title ?? "");
     ref.name = name;
+    if (rawName && !/^\d+$/.test(rawName) && identLosesName(rawName, wantId)) owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} is named "${rawName}" in EA`);   // IMP-124: the EA name, where the identifier cannot hold it
     if (kind === "PartUsage" && (g.tags.get(e.id) ?? []).some(([k, v]) => /^isReference$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.isRef = true;   // IMP-121: a reference part (REG-293)
     if ((kind === "PortUsage" || kind === "PartUsage") && e.pdata2.trim()) { const rd = refObj(e.pdata2); if (rd) owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} is a redefinition of ${rd.name || rd.alias || rd.id} in EA (PDATA2); not applied, redefinition is never inferred (REG-189)`); }
     if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag (EA stores -1 for true)

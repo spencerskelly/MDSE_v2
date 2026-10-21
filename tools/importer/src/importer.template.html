@@ -63,11 +63,14 @@ ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
  <span id="vaultStatus" class="mut">No folder chosen: a ZIP will be built.</span></div>
 <p class="mut" style="margin:8px 0 0">In an existing vault a note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. Part numbers that already have a BOM note are left as they are.</p>
 <p class="mut" style="margin:8px 0 0">On Windows keep the path short: write to a folder such as <code>C:\MDSE</code> that OneDrive does not sync, or extract the ZIP to a short path (not Downloads). Windows refuses paths over 260 characters, and cloud sync or antivirus can interrupt writes to a synced folder.</p>
-<div id="vaultOut"></div></section>
+<div id="vaultOut"></div>
+<div id="toolBox" hidden style="margin-top:12px"><h3 style="margin-top:0">Toolset in this vault</h3><div id="toolOut"></div>
+ <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" id="toolUpd" style="margin-top:4px"><span>Update the toolset (Workbench, Bootstrap, plugins, schemas, templates, AI instructions) as part of this import. Untick to import the model and leave the installed tools as they are.</span></label>
+ <p class="mut" id="toolHint" style="margin:6px 0 0"></p></div></section>
 
 <section class="card" id="cGen" aria-labelledby="h-gen"><h2 id="h-gen"><span class="badge">4</span>Build the vault</h2>
 <div class="row"><label>Vault name <input type="text" id="vname" value="MDSE Vault"></label><label>Source lineage <input type="text" id="lineage" value="EA8647" size="10"></label></div>
-<div class="row" style="margin-top:10px"><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Write to chosen folder</button><span id="genHint" class="mut"></span></div>
+<div class="row" style="margin-top:10px"><button id="genCheck" class="alt" disabled title="Runs the whole translation in memory and lists every flag it would write. Nothing is written.">Check for flags first</button><button id="genNew" disabled>Build new vault (ZIP)</button><button id="genAdd" disabled>Write to chosen folder</button><span id="genHint" class="mut"></span></div>
 <div id="prog" hidden style="margin-top:14px" role="status" aria-live="polite">
  <div class="row" style="justify-content:space-between"><b id="plabel">Working…</b><span id="ppct" class="mut"></span></div>
  <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="pbar"><div class="pfill" id="pfill"></div></div>
@@ -102,11 +105,12 @@ const TAGS = /*@@TAGS@@*/;
 const BASEVAULT = /*@@BASEVAULT@@*/;
 const CLASSES = /*@@CLASSES@@*/;
 const BUILD = "/*@@BUILD@@*/";
+const RELEASE = /*@@RELEASE@@*/;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));          // lets the browser repaint between heavy steps
-$("build").textContent = BUILD;
+$("build").textContent = BUILD + " · toolset " + RELEASE;
 let source = null, bom = null, vaultHandle = null, person = null;
 
 /* ---- Step 1: who ------------------------------------------------------------------------------------------------------- */
@@ -214,7 +218,7 @@ const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDi
 let vaultFiles = null, vaultExists = false;
 function refreshButtons() {
   const ready = !!person && (!!source || !!bom);
-  $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true;
+  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true;
   $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
   $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
 }
@@ -226,8 +230,31 @@ $("pick").addEventListener("click", async () => {
     vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
     if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The whole vault will be written into it.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
+    await showToolset();
   } catch (e) { if (e.name !== "AbortError") $("vaultStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; }
 });
+
+/* ---- Toolset version check ---------------------------------------------------------------------------------------------- */
+let toolStatus = null;
+const STATE_TEXT = { same: "same", update: "newer in this importer", newer: "vault is newer", missing: "not installed", differs: "same version, different files" };
+async function showToolset() {
+  toolStatus = null; $("toolBox").hidden = !vaultHandle; if (!vaultHandle) return;
+  if (!vaultExists) {
+    $("toolOut").innerHTML = `<p class="mut" style="margin:0">No vault in this folder yet, so the whole toolset (release ${esc(RELEASE)}) is written together with the notes.</p>`;
+    $("toolUpd").checked = true; $("toolUpd").disabled = true; $("toolHint").textContent = ""; return;
+  }
+  try {
+    const st = await toolsetStatus({ base: BASEVAULT, read: readVaultFile, runDate: localIso() }); toolStatus = st;
+    $("toolOut").innerHTML = `<table><tr><th>Component</th><th>In this vault</th><th>In this importer</th><th>State</th></tr>` + st.rows.map((r) =>
+      `<tr><td>${esc(r.name)}</td><td>${r.installed === null ? "<span class=mut>none</span>" : esc(r.installed)}</td><td>${esc(r.shipped)}</td><td class="${r.state === "same" ? "ok" : r.state === "newer" ? "bad" : "warn"}">${STATE_TEXT[r.state]}</td></tr>`).join("") + "</table>";
+    const n = st.plan.files.length;
+    $("toolUpd").disabled = false; $("toolUpd").checked = st.verdict === "UPDATE";
+    $("toolHint").innerHTML = st.verdict === "CURRENT" ? '<span class=ok>The toolset in this vault is current. Nothing to update.</span>'
+      : st.verdict === "UPDATE" ? `An update is available: ${n} file(s) would be written, replaced files are saved under <code>99_System/11_Import/Update …/Replaced/</code>. Ticked by default.`
+      : `<span class=bad>This vault has a newer toolset than this importer.</span> Updating would roll some components back, so it is unticked. Tick it only if you mean to.`;
+    log(`toolset: vault ${st.rows[0].installed || "none"} · importer ${RELEASE} · ${st.verdict}`);
+  } catch (e) { $("toolOut").innerHTML = `<p class="bad">Could not read the toolset: ${esc(e.message)}</p>`; }
+}
 
 /* ---- Progress ---------------------------------------------------------------------------------------------------------- */
 const P = { list: [], at: -1, t0: 0 };
@@ -278,7 +305,7 @@ async function assemble(existing, writeStage) {
     stageAt(1, 0, "Translating the EA model (this is the long step)…", true); await tick();
     const opts = { sourceName: source.file.name, fingerprint, runDate, lineage: $("lineage").value.trim() || "EA", vaultName,
       authors: { authorMap: {}, fallbackCode: code, unmappedNames: ["", "7.1.0-2"] }, omitRootPackages: ["Model", "IPC !"], person: { name: person.name, timezone: tz() },
-      releaseVersion: "0.0.0-dev", classes: CLASSES, mapping: MAPPING, tags: TAGS, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
+      releaseVersion: RELEASE, classes: CLASSES, mapping: MAPPING, tags: TAGS, baseFiles: BASEVAULT, existing, preApproved: [], emitNative: true };
     res = await runImport(source.reader, opts);
     if (res.status === "WRITE_READY") files = res.files.slice();
     const d = res.summary.dispositions;
@@ -310,7 +337,7 @@ async function assemble(existing, writeStage) {
     log(`BOM ${bomRes.status}: ${JSON.stringify(bomRes.summary)}`);
   } else stageAt(2, 1, "No BOM chosen; skipped");
   stageAt(3, 0, "Assembling the vault…", true); await tick();
-  if (!source && !existing) files.push(...initVaultFiles(BASEVAULT, { runDate, vaultName, code, release: "0.0.0-dev", person: { name: person.name, timezone: tz() } }));
+  if (!source && !existing) files.push(...initVaultFiles(BASEVAULT, { runDate, vaultName, code, release: RELEASE, person: { name: person.name, timezone: tz() } }));
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const seen = new Set(); for (const f of files) { const k = f.path.toLowerCase(); if (seen.has(k)) throw Object.assign(new Error("Two output files would have the same path: " + f.path), { stage: "assemble" }); seen.add(k); }
   return { res, files, summaryHtml, bomRes };
@@ -342,6 +369,25 @@ $("genNew").addEventListener("click", async () => {
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" })); a.download = "MDSE.zip"; a.click();
     progDone(`MDSE.zip built, ${r.files.length} files`); $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${r.files.length} files. Your browser has saved it.</span>`; showTrust("in MDSE.zip");
   } catch (e) { reportFailure(e, "build ZIP"); }
+});
+/* ---- Check before import: every flag the run would write, with nothing written ------------------------------------------- */
+$("genCheck").addEventListener("click", async () => {
+  try {
+    progStart(STAGES);
+    const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
+    const sum = r.res ? r.res.summary : null, b = r.bomRes;
+    const pf = preflight({ files: r.files, ledger: r.res ? r.res.ledger : [], status: r.res ? r.res.status : "", elements: sum ? sum.elements : 0, errors: sum ? sum.errors : 0,
+      problems: [...(r.res ? r.res.problems : []), ...(b ? b.problems : [])], bomErrors: b ? b.findings.filter((f) => f.level === "error" && /^(BOM_LAYOUT|BOM_COLUMNS|BOM_EMPTY)$/.test(f.code)).map((f) => f.message) : [], bomSkipped: b ? b.findings.filter((f) => f.level === "error" && !/^(BOM_LAYOUT|BOM_COLUMNS|BOM_EMPTY)$/.test(f.code)).length : 0,
+      bomWarnings: b ? b.findings.filter((f) => f.level === "warn").length : 0, conflicts: sum ? sum.conflicts : 0, existingDiffers: b ? b.findings.filter((f) => /EXISTING_DIFFERS/.test(f.code || f.message || "")).length : 0, badPaths: badPaths(r.files) });
+    const cls = { BLOCKED: "bad", REVIEW: "warn", FLAGS: "", CLEAN: "ok" }[pf.verdict], head = { BLOCKED: "Do not import this yet", REVIEW: "Look before importing", FLAGS: "Safe to import; these flags will be written", CLEAN: "Clean: no flags" }[pf.verdict];
+    const csv = URL.createObjectURL(new Blob([preflightCsv(pf)], { type: "text/csv" }));
+    $("genOut").innerHTML = `<h3 class="${cls}">${head}</h3>` + (pf.reasons.length ? `<ul>${pf.reasons.map((x) => `<li class="${pf.verdict === "BLOCKED" ? "bad" : "warn"}">${esc(x)}</li>`).join("")}</ul>` : "") +
+      `<p>${pf.flagTotal} flag(s) would be written${Object.keys(pf.byType).length ? " (" + Object.entries(pf.byType).map(([k, v]) => `${v} ${esc(k)}`).join(" · ") + ")" : ""} · ${pf.deferred.reduce((a, d) => a + d.count, 0)} element(s) or link(s) deferred for review · ${r.files.length} file(s) in the run. <a href="${csv}" download="flags_preview.csv">Save every flag (CSV)</a></p>` +
+      (pf.groups.length ? "<table><tr><th>Flag</th><th>Kind</th><th class=n>Count</th><th>Example</th></tr>" + pf.groups.slice(0, 30).map((g) => `<tr><td>${esc(g.title)}</td><td>${esc(g.type)}</td><td class=n>${g.count}</td><td><code>${esc(g.example)}</code></td></tr>`).join("") + "</table>" + (pf.groups.length > 30 ? `<p class=mut>${pf.groups.length - 30} more kinds in the CSV</p>` : "") : "") +
+      (pf.deferred.length ? "<h3>Deferred for review</h3><table><tr><th>Reason</th><th>EA type</th><th class=n>Count</th></tr>" + pf.deferred.slice(0, 20).map((d) => `<tr><td><code>${esc(d.code)}</code></td><td>${esc(d.kind)}</td><td class=n>${d.count}</td></tr>`).join("") + "</table>" : "") + r.summaryHtml;
+    progDone("Check finished; nothing was written"); $("genStatus").innerHTML = `<span class="${cls}">${head}.</span> Nothing was written.`;
+    log(`preflight ${pf.verdict}: ${pf.flagTotal} flags, ${pf.groups.length} kinds`);
+  } catch (e) { reportFailure(e, "check for flags"); }
 });
 /* A name the browser or Windows would refuse (the same rules as safeName): checked before anything is written, so a bad name is listed, not found halfway. */
 const FS_ILLEGAL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff<>:"\\|?*]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
@@ -386,6 +432,14 @@ $("genAdd").addEventListener("click", async () => {
   try {
     progStart(STAGES);
     const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
+    if (vaultExists) {
+      if ($("toolUpd").checked) {
+        const up = await planVaultUpdate({ base: BASEVAULT, read: readVaultFile, runDate: localIso() }), taken = new Set(r.files.map((f) => f.path.toLowerCase()));
+        for (const f of up.files) if (!taken.has(f.path.toLowerCase())) r.files.push(f);
+        r.summaryHtml += `<h3>Toolset</h3><p>${up.status === "NO_CHANGES" ? "Already current; nothing to update." : `Updated to release ${esc(RELEASE)}: ${up.summary.add} added · ${up.summary.replace} replaced · ${up.summary.merge} merged · ${up.summary.same} already current.`}</p>`;
+        log(`toolset update included: ${JSON.stringify(up.summary)}`);
+      } else { r.summaryHtml += `<h3>Toolset</h3><p>Left as it is${toolStatus && toolStatus.verdict === "UPDATE" ? " (an update is available and was not applied)" : ""}.</p>`; log("toolset update skipped by choice"); }
+    }
     $("genOut").innerHTML = r.summaryHtml;
     if (r.res && r.res.status !== "WRITE_READY" && r.res.status !== "NO_CHANGES") { progFail(); $("genStatus").innerHTML = `<span class=bad>${r.res.status}: nothing written</span>`; return; }
     if (!r.files.length) { progDone("Nothing to change"); $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }

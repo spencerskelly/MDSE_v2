@@ -59,6 +59,7 @@ export const STYLE = `
 .mdw .bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;min-width:80px}.mdw .bar i{display:block;height:100%;background:var(--acc)}
 .mdw svg.g{width:100%;height:560px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}.mdw svg text{fill:var(--fg);font:12px system-ui,sans-serif}.mdw svg .box{fill:var(--bg2);stroke:var(--line)}.mdw svg .box.c{stroke:var(--acc);stroke-width:2}.mdw svg .box:hover{stroke:var(--acc)}.mdw svg .edge{stroke:var(--mut);fill:none;opacity:.7}.mdw svg .elabel{fill:var(--mut);font-size:10px}
 .mdw .gap{color:var(--bad)}.mdw .okc{color:var(--ok)}.mdw .empty{color:var(--mut);padding:30px 0;text-align:center}.mdw .banner{padding:8px 12px;border-bottom:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);font-size:13px}
+.mdw details.sec{margin:8px 0;border-top:1px solid var(--line)}.mdw details.sec>summary{cursor:pointer;padding:6px 0;font-size:13px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;list-style:none}.mdw details.sec>summary::-webkit-details-marker{display:none}.mdw details.sec>summary::before{content:"\\25B8  "}.mdw details.sec[open]>summary::before{content:"\\25BE  "}.mdw details.sec>summary .mut{text-transform:none;letter-spacing:0;font-weight:400}.mdw .secbar{display:flex;gap:6px;justify-content:flex-end;margin:0 0 4px}.mdw .secbar button{font-size:12px;padding:1px 8px}
 @media (max-width:760px){.mdw{grid-template-columns:1fr}.mdw aside{max-height:240px;border-right:0;border-bottom:1px solid var(--line)}.mdw header{grid-column:1}}
 `;
 
@@ -82,14 +83,16 @@ export function download(name: string, text: string): void {
 }
 
 const TABS: Array<[string, string, boolean]> = [
-  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["where", "Where used", true],
-  ["trace", "Traceability", false], ["behavior", "Behavior", true], ["interfaces", "Interfaces", true], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false], ["guide", "Guide", false],
+  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["design", "Design types", true], ["internal", "Internal", true], ["function", "Function", true], ["states", "States", true], ["reqs", "Requirements", true],
+  ["where", "Where used", true], ["trace", "Traceability", false], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false], ["guide", "Guide", false],
 ];
 
 export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
   let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
+  let tableGroup: "" | "type" | "folder" = "";
+  const secs = new Map<string, boolean>();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
 
@@ -140,6 +143,23 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       h("tbody", {}, ...rows.map((r) => h("tr", {}, ...r.map((c, i) => h("td", { class: heads[i]?.[2] ? "n" : "" }, c))))));
   }
   const empty = (msg: string): HTMLElement => h("div", { class: "empty" }, msg);
+  /* ---- collapsible sections ---- */
+  function section(key: string, title: string, body: Child[], o: { count?: number | string; open?: boolean } = {}): HTMLElement {
+    const k = tab + ":" + key, d = h("details", { class: "sec", open: secs.get(k) ?? o.open ?? true }, h("summary", {}, title, o.count !== undefined ? h("span", { class: "mut" }, ` (${o.count})`) : null), ...body);
+    d.addEventListener("toggle", () => { secs.set(k, (d as HTMLDetailsElement).open); });
+    return d;
+  }
+  const secBar = (): HTMLElement => h("div", { class: "secbar" },
+    h("button", { title: "Fold every section on this page", onclick: () => wrap.querySelectorAll("main details.sec").forEach((d) => { (d as HTMLDetailsElement).open = false; }) }, "Collapse all"),
+    h("button", { title: "Open every section on this page", onclick: () => wrap.querySelectorAll("main details.sec").forEach((d) => { (d as HTMLDetailsElement).open = true; }) }, "Expand all"));
+  function dataTable(t: V.TableData): HTMLElement {
+    if (!t.rows.length) return empty(t.empty);
+    const cols = t.columns.filter((c) => c.label), one = (x: V.Cell): Node => (x.path ? lnk(x.path, x.text) : h("span", { class: x.cls ?? "" }, x.text));
+    const cell = (c: V.TableCell | undefined): Child => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? h("span", {}, ...c.flatMap((x, i) => [i ? ", " : "", one(x)])) : one(c));
+    return tableOf(cols.map((c) => [c.key, c.label]), t.rows.slice(0, 1000).map((r) => cols.map((c) => cell(r[c.key]))));
+  }
+  const dataSections = (ts: V.TableData[], open = true): HTMLElement[] => ts.map((t) => section(t.id, t.title, [t.note ? h("div", { class: "mut", style: "margin-bottom:4px" }, t.note) : null, dataTable(t)], { count: t.rows.length, open }));
+
   const needNote = (): HTMLElement | null => (sel && note(sel) ? null : empty("Pick a note on the left."));
 
   /* ---- views ---- */
@@ -167,14 +187,21 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       h("input", { type: "search", placeholder: "Filter", value: tableF.text ?? "", onchange: (e: Event) => { tableF.text = (e.target as HTMLInputElement).value; redraw(); } }),
       h("select", { onchange: (e: Event) => { tableF.type = (e.target as HTMLSelectElement).value; redraw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: tableF.type === t }, t))),
       h("select", { onchange: (e: Event) => { tableF.status = (e.target as HTMLSelectElement).value; redraw(); } }, h("option", { value: "" }, "all statuses"), ...statuses.map((t) => h("option", { value: t, selected: tableF.status === t }, t || "(none)"))),
+      h("select", { "aria-label": "Group notes", title: "Group the list into folding sections", onchange: (e: Event) => { tableGroup = (e.target as HTMLSelectElement).value as typeof tableGroup; redraw(); } }, ...([["", "no grouping"], ["type", "group by type"], ["folder", "group by folder"]] as const).map(([v, l]) => h("option", { value: v, selected: v === tableGroup }, l))),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.flagged, onchange: (e: Event) => { tableF.flagged = (e.target as HTMLInputElement).checked; redraw(); } }), " flagged"),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.unresolved, onchange: (e: Event) => { tableF.unresolved = (e.target as HTMLInputElement).checked; redraw(); } }), " unresolved"),
       h("button", { onclick: () => download("notes.csv", [["id", "type", "subtype", "title", "status", "folder", "flags", "path"].join(","), ...rows.map((r) => [r.id, r.type, r.subtype, r.title, r.status, r.folder, r.flags, r.path].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
     const rows = V.tableRows(ix!, tableF), cap = rows.slice(0, 1000);
     pane.append(h("div", { class: "mut" }, `${rows.length} notes${rows.length > cap.length ? " (first 1,000 shown)" : ""}`));
-    pane.append(tableOf([["id", "ID"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]],
-      cap.map((r) => [r.id, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""]),
-      (k) => { tableF.desc = tableF.sort === k ? !tableF.desc : false; tableF.sort = k; redraw(); }));
+    const heads: Array<[string, string, boolean?]> = [["id", "ID"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]];
+    const toRow = (r: typeof cap[number]): Child[] => [r.id, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""];
+    const sort = (k: string): void => { tableF.desc = tableF.sort === k ? !tableF.desc : false; tableF.sort = k; redraw(); };
+    if (!tableGroup) pane.append(tableOf(heads, cap.map(toRow), sort));
+    else {
+      const groups = new Map<string, typeof cap>();
+      for (const r of cap) { const k = tableGroup === "type" ? r.type + (r.subtype ? "/" + r.subtype : "") : r.folder.split("/").slice(0, 2).join("/") || "(root)"; (groups.get(k) ?? groups.set(k, []).get(k)!).push(r); }
+      pane.append(secBar(), ...[...groups].sort((x, y) => x[0].localeCompare(y[0])).map(([k, list]) => section("g:" + k, k, [tableOf(heads, list.map(toRow), sort)], { count: list.length, open: false })));
+    }
     return pane;
   }
 
@@ -185,22 +212,24 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     return h("div", {}, ...[...by].map(([k, list]) => h("div", {}, h("span", { class: "tag k" }, k), " ", ...list.flatMap((x, i) => [i ? ", " : "", x.other ? lnk(x.other) : h("span", { class: "gap" }, (x.e.reverse ? "← " : "") + x.sym + (x.e.reverse ? " (source not in vault)" : " (unresolved)")), x.e.label ? h("span", { class: "mut" }, ` ${x.e.label}`) : null]))));
   }
 
+  const KIND_LABEL: Record<string, string> = { part: "Parts", port: "Ports", action: "Actions", state: "States", item: "Items and flows", attribute: "Attributes", fork: "Control nodes", join: "Control nodes" };
   function vNote(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
     const n = note(sel)!, pane = h("div", { class: "pane" });
     pane.append(h("h2", {}, n.title), h("div", { class: "row" }, h("span", { class: "pill" }, n.id), typeTag(n), h("span", { class: "pill" }, n.status || "no status"),
       n.block ? h("span", { class: "pill " + (ix!.parser === "passed" ? "ok" : ix!.parser === "failed" ? "bad" : "warn") }, ix!.parser === "passed" ? "SysML checked" : ix!.parser === "failed" ? "SysML check failed" : "SysML unchecked") : null,
-      host.openNote ? h("button", { onclick: () => host.openNote!(n.path) }, "Open in editor") : null));
-    for (const f of n.flags) pane.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail));
+      host.openNote ? h("button", { onclick: () => host.openNote!(n.path) }, "Open in editor") : null), secBar());
+    if (n.flags.length) pane.append(section("flags", "Flags", n.flags.map((f) => h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail)), { count: n.flags.length }));
     if (n.def?.doc) pane.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
-    if (n.body) pane.append(h("div", { style: "white-space:pre-wrap;margin:10px 0" }, n.body));
-    pane.append(h("h3", {}, "Properties"), tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path));
-    const o = V.relationshipRows(ix!).length ? null : null; void o;
+    if (n.body) pane.append(section("body", "Description", [h("div", { style: "white-space:pre-wrap" }, n.body)]));
     const out = (ix!.out.get(n.path) ?? []).map((e) => ({ e, other: e.to, sym: e.toSymbol })), inn = (ix!.inn.get(n.path) ?? []).map((e) => ({ e, other: e.from, sym: e.from }));
-    pane.append(h("h3", {}, "Relates to"), relList(out), h("h3", {}, "Related from"), relList(inn));
-    if (n.def?.usages.length) pane.append(h("h3", {}, "Usages"), tableOf([["k", "Kind"], ["name", "Name"], ["type", "Type"], ["mult", "Multiplicity"]], n.def.usages.map((u) => [(u.dir ? u.dir + " " : "") + u.kind, u.name, u.type ? lnk(ix!.bySymbol.get(u.type) ?? null, u.type) : h("span", { class: "gap" }, "untyped"), u.mult ?? ""])));
-    if (n.block) pane.append(h("h3", {}, "SysML v2"), highlight(n.block), n.warnings.length ? h("div", { class: "gap" }, n.warnings.join("; ")) : null);
-    if (n.sourceLines.length) pane.append(h("h3", {}, "Provenance (Source: EA)"), h("ul", {}, ...n.sourceLines.map((l) => h("li", {}, l.slice(2)))));
+    pane.append(section("rel-out", "Relates to", [relList(out)], { count: out.length }), section("rel-in", "Related from", [relList(inn)], { count: inn.length }));
+    const byKind = new Map<string, NonNullable<Note["def"]>["usages"]>();
+    for (const u of n.def?.usages ?? []) { const k = KIND_LABEL[u.kind] ?? "Other"; (byKind.get(k) ?? byKind.set(k, []).get(k)!).push(u); }
+    for (const [k, list] of byKind) pane.append(section("use-" + k, k, [tableOf([["k", "Kind"], ["name", "Name"], ["type", "Type"], ["mult", "Multiplicity"]], list.map((u) => [(u.dir ? u.dir + " " : "") + (u.ref ? "ref " : "") + u.kind, u.name, u.type ? lnk(ix!.bySymbol.get(u.type) ?? null, u.type) : h("span", { class: "gap" }, "untyped"), u.mult ?? ""]))], { count: list.length }));
+    if (n.block) pane.append(section("sysml", "SysML v2", [highlight(n.block), n.warnings.length ? h("div", { class: "gap" }, n.warnings.join("; ")) : null], { open: false }));
+    if (n.sourceLines.length) pane.append(section("prov", "Provenance (Source: EA)", [h("ul", {}, ...n.sourceLines.map((l) => h("li", {}, l.slice(2))))], { count: n.sourceLines.length, open: false }));
+    pane.append(section("props", "Properties", [tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path)], { open: false }));
     return pane;
   }
 
@@ -220,23 +249,38 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
 
   function vStructure(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.structure(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), canvasButton("Structure"));
-    if (r.supers.length) pane.append(h("div", {}, "Specializes: ", ...r.supers.flatMap((p, i) => [i ? " → " : "", lnk(p)])));
-    if (r.subs.length) pane.append(h("div", {}, "Specialized by: ", ...r.subs.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
-    pane.append(r.tree.children.length ? treeView(r.tree) : empty("This definition owns no typed usages."));
-    if (r.untyped.length) pane.append(h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")));
+    const r = V.structure(ix!, sel, 6, 40, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
+    pane.append(section("tree", "Parts tree", [r.tree.children.length ? treeView(r.tree) : empty("This definition owns no parts."), r.untyped.length ? h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")) : null], { count: r.tree.children.length }));
     const b = V.bom(ix!, sel);
-    if (b.length) pane.append(h("h3", {}, "Parts list (rolled up)"), tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
-      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
+    if (b.length) pane.append(section("bom", "Parts list (rolled up)", [tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
+      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV")], { count: b.length, open: b.length < 60 }));
+    return pane;
+  }
+
+  function vDesign(): HTMLElement {
+    const miss = needNote(); if (miss) return miss;
+    const r = V.designTypes(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Design types of " + note(sel)!.title), h("div", { class: "mut" }, "The specialization hierarchy only: what this definition specializes and the designs that specialize it. No parts, ports or behavior."), secBar());
+    if (!r.chain.length && !r.tree.children.length) return (pane.append(empty("This definition neither specializes nor is specialized.")), pane);
+    if (r.chain.length) pane.append(section("chain", "Specializes", [h("div", {}, ...r.chain.flatMap((p, i) => [i ? " → " : "", lnk(p)]), " → ", h("b", {}, note(sel)!.title))], { count: r.chain.length }));
+    pane.append(section("subs", "Specialized by", [r.tree.children.length ? treeView(r.tree) : empty("No design specializes this definition.")], { count: r.total }));
+    if (r.siblings.length) pane.append(section("sib", "Sibling designs", [h("div", {}, ...r.siblings.flatMap((p, i) => [i ? ", " : "", lnk(p)]))], { count: r.siblings.length, open: false }));
+    return pane;
+  }
+
+  function vReqs(): HTMLElement {
+    const miss = needNote(); if (miss) return miss;
+    const n = note(sel)!, pane = h("div", { class: "pane" }, h("h2", {}, "Requirements around " + n.title), secBar());
+    if (V.isRequirement(n)) pane.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, V.requirementText(n)));
+    pane.append(...dataSections(V.lensTables(ix!, "requirements", sel, { scope: "selected" })));
     return pane;
   }
 
   function vWhere(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.whereUsed(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel)!.title + " is used"), canvasButton("Where used"));
-    pane.append(r.tree.children.length ? treeView(r.tree) : empty("Nothing owns, specializes or performs this note."));
-    if (r.roots.length) pane.append(h("h3", {}, "Top-level assemblies"), h("div", {}, ...r.roots.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
-    if (r.references.length) pane.append(h("h3", {}, "Other references"), tableOf([["k", "Kind"], ["f", "From"], ["l", "Label"]], r.references.map((x) => [x.kind, lnk(x.path), x.label])));
+    const r = V.whereUsed(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Where " + note(sel)!.title + " is used"), canvasButton("Where used"), secBar());
+    pane.append(section("tree", "Used in", [r.tree.children.length ? treeView(r.tree) : empty("Nothing owns, specializes or performs this note.")], { count: r.tree.children.length }));
+    if (r.roots.length) pane.append(section("roots", "Top-level assemblies", [h("div", {}, ...r.roots.flatMap((p, i) => [i ? ", " : "", lnk(p)]))], { count: r.roots.length }));
+    if (r.references.length) pane.append(section("refs", "Other references", [tableOf([["k", "Kind"], ["f", "From"], ["l", "Label"]], r.references.map((x) => [x.kind, lnk(x.path), x.label]))], { count: r.references.length, open: false }));
     return pane;
   }
 
@@ -269,34 +313,36 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     }
     return svg;
   }
-  function vBehavior(): HTMLElement {
+  function vFlow(only: "actions" | "states"): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const f = V.behavior(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, (f.kind === "states" ? "States of " : "Actions of ") + note(sel)!.title));
-    if (f.kind === "none") return h("div", { class: "pane" }, h("h2", {}, note(sel)!.title), empty("This note has no actions or states."));
-    pane.append(flowSvg(f));
-    if (f.triggers.length) pane.append(h("h3", {}, "Triggers"), h("ul", {}, ...f.triggers.map((t) => h("li", {}, t))));
-    if (f.unresolved.length) pane.append(h("h3", {}, "Not drawn"), h("ul", {}, ...f.unresolved.map((t) => h("li", { class: "gap" }, t))));
-    if (f.guards.length) pane.append(h("h3", {}, "Triggers, guards and effects"), tableOf([["a", "From"], ["b", "To"], ["t", "Trigger (accept)"], ["g", "Guard (if)"], ["e", "Effect (do)"]], f.guards.map((x) => [x.from, x.to, x.trigger, x.guard, x.effect])));
+    const word = only === "states" ? "States" : "Function", f = V.behavior(ix!, sel, only), n = note(sel)!;
+    const pane = h("div", { class: "pane" }, h("h2", {}, (only === "states" ? "State machine of " : "Function of ") + n.title), secBar());
+    if (only === "actions") pane.append(...dataSections(V.lensTables(ix!, "functional", sel, { scope: "selected" }).slice(0, 1), true));
+    if (f.kind === "none") { pane.append(empty(only === "states" ? "This definition has no states. Its design types and parts are under their own tabs." : "This definition has no actions.")); return pane; }
+    pane.append(section("flow", only === "states" ? "State diagram" : "Action flow", [flowSvg(f)], { count: f.nodes.length }));
+    if (f.triggers.length) pane.append(section("trig", "Triggers", [h("ul", {}, ...f.triggers.map((t) => h("li", {}, t)))], { count: f.triggers.length }));
+    if (f.guards.length) pane.append(section("guards", only === "states" ? "Transitions: triggers, guards and effects" : "Triggers, guards and effects", [tableOf([["a", "From"], ["b", "To"], ["t", "Trigger (accept)"], ["g", "Guard (if)"], ["e", "Effect (do)"]], f.guards.map((x) => [x.from, x.to, x.trigger, x.guard, x.effect]))], { count: f.guards.length }));
+    if (f.unresolved.length) pane.append(section("undrawn", "Not drawn", [h("ul", {}, ...f.unresolved.map((t) => h("li", { class: "gap" }, t)))], { count: f.unresolved.length, open: false }));
+    void word;
     return pane;
   }
+  const vFunction = (): HTMLElement => vFlow("actions"), vStates = (): HTMLElement => vFlow("states");
 
-  function vInterfaces(): HTMLElement {
+  function vInternal(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.interfaces(ix!, sel), pane = h("div", { class: "pane" }, h("h2", {}, "Interfaces of " + note(sel)!.title));
-    if (!r.ports.length && !r.flows.length && !r.features.length && !r.ends.length && !r.connections.length && !r.transfers.length && !r.binds.length && !r.users.length) return h("div", { class: "pane" }, h("h2", {}, note(sel)!.title), empty("No ports, flows or connections."));
+    const n = note(sel)!, pane = h("div", { class: "pane" }, h("h2", {}, "Internal structure of " + n.title), h("div", { class: "mut" }, "Parts and the ports they offer, this definition's own boundary ports, and how they are wired. A wire to a part or port that does not exist is marked (not found)."), secBar());
+    pane.append(...dataSections(V.lensTables(ix!, "internal", sel, {})));
+    const r = V.interfaces(ix!, sel);
     const typeCell = (path: string | null, type: string): HTMLElement | string => (path ? lnk(path) : h("span", { class: "gap" }, type || "untyped"));
-    if (r.ports.length) {
-      pane.append(h("h3", {}, "Ports"), tableOf([["n", "Port"], ["t", "Type"], ["c", "Conjugated"], ["m", "Quantity"], ["f", "Directed features (as seen from this port)"]],
-        r.ports.map((p) => [(p.ref ? "ref " : "") + p.name, typeCell(p.path, p.type), p.conj ? "~ yes" : "", p.mult, p.features.length ? p.features.map((f) => `${f.dir ? f.dir + " " : ""}${f.name}`).join(", ") : ""])));
-    }
-    if (r.features.length) pane.append(h("h3", {}, "Features"), tableOf([["d", "Direction"], ["k", "Kind"], ["n", "Name"], ["t", "Type"], ["m", "Quantity"]], r.features.map((f) => [f.dir, f.kind, f.name, typeCell(f.path, f.type), f.mult])));
-    else if (r.flows.length) pane.append(h("h3", {}, "Flows"), tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, typeCell(p.path, p.type)])));
-    if (r.ends.length) pane.append(h("h3", {}, "Ends"), tableOf([["n", "End"], ["t", "Port type"], ["c", "Conjugated"], ["m", "Quantity"]], r.ends.map((e) => [e.name, typeCell(e.path, e.type), e.conj ? "~ yes" : "", e.mult])));
-    if (r.connections.length) pane.append(h("h3", {}, "Connections"), tableOf([["f", "Form"], ["n", "Name"], ["v", "Interface / definition"], ["a", "From"], ["b", "To"]],
-      r.connections.map((c) => [c.form === "plain" ? "connect" : c.form, c.name, c.via ? typeCell(c.viaPath, c.via) : "", (c.endA ? c.endA + " ::> " : "") + c.from, (c.endB ? c.endB + " ::> " : "") + c.to])));
-    if (r.transfers.length) pane.append(h("h3", {}, "Flows across connections"), tableOf([["t", "Carries"], ["a", "From"], ["b", "To"]], r.transfers.map((x) => [x.type ? typeCell(x.typePath, x.type) : "(unspecified)", x.from, x.to])));
-    if (r.binds.length) pane.append(h("h3", {}, "Bindings"), tableOf([["a", "A"], ["b", "B"]], r.binds.map((x) => [x.a, x.b])));
-    if (r.users.length) pane.append(h("h3", {}, "Used by (as a port type)"), h("div", {}, ...r.users.flatMap((p, i) => [i ? ", " : "", lnk(p)])));
+    const rich: HTMLElement[] = [];
+    if (r.ports.some((p) => p.features.length)) rich.push(section("pfeat", "Directed features of each port", [tableOf([["n", "Port"], ["t", "Type"], ["f", "Seen from this port"]], r.ports.filter((p) => p.features.length).map((p) => [(p.ref ? "ref " : "") + p.name, typeCell(p.path, p.type), p.features.map((f) => `${f.dir ? f.dir + " " : ""}${f.name}`).join(", ")]))], { count: r.ports.filter((p) => p.features.length).length, open: false }));
+    if (r.features.length) rich.push(section("features", "Features of this definition", [tableOf([["d", "Direction"], ["k", "Kind"], ["n", "Name"], ["t", "Type"], ["m", "Quantity"]], r.features.map((f) => [f.dir, f.kind, f.name, typeCell(f.path, f.type), f.mult]))], { count: r.features.length }));
+    else if (r.flows.length) rich.push(section("flows", "Flows", [tableOf([["d", "Direction"], ["n", "Name"], ["t", "Carries"]], r.flows.map((p) => [p.dir, p.name, typeCell(p.path, p.type)]))], { count: r.flows.length }));
+    if (r.ends.length) rich.push(section("ends", "Ends", [tableOf([["n", "End"], ["t", "Port type"], ["c", "Conjugated"], ["m", "Quantity"]], r.ends.map((e) => [e.name, typeCell(e.path, e.type), e.conj ? "~ yes" : "", e.mult]))], { count: r.ends.length }));
+    if (r.transfers.length) rich.push(section("xfer", "Flows across connections", [tableOf([["t", "Carries"], ["a", "From"], ["b", "To"]], r.transfers.map((x) => [x.type ? typeCell(x.typePath, x.type) : "(unspecified)", x.from, x.to]))], { count: r.transfers.length }));
+    if (r.users.length) rich.push(section("users", "Used by (as a port type)", [h("div", {}, ...r.users.flatMap((p, i) => [i ? ", " : "", lnk(p)]))], { count: r.users.length, open: false }));
+    pane.append(...rich);
+    if (!pane.querySelector("table") && !rich.length) pane.append(empty("No parts, ports, flows or connections."));
     return pane;
   }
 
@@ -394,7 +440,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   }
 
   /* ---- shell ---- */
-  const views: Record<string, () => HTMLElement> = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, behavior: vBehavior, interfaces: vInterfaces, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
+  const views: Record<string, () => HTMLElement> = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, design: vDesign, internal: vInternal, function: vFunction, states: vStates, reqs: vReqs, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
   function draw(): void {
     const header = h("header", {}, h("b", {}, "MDSE Workbench"), ix ? h("span", { class: "pill" }, `${ix.notes.size} notes · ${ix.edges.length} links · built in ${ix.builtMs} ms`) : null,
       ix ? h("span", { class: "pill " + (ix.parser === "passed" ? "ok" : ix.parser === "failed" ? "bad" : "warn") }, ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked") : null,

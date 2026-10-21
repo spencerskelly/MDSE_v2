@@ -1,6 +1,7 @@
 {
   "name": "mdse",
   "private": true,
+  "version": "0.9.0",
   "description": "Markdown Systems Engineering: rules, schemas and tools for an Obsidian vault backed by SysML v2 text.",
   "engines": {
     "node": ">=22"

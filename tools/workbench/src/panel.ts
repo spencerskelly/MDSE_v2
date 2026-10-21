@@ -75,15 +75,22 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
+  const secs = new Map<string, boolean>();                                                // open/closed state of each folding section, kept across redraws
+  function sec(key: string, title: string, body: Child[], o: { count?: number | string; open?: boolean } = {}): HTMLElement {
+    const k = lens + ":" + key, d = h("details", { class: "sec", open: secs.get(k) ?? o.open ?? true }, h("summary", {}, title, o.count !== undefined ? h("span", { class: "mut" }, ` (${o.count})`) : null), ...body);
+    d.addEventListener("toggle", () => { secs.set(k, (d as HTMLDetailsElement).open); });
+    return d;
+  }
   function tableView(t: V.TableData): HTMLElement {
-    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}, h("h3", {}, t.title));
+    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {});
+    const wrapSec = (): HTMLElement => { const kids = [...box.childNodes]; return sec(t.id, t.title || "Table", kids as Child[], { count: t.rows.length }); };
     if (t.note) box.append(h("div", { class: "mut", style: "font-size:12px;margin-bottom:4px" }, t.note));
-    if (!t.rows.length) { box.append(empty(t.empty)); return box; }
+    if (!t.rows.length) { box.append(empty(t.empty)); return t.title ? wrapSec() : box; }
     const shown = t.rows.slice(0, CAP);
     box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
     if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
     if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
-    return box;
+    return t.title ? wrapSec() : box;
   }
 
   /* ---- lenses ---- */
@@ -106,8 +113,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (!by.size) return h("div", { class: "mut" }, "None.");
       return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
-    box.append(h("h3", {}, "Relates to"), rel(outgoing(ix!, n.path), "out"), h("h3", {}, "Related from"), rel(incoming(ix!, n.path), "in"));
-    if (n.def?.usages.length) box.append(h("h3", {}, "Usages"), tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" }));
+    box.append(sec("rel-out", "Relates to", [rel(outgoing(ix!, n.path), "out")], { count: outgoing(ix!, n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix!, n.path), "in")], { count: incoming(ix!, n.path).length }));
+    if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
     return box;
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
@@ -177,6 +184,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     else try {
       if (compact && V.lensHasCanvas(lens) && n) body.append(canvasSettings());
       const bar = scopeBar(); if (bar) body.append(bar);
+      if (lens !== "dashboard" && lens !== "edit") body.append(h("div", { class: "secbar", style: "display:flex;gap:6px;justify-content:flex-end" }, h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = false; }) }, "Collapse all"), h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = true; }) }, "Expand all")));
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());

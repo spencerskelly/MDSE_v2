@@ -97,3 +97,38 @@ export async function planVaultUpdate(o: UpdateInput): Promise<UpdateResult> {
   files.push({ path: `99_System/11_Import/Vault Update ${lab}.md`, content: `# Vault Update ${lab}\n\nConfiguration brought up to the shipped release. No notes were read or changed; nothing was deleted.\n\n| File | Action | Why |\n|---|---|---|\n${changedRows.map((r) => `| \`${r.path}\` | ${r.action} | ${r.reason.replace(/\|/g, "/")} |`).join("\n")}\n\n${summary.same} file(s) were already current; ${summary.left} yours were left alone.${backups.length ? ` Replaced copies are under \`99_System/11_Import/Update ${lab}/Replaced/\`; delete them once you are satisfied.` : ""}\n` });
   return { status: "WRITE_READY", files, rows, summary };
 }
+
+/* ---- Version check: what the vault has against what this importer ships ------------------------------------------------ */
+/** Compare dotted numbers; a `-dev` or other suffix sorts before the plain release. */
+export function semverCmp(a: string, b: string): number {
+  const parse = (v: string): { n: number[]; pre: string } => { const m = /^(\d+(?:\.\d+)*)(.*)$/.exec(v.trim()); return { n: (m?.[1] ?? "0").split(".").map(Number), pre: (m?.[2] ?? "").trim() }; };
+  const x = parse(a), y = parse(b);
+  for (let i = 0; i < Math.max(x.n.length, y.n.length); i++) { const d = (x.n[i] ?? 0) - (y.n[i] ?? 0); if (d) return d < 0 ? -1 : 1; }
+  return x.pre === y.pre ? 0 : !x.pre ? 1 : !y.pre ? -1 : x.pre < y.pre ? -1 : 1;
+}
+export interface ToolsetRow { name: string; installed: string | null; shipped: string; state: "same" | "update" | "newer" | "missing" | "differs" }
+export interface ToolsetStatus { vaultFound: boolean; verdict: "NEW_VAULT" | "CURRENT" | "UPDATE" | "VAULT_NEWER"; rows: ToolsetRow[]; plan: UpdateResult }
+const yamlKey = (s: string | null, k: string): string | null => (s === null ? null : new RegExp(`^${k}:\\s*(.*)$`, "m").exec(s)?.[1]?.trim() ?? null);
+const manifestVersion = (s: string | null): string | null => { if (s === null) return null; try { const v = (JSON.parse(s) as { version?: unknown }).version; return typeof v === "string" ? v : null; } catch { return null; } };
+
+/** The MDSE release, schema and every shipped plugin: the version in the vault, the version in this importer, and whether the files agree.
+ *  "differs" means the same version number with different files, which is what a development build looks like. Reads only; writes nothing. */
+export async function toolsetStatus(o: UpdateInput): Promise<ToolsetStatus> {
+  const plan = await planVaultUpdate(o), vy = await o.read(".vault.yaml"), vaultFound = vy !== null;
+  const rows: ToolsetRow[] = [];
+  const push = (name: string, installed: string | null, shipped: string, files: UpdateRow[]): void => {
+    const drift = files.some((r) => r.action === "add" || r.action === "replace" || r.action === "merge");
+    const state: ToolsetRow["state"] = installed === null ? "missing" : semverCmp(installed, shipped) < 0 ? "update" : semverCmp(installed, shipped) > 0 ? "newer" : drift ? "differs" : "same";
+    rows.push({ name, installed, shipped, state });
+  };
+  push("MDSE release", yamlKey(vy, "mdse_release"), yamlKey(o.base[".vault.yaml"] ?? null, "mdse_release") ?? "unknown", plan.rows.filter((r) => r.path === ".vault.yaml"));
+  for (const path of Object.keys(o.base).sort()) {
+    const m = /^\.obsidian\/plugins\/([^/]+)\/manifest\.json$/.exec(path); if (!m) continue;
+    push(m[1]!, manifestVersion(await o.read(path)), manifestVersion(o.base[path]!) ?? "unknown", plan.rows.filter((r) => r.path.startsWith(`.obsidian/plugins/${m[1]}/`)));
+  }
+  const shared = plan.rows.filter((r) => !/^\.obsidian\/plugins\//.test(r.path) && r.path !== ".vault.yaml" && r.kind !== "seed");
+  const stale = shared.filter((r) => r.action !== "same").length;
+  rows.push({ name: "Schemas, templates, AI instructions, settings", installed: vaultFound ? `${shared.length - stale} of ${shared.length} current` : null, shipped: `${shared.length} files`, state: !vaultFound ? "missing" : stale ? "update" : "same" });
+  const verdict: ToolsetStatus["verdict"] = !vaultFound ? "NEW_VAULT" : plan.status === "NO_CHANGES" ? "CURRENT" : rows.some((r) => r.state === "newer") ? "VAULT_NEWER" : "UPDATE";
+  return { vaultFound, verdict, rows, plan };
+}
