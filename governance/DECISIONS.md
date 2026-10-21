@@ -373,4 +373,6 @@ Rules: IMP-103.
 
 A real EA run came in with every Part usage (1,824) and every Port usage (2,337) untyped, 2,100 Ports and 746 flow pins deferred, and Part-level connectors lost. Cause (confirmed against the vault output and V1 evidence W-44, W-113, W-114, W-120): PDATA1 holds a GUID, which was read as a number; a Port's type is its PDATA1, not Classifier; EA interface Classes were written as `interface def` although ports are typed by them; and Ports under Parts, the V1 instance ports, were not merged into the block's port. Changes: IMP-104 to IMP-109 and IMP-111. Not changed: the approved family mapping file still names `InterfaceDefinition` for the interface stereotypes; the importer writes them as `port def`. Open: PDATA2 (port redefinition) is not yet written as `:>>`; `isReference` Parts are not yet `ref part`; Ports under an Object and ports on nested Parts still follow the older owner rule. Not run on the real `.qeax`.
 
-Rules: IMP-101, IMP-104, IMP-105, IMP-106, IMP-107, IMP-108, IMP-109, IMP-111.
+Also: usage names keep an acronym's case (IMP-112). The Engineering_Data mini `.qeax` holds 7 Parts and 16 Ports (the full model 3,134 and 4,790), so these changes are tested on the synthetic fixture only, not on real Part and Port rows.
+
+Rules: IMP-101, IMP-104, IMP-105, IMP-106, IMP-107, IMP-108, IMP-109, IMP-111, IMP-112.

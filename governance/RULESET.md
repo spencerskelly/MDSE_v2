@@ -378,6 +378,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **IMP-108** · Active · P1 — A connector whose end is a Part acts on the block that Part points at (PDATA1), not on the usage: a requirement satisfied or allocated by a Part is satisfied by its block. (REG-113; D-0037)
 - **IMP-109** · Active · P1 — A connector between Ports on Parts of one assembly is written in that assembly as `connect partA.port to partB.port`; a Port on a Part and a boundary Port of the assembly connect the same way. Other port connections follow IMP-049. (D-0037)
 - **IMP-111** · Active · P1 — An EA Object points at the Class it is a kind of through Classifier; its part def specializes that Class's part def (`:>`), never typed by it. (V1 W-135, approved exception on Object classifiers; D-0037)
+- **IMP-112** · Active · P1 — A usage name is the EA name made into a SysML identifier with a lower first letter, except that a name that starts with two capitals (an acronym) keeps its case: `USB-MCU` is `USBMCU`, `CAN TXRX` is `CANTXRX`, `LED Port` is `LEDPort`, not `uSBMCU`, `cANTXRX`, `lEDPort`. (D-0037)
 
 ## BOM — BOM importer
 

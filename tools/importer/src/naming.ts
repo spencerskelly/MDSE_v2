@@ -50,7 +50,8 @@ export const lowerFirst = (s: string): string => (s ? s[0]!.toLowerCase() + s.sl
 
 /** Identifier for a usage (part, port, action ...): camelCase, never a SysML keyword. */
 export function usageIdent(raw: string, fallback = "unnamed"): string {
-  const s = lowerFirst(sysmlIdent(raw, fallback));
+  const id = sysmlIdent(raw, fallback);
+  const s = /^[A-Z]{2}/.test(id) ? id : lowerFirst(id);                       // an acronym keeps its case: `CAN0`, `USBC`, not `cAN0`, `uSBC` (IMP-112)
   return SYSML_KEYWORDS.has(s) ? s + "_" : s;
 }
 
