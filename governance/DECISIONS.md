@@ -365,4 +365,6 @@ Rules: IMP-102.
 
 The same EA import built a ZIP that Windows would not extract, and a folder write that stopped with `InvalidStateError`. Causes are diagnosed, not confirmed on the real data: folder-per-parent layout with long EA names exceeds the 260-character path limit in Explorer; and a freshly created file touched by antivirus, OneDrive or the indexer between create and close raises the state error. Fixes: a deterministic folder path budget and shorter name cap (IMP-103), per-file retry, and errors that carry the path (a DOMException message cannot be edited, so a new Error is thrown). Advice stays on the page: write to a short folder that is not synced (such as `C:\MDSE`), and extract a ZIP to a short path.
 
+First version of the squeeze was wrong: it shortened each note's folder chain by that note's own total length, so the same folder appeared under several spellings and the tree split (`Anderson` and `Ande~1ws`). A folder's name is now fixed by its own name, its ancestors and the height of the tree below it. Deep part chains (12 levels in the IPC tree) still come out heavily shortened; that is the cost of mirroring the EA parent chain as folders (MOD-105), and the open question is whether parts deeper than a set level should stay in one folder with the parent kept in the note's relations.
+
 Rules: IMP-103.

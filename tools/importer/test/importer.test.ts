@@ -269,18 +269,20 @@ test("file names the browser would refuse never reach the writer: device names w
   assert.deepEqual(bad, []);
 });
 
-test("folder paths are squeezed to fit Windows extraction, the same way for every note in a folder (IMP-103)", async () => {
-  const { squeezeDir, DIR_BUDGET } = await import("../src/naming.ts");
-  const short = ["02 Product", "Power Train"];
-  assert.deepEqual(squeezeDir(short), short);
-  const deep = Array.from({ length: 9 }, (_, i) => `Subsystem ${i} with a long descriptive package name`);
-  const sq = squeezeDir(deep);
-  assert.ok(sq.join("/").length <= DIR_BUDGET, sq.join("/"));
-  assert.deepEqual(squeezeDir(deep), sq, "deterministic");
-  assert.equal(sq[0]!.slice(0, 6), "Subsys");
-  const absurd = Array.from({ length: 40 }, (_, i) => `Level${i}`);
-  const as = squeezeDir(absurd);
-  assert.ok(as.join("/").length <= DIR_BUDGET && as.includes("_") && as[0] === "Level0" && as.at(-1) === "Level39", as.join("/"));
+test("folder paths are squeezed to fit Windows extraction, and a folder has one spelling whatever sits below it (IMP-103)", async () => {
+  const { folderSqueezer, DIR_BUDGET } = await import("../src/naming.ts");
+  const long = (i: number): string => `Subsystem ${i} with a long descriptive package name`;
+  const deep = Array.from({ length: 12 }, (_, i) => long(i));
+  const shallow = deep.slice(0, 3);
+  const sq = folderSqueezer([deep, shallow, ["02 Product", "Power Train"]]);
+  assert.deepEqual(sq(["02 Product", "Power Train"]), ["02 Product", "Power Train"], "a short tree is left whole");
+  const full = sq(deep);
+  for (let n = 1; n <= deep.length; n++) assert.deepEqual(sq(deep.slice(0, n)), full.slice(0, n), `prefix ${n} must be spelled as in the deep path`);
+  assert.deepEqual(sq(shallow), full.slice(0, 3));
+  assert.ok(full.join("/").length <= DIR_BUDGET + 12, full.join("/"));
+  assert.deepEqual(folderSqueezer([deep, shallow])(deep), full, "deterministic");
+  const alone = folderSqueezer([shallow]);
+  assert.deepEqual(alone(shallow), shallow, "a shallow tree keeps its names even if another tree is deep");
   const res = await run();
   const longest = Math.max(...res.files.map((f) => f.path.length));
   assert.ok(longest < 200, String(longest));
