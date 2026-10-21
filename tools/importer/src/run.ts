@@ -14,7 +14,7 @@ import { buildResolver, classify, isUsageEntry, connectorKey, DEFINITION_KINDS }
 import type { FamilyMapping, ElementEntry } from "./ea_mapping.ts";
 import { allocateUids, allocateIds } from "./identity.ts";
 import type { AuthorOptions } from "./identity.ts";
-import { safeName, folderSqueezer, sysmlIdent, usageIdent, IdentScope } from "./naming.ts";
+import { safeName, sysmlIdent, usageIdent, IdentScope } from "./naming.ts";
 import { renderBlock, parseMultiplicity } from "./sysml.ts";
 import type { UsageDecl } from "./sysml.ts";
 import { renderNote, flagCallout } from "./notes.ts";
@@ -184,7 +184,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (en.disposition === "native_candidate" && en.native_kind && DEFINITION_KINDS[en.native_kind] || en.disposition === "mdse_note" || en.disposition === "attachment_link") {
       const cls = classify(en, e, pkgPath(e.packageId));
       if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
-      const kw = en.native_kind ? DEFINITION_KINDS[en.native_kind] ?? null : null;
+      const kw = en.native_kind ? (en.native_kind === "InterfaceDefinition" ? "port def" : DEFINITION_KINDS[en.native_kind] ?? null) : null;   // IMP-104: an EA interface Class is what ports are typed by, so it is a port def
       const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
       const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(title), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
       for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
@@ -195,6 +195,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (en.disposition === "conditional_review") { set(r, "deferred_review", "", en.conditional_evidence[0] ?? "CONDITIONAL_REVIEW", "Needs the evidence named in the diagnostic"); return; }
     set(r, "deferred_review", "", "UNHANDLED_DISPOSITION_" + en.disposition);
   });
+
+  // IMP-111 (V1 W-135, EXC "Object classifier = specialization"): an EA Object points at the Class it is a kind of through Classifier; the part def specializes it (never typing).
+  for (const d of drafts) if (d.o.type === "Object" && d.keyword === "part def") { const t = byObj.get(d.o.classifier); if (t && t !== d && t.keyword === "part def" && !d.specializes.includes(t)) d.specializes.push(t); }
 
   track.stage = "identity";
   // ---- identity ------------------------------------------------------------------------------------------------------
@@ -229,9 +232,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
   for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(safeName(d.title));
   const dirParts = (d: Draft): string[] => (d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
-  const squeeze = folderSqueezer(drafts.flatMap((d) => (d.children.length ? [dirParts(d), [...dirParts(d), d.baseName]] : [dirParts(d)])));   // IMP-103
-  const dirOf = (d: Draft): string => squeeze(dirParts(d)).join("/");
-  const ownDirOf = (d: Draft): string => squeeze([...dirParts(d), d.baseName]).join("/");
+  const dirOf = (d: Draft): string => dirParts(d).join("/");
+  const ownDirOf = (d: Draft): string => [...dirParts(d), d.baseName].join("/");
   for (const d of drafts) {
     if (d.existingPath) { d.path = d.existingPath; continue; }
     const dir = dirOf(d);
@@ -244,31 +246,76 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const scopeOf = (d: Draft): IdentScope => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d)!);
   const flagLink = (d: Draft, title: string, detail: string[]): void => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
   const ownerKeyword: Record<string, string> = { PartUsage: "part def", PortUsage: "part def", ActionUsage: "action def", StateUsage: "state def", SyncNode: "action def" };
-  usageObjs.sort((a, b) => a.o.id - b.o.id);
+  // IMP-105: PDATA1/2/3 hold the GUID of another element ({...}); a plain number is accepted too.
+  const byGuid = new Map<string, EaObject>(g.objects.map((x) => [x.guid.toLowerCase(), x] as const));
+  const refObj = (s: string): EaObject | undefined => { const t = s.trim(); if (!t) return undefined; return t.startsWith("{") ? byGuid.get(t.toLowerCase()) : /^\d+$/.test(t) ? g.objectsById.get(Number(t)) : undefined; };
+  const refDraft = (s: string): Draft | null => { const x = refObj(s); return x ? byObj.get(x.id) ?? null : null; };
+  const isInstancePort = (e: EaObject): boolean => e.type === "Port" && g.objectsById.get(e.parentId)?.type === "Part";
+  const phase = (u: { o: EaObject; entry: ElementEntry }): number => (u.entry.native_kind === "ItemUsage" ? 3 : u.entry.native_kind === "PortUsage" ? (isInstancePort(u.o) ? 2 : 1) : 0);
+  usageObjs.sort((a, b) => phase(a) - phase(b) || a.o.id - b.o.id);
   const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
+  const carrierOf = new Map<number, number>();                      // instance port (EA Port under a Part) -> that Part
+  const addedPorts = new Map<string, UsageRef>();                   // block + port name -> the port added from assemblies
   const flowIn = new Map<number, number>(), flowOut = new Map<number, number>();
   for (const c of g.connectors) if (connectorKey(c) === "ControlFlow") { flowOut.set(c.sourceId, (flowOut.get(c.sourceId) ?? 0) + 1); flowIn.set(c.destId, (flowIn.get(c.destId) ?? 0) + 1); }
   const flowItem = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
     const e = u.o;
     let ownerDef = byObj.get(e.parentId) ?? null;
-    if (!ownerDef) { const po = g.objectsById.get(e.parentId); if (po && po.type === "Port") ownerDef = byObj.get(po.classifier) ?? null; }   // flow item under a port usage: its port def owns it
+    if (!ownerDef) { const po = g.objectsById.get(e.parentId); if (po && po.type === "Port") ownerDef = usageByObj.get(po.id)?.ref.typeDraft ?? refDraft(po.pdata1); }   // flow item under a port usage: its port def owns it
     if (!ownerDef || ownerDef.keyword !== "port def") { set(u.row, "deferred_review", "ItemUsage", "FLOW_OWNER_NOT_PORT_DEF", "Move the flow item under its port definition"); return; }
     const tag = ((g.tags.get(e.id) ?? []).find(([k]) => /^(flow ?)?direction$/i.test(k.trim()))?.[1] ?? "").trim().toLowerCase();
     const dir = tag === "in" || tag === "out" || tag === "inout" ? tag : tag === "in/out" || tag === "bidirectional" ? "inout" : null;
     if (!dir) { set(u.row, "deferred_review", "ItemUsage", "DIRECTION_EVIDENCE_MISSING", "Set the flow direction (in, out, inout)"); return; }
-    const t = byObj.get(e.classifier), typed = t && (t.keyword === "item def" || t.keyword === "attribute def") ? t : null;
+    const t = refDraft(e.pdata1) ?? byObj.get(e.classifier), typed = t && (t.keyword === "item def" || t.keyword === "attribute def") ? t : null;
     const name = scopeOf(ownerDef).take(usageIdent(e.name || e.alias, `flow${e.id}`));
     const ref: UsageRef = { kind: "item", dir, name, typeDraft: typed, objGuid: e.guid, typedBy: typed?.title ?? "" };
     ownerDef.usages.push(ref); usageByObj.set(e.id, { owner: ownerDef, ref });
-    set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the Classifier to the Signal this flow carries");
+    set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the PDATA1 type to the Signal this flow carries");
     u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
-    if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as Classifier. It is written without a type.`]);
+    if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as its type. It is written without a type.`]);
+  };
+  // IMP-106 (V1 W-114): a Port under a Part is the Part's block's own port. Merge it by PDATA3, else by a unique same name, else add it to the block.
+  const instancePort = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
+    const e = u.o, carrier = g.objectsById.get(e.parentId)!;
+    const block = refDraft(carrier.pdata1);
+    if (!block || block.keyword !== "part def") { set(u.row, "deferred_review", "PortUsage", "USAGE_WITHOUT_NOTE_OWNER", "The Part this port sits on has no block in PDATA1"); return; }
+    const typeOf = refDraft(e.pdata1), typePort = typeOf?.keyword === "port def" ? typeOf : null;
+    const eaName = (e.name || e.alias).trim();
+    const named = refObj(e.pdata3);
+    let ref: UsageRef | undefined = named && named.type === "Port" && named.parentId === block.o.id ? usageByObj.get(named.id)?.ref : undefined, how = ref ? "PDATA3" : "";
+    if (!ref && eaName) {
+      const same = block.usages.filter((x) => x.kind === "port" && (g.objects.find((q) => q.guid === x.objGuid)?.name ?? "").trim() === eaName);
+      if (same.length === 1) { ref = same[0]; how = "SAME_NAME"; }
+    }
+    let added = false;
+    if (!ref) {
+      const key = `${block.o.id}|${eaName}`;
+      ref = eaName ? addedPorts.get(key) : undefined;
+      if (ref) how = "SAME_NAME_ADDED";
+      else {
+        const name = scopeOf(block).take(usageIdent(eaName || typePort?.title || "", `port${e.id}`));
+        ref = { kind: "port", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
+        block.usages.push(ref); if (eaName) addedPorts.set(key, ref); added = true; how = "ADDED";
+        flagLink(block, `Port \`${name}\` added from an assembly`, [`The EA Port \`${eaName || "(unnamed)"}\` sits on a Part of this block and no port on the block matches it (no PDATA3 target, no unique same name). It is written on the block as its own port. Review it.`]);
+      }
+    }
+    if (typePort) { if (!ref.typeDraft) { ref.typeDraft = typePort; ref.typedBy = typePort.title; } else if (ref.typeDraft !== typePort) block.sourceLines.push(`- Port ${ref.name} is also typed [[${typePort.baseName}]] on a Part`); }
+    if (!ref.mult) { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; }
+    usageByObj.set(e.id, { owner: block, ref }); carrierOf.set(e.id, carrier.id);
+    set(u.row, "native", "PortUsage", added ? "PORT_ADDED_TO_BLOCK" : "MERGED_INTO_BLOCK_PORT", added ? "Review: port added to the block from an assembly" : "");
+    u.row.evidence = `merged into ${block.title}.${ref.name} by ${how}`; u.row.target_stable_id = block.id; u.row.target_file = block.path;
   };
   for (const u of usageObjs) guard("usage", "t_object", u.o, () => {
-    const e = u.o, kind = u.entry.native_kind ?? "SyncNode";
+    const e = u.o;
+    let kind = u.entry.native_kind ?? "SyncNode";
     if (kind === "ItemUsage") { flowItem(u); return; }
+    if (kind === "PortUsage" && isInstancePort(e)) { instancePort(u); return; }
     const owner = byObj.get(e.parentId);
     if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); return; }
+    // IMP-107 (V1 W-137): a Part inside an action or state definition that points at another action or state is that action or state used there
+    const partTarget = kind === "PartUsage" ? refDraft(e.pdata1) : null;
+    if (kind === "PartUsage" && owner.keyword === "action def" && partTarget?.keyword === "action def") kind = "ActionUsage";
+    else if (kind === "PartUsage" && owner.keyword === "state def" && partTarget?.keyword === "state def") kind = "StateUsage";
     if (owner.keyword !== ownerKeyword[kind]) { set(u.row, "deferred_review", kind, "USAGE_OWNER_KIND_MISMATCH", `${kind} inside ${owner.keyword}`); return; }
     if (kind === "SyncNode") {                                      // fork or join, decided by how many control flows meet it
       const nIn = flowIn.get(e.id) ?? 0, nOut = flowOut.get(e.id) ?? 0;
@@ -282,21 +329,22 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     const ref: UsageRef = { kind: kind === "PartUsage" ? "part" : kind === "PortUsage" ? "port" : kind === "ActionUsage" ? "action" : "state", name: "", typeDraft: null, objGuid: e.guid, typedBy: "" };
     let diag = "";
-    if (kind === "PartUsage" || kind === "PortUsage" || kind === "ActionUsage") {
-      const want = kind === "PartUsage" ? Number(e.pdata1) || 0 : e.classifier;                      // IMP-011: the block comes from PDATA1
-      const target = byObj.get(want);
-      const okKind = kind === "PartUsage" ? "part def" : kind === "PortUsage" ? "port def" : "action def";
+    if (kind === "PartUsage" || kind === "PortUsage" || kind === "ActionUsage" || (kind === "StateUsage" && partTarget)) {
+      const target = kind === "ActionUsage" && !partTarget ? byObj.get(e.classifier) : kind === "PortUsage" ? refDraft(e.pdata1) : partTarget ?? (kind === "PartUsage" ? null : byObj.get(e.classifier));
+      const want = kind === "PartUsage" ? (e.pdata1.trim() ? 1 : 0) : kind === "PortUsage" ? (e.pdata1.trim() ? 1 : 0) : e.classifier;
+      const okKind = kind === "PartUsage" ? "part def" : kind === "PortUsage" ? "port def" : kind === "StateUsage" ? "state def" : "action def";
       if (target && target.keyword === okKind) { ref.typeDraft = target; ref.typedBy = target.title; }
-      else if (kind === "ActionUsage" && want === 0) { /* a plain step in an activity has no type; that is not a gap */ }
-      else if (kind === "PortUsage" && target?.keyword === "interface def") {                 // SysML v2 types a port by a port definition, never by an interface definition
-        diag = "UNRESOLVED_PORT_TYPE:TARGET_IS_INTERFACE_DEF"; owner.sourceLines.push(`- Port ${e.name || e.alias || e.id} is typed by interface [[${target.baseName}]]`);
+      else if (kind === "ActionUsage" && !want) { /* a plain step in an activity has no type; that is not a gap */ }
+      else if (kind === "PortUsage" && !want) { diag = "UNRESOLVED_PORT_TYPE"; }
+      else if (kind === "PortUsage" && target) {                                          // W-127: a Port typed by something that is not a port definition (a connector, a signal)
+        diag = `UNRESOLVED_PORT_TYPE:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; owner.sourceLines.push(`- Port ${e.name || e.alias || e.id} is typed by [[${target.baseName}]]`);
       }
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
     const name = scopeOf(owner).take(usageIdent(e.name || e.alias || ref.typeDraft?.title || "", `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
     ref.name = name;
-    if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag
+    if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag (EA stores -1 for true)
     if (kind === "PartUsage" || kind === "PortUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
     owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
@@ -314,6 +362,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   });
   track.stage = "connectors";
   // ---- connectors ---------------------------------------------------------------------------------------------------
+  // IMP-108 (V1 W-136/REG-113): a Part is a carrier for the block it points at (PDATA1); a connector on a Part acts on that block, not on the usage.
+  const endDraft = (id: number): Draft | undefined => {
+    const d = byObj.get(id); if (d) return d;
+    const x = g.objectsById.get(id); return x && x.type === "Part" ? refDraft(x.pdata1) ?? undefined : undefined;
+  };
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
   // IMP-096: what the SysML block says is not repeated in Source: EA. `line` is kept only where it carries something SysML does not (a guard or trigger text).
   const addStmt = (d: Draft, text: string, line = ""): void => { if (!d.members.includes(text)) d.members.push(text); if (/^- (Succession|Transition) /.test(line) && !d.sourceLines.includes(line)) d.sourceLines.push(line); };
@@ -323,7 +376,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   for (const c of g.connectors) guard("connector", "t_connector", c, () => {
     const key = connectorKey(c);
     const r = row("t_connector", c.id, c.guid, c.type, c.stereotype, 0, "family:" + key);
-    const src = byObj.get(c.sourceId), dst = byObj.get(c.destId);
+    const src = endDraft(c.sourceId), dst = endDraft(c.destId);
     const defer = (code: string, action = "Native relationship not emitted"): void => {
       set(r, "deferred_review", "", code, action); deferredLinks.push({ c, code, family: key });
       if (src) {
@@ -411,6 +464,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "Connector") {
       const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
       if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer("CONNECTOR_ENDPOINT_NOT_PORT"); return; }
+      // IMP-109: ports that sit on Parts of one assembly connect through those Parts: `connect partA.port to partB.port`
+      const ca = carrierOf.get(c.sourceId), cb = carrierOf.get(c.destId);
+      const pa = ca ? usageByObj.get(ca) : undefined, pb = cb ? usageByObj.get(cb) : undefined;
+      const endText = (x: { owner: Draft; ref: UsageRef } | undefined, port: { owner: Draft; ref: UsageRef }): string | null => (x ? `${x.ref.name}.${port.ref.name}` : null);
+      if (pa && pb && pa.owner === pb.owner) { const t = `connect ${endText(pa, a)} to ${endText(pb, b)};`; addStmt(pa.owner, t, `- Connection ${endText(pa, a)} to ${endText(pb, b)}`); done(pa.owner, "ConnectionUsage"); return; }
+      if (pa && !cb && b.owner === pa.owner) { addStmt(pa.owner, `connect ${endText(pa, a)} to ${b.ref.name};`, `- Connection ${endText(pa, a)} to ${b.ref.name}`); done(pa.owner, "ConnectionUsage"); return; }
+      if (pb && !ca && a.owner === pb.owner) { addStmt(pb.owner, `connect ${a.ref.name} to ${endText(pb, b)};`, `- Connection ${a.ref.name} to ${endText(pb, b)}`); done(pb.owner, "ConnectionUsage"); return; }
       if (a.owner !== b.owner) {                                     // find the one definition that owns a part of each end's type
         const ctxs = drafts.filter((w) => w.keyword === "part def" && w.usages.some((u) => u.kind === "part" && u.typeDraft === a.owner) && w.usages.some((u) => u.kind === "part" && u.typeDraft === b.owner));
         if (!ctxs.length) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }

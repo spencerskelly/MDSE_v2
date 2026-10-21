@@ -73,7 +73,7 @@ test("merging leaves one note per part: the BOM note keeps its identity and take
   assert.match(n, /- BOM Part Number: SYN-CTRL-1/);
   assert.match(n, /## Aliases\n\n- Controller\n/);
   assert.match(n, /## Former ids\n\n- OBJ-00005 \(uid 20210309180000000skellyspencer\)/);
-  assert.match(n, /> \[!flagLink\] Untyped port usage `can`/, "the EA note's review flags survive");
+  assert.match(n, /> \[!flagLink\] Port `spare` added from an assembly/, "the EA note's review flags survive");
   assert.doesNotMatch(n, /aliasOf/);
   assert.equal((n.match(/^## SysML v2/gm) ?? []).length, 1);
 });

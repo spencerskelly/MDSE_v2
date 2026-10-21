@@ -11,7 +11,7 @@ export interface ReaderLike {
 export interface EaPackage { id: number; parentId: number; name: string; notes: string; guid: string; created: string }
 export interface EaObject {
   id: number; type: string; name: string; alias: string; author: string; note: string; packageId: number; stereotype: string;
-  created: string; guid: string; parentId: number; classifier: number; pdata1: string; multiplicity: string; abstract: string;
+  created: string; guid: string; parentId: number; classifier: number; pdata1: string; pdata2: string; pdata3: string; multiplicity: string; abstract: string;
 }
 export interface EaConnector {
   id: number; type: string; stereotype: string; name: string; notes: string; direction: string; guid: string;
@@ -44,7 +44,7 @@ export async function readSourceGraph(reader: ReaderLike): Promise<SourceGraph> 
     objects.push({
       id: num(r.Object_ID), type: str(r.Object_Type), name: str(r.Name), alias: str(r.Alias), author: str(r.Author), note: str(r.Note),
       packageId: num(r.Package_ID), stereotype: str(r.Stereotype), created: str(r.CreatedDate), guid: str(r.ea_guid), parentId: num(r.ParentID),
-      classifier: num(r.Classifier), pdata1: str(r.PDATA1), multiplicity: str(r.Multiplicity), abstract: str(r.Abstract),
+      classifier: num(r.Classifier), pdata1: str(r.PDATA1), pdata2: str(r.PDATA2), pdata3: str(r.PDATA3), multiplicity: str(r.Multiplicity), abstract: str(r.Abstract),
     });
   const connectors: EaConnector[] = [];
   for await (const r of reader.scan("t_connector"))

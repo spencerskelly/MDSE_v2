@@ -262,28 +262,50 @@ test("file names the browser would refuse never reach the writer: device names w
   assert.equal(safeName("Bad\ud800 name\udfff"), "Bad name");
   assert.equal(safeName("Emoji \ud83d\ude80 ok"), "Emoji \ud83d\ude80 ok", "a valid surrogate pair is kept");
   assert.equal(safeName("Tab\there\u0085"), "Tabhere");
-  assert.equal(safeName("x".repeat(160) + "."), "x".repeat(100) + "~a");
+  assert.equal(safeName("x".repeat(160) + "."), "x".repeat(150) + "~a");
   assert.equal(safeName("\u2028\u200e"), "Unnamed");
   const res = await run();
   const bad = res.files.flatMap((f) => f.path.split("/").map((c) => [f.path, c])).filter(([, c]) => !c || /[\u0000-\u001f\u007f-\u009f<>:"\\|?*\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff]|[. ]$/.test(c!) || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(c!.split(".")[0]!));
   assert.deepEqual(bad, []);
 });
 
-test("folder paths are squeezed to fit Windows extraction, and a folder has one spelling whatever sits below it (IMP-103)", async () => {
-  const { folderSqueezer, DIR_BUDGET } = await import("../src/naming.ts");
-  const long = (i: number): string => `Subsystem ${i} with a long descriptive package name`;
-  const deep = Array.from({ length: 12 }, (_, i) => long(i));
-  const shallow = deep.slice(0, 3);
-  const sq = folderSqueezer([deep, shallow, ["02 Product", "Power Train"]]);
-  assert.deepEqual(sq(["02 Product", "Power Train"]), ["02 Product", "Power Train"], "a short tree is left whole");
-  const full = sq(deep);
-  for (let n = 1; n <= deep.length; n++) assert.deepEqual(sq(deep.slice(0, n)), full.slice(0, n), `prefix ${n} must be spelled as in the deep path`);
-  assert.deepEqual(sq(shallow), full.slice(0, 3));
-  assert.ok(full.join("/").length <= DIR_BUDGET + 12, full.join("/"));
-  assert.deepEqual(folderSqueezer([deep, shallow])(deep), full, "deterministic");
-  const alone = folderSqueezer([shallow]);
-  assert.deepEqual(alone(shallow), shallow, "a shallow tree keeps its names even if another tree is deep");
+
+const blockOf = (res: ImportResult, name: string): string => { const f = res.files.find((x) => !x.bytes && x.path.endsWith(`/${name}.md`)); assert.ok(f, name); const t = f!.content; const i = t.lastIndexOf("```sysml"); return t.slice(i, t.indexOf("```", i + 8)); };
+
+test("parts and ports are typed from PDATA1, which holds a GUID (IMP-104, IMP-105)", async () => {
   const res = await run();
-  const longest = Math.max(...res.files.map((f) => f.path.length));
-  assert.ok(longest < 200, String(longest));
+  const charger = blockOf(res, "Charger");
+  assert.match(charger, /part controller : OBJ_\d+::Controller;/);
+  assert.match(charger, /part modules : OBJ_\d+::PowerModule\[3\];/);
+  assert.match(blockOf(res, "Twin A"), /part numericRef : OBJ_\d+::Contactor;/, "a plain object id still resolves");
+  assert.match(charger, /part mystery;/, "a block that is not in the export stays untyped");
+  assert.match(blockOf(res, "CAN Interface"), /port def CANInterface/, "an interface Class is a port def");
+  const ctl = blockOf(res, "Controller~2");
+  assert.match(ctl, /port can : OBJ_\d+::CANInterface;/);
+  assert.match(ctl, /port auxIn : ~OBJ_\d+::ChargePortInterface\[0\.\.2\];/);
+  assert.equal(res.ledger.filter((l) => l.ea_type === "Port" && l.disposition === "deferred_review").length, 0);
+});
+
+test("a Port under a Part is the block's own port: PDATA3, same name, or added (IMP-106)", async () => {
+  const res = await run();
+  const ctl = blockOf(res, "Controller~2");
+  assert.equal((ctl.match(/port ctrlIn\b/g) ?? []).length, 1, "merged by PDATA3, not repeated");
+  assert.equal((ctl.match(/port ctrlOut\b/g) ?? []).length, 1, "merged by the unique same name");
+  assert.match(ctl, /port spare : OBJ_\d+::CANInterface;/, "no match on the block: added to it");
+  const ev = res.ledger.filter((l) => l.ea_type === "Port").map((l) => l.evidence).join("|");
+  assert.match(ev, /merged into Controller\.ctrlIn by PDATA3/); assert.match(ev, /merged into Controller\.ctrlOut by SAME_NAME/); assert.match(ev, /Controller\.spare by ADDED/);
+  const note = res.files.find((x) => !x.bytes && x.path.endsWith("/Controller~2.md"))!.content;
+  assert.match(note, /Port `spare` added from an assembly/);
+});
+
+test("connectors on Parts act on the Part's block and connect through the Parts (IMP-108, IMP-109)", async () => {
+  const res = await run();
+  assert.match(blockOf(res, "Charger"), /connect controller\.ctrlOut to modules\.pmPort;/);
+  assert.match(blockOf(res, "Controller~2"), /satisfy REQ_\d+::ChargeCurrentAccuracy;/, "a requirement satisfied by the Part is satisfied by its block");
+});
+
+test("a Part in a function that points at another function is an action there; an Object specializes its Class (IMP-107, IMP-111)", async () => {
+  const res = await run();
+  assert.match(blockOf(res, "Provide Charge Power"), /action monitorOutput : BEH_\d+::MonitorOutput;/);
+  assert.match(blockOf(res, "Module Unit 7"), /part def ModuleUnit7 :> OBJ_\d+::GenericModule/);
 });

@@ -363,8 +363,14 @@ Rules: IMP-102.
 
 2026-10-21 · Spencer · Accepted
 
-The same EA import built a ZIP that Windows would not extract, and a folder write that stopped with `InvalidStateError`. Causes are diagnosed, not confirmed on the real data: folder-per-parent layout with long EA names exceeds the 260-character path limit in Explorer; and a freshly created file touched by antivirus, OneDrive or the indexer between create and close raises the state error. Fixes: a deterministic folder path budget and shorter name cap (IMP-103), per-file retry, and errors that carry the path (a DOMException message cannot be edited, so a new Error is thrown). Advice stays on the page: write to a short folder that is not synced (such as `C:\MDSE`), and extract a ZIP to a short path.
-
-First version of the squeeze was wrong: it shortened each note's folder chain by that note's own total length, so the same folder appeared under several spellings and the tree split (`Anderson` and `Ande~1ws`). A folder's name is now fixed by its own name, its ancestors and the height of the tree below it. Deep part chains (12 levels in the IPC tree) still come out heavily shortened; that is the cost of mirroring the EA parent chain as folders (MOD-105), and the open question is whether parts deeper than a set level should stay in one folder with the parent kept in the note's relations.
+The same EA import built a ZIP that Windows would not extract, and a folder write that stopped with `InvalidStateError`. A folder path shortener was tried and removed: it broke the standing rule that no name is cut for path length (the limit is 400 characters and shortening is a post-import task), and it spelled one folder several ways (`00 Abstracts`, `00 Abst~1pt`, `00 A~1pt`). The importer keeps full names; only IMP-102 safety changes apply. The write retry stays: a file is tried up to six times with a growing delay on the browser's state errors, and an error carries the file path (a DOMException message cannot be edited, so a new Error is thrown). The cause of the state error (antivirus, OneDrive or the indexer touching a new file) is diagnosed, not confirmed.
 
 Rules: IMP-103.
+
+## D-0037 — Parts, ports and connectors follow the EA fields V1 proved
+
+2026-10-21 · Spencer · Accepted
+
+A real EA run came in with every Part usage (1,824) and every Port usage (2,337) untyped, 2,100 Ports and 746 flow pins deferred, and Part-level connectors lost. Cause (confirmed against the vault output and V1 evidence W-44, W-113, W-114, W-120): PDATA1 holds a GUID, which was read as a number; a Port's type is its PDATA1, not Classifier; EA interface Classes were written as `interface def` although ports are typed by them; and Ports under Parts, the V1 instance ports, were not merged into the block's port. Changes: IMP-104 to IMP-109 and IMP-111. Not changed: the approved family mapping file still names `InterfaceDefinition` for the interface stereotypes; the importer writes them as `port def`. Open: PDATA2 (port redefinition) is not yet written as `:>>`; `isReference` Parts are not yet `ref part`; Ports under an Object and ports on nested Parts still follow the older owner rule. Not run on the real `.qeax`.
+
+Rules: IMP-101, IMP-104, IMP-105, IMP-106, IMP-107, IMP-108, IMP-109, IMP-111.

@@ -40,11 +40,12 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
       .run(100000 + id, "Package", name, "Skelly, Spencer", parent, stamp(id), guid("PO", id));
     return id;
   };
+  const G = (id) => guid("O", id);                                    // EA keeps the block a Part or Port points at as a GUID in PDATA1/2/3
   const obj = (type, name, packageId, o = {}) => {
     const id = ++ok;
-    db.prepare(`INSERT INTO t_object (Object_ID,Object_Type,Name,Alias,Author,Note,Package_ID,Stereotype,CreatedDate,Classifier,ea_guid,ParentID,PDATA1,Multiplicity,Abstract)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, type, name, o.alias ?? null, o.author === undefined ? "Skelly, Spencer" : o.author, o.note ?? null,
-      packageId, o.stereotype ?? null, o.created === undefined ? stamp(200 + id) : o.created, o.classifier ?? 0, guid("O", id), o.parent ?? 0, o.pdata1 ?? null, o.mult ?? null, o.abstract ?? null);
+    db.prepare(`INSERT INTO t_object (Object_ID,Object_Type,Name,Alias,Author,Note,Package_ID,Stereotype,CreatedDate,Classifier,ea_guid,ParentID,PDATA1,Multiplicity,Abstract,PDATA2,PDATA3)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, type, name, o.alias ?? null, o.author === undefined ? "Skelly, Spencer" : o.author, o.note ?? null,
+      packageId, o.stereotype ?? null, o.created === undefined ? stamp(200 + id) : o.created, o.classifier ?? 0, guid("O", id), o.parent ?? 0, o.pdata1 ?? null, o.mult ?? null, o.abstract ?? null, o.pdata2 ?? null, o.pdata3 ?? null);
     for (const [k, v] of Object.entries(o.tags ?? {}))
       db.prepare("INSERT INTO t_objectproperties (Object_ID,Property,Value,ea_guid) VALUES (?,?,?,?)").run(id, k, v, guid("T", ++tk));
     return id;
@@ -73,12 +74,12 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const sigCmd = obj("Signal", "Charge Current Command", prod, { stereotype: "Logical Signal" });
   const weird = obj("Class", "Mystery Thing", prod, { stereotype: "Totally Unmapped Stereotype" });
   // Usages owned by definitions
-  obj("Part", "controller", prod, { parent: charger, pdata1: String(controller), mult: "1" });
-  obj("Part", "modules", prod, { parent: charger, pdata1: String(pm), mult: "3" });
-  obj("Part", "contactors", prod, { parent: charger, pdata1: String(contactor), mult: "2" });
-  obj("Part", "", prod, { parent: charger, pdata1: String(contactor) });            // no name of its own: takes the type's name
-  obj("Part", "mystery", prod, { parent: charger, pdata1: "999999" });            // unresolvable type
-  obj("Port", "can", prod, { parent: controller, classifier: canIf });
+  const ctlUse = obj("Part", "controller", prod, { parent: charger, pdata1: G(controller), mult: "1" });
+  const pmUse = obj("Part", "modules", prod, { parent: charger, pdata1: G(pm), mult: "3" });
+  obj("Part", "contactors", prod, { parent: charger, pdata1: G(contactor), mult: "2" });
+  obj("Part", "", prod, { parent: charger, pdata1: G(contactor) });            // no name of its own: takes the type's name
+  obj("Part", "mystery", prod, { parent: charger, pdata1: "{00000000-0000-0000-0000-000000999999}" });            // a block that is not in the export
+  obj("Port", "can", prod, { parent: controller, pdata1: G(canIf) });
   // Requirements
   const r1 = obj("Requirement", "UL 2594 5.1 Enclosure", reqs, { stereotype: "functionalRequirement", note: "Synthetic: the charger enclosure shall be rated for outdoor use.\n## not a heading\n```\nunbalanced fence" });
   const r2 = obj("Requirement", "Charge Current Accuracy", ipc, { stereotype: "performanceRequirement", note: "Synthetic: output current within 1 %." });
@@ -100,7 +101,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   obj("Class", "Old Tool Author", prod, { stereotype: "Hardware Component", author: "7.1.0-2" });
   // Colliding names and timestamps
   obj("Class", "Controller", power, { stereotype: "Hardware Component", created: stamp(201) });
-  obj("Class", "Twin A", power, { stereotype: "Hardware Component", created: "2021-03-02 10:00:00" });
+  const twinA = obj("Class", "Twin A", power, { stereotype: "Hardware Component", created: "2021-03-02 10:00:00" });
   obj("Class", "Twin B", power, { stereotype: "Hardware Component", created: "2021-03-02 10:00:00" });
 
   // Connectors
@@ -121,16 +122,27 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   // Flows and relationships added for translation coverage
   const sigStatus = obj("Signal", "Charger Status", prod, { stereotype: "Logical Signal" });
   const gpi = obj("Class", "Charge Port Interface", prod, { stereotype: "Generic Physical Interface" });
-  obj("Part", "currentCmd", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigCmd, tags: { direction: "in" } });
-  obj("Part", "statusOut", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigStatus, tags: { direction: "out" } });
-  obj("Part", "noDirection", prod, { parent: gpi, stereotype: "FlowProperty", classifier: sigStatus });
+  obj("Part", "currentCmd", prod, { parent: gpi, stereotype: "FlowProperty", pdata1: G(sigCmd), tags: { direction: "in" } });
+  obj("Part", "statusOut", prod, { parent: gpi, stereotype: "FlowProperty", pdata1: G(sigStatus), tags: { direction: "out" } });
+  obj("Part", "noDirection", prod, { parent: gpi, stereotype: "FlowProperty", pdata1: G(sigStatus) });
   obj("Part", "untypedFlow", prod, { parent: gpi, stereotype: "FlowProperty", tags: { direction: "inout" } });
-  const portA = obj("Port", "ctrlIn", prod, { parent: controller, classifier: gpi });
-  const portB = obj("Port", "ctrlOut", prod, { parent: controller, classifier: gpi });
-  const portC = obj("Port", "pmPort", power, { parent: pm, classifier: gpi });
-  obj("Port", "auxIn", prod, { parent: controller, classifier: gpi, mult: "0..2", tags: { isConjugated: "true" } });   // conjugated, counted port (D-0033)
+  const portA = obj("Port", "ctrlIn", prod, { parent: controller, pdata1: G(gpi) });
+  const portB = obj("Port", "ctrlOut", prod, { parent: controller, pdata1: G(gpi) });
+  const portC = obj("Port", "pmPort", power, { parent: pm, pdata1: G(gpi) });
+  obj("Port", "auxIn", prod, { parent: controller, pdata1: G(gpi), mult: "0..2", tags: { isConjugated: "true" } });   // conjugated, counted port (D-0033)
+  // Ports under Parts belong to the Part's block (V1 W-114): by PDATA3, by a unique same name, or added to the block
+  const iIn = obj("Port", "ctrlIn", prod, { parent: ctlUse, pdata1: G(gpi), pdata3: G(portA) });
+  const iOut = obj("Port", "ctrlOut", prod, { parent: ctlUse });
+  obj("Port", "spare", prod, { parent: ctlUse, pdata1: G(canIf) });
+  const iPm = obj("Port", "pmPort", power, { parent: pmUse, pdata3: G(portC) });
+  con("Connector", iOut, iPm);                                                                // ports on two Parts of the Charger -> connect controller.ctrlOut to modules.pmPort
+  con("Dependency", ctlUse, r2, { stereotype: "satisfy" });                                   // on the Part carrier: acts on its block
   con("Connector", portA, portB);                                                            // same owner -> connect
   con("Connector", portB, portC);                                                            // different owners -> review
+  const fn2 = obj("Activity", "Monitor Output", fns, { stereotype: "System Function" });
+  obj("Part", "", fns, { parent: fn, pdata1: G(fn2) });                                       // a Part inside a function that points at another function: an action used there
+  obj("Object", "Module Unit 7", prod, { classifier: module_ });                          // an Object is a kind of its Class
+  obj("Part", "numericRef", prod, { parent: twinA, pdata1: String(contactor) });            // a plain object id still resolves
   const a1 = obj("Action", "measure", fns, { parent: fn }), a2 = obj("Action", "adjust", fns, { parent: fn });
   con("ControlFlow", a1, a2, { name: "if ready", p2: "measurement ready */ and stable" });
   con("ControlFlow", a1, st);                                                                 // not usages -> review
@@ -167,7 +179,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   for (let i = 0; i < scale; i++) {
     const p = pkg(`Bulk ${i % 20}`, prod);
     const c = obj("Class", `Bulk Part ${i}`, p, { stereotype: "Hardware Component", created: stamp(1000 + (i % 50)) });
-    obj("Part", `bulk${i}`, p, { parent: charger, pdata1: String(c), mult: String(1 + (i % 4)) });
+    obj("Part", `bulk${i}`, p, { parent: charger, pdata1: G(c), mult: String(1 + (i % 4)) });
     obj("Requirement", `Bulk Requirement ${i}`, reqs, { stereotype: "functionalRequirement", created: stamp(1000 + (i % 50)) });
     if (i % 3 === 0) con("Aggregation", charger, c, { srcAgg: 2, dstCard: "2" });
   }

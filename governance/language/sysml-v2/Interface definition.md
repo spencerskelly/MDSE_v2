@@ -35,6 +35,6 @@ interface def PowerInterface;
 
 ## In MDSE
 
-- **Importer:** Yes. The importer writes it (seen in its output on the synthetic model).
+- **Importer:** No. The importer does not write it; engineers add it by hand or a later import step will.
 - **Workbench:** Recognized and kept: the Workbench scanner classifies it and shows it in the SysML block; no relationship or view is drawn from it yet.
 - **Everyday use:** Common.
