@@ -384,3 +384,21 @@ Rules: IMP-101, IMP-104, IMP-105, IMP-106, IMP-107, IMP-108, IMP-109, IMP-111, I
 The 2026-10-17 approved decision docs in Test_Vault_ `24_Workbench/docs` (aggregation by kind, repeated aggregations as distinct usages, nested states, activities and requirements, ownership cycles, generated usage names, multiplicity, realisation, association) were not in V2. They are now: IMP-113 to IMP-118. On the mini model the connectors left for review fall from about 1,700 to 370. What is still open and needs a decision: Association between components (no connectivity evidence), Generalization from an interface to a part, flows touching StateNode, Synchronization or Decision nodes that have no owner, PDATA2 redefinition, `isReference` Parts, Part data on the assembly, and the provisional `tracesTo` for Issue and Change links.
 
 Rules: IMP-113, IMP-114, IMP-115, IMP-116, IMP-117, IMP-118, IMP-119.
+
+## D-0039 — Families found only in the full model, and what stays open
+
+2026-10-21 · Spencer · Accepted (the mapping rows follow existing approvals; the open items are his to decide)
+
+The full EA model has 12 element families and 4 connector families that the reduced QEAX (60/26) does not contain. They are in `ea-family-mapping.json` now, so the first full-model run flags nothing as UNKNOWN_FAMILY by accident:
+
+- Requirement:Regulatory Requirement and Requirement:physicalRequirement are requirement defs (REG-289). Port:ProxyPort, Port:FullPort, Signal:Environmental Effect, Class:Environmental Interface, State:Fault State and StateMachine follow their base family. Artifact:CustomDocument is an attachment.
+- ActivityPartition, ActionPin and ActivityParameter have no approved rule and are review rows (grouping is not ownership; pins have no rule).
+- Connector:BindingConnector (`bind`) and InformationFlow:itemFlow (`flow`) are IMP-120. Dependency:ASILDecompose has no rule and is a review row. Realisation:refine follows Dependency:refine.
+
+Settled by searching the earlier work: PDATA2 is not applied (REG-189); isReference is `ref part` (REG-293); ports under an Object already work because an Object is a part def, and ports under a Part are IMP-106; Decision nodes are MDSE notes with `precedes` links; a StateNode or Synchronization with no owner stays deferred; an Association between components stays a review row, with no generic fallthrough (REG-189).
+
+Still open for the owner: Association between components (about 106 on the mini model); Generalization from an interface to a part (44, flagged exception); whether `tracesTo` stays provisional; owner-less control nodes (about 134 flows); ASILDecompose, ActionPin and ActivityPartition rules; a full-model Part and Port export to validate the nested-usage output.
+
+Every deferred row now leaves a flag in the vault (IMP-123). The holding note needed a modelCheck subtype, so `Review` was added to the class in `element-types.yaml` (MOD-056 says blank, but the validator rejects a blank subtype and the other subtypes are EA types). On the mini model that is 370 flags for 14,688 connectors and 11,447 elements.
+
+Rules: IMP-120, IMP-121, IMP-122, IMP-123.

@@ -329,8 +329,9 @@ test("aggregation follows the kinds of its ends; every connector is its own usag
 test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
   const res = await run();
   const text = (name: string) => res.files.find((x) => !x.bytes && x.path.endsWith(`/${name}.md`))!.content;
-  assert.match(text("Loose Cable"), /^tracesTo: \["\[\[Provide Charge Power\]\]"\]$/m);
-  assert.match(text("Loose Cable"), /^dependsOn: \["\[\[Charger\]\]"\]$/m);
+  assert.match(text("Loose Cable"), /^affects: \["\[\[Provide Charge Power\]\]", "\[\[Charger\]\]"\]$/m, "an Issue affects what it is linked to");
+  assert.match(text("Change A"), /^tracesTo: \["\[\[Loose Cable\]\]"\]$/m, "Change and Issue: provisional");
+  assert.match(text("Pick Supplier"), /^dependsOn: \["\[\[Charger\]\]"\]$/m);
   assert.match(text("Wiring Diagram"), /^describes: \["\[\[Charger\]\]"\]$/m, "an Image artifact describes the element");
   assert.match(text("Design remark"), /^describes: .*\[\[Charger\]\]/m, "an Info note describes the element");
   assert.match(text("Change A"), /^hasChild: \["\[\[Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
@@ -360,4 +361,33 @@ test("what a Part says about its use goes on the assembly's note (IMP-119)", asy
   const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
   assert.match(charger, /^- On part controller: PN: SYN-CTRL-1; Piece Cost: 12\.5$/m);
   assert.doesNotMatch(charger, /Approved/, "a dropped tag stays dropped");
+});
+
+test("families found only in the full model are mapped or flagged, never dropped (D-0039, IMP-120, IMP-121)", async () => {
+  const res = await run();
+  const byType = (type: string, stereo: string) => res.ledger.filter((l) => l.source_table === "t_object" && l.ea_type === type && l.ea_stereotype === stereo);
+  assert.equal(byType("Requirement", "Regulatory Requirement")[0]!.disposition, "native", "Regulatory Requirement is a requirement def");
+  assert.equal(byType("Port", "ProxyPort")[0]!.target_semantic_kind, "PortUsage");
+  assert.equal(byType("ActivityPartition", "")[0]!.disposition, "deferred_review");
+  assert.equal(byType("ActivityPartition", "")[0]!.diagnostic_code, "ACTIVITY_PARTITION_REVIEW");
+  const conn = (type: string, stereo: string) => res.ledger.filter((l) => l.source_table === "t_connector" && l.ea_type === type && l.ea_stereotype === stereo);
+  assert.equal(conn("Dependency", "ASILDecompose")[0]!.disposition, "deferred_review");
+  const bind = conn("Connector", "BindingConnector");
+  assert.deepEqual(bind.map((l) => l.diagnostic_code).sort(), ["BINDING_FEATURES_NOT_COMPATIBLE", "UNVERIFIED_SYNTAX"].sort());
+  const ctlNote = res.files.find((x) => !x.bytes && x.content.includes("port proxyOut"))!.content;
+  assert.match(ctlNote, /bind ctrlIn = ctrlOut;/, "same type, same conjugation: bound");
+  assert.match(blockOf(res, "Twin A"), /ref part spareCtrl : OBJ_\d+::Controller;/, "isReference makes a reference part");
+  assert.match(blockOf(res, "Charger"), /flow from controller\.ctrlIn to modules\.pmPort;/, "an information flow between ports is placed in the assembly");
+  assert.match(ctlNote, /Port proxyOut is a redefinition of ctrlIn in EA \(PDATA2\); not applied/, "PDATA2 is recorded, not applied");
+});
+
+test("every deferred element and connector leaves a flag in a note (IMP-123, D-0039)", async () => {
+  const res = await run();
+  const text = res.files.filter((f) => !f.bytes && f.path.endsWith(".md") && !f.path.startsWith("99_System/")).map((f) => f.content).join("\n");
+  const rows = res.ledger.filter((l) => l.disposition === "deferred_review");
+  assert.ok(rows.length > 5);
+  const lost = rows.filter((l) => !text.includes(l.ea_guid));
+  assert.deepEqual(lost.map((l) => `${l.source_table} ${l.ea_type} ${l.diagnostic_code}`), [], "each deferred row names its EA GUID in a flag");
+  const holding = res.files.find((f) => f.path.endsWith("Unplaced Review Items.md"));
+  if (holding) assert.match(holding.content, /^subtype: Review$/m);
 });

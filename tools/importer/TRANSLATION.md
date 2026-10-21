@@ -68,6 +68,18 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Sequence` | reference_only | Ledger row only | No note. The row is kept as evidence. | `REFERENCE_ONLY` |
 | `ProxyConnector` | reference_only | Ledger row only | No note. The row is kept as evidence. | `REFERENCE_ONLY` |
 | `Boundary` | aggregate_boundary_note | One shared note `Boundaries` | Every Boundary is a line in one aggregate note. | `BOUNDARY_GROUPED` |
+| `Requirement:Regulatory Requirement` | native_candidate | Note, `requirement def` | MDSE class Requirement. Subtype from the EA package path (standard, stakeholder, functional, design, else engineering). EA note text becomes the note body. | `SUBTYPE_DEFAULTED_ENGINEERING` |
+| `Requirement:physicalRequirement` | native_candidate | Note, `requirement def` | MDSE class Requirement. Subtype from the EA package path (standard, stakeholder, functional, design, else engineering). EA note text becomes the note body. | `SUBTYPE_DEFAULTED_ENGINEERING` |
+| `Port:ProxyPort` | native_candidate | `port` usage inside the owning definition's block | Typed by PDATA1 (the EA interface Class, a port definition). A Port under a Part is the Part's block's own port: merged by PDATA3, else by a unique same name, else added to the block with a review flag (IMP-106). Connectors between such ports connect through the Parts. | `USAGE_WITHOUT_NOTE_OWNER`, `USAGE_OWNER_KIND_MISMATCH`, `UNRESOLVED_PORT_TYPE`, `MERGED_INTO_BLOCK_PORT`, `PORT_ADDED_TO_BLOCK` |
+| `Port:FullPort` | native_candidate | `port` usage inside the owning definition's block | Typed by PDATA1 (the EA interface Class, a port definition). A Port under a Part is the Part's block's own port: merged by PDATA3, else by a unique same name, else added to the block with a review flag (IMP-106). Connectors between such ports connect through the Parts. | `USAGE_WITHOUT_NOTE_OWNER`, `USAGE_OWNER_KIND_MISMATCH`, `UNRESOLVED_PORT_TYPE`, `MERGED_INTO_BLOCK_PORT`, `PORT_ADDED_TO_BLOCK` |
+| `Signal:Environmental Effect` | native_candidate | Note, `item def` | MDSE class Item Flow (material when the stereotype says physical, else information). This is the type a flow carries. |  |
+| `Class:Environmental Interface` | native_candidate | Note, `port def` (IMP-104) | MDSE class Object, subtype interface. An EA interface Class is what ports are typed by, so it is written as a port definition (V1 W-120); it owns the flow items declared inside it. |  |
+| `State:Fault State` | native_candidate | Note, `state def` | MDSE class Condition, subtype state. |  |
+| `StateMachine` | native_candidate | Note, `state def` | MDSE class Condition, subtype state. |  |
+| `Artifact:CustomDocument` | attachment_link | Artifact note + file in `Attachments/` | Content is read from t_document (ElementID = the element GUID). Images are embedded in the note body. A file already in the vault is never overwritten. Files over 25 MB are skipped. | `ATTACHMENT_BYTES_NOT_FOUND`, `ATTACHMENT_TOO_LARGE` |
+| `ActivityPartition` | conditional_review | Review row; no note | Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists. | `FORK_JOIN_CONTROL_FLOW_EVIDENCE`, `LEGAL_TRANSITION_CONTEXT` |
+| `ActionPin` | conditional_review | Review row; no note | Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists. | `FORK_JOIN_CONTROL_FLOW_EVIDENCE`, `LEGAL_TRANSITION_CONTEXT` |
+| `ActivityParameter` | conditional_review | Review row; no note | Fork/join and trigger nodes are not translated until the evidence named in the diagnostic exists. | `FORK_JOIN_CONTROL_FLOW_EVIDENCE`, `LEGAL_TRANSITION_CONTEXT` |
 
 ## Relationships
 
@@ -99,6 +111,10 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Usage:Responsibility` | conditional_native_candidate | `allocate A to B` in A's block | Same as allocate. | `ALLOCATE_ENDPOINT_KIND` |
 | `Abstraction:Refine` | conditional_native_candidate | `dependency from a to b; // refines` | Same as refine. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Realisation:deriveReqt` | conditional_native_candidate | `dependency from a to b; // derivedFrom` | Requirement to requirement only. Provisional until the derivation form is chosen. | `DERIVE_ENDPOINT_KIND` |
+| `Connector:BindingConnector` | conditional_native_candidate | `bind a = b;` in the owning definition | Both ends port usages of the same port def and the same conjugation (REG-293). Ports on Parts bind through the Parts like a connection. Anything else is a review row. | `BINDING_ENDPOINT_NOT_PORT`, `BINDING_FEATURES_NOT_COMPATIBLE`, `PORT_CONNECTION_NEEDS_COMMON_OWNER`, `PORT_CONNECTION_AMBIGUOUS_OWNER` |
+| `InformationFlow:itemFlow` | conditional_native_candidate | `flow from a to b;` in the owning definition | Both ends port usages, placed like a connection. The conveyed item is not read yet. Anything else is a review row. | `FLOW_ENDPOINT_NOT_PORT`, `PORT_CONNECTION_NEEDS_COMMON_OWNER`, `PORT_CONNECTION_AMBIGUOUS_OWNER` |
+| `Dependency:ASILDecompose` | conditional_review | Review row | No approved rule. Flagged, never turned into a generic dependency. | `ASIL_DECOMPOSE_REVIEW` |
+| `Realisation:refine` | conditional_native_candidate | `dependency from a to b; // refines` | Same as Dependency:refine. | `DEPENDENCY_ENDPOINT_KIND` |
 
 ## Dependency kinds
 
@@ -135,7 +151,7 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `UNHANDLED_DISPOSITION` | Mapping disposition the importer has no code for. | Importer bug or new disposition; fix run.ts. |
 | `FORK_JOIN_CONTROL_FLOW_EVIDENCE` | Fork/join nodes are not translated. | Needs the flow evidence named in the mapping. |
 | `LEGAL_TRANSITION_CONTEXT` | Trigger nodes are not translated. | Needs a legal transition context. |
-| `CONDITIONAL_REVIEW` | Conditional family without a named evidence code. | Review. |
+| `CONDITIONAL_REVIEW` | The family is conditional and its evidence is not named. | Review the EA link. |
 | `DIRECTION_EVIDENCE_MISSING` | Flow item has no usable `direction` tag (in, out, inout). | Set the direction in EA or in the note. |
 | `FLOW_OWNER_NOT_PORT_DEF` | Flow item is not inside a port definition. | Move it under the port definition in EA. |
 | `UNRESOLVED_FLOW_TYPE` | Flow item has no Signal/item definition to type it. | Set the EA Classifier. Item is written untyped. |
@@ -152,6 +168,12 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `ORGANIZATIONAL_ONLY` | Nesting connector carries no model meaning. | None. |
 | `NATIVE_EMISSION_DISABLED` | Run option turned native SysML off. | Re-run with native emission on. |
 | `GENERALIZATION_ENDPOINT_KIND` | Generalization ends are not the same kind of definition. | Review the EA link. |
+| `ACTIVITY_PARTITION_REVIEW` | A swimlane groups actions; grouping is not ownership. | Decide whether the lane means a performer or only a layout. |
+| `ACTION_PIN_REVIEW` | Action pins and activity parameters have no approved rule. | Decide how pins are modelled. |
+| `ASIL_DECOMPOSE_REVIEW` | ASIL decomposition has no approved rule. | Decide the construct. |
+| `BINDING_ENDPOINT_NOT_PORT` | A binding connector end is not a port usage. | Review the EA link. |
+| `BINDING_FEATURES_NOT_COMPATIBLE` | The two ports are not the same type, so they are not provably equal. | Review; bind them by hand if they are equal. |
+| `FLOW_ENDPOINT_NOT_PORT` | An information flow end is not a port usage. | Review the EA link. |
 | `USAGE_WINS` | An EA Part, nested element or actor already covers this connector; the connector is merged into that usage. | None. |
 | `OWNERSHIP_CYCLE` | Whole and part own each other through the aggregation and the usages already written. | Resolve the cycle in EA; the connector is left out of the model. |
 | `AGGREGATION_PART_IN_INTERFACE` | A part is the child of an interface. Approved as an exception, not as a mapping. | Inspect the EA source and decide the construct. |

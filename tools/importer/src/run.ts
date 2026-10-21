@@ -84,7 +84,7 @@ export interface ImportResult {
   errors: ErrorRecord[];
 }
 
-interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout"; conj?: boolean; conn?: boolean }
+interface UsageRef { kind: UsageDecl["kind"]; name: string; typeDraft: Draft | null; mult?: string; objGuid: string; typedBy: string; dir?: "in" | "out" | "inout"; conj?: boolean; conn?: boolean; isRef?: boolean }
 interface Draft {
   key: string; o: EaObject; family: string; entry: ElementEntry; type: string; subtype: string; evidence: string[];
   title: string; uid: string; id: string; baseName: string; path: string; ownDir: string | null; parent: Draft | null; children: Draft[];
@@ -345,6 +345,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
     const name = scopeOf(owner).take(usageIdent(e.name || e.alias || ref.typeDraft?.title || "", `${kind.replace("Usage", "").toLowerCase()}${e.id}`));
     ref.name = name;
+    if (kind === "PartUsage" && (g.tags.get(e.id) ?? []).some(([k, v]) => /^isReference$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.isRef = true;   // IMP-121: a reference part (REG-293)
+    if ((kind === "PortUsage" || kind === "PartUsage") && e.pdata2.trim()) { const rd = refObj(e.pdata2); if (rd) owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} is a redefinition of ${rd.name || rd.alias || rd.id} in EA (PDATA2); not applied, redefinition is never inferred (REG-189)`); }
     if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag (EA stores -1 for true)
     if (kind === "PartUsage" || kind === "PortUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
     owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
@@ -384,9 +386,10 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const x = g.objectsById.get(id); return x && x.type === "Part" ? refDraft(x.pdata1) ?? undefined : undefined;
   };
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
+  const hostlessLinks: Array<{ c: EaConnector; code: string; family: string; row: LedgerRow }> = [];
   // IMP-096: what the SysML block says is not repeated in Source: EA. `line` is kept only where it carries something SysML does not (a guard or trigger text).
   const addStmt = (d: Draft, text: string, line = ""): void => { if (!d.members.includes(text)) d.members.push(text); if (/^- (Succession|Transition) /.test(line) && !d.sourceLines.includes(line)) d.sourceLines.push(line); };
-  const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
+  const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Realisation:refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
   const DERIVE = new Set(["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"]);
   const ALLOCATE = new Set(["Abstraction:allocate", "Usage:Responsibility"]);
   // IMP-113 (Test_Vault_ approved aggregation docs): the child of an Aggregation is a usage in the whole, of the kind its definitions are.
@@ -440,11 +443,15 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const src = endDraft(c.sourceId), dst = endDraft(c.destId);
     const defer = (code: string, action = "Native relationship not emitted"): void => {
       set(r, "deferred_review", "", code, action); deferredLinks.push({ c, code, family: key });
-      if (src) {
-        const to = dst ? `[[${dst.baseName}]]` : (g.objectsById.get(c.destId)?.name ?? `object ${c.destId}`);
-        src.sourceLines.push(`- Connector ${key} to ${to} (unresolved: ${code})`);
-        flagLink(src, `Unresolved ${key} link to ${dst ? dst.title : (g.objectsById.get(c.destId)?.name ?? "?")}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
-      }
+      // Every deferred connector leaves a flag in the vault: on the source note, else on the note that owns the source or target usage.
+      const eName = (id: number): string => g.objectsById.get(id)?.name ?? `object ${id}`;
+      const host = src ?? usageByObj.get(c.sourceId)?.owner ?? dst ?? usageByObj.get(c.destId)?.owner;
+      if (host) {
+        const to = dst ? `[[${dst.baseName}]]` : eName(c.destId);
+        const from = host === src ? "" : ` from ${src ? `[[${src.baseName}]]` : eName(c.sourceId)}`;
+        host.sourceLines.push(`- Connector ${key}${from} to ${to} (unresolved: ${code})`);
+        flagLink(host, `Unresolved ${key} link${from} to ${dst ? dst.title : eName(c.destId)}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
+      } else hostlessLinks.push({ c, code, family: key, row: r });
     };
     const done = (owner: Draft, kind: string, diag = "UNVERIFIED_SYNTAX"): void => { set(r, "native", kind, diag); r.target_stable_id = owner.id; r.target_file = owner.path; };
     const hit = resolver.relationship(c.type, c.stereotype);
@@ -463,6 +470,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       set(r, "evidence_only", "", "REFERENCE_ONLY"); return;
     }
     if (key === "Nesting") { set(r, "evidence_only", "", "ORGANIZATIONAL_ONLY"); return; }
+    if (en.disposition === "conditional_review") { defer(en.required_evidence[0] ?? "CONDITIONAL_REVIEW", "No approved rule for this family; decide it and add the rule"); return; }
     if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
     const kw = (d?: Draft): string => d?.keyword ?? "";
     const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]]`;
@@ -470,8 +478,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     // Info, Artifact and Document notes describe the element; Dependency/Usage is dependsOn; anything else is the provisional tracesTo (a Review finding, W-288).
     const noteLink = (): boolean => {
       if (!src || !dst || src === dst || (src.keyword && dst.keyword)) return false;
-      const field = !src.keyword && DESCRIBER.has(src.type) ? "describes" : !dst.keyword && DESCRIBER.has(dst.type) ? "describes" : key === "Dependency" || key === "Usage" ? "dependsOn" : "tracesTo";
-      const from = field === "describes" && !(!src.keyword && DESCRIBER.has(src.type)) ? dst : src, to = from === src ? dst : src;
+      const issue = [src, dst].find((d) => !d.keyword && d.o.type === "Issue"), other = issue === src ? dst : src;
+      const field = !src.keyword && DESCRIBER.has(src.type) ? "describes" : !dst.keyword && DESCRIBER.has(dst.type) ? "describes" : issue && other.o.type !== "Issue" && other.o.type !== "Change" ? "affects" : key === "Dependency" || key === "Usage" ? "dependsOn" : "tracesTo";
+      const from = field === "describes" ? (!src.keyword && DESCRIBER.has(src.type) ? src : dst) : field === "affects" ? issue! : src, to = from === src ? dst : src;
       from.links.push([field, to]);                                  // the YAML says it; Source: EA does not repeat it (IMP-096)
       set(r, "native", `MdseLink:${field}`, field === "tracesTo" ? "PROVISIONAL_LINK" : "", field === "tracesTo" ? "Replace tracesTo with a stronger relationship" : ""); r.target_stable_id = from.id; r.target_file = from.path;
       return true;
@@ -557,24 +566,29 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       }
       defer("ASSOCIATION_CONNECTIVITY_NOT_PROVEN", "An association is not a connection; model it as a Connector between ports"); return;
     }
-    if (key === "Connector") {
+    if (key === "Connector" || key === "Connector:BindingConnector" || key === "InformationFlow:itemFlow") {
       const a = usageByObj.get(c.sourceId), b = usageByObj.get(c.destId);
-      if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer("CONNECTOR_ENDPOINT_NOT_PORT"); return; }
+      if (!a || !b || a.ref.kind !== "port" || b.ref.kind !== "port") { defer(key === "Connector" ? "CONNECTOR_ENDPOINT_NOT_PORT" : key === "Connector:BindingConnector" ? "BINDING_ENDPOINT_NOT_PORT" : "FLOW_ENDPOINT_NOT_PORT"); return; }
+      if (key === "Connector:BindingConnector" && (!a.ref.typeDraft || a.ref.typeDraft !== b.ref.typeDraft || !!a.ref.conj !== !!b.ref.conj)) { defer("BINDING_FEATURES_NOT_COMPATIBLE", "Binding needs two ports of the same type; the connection is kept as a review row"); return; }
       // IMP-109: ports that sit on Parts of one assembly connect through those Parts: `connect partA.port to partB.port`
       const ca = carrierOf.get(c.sourceId), cb = carrierOf.get(c.destId);
       const pa = ca ? usageByObj.get(ca) : undefined, pb = cb ? usageByObj.get(cb) : undefined;
-      const endText = (x: { owner: Draft; ref: UsageRef } | undefined, port: { owner: Draft; ref: UsageRef }): string | null => (x ? `${x.ref.name}.${port.ref.name}` : null);
-      if (pa && pb && pa.owner === pb.owner) { const t = `connect ${endText(pa, a)} to ${endText(pb, b)};`; addStmt(pa.owner, t, `- Connection ${endText(pa, a)} to ${endText(pb, b)}`); done(pa.owner, "ConnectionUsage"); return; }
-      if (pa && !cb && b.owner === pa.owner) { addStmt(pa.owner, `connect ${endText(pa, a)} to ${b.ref.name};`, `- Connection ${endText(pa, a)} to ${b.ref.name}`); done(pa.owner, "ConnectionUsage"); return; }
-      if (pb && !ca && a.owner === pb.owner) { addStmt(pb.owner, `connect ${a.ref.name} to ${endText(pb, b)};`, `- Connection ${a.ref.name} to ${endText(pb, b)}`); done(pb.owner, "ConnectionUsage"); return; }
-      if (a.owner !== b.owner) {                                     // find the one definition that owns a part of each end's type
+      const endText = (x: { owner: Draft; ref: UsageRef } | undefined, port: { owner: Draft; ref: UsageRef }): string => (x ? `${x.ref.name}.${port.ref.name}` : port.ref.name);
+      let owner: Draft | null = null, ta = "", tb = "";
+      if (pa && pb && pa.owner === pb.owner) { owner = pa.owner; ta = endText(pa, a); tb = endText(pb, b); }
+      else if (pa && !cb && b.owner === pa.owner) { owner = pa.owner; ta = endText(pa, a); tb = b.ref.name; }
+      else if (pb && !ca && a.owner === pb.owner) { owner = pb.owner; ta = a.ref.name; tb = endText(pb, b); }
+      else if (a.owner !== b.owner) {                                // find the one definition that owns a part of each end's type
         const ctxs = drafts.filter((w) => w.keyword === "part def" && w.usages.some((u) => u.kind === "part" && u.typeDraft === a.owner) && w.usages.some((u) => u.kind === "part" && u.typeDraft === b.owner));
         if (!ctxs.length) { defer("PORT_CONNECTION_NEEDS_COMMON_OWNER"); return; }
         const w = ctxs[0]!, ua = w.usages.filter((u) => u.kind === "part" && u.typeDraft === a.owner), ub = w.usages.filter((u) => u.kind === "part" && u.typeDraft === b.owner);
         if (ctxs.length > 1 || ua.length !== 1 || ub.length !== 1) { defer("PORT_CONNECTION_AMBIGUOUS_OWNER"); return; }
-        addStmt(w, `connect ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name};`, `- Connection ${ua[0]!.name}.${a.ref.name} to ${ub[0]!.name}.${b.ref.name}`); done(w, "ConnectionUsage"); return;
-      }
-      addStmt(a.owner, `connect ${a.ref.name} to ${b.ref.name};`, `- Connection ${a.ref.name} to ${b.ref.name}`); done(a.owner, "ConnectionUsage"); return;
+        owner = w; ta = `${ua[0]!.name}.${a.ref.name}`; tb = `${ub[0]!.name}.${b.ref.name}`;
+      } else { owner = a.owner; ta = a.ref.name; tb = b.ref.name; }
+      if (key === "Connector") { addStmt(owner, `connect ${ta} to ${tb};`, `- Connection ${ta} to ${tb}`); done(owner, "ConnectionUsage"); }
+      else if (key === "Connector:BindingConnector") { addStmt(owner, `bind ${ta} = ${tb};`); done(owner, "BindingConnectorUsage"); }   // IMP-120
+      else { addStmt(owner, `flow from ${ta} to ${tb};`); done(owner, "FlowUsage"); }                                                              // IMP-120
+      return;
     }
     if (key === "ControlFlow" || key === "StateFlow") {
       const okKinds = key === "ControlFlow" ? ["action", "fork", "join"] : ["state"];
@@ -623,6 +637,41 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   });
 
   track.stage = "render notes";
+  // Every deferred element leaves a flag on the nearest note that holds it (its owner, else the owner of its owner). One with no note above it goes
+  // on a single modelCheck holding note (MOD-056) so nothing is only in the CSV.
+  const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
+  const hostlessEls: Array<{ e: EaObject; r: LedgerRow }> = [];
+  let holdingFlags = 0;
+  for (const e of g.objects) {
+    const r = objRow.get(e.id); if (!r || r.disposition !== "deferred_review") continue;
+    let host: Draft | undefined = byObj.get(e.id), cur: EaObject | undefined = e; const seen = new Set<number>();
+    while (!host && cur && !seen.has(cur.id)) { seen.add(cur.id); host = byObj.get(cur.parentId) ?? usageByObj.get(cur.parentId)?.owner; cur = g.objectsById.get(cur.parentId); }
+    if (!host) { hostlessEls.push({ e, r }); continue; }
+    const label = `${e.type}${e.stereotype ? ":" + e.stereotype : ""}`, nm = e.name.trim() || e.alias.trim() || `object ${e.id}`;
+    host.sourceLines.push(`- Element ${label} \`${nm}\` not written (${r.diagnostic_code})`);
+    flagLink(host, `Unmapped ${label} \`${nm}\``, [`Not written to SysML (${r.diagnostic_code}). ${(r.operator_action || "See the ledger row").replace(/\.$/, "")}. EA GUID ${e.guid}.`]);
+    r.target_stable_id = host.id; r.target_file = host.path;
+  }
+  if (hostlessEls.length || hostlessLinks.length) {
+    const guid = "review-unplaced", known = idx?.byGuid.get(guid), created = [...hostlessEls.map((x) => x.e.created)].sort()[0] ?? "";
+    let uid = known?.uid ?? "", id = known?.id ?? "";
+    if (!known) {
+      uid = allocateUids([{ key: "review", created, guid, author: "" }], o.authors, taken, "20000101000000000").get("review")!.uid;
+      const pre = prefixOf("modelCheck", "Review"), top = [...ids.values()].filter((v) => v.startsWith(pre + "-")).map((v) => +v.slice(pre.length + 1));
+      const hi = new Map(highest); hi.set(pre, Math.max(hi.get(pre) ?? 0, ...top, 0));
+      id = allocateIds([{ key: "review", prefix: pre, created, guid }], hi).get("review")!;
+    }
+    const path = known?.path ?? `${claim("Unplaced Review Items")}.md`;
+    const lname = (id: number): string => g.objectsById.get(id)?.name || `object ${id}`;
+    const linkFlags = hostlessLinks.map(({ c, code, family }) => flagCallout("flagLink", `Unresolved ${family} link from ${lname(c.sourceId)} to ${lname(c.destId)}`, sourceLink, [`No native relationship was written (${code}). Neither end has a note. See the ledger row for EA connector ${c.guid}.`]));
+    const flags = linkFlags.concat(hostlessEls.map(({ e, r }) => flagCallout("flagNote", `${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\``, sourceLink,
+      [`Not written to SysML (${r.diagnostic_code}). ${(r.operator_action || "See the ledger row").replace(/\.$/, "")}. Package: ${pkgPath(e.packageId).join(" > ") || "(root)"}. EA GUID ${e.guid}.`])));
+    const lines = [`- EA GUID: ${guid}`, ...hostlessLinks.map(({ c, code, family }) => `- Connector ${family} from ${lname(c.sourceId)} to ${lname(c.destId)} (unresolved: ${code})`), ...hostlessEls.map(({ e, r }) => `- ${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\` (${r.diagnostic_code}) — EA package: ${pkgPath(e.packageId).join(" > ") || "(root)"}`)];
+    generated.set(path, { path, guid, draft: undefined as unknown as Draft, text: renderNote({ type: "modelCheck", subtype: "Review", id, uid, eaType: "Review", title: "Unplaced Review Items", relFields: [], bodyText: "Elements and connectors the importer could not place in any note (no mapping, no owner, or no rule). Each has a flag below and a row in Review - Deferred Elements.csv. Decide each one, then remove its flag.", flags, sourceLines: lines, sysml: null }) });
+    holdingFlags = flags.length;
+    for (const r of [...hostlessEls.map((x) => x.r), ...hostlessLinks.map((x) => x.row)]) { r.target_stable_id = id; r.target_file = path; }
+  }
+
   // ---- render notes -------------------------------------------------------------------------------------------------
   const outFiles: OutFile[] = [];
   const relFieldsOf = (d: Draft): Array<[string, string[]]> => {
@@ -630,11 +679,10 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     for (const [k, t] of d.links) { const l = f.get(k) ?? []; if (!l.includes(t.baseName)) l.push(t.baseName); f.set(k, l); }
     return [...f].map(([k, v]) => [k, [...new Set(v)]] as [string, string[]]);
   };
-  let blocks = 0, flagCount = 0;
+  let blocks = 0, flagCount = holdingFlags;
   const tagDisp = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const)), unlistedTags = new Map<string, number>();
   const attachFiles: OutFile[] = [], attachTaken = new Set<string>(existing?.allPaths ? [...existing.allPaths].map((p) => p.toLowerCase()) : []);
   let attachRows = 0;
-  const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
   for (const d of drafts) guard("render", "t_object", d.o, () => {
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
     if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
@@ -667,7 +715,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       }
     }
     const sysml = d.keyword ? renderBlock({ keyword: d.keyword, pkg: d.pkg, name: d.ident, specializes: d.specializes.map((s) => s.symbol),
-      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}), ...(u.conj ? { conj: true } : {}) })),
+      usages: d.usages.map((u) => ({ kind: u.kind, name: u.name, ...(u.dir ? { dir: u.dir } : {}), ...(u.typeDraft ? { typeSymbol: u.typeDraft.symbol } : {}), ...(u.mult ? { mult: u.mult } : {}), ...(u.conj ? { conj: true } : {}), ...(u.isRef ? { ref: true } : {}) })),
       ...(reqText ? { doc: reqText } : {}), members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;

@@ -18,7 +18,9 @@
   "counts": {
     "element_families": 60,
     "relationship_families": 26,
-    "reduced_qeax_connectors": 14688
+    "reduced_qeax_connectors": 14688,
+    "element_families_full_model_extension": 12,
+    "relationship_families_full_model_extension": 4
   },
   "elements": [
     {
@@ -704,6 +706,144 @@
       "approved_source": "24_Workbench/docs/GOLDEN_IMPORT_STEP2_60_FAMILY_DECISION_RECONCILIATION_2026-10-17.md",
       "parser_accepted": false,
       "emission_enabled": false
+    },
+    {
+      "family": "Requirement:Regulatory Requirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition, like every other Requirement variant (REG-289).",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Requirement:physicalRequirement",
+      "disposition": "native_candidate",
+      "native_kind": "RequirementDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "RequirementDefinition (REG-289).",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Port:ProxyPort",
+      "disposition": "native_candidate",
+      "native_kind": "PortUsage",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PortUsage; the EA stereotype stays in the ledger family (ProxyPort and FullPort do not decide the construct).",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Port:FullPort",
+      "disposition": "native_candidate",
+      "native_kind": "PortUsage",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "PortUsage; the EA stereotype stays in the ledger family.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Signal:Environmental Effect",
+      "disposition": "native_candidate",
+      "native_kind": "ItemDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "ItemDefinition, like Signal:Physical Signal.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Class:Environmental Interface",
+      "disposition": "native_candidate",
+      "native_kind": "InterfaceDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "Interface Class: the definition ports are typed by (IMP-104).",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "State:Fault State",
+      "disposition": "native_candidate",
+      "native_kind": "StateDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "StateDefinition, like State:System State.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "StateMachine",
+      "disposition": "native_candidate",
+      "native_kind": "StateDefinition",
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "StateDefinition that owns the states nested in it.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Artifact:CustomDocument",
+      "disposition": "attachment_link",
+      "native_kind": null,
+      "conditional_evidence": [],
+      "review_notes": [],
+      "approved_description": "Artifact note and attachment, like Artifact:Document.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "ActivityPartition",
+      "disposition": "conditional_review",
+      "native_kind": null,
+      "conditional_evidence": [
+        "ACTIVITY_PARTITION_REVIEW"
+      ],
+      "review_notes": [],
+      "approved_description": "A swimlane is grouping, not ownership: flagged for review, never turned into a usage.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "ActionPin",
+      "disposition": "conditional_review",
+      "native_kind": null,
+      "conditional_evidence": [
+        "ACTION_PIN_REVIEW"
+      ],
+      "review_notes": [],
+      "approved_description": "Pins and parameters have no approved rule: flagged for review.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "ActivityParameter",
+      "disposition": "conditional_review",
+      "native_kind": null,
+      "conditional_evidence": [
+        "ACTION_PIN_REVIEW"
+      ],
+      "review_notes": [],
+      "approved_description": "Pins and parameters have no approved rule: flagged for review.",
+      "approved_source": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
     }
   ],
   "relationships": [
@@ -1042,6 +1182,58 @@
         "requirement_endpoints_and_role"
       ],
       "source_authority": "24_Workbench/docs/GOLDEN_IMPORT_RELATIONSHIP_26_FAMILY_DECISION_AUDIT_2026-10-17.md",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Connector:BindingConnector",
+      "source_count": 0,
+      "approved_direction": "bind between port usages only when both ends are the same type (REG-293); otherwise review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "Binding",
+      "required_evidence": [
+        "compatible_equal_features"
+      ],
+      "source_authority": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "InformationFlow:itemFlow",
+      "source_count": 0,
+      "approved_direction": "flow between port usages (SysML v2 interface approved mapping); otherwise review",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "Flow",
+      "required_evidence": [
+        "port_endpoints"
+      ],
+      "source_authority": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Dependency:ASILDecompose",
+      "source_count": 0,
+      "approved_direction": "no approved rule; flagged for review",
+      "disposition": "conditional_review",
+      "native_operation": null,
+      "required_evidence": [
+        "ASIL_DECOMPOSE_REVIEW"
+      ],
+      "source_authority": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
+      "parser_accepted": false,
+      "emission_enabled": false
+    },
+    {
+      "family": "Realisation:refine",
+      "source_count": 0,
+      "approved_direction": "Dependency plus Refinement, like Dependency:refine",
+      "disposition": "conditional_native_candidate",
+      "native_operation": "Dependency",
+      "required_evidence": [
+        "definition_endpoints"
+      ],
+      "source_authority": "governance/DECISIONS.md D-0039 (families found only in the full model, outside the 60/26 of the reduced QEAX)",
       "parser_accepted": false,
       "emission_enabled": false
     }

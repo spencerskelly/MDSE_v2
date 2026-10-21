@@ -236,7 +236,7 @@ const MDSE = (() => {
   return { SYSML_HEADING, SOURCE_HEADING, EA_OWNED_KEYS, parse, extractSysml, qualifiedNames, validate, renderSysmlSection, replaceSysmlBlock, mergeNote, indexByUid, crc32, zip, setFrontmatterField, removeFlag };
 })();
 
-const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package"]}};
+const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package","Review"]}};
 const WB = (() => {
 /* sysml_lang.ts */
 /* Recognizes the SysML v2 textual notation by the language catalog (governance/language/catalog.json): which construct a
@@ -949,6 +949,8 @@ function reviewQueue(ix            )               {
     for (const f of n.flags) { const k = f.type + "\u0000" + f.title, nth = seenFlag.get(k) ?? 0; seenFlag.set(k, nth + 1); out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title, flag: { type: f.type, title: f.title, nth } }); }
     if (n.type === "Issue" && n.status !== "Retired") out.push({ severity: "medium", category: "issue", path: n.path, message: n.title, status: n.status || "(none)" });
     for (const w of n.warnings) out.push({ severity: "medium", category: "sysml-not-recognized", path: n.path, message: w });
+    // W-288: tracesTo is the importer's provisional link; each one is a finding until it is replaced by a stronger relationship.
+    for (const l of n.links) if (l.field === "tracesTo") out.push({ severity: "low", category: "provisional-link", path: n.path, message: `tracesTo ${l.target}: replace with a stronger relationship (satisfies, refines, derives...) or confirm it` });
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
     for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }
@@ -2414,6 +2416,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 const V = { qtyOf, structure, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+
                 
                                                                                           
                                     
@@ -2490,13 +2493,13 @@ function download(name        , text        )       {
 
 const TABS                                   = [
   ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["where", "Where used", true],
-  ["trace", "Traceability", false], ["behavior", "Behavior", true], ["interfaces", "Interfaces", true], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false],
+  ["trace", "Traceability", false], ["behavior", "Behavior", true], ["interfaces", "Interfaces", true], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false], ["guide", "Guide", false],
 ];
 
 function mountWorkbench(root             , host       = {})      {
   const style = h("style"); style.textContent = STYLE;
   let ix                    = null, sel = "", tab = "dashboard", sidebar                       = "folders", query = "";
-  let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "";
+  let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
   const wrap = h("div", { class: "mdw" + (typeof (globalThis                     ).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
 
@@ -2781,15 +2784,27 @@ function mountWorkbench(root             , host       = {})      {
     if (ix .parser !== "passed") pane.append(h("div", { class: "callout" }, h("b", {}, "SysML blocks are not parser-checked"), ix .parser === "failed" ? "The last parser check failed." : "No parser report was found. Blocks are shown as written; the pinned parser gate decides conformance."));
     if (!items.length) return (pane.append(empty("Nothing to review.")), pane);
     const cats = new Map                (); for (const i of items) cats.set(i.category, (cats.get(i.category) ?? 0) + 1);
-    pane.append(h("div", { class: "row" }, ...[...cats].map(([k, n]) => h("span", { class: "pill" }, `${k} ${n}`))));
-    const cap = items.slice(0, 1000);
+    if (reviewCat && !cats.has(reviewCat)) reviewCat = "";
+    const pill = (label        , on         , f            )              => h("button", { class: "pill" + (on ? " warn" : ""), "aria-pressed": on ? "true" : "false", onclick: f }, label);
+    pane.append(h("div", { class: "row" }, pill(`all ${items.length}`, !reviewCat, () => { reviewCat = ""; draw(); }), ...[...cats].map(([k, n]) => pill(`${k} ${n}`, reviewCat === k, () => { reviewCat = reviewCat === k ? "" : k; draw(); }))));
+    const sev = h("select", { "aria-label": "Severity", onchange: (e       ) => { reviewSev = (e.target                     ).value; draw(); } }, ...["", "high", "medium", "low"].map((v) => h("option", { value: v, selected: v === reviewSev }, v || "any severity")));
+    const shown = items.filter((i) => (!reviewCat || i.category === reviewCat) && (!reviewSev || i.severity === reviewSev));
+    pane.append(h("div", { class: "row" }, sev, h("span", { class: "mut" }, `${shown.length} of ${items.length}`),
+      h("button", { onclick: () => download("review.csv", ["severity,category,note,detail", ...shown.map((i) => [i.severity, i.category, i.path, i.message].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
+    const cap = shown.slice(0, 1000);
     pane.append(tableOf([["s", "Severity"], ["c", "Category"], ["n", "Note"], ["m", "Detail"]], cap.map((i) => [h("span", { class: i.severity === "high" ? "gap" : "" }, i.severity), i.category, i.path ? lnk(i.path) : "", i.message])));
-    if (items.length > cap.length) pane.append(h("div", { class: "mut" }, `${items.length - cap.length} more not shown`));
+    if (shown.length > cap.length) pane.append(h("div", { class: "mut" }, `${shown.length - cap.length} more not shown`));
+    return pane;
+  }
+
+  function vGuide()              {
+    const pane = h("div", { class: "pane" }, h("h2", {}, "Guide"));
+    for (const s of GUIDE) pane.append(h("h3", {}, s.title), ...s.body.map((p) => h("p", {}, p)));
     return pane;
   }
 
   /* ---- shell ---- */
-  const views                                    = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, behavior: vBehavior, interfaces: vInterfaces, graph: vGraph, rels: vRels, review: vReview };
+  const views                                    = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, behavior: vBehavior, interfaces: vInterfaces, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
   function draw()       {
     const header = h("header", {}, h("b", {}, "MDSE Workbench"), ix ? h("span", { class: "pill" }, `${ix.notes.size} notes · ${ix.edges.length} links · built in ${ix.builtMs} ms`) : null,
       ix ? h("span", { class: "pill " + (ix.parser === "passed" ? "ok" : ix.parser === "failed" ? "bad" : "warn") }, ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked") : null,

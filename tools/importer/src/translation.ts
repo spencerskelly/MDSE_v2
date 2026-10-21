@@ -62,6 +62,10 @@ export const RELATIONSHIP_RULES: Record<string, Rule> = {
   Nesting: { outcome: "Evidence only", how: "Nesting is organizational. Ownership of usages comes from the parent id, not this connector.", exceptions: ["ORGANIZATIONAL_ONLY"] },
   NoteLink: { outcome: "`describes` YAML link on the Info note", how: "One end must be an Info note.", exceptions: ["NOTELINK_ENDPOINT_NOT_INFO_NOTE"] },
   Sequence: { outcome: "Ledger row only", how: "Reference only; diagrams are out of scope.", exceptions: ["REFERENCE_ONLY"] },
+  "Connector:BindingConnector": { outcome: "`bind a = b;` in the owning definition", how: "Both ends port usages of the same port def and the same conjugation (REG-293). Ports on Parts bind through the Parts like a connection. Anything else is a review row.", exceptions: ["BINDING_ENDPOINT_NOT_PORT", "BINDING_FEATURES_NOT_COMPATIBLE", "PORT_CONNECTION_NEEDS_COMMON_OWNER", "PORT_CONNECTION_AMBIGUOUS_OWNER"] },
+  "InformationFlow:itemFlow": { outcome: "`flow from a to b;` in the owning definition", how: "Both ends port usages, placed like a connection. The conveyed item is not read yet. Anything else is a review row.", exceptions: ["FLOW_ENDPOINT_NOT_PORT", "PORT_CONNECTION_NEEDS_COMMON_OWNER", "PORT_CONNECTION_AMBIGUOUS_OWNER"] },
+  "Dependency:ASILDecompose": { outcome: "Review row", how: "No approved rule. Flagged, never turned into a generic dependency.", exceptions: ["ASIL_DECOMPOSE_REVIEW"] },
+  "Realisation:refine": { outcome: "`dependency from a to b; // refines`", how: "Same as Dependency:refine.", exceptions: ["DEPENDENCY_ENDPOINT_KIND"] },
 };
 
 /** Every diagnostic code the importer can write, with what it means and what to do. Codes with a `:suffix` match by prefix. */
@@ -96,6 +100,13 @@ export const CODES: Record<string, { meaning: string; action: string }> = {
   ORGANIZATIONAL_ONLY: { meaning: "Nesting connector carries no model meaning.", action: "None." },
   NATIVE_EMISSION_DISABLED: { meaning: "Run option turned native SysML off.", action: "Re-run with native emission on." },
   GENERALIZATION_ENDPOINT_KIND: { meaning: "Generalization ends are not the same kind of definition.", action: "Review the EA link." },
+  ACTIVITY_PARTITION_REVIEW: { meaning: "A swimlane groups actions; grouping is not ownership.", action: "Decide whether the lane means a performer or only a layout." },
+  ACTION_PIN_REVIEW: { meaning: "Action pins and activity parameters have no approved rule.", action: "Decide how pins are modelled." },
+  ASIL_DECOMPOSE_REVIEW: { meaning: "ASIL decomposition has no approved rule.", action: "Decide the construct." },
+  CONDITIONAL_REVIEW: { meaning: "The family is conditional and its evidence is not named.", action: "Review the EA link." },
+  BINDING_ENDPOINT_NOT_PORT: { meaning: "A binding connector end is not a port usage.", action: "Review the EA link." },
+  BINDING_FEATURES_NOT_COMPATIBLE: { meaning: "The two ports are not the same type, so they are not provably equal.", action: "Review; bind them by hand if they are equal." },
+  FLOW_ENDPOINT_NOT_PORT: { meaning: "An information flow end is not a port usage.", action: "Review the EA link." },
   USAGE_WINS: { meaning: "An EA Part, nested element or actor already covers this connector; the connector is merged into that usage.", action: "None." },
   OWNERSHIP_CYCLE: { meaning: "Whole and part own each other through the aggregation and the usages already written.", action: "Resolve the cycle in EA; the connector is left out of the model." },
   AGGREGATION_PART_IN_INTERFACE: { meaning: "A part is the child of an interface. Approved as an exception, not as a mapping.", action: "Inspect the EA source and decide the construct." },

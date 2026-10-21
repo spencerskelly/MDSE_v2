@@ -321,6 +321,8 @@ export function reviewQueue(ix: ModelIndex): ReviewItem[] {
     for (const f of n.flags) { const k = f.type + "\u0000" + f.title, nth = seenFlag.get(k) ?? 0; seenFlag.set(k, nth + 1); out.push({ severity: f.type === "flagConflict" ? "high" : f.type === "flagNote" ? "low" : "medium", category: f.type, path: n.path, message: f.title, flag: { type: f.type, title: f.title, nth } }); }
     if (n.type === "Issue" && n.status !== "Retired") out.push({ severity: "medium", category: "issue", path: n.path, message: n.title, status: n.status || "(none)" });
     for (const w of n.warnings) out.push({ severity: "medium", category: "sysml-not-recognized", path: n.path, message: w });
+    // W-288: tracesTo is the importer's provisional link; each one is a finding until it is replaced by a stronger relationship.
+    for (const l of n.links) if (l.field === "tracesTo") out.push({ severity: "low", category: "provisional-link", path: n.path, message: `tracesTo ${l.target}: replace with a stronger relationship (satisfies, refines, derives...) or confirm it` });
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
     for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }

@@ -12,6 +12,8 @@ export interface UsageDecl {
   mult?: string;
   /** port usages: typed by the conjugate of the port definition (`port p : ~P`). */
   conj?: boolean;
+  /** part usages: a reference (`ref part`), not owned. */
+  ref?: boolean;
 }
 
 export interface DefDecl {
@@ -40,7 +42,7 @@ const docComment = (t: string): string => t.replace(/\r\n/g, "\n").replace(/\*\/
 export function renderBlock(d: DefDecl): string {
   const head = `${d.keyword} ${d.name}` + (d.specializes.length ? ` :> ${d.specializes.join(", ")}` : "");
   const body: string[] = [];
-  for (const u of d.usages) body.push(`        ${u.dir ? u.dir + " " : ""}${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.conj ? "~" : ""}${u.typeSymbol}` : ""}${u.mult ?? ""};`);
+  for (const u of d.usages) body.push(`        ${u.dir ? u.dir + " " : ""}${u.ref ? "ref " : ""}${u.kind} ${u.name}${u.typeSymbol ? ` : ${u.conj ? "~" : ""}${u.typeSymbol}` : ""}${u.mult ?? ""};`);
   for (const m of d.members ?? []) body.push(`        ${m}`);
   if (d.doc && d.doc.trim()) body.push(`        doc /* ${docComment(d.doc).split("\n").join("\n           ")} */`);
   const def = body.length ? `    ${head} {\n${body.map((l) => l.slice(0)).join("\n")}\n    }` : `    ${head};`;

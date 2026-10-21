@@ -232,6 +232,12 @@ test("review rows carry what is needed to resolve a flag; Issue notes get a stat
   assert.equal(V.reviewQueue(retired).filter((i) => i.category === "issue").length, 0);
 });
 
+test("a provisional tracesTo link is a review finding until it is replaced (W-288)", () => {
+  const v = buildIndex(new Map([["A.md", "---\ntype: Requirement\nid: REQ-1\nuid: u1\ntracesTo: [\"[[B]]\"]\n---\n# A\n"], ["B.md", "---\ntype: Requirement\nid: REQ-2\nuid: u2\n---\n# B\n"]]), { classes });
+  const rows = V.reviewQueue(v).filter((i) => i.category === "provisional-link");
+  assert.equal(rows.length, 1); assert.equal(rows[0]!.path, "A.md"); assert.equal(rows[0]!.severity, "low");
+});
+
 test("status choices include the vocabulary in use plus Draft and Retired", () => {
   const c = V.statusChoices(ix);
   assert.ok(c.includes("Draft") && c.includes("Retired"));

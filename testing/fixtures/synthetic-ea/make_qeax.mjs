@@ -129,7 +129,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const portA = obj("Port", "ctrlIn", prod, { parent: controller, pdata1: G(gpi) });
   const portB = obj("Port", "ctrlOut", prod, { parent: controller, pdata1: G(gpi) });
   const portC = obj("Port", "pmPort", power, { parent: pm, pdata1: G(gpi) });
-  obj("Port", "auxIn", prod, { parent: controller, pdata1: G(gpi), mult: "0..2", tags: { isConjugated: "true" } });   // conjugated, counted port (D-0033)
+  const portAux = obj("Port", "auxIn", prod, { parent: controller, pdata1: G(gpi), mult: "0..2", tags: { isConjugated: "true" } });   // conjugated, counted port (D-0033)
   // Ports under Parts belong to the Part's block (V1 W-114): by PDATA3, by a unique same name, or added to the block
   const iIn = obj("Port", "ctrlIn", prod, { parent: ctlUse, pdata1: G(gpi), pdata3: G(portA) });
   const iOut = obj("Port", "ctrlOut", prod, { parent: ctlUse });
@@ -176,7 +176,9 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   con("Aggregation", chA, chB, { srcAgg: 2 });                                                 // Change hierarchy: hasChild
   const issue = obj("Issue", "Loose Cable", ctx);
   con("Abstraction", issue, fn, { stereotype: "allocate" });                                  // note end: provisional tracesTo
-  con("Usage", issue, charger);                                                               // note end: dependsOn
+  con("Usage", issue, charger);                                                               // an Issue harms the element: affects
+  con("Abstraction", chA, issue, { stereotype: "allocate" });                                 // Change and Issue: provisional tracesTo
+  con("Usage", obj("Decision", "Pick Supplier", ctx), charger);                               // other note end: dependsOn
   con("Dependency", note, charger, { stereotype: "trace" });                                  // Info end: describes
   const pic2 = obj("Artifact", "Wiring Diagram", prod, { stereotype: "Image" });
   con("Dependency", pic2, charger, { stereotype: "trace" });                                  // Artifact end: describes
@@ -191,6 +193,16 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const operator = obj("Actor", "Mechanic", ctx);
   con("Association", uc, operator); con("Association", operator, uc);                          // actor of the use case, once
   con("Association", uc2, pm);                                                                // participant
+
+  // Families found only in the full model (D-0039)
+  obj("Requirement", "EU Directive 12", reqs, { stereotype: "Regulatory Requirement" });
+  obj("Port", "proxyOut", prod, { parent: controller, stereotype: "ProxyPort", pdata1: G(gpi), pdata2: G(portA) });   // redefinition is recorded, not applied
+  obj("Part", "spareCtrl", prod, { parent: twinA, pdata1: G(controller), tags: { isReference: "-1" } });            // a reference part
+  con("Connector", portA, portB, { stereotype: "BindingConnector" });                         // same type: bind
+  con("Connector", portA, portAux, { stereotype: "BindingConnector" });                       // conjugated against not: review
+  con("InformationFlow", portA, portC, { stereotype: "itemFlow" });                           // flow through the assembly
+  con("Dependency", r1, r2, { stereotype: "ASILDecompose" });                                 // no rule: review
+  obj("ActivityPartition", "Lane", fns);                                                      // grouping: review
 
   // Control nodes, triggers, attachments
   const fk = obj("Synchronization", "Split", fns, { parent: fn });

@@ -154,7 +154,8 @@
    "ProxyConnector",
    "Event",
    "ActivityParameter",
-   "Package"
+   "Package",
+   "Review"
   ]
  }
 }
