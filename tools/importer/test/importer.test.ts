@@ -251,3 +251,20 @@ test("requirement wording is the definition's doc, not repeated in the body (IMP
   assert.match(sysml, /requirement def [\s\S]*doc \/\*[\s\S]*outdoor use[\s\S]*\*\//, "text is a doc comment in the requirement def");
   assert.equal(req.split("## SysML v2")[0]!.includes("outdoor use"), false, "not duplicated above the SysML block");
 });
+
+test("file names the browser would refuse never reach the writer: device names with an extension, invisible characters, lone surrogates", async () => {
+  const { safeName } = await import("../src/naming.ts");
+  assert.equal(safeName("Con.pdf"), "Con_.pdf");
+  assert.equal(safeName("aux"), "aux_");
+  assert.equal(safeName("COM1.final.xlsx"), "COM1_.final.xlsx");
+  assert.equal(safeName("Console.pdf"), "Console.pdf");
+  assert.equal(safeName("Rail\u200e Spec\u202e v2\u2028"), "Rail Spec v2");
+  assert.equal(safeName("Bad\ud800 name\udfff"), "Bad name");
+  assert.equal(safeName("Emoji \ud83d\ude80 ok"), "Emoji \ud83d\ude80 ok", "a valid surrogate pair is kept");
+  assert.equal(safeName("Tab\there\u0085"), "Tabhere");
+  assert.equal(safeName("x".repeat(160) + "."), "x".repeat(150) + "~a");
+  assert.equal(safeName("\u2028\u200e"), "Unnamed");
+  const res = await run();
+  const bad = res.files.flatMap((f) => f.path.split("/").map((c) => [f.path, c])).filter(([, c]) => !c || /[\u0000-\u001f\u007f-\u009f<>:"\\|?*\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff]|[. ]$/.test(c!) || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(c!.split(".")[0]!));
+  assert.deepEqual(bad, []);
+});

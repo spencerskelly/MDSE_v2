@@ -1,6 +1,9 @@
 /* File and folder names (MOD-097/098/102/110/111) and SysML identifiers. */
 
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])$/i;
+/** Characters a browser or Windows refuses in a name: controls, bidi marks, line and paragraph separators, specials, lone surrogates. */
+// eslint-disable-next-line no-control-regex
+const ILLEGAL_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
 const MAX_COMPONENT = 150;
 
 /** One path component safe on Windows and macOS. Replacement order follows MOD-097/098. */
@@ -8,12 +11,12 @@ export function safeName(raw: string, fallback = "Unnamed"): string {
   let s = raw.replace(/\r?\n/g, " ")
     .replace(/\//g, "-").replace(/:/g, " -").replace(/[?*]/g, "").replace(/"/g, "''")
     .replace(/[<>|\\]/g, "-").replace(/\[/g, "(").replace(/\]/g, ")").replace(/#/g, "no.").replace(/\^/g, "")
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f]/g, "")
+    .replace(ILLEGAL_CHARS, "")
     .replace(/\s+/g, " ").trim().replace(/[. ]+$/, "");
   if (!s) s = fallback;
-  if (WINDOWS_RESERVED.test(s)) s += "_";
-  if (s.length > MAX_COMPONENT) s = s.slice(0, MAX_COMPONENT).trim() + "~a";   // forced alteration marker (MOD-102)
+  if (s.length > MAX_COMPONENT) s = s.slice(0, MAX_COMPONENT).replace(/[\ud800-\udbff]$/, "").trim().replace(/[. ]+$/, "") + "~a";   // forced alteration marker (MOD-102)
+  const dot = s.indexOf("."), stem = dot < 0 ? s : s.slice(0, dot);
+  if (WINDOWS_RESERVED.test(stem)) s = stem + "_" + s.slice(stem.length);            // a device name is reserved with any extension: Con.pdf
   return s;
 }
 

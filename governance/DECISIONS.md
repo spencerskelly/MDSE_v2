@@ -350,3 +350,11 @@ Rules: IMP-101, WKB-014, WKB-015, WKB-016, BOM-016.
 5. **Not yet.** Re-importing EA after a merge: the removed note's uid is only in Former ids, so the importer would see a new element. Canvases that show a removed note are not updated. Notes with more than one definition are refused. Matching when the EA part number is absent and the name differs is manual.
 
 Rules: MOD-167, WKB-017, WKB-018, WKB-019.
+
+## D-0035 — Names the folder writer refuses
+
+2026-10-21 · Spencer · Accepted
+
+A full EA import translated all 23,112 notes and then stopped at the folder write: `getFileHandle … Name is not allowed`, with no path in the message. The name rules covered a whole name equal to a device name but not `Con.pdf` (attachments add an extension after the name is made safe), nor invisible or bidi characters. Names are now made safe at the source so links stay consistent (IMP-102), the page lists every unwritable path before it writes, and a write error carries its path.
+
+Rules: IMP-102.

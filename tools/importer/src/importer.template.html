@@ -336,10 +336,26 @@ $("genNew").addEventListener("click", async () => {
     progDone(`MDSE.zip built, ${r.files.length} files`); $("genStatus").innerHTML = `<span class=ok>MDSE.zip: ${r.files.length} files. Your browser has saved it.</span>`; showTrust("in MDSE.zip");
   } catch (e) { reportFailure(e, "build ZIP"); }
 });
+/* A name the browser or Windows would refuse (the same rules as safeName): checked before anything is written, so a bad name is listed, not found halfway. */
+const FS_ILLEGAL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff<>:"\\|?*]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+function fsBadName(c) {
+  if (!c || c === "." || c === ".." || c.length > 255) return "empty, dot or too long";
+  if (FS_ILLEGAL.test(c)) { const m = FS_ILLEGAL.exec(c)[0]; return "contains U+" + m.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0"); }
+  if (/[. ]$/.test(c)) return "ends with a dot or space";
+  if (/^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])$/i.test(c.split(".")[0])) return "is a Windows device name";
+  return "";
+}
+function badPaths(files) {
+  const out = [];
+  for (const f of files) { for (const c of f.path.split("/")) { const why = fsBadName(c); if (why) { out.push(`${f.path} (“${c}” ${why})`); break; } } }
+  return out;
+}
 async function writeFile(root, path, text) {   // text is a string or a Uint8Array
   const parts = path.split("/"); let dir = root;
-  for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
-  const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
+  try {
+    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
+    const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
+  } catch (e) { e.message = `${e.message} [path: ${path}]`; throw e; }
 }
 $("genAdd").addEventListener("click", async () => {
   try {
@@ -348,6 +364,8 @@ $("genAdd").addEventListener("click", async () => {
     $("genOut").innerHTML = r.summaryHtml;
     if (r.res && r.res.status !== "WRITE_READY" && r.res.status !== "NO_CHANGES") { progFail(); $("genStatus").innerHTML = `<span class=bad>${r.res.status}: nothing written</span>`; return; }
     if (!r.files.length) { progDone("Nothing to change"); $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
+    const bad = badPaths(r.files);
+    if (bad.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written by the browser; nothing was written.</span><pre>${esc(bad.slice(0, 25).join("\n"))}${bad.length > 25 ? "\n… and " + (bad.length - 25) + " more" : ""}</pre>`; return; }
     if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
     let n = 0;
     for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
