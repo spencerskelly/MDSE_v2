@@ -14,7 +14,7 @@ import { buildResolver, classify, isUsageEntry, connectorKey, DEFINITION_KINDS }
 import type { FamilyMapping, ElementEntry } from "./ea_mapping.ts";
 import { allocateUids, allocateIds } from "./identity.ts";
 import type { AuthorOptions } from "./identity.ts";
-import { safeName, sysmlIdent, usageIdent, IdentScope } from "./naming.ts";
+import { safeName, squeezeDir, sysmlIdent, usageIdent, IdentScope } from "./naming.ts";
 import { renderBlock, parseMultiplicity } from "./sysml.ts";
 import type { UsageDecl } from "./sysml.ts";
 import { renderNote, flagCallout } from "./notes.ts";
@@ -228,8 +228,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   };
   const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
   for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(safeName(d.title));
-  const dirOf = (d: Draft): string => (d.parent ? ownDirOf(d.parent) : d.pkgPath.join("/"));
-  const ownDirOf = (d: Draft): string => { const base = dirOf(d); return (base ? base + "/" : "") + d.baseName; };
+  const dirParts = (d: Draft): string[] => (d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
+  const dirOf = (d: Draft): string => squeezeDir(dirParts(d)).join("/");           // IMP-103: a folder path short enough to extract on Windows
+  const ownDirOf = (d: Draft): string => squeezeDir([...dirParts(d), d.baseName]).join("/");
   for (const d of drafts) {
     if (d.existingPath) { d.path = d.existingPath; continue; }
     const dir = dirOf(d);

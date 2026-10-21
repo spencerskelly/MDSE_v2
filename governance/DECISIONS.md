@@ -358,3 +358,11 @@ Rules: MOD-167, WKB-017, WKB-018, WKB-019.
 A full EA import translated all 23,112 notes and then stopped at the folder write: `getFileHandle … Name is not allowed`, with no path in the message. The name rules covered a whole name equal to a device name but not `Con.pdf` (attachments add an extension after the name is made safe), nor invisible or bidi characters. Names are now made safe at the source so links stay consistent (IMP-102), the page lists every unwritable path before it writes, and a write error carries its path.
 
 Rules: IMP-102.
+
+## D-0036 — Path length and write retries
+
+2026-10-21 · Spencer · Accepted
+
+The same EA import built a ZIP that Windows would not extract, and a folder write that stopped with `InvalidStateError`. Causes are diagnosed, not confirmed on the real data: folder-per-parent layout with long EA names exceeds the 260-character path limit in Explorer; and a freshly created file touched by antivirus, OneDrive or the indexer between create and close raises the state error. Fixes: a deterministic folder path budget and shorter name cap (IMP-103), per-file retry, and errors that carry the path (a DOMException message cannot be edited, so a new Error is thrown). Advice stays on the page: write to a short folder that is not synced (such as `C:\MDSE`), and extract a ZIP to a short path.
+
+Rules: IMP-103.

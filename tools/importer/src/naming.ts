@@ -4,7 +4,9 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u
 /** Characters a browser or Windows refuses in a name: controls, bidi marks, line and paragraph separators, specials, lone surrogates. */
 // eslint-disable-next-line no-control-regex
 const ILLEGAL_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
-const MAX_COMPONENT = 150;
+const MAX_COMPONENT = 100;
+/** The folder part of a path stays within this many characters, so the whole path extracts on Windows (260 limit) from a typical download folder. */
+export const DIR_BUDGET = 110;
 
 /** One path component safe on Windows and macOS. Replacement order follows MOD-097/098. */
 export function safeName(raw: string, fallback = "Unnamed"): string {
@@ -62,4 +64,22 @@ export class IdentScope {
     this.used.add(name);
     return name;
   }
+}
+
+/** Folder names that fit DIR_BUDGET: long names are cut and marked, and if that is not enough the middle folders are dropped for one `_`.
+ * Depends only on the list, so every note in one folder gets the same result. */
+export function squeezeDir(parts: string[], budget = DIR_BUDGET): string[] {
+  const len = (p: string[]): number => p.reduce((n, x) => n + x.length, 0) + Math.max(0, p.length - 1);
+  if (len(parts) <= budget) return parts;
+  const hash = (s: string): string => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36).slice(0, 3); };
+  let out = parts.slice();
+  for (let cap = Math.max(8, Math.floor((budget - (out.length - 1)) / out.length)); cap >= 8; cap -= 4) {
+    const cut = out.map((x) => (x.length > cap ? x.slice(0, cap - 4).replace(/[. ]+$/, "") + "~" + hash(x) : x));
+    if (len(cut) <= budget) return cut;
+    out = cut;
+  }
+  const full = out.length;
+  while (out.length > 3 && len(out) + 2 > budget) out.splice(Math.floor(out.length / 2), 1);
+  if (out.length < full) out.splice(2, 0, "_");                                       // the dropped middle folders
+  return out;
 }

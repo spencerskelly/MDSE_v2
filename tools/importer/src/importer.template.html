@@ -62,6 +62,7 @@ ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
  <label class="btn alt">Check a folder (read-only)<input id="scanInput" type="file" webkitdirectory multiple></label>
  <span id="vaultStatus" class="mut">No folder chosen: a ZIP will be built.</span></div>
 <p class="mut" style="margin:8px 0 0">In an existing vault a note found by <code>uid</code> keeps your text, <code>status</code> and <code>tags</code>; only EA-owned keys, <code>## Source: EA</code> and <code>## SysML v2</code> refresh. Part numbers that already have a BOM note are left as they are.</p>
+<p class="mut" style="margin:8px 0 0">On Windows keep the path short: write to a folder such as <code>C:\MDSE</code> that OneDrive does not sync, or extract the ZIP to a short path (not Downloads). Windows refuses paths over 260 characters, and cloud sync or antivirus can interrupt writes to a synced folder.</p>
 <div id="vaultOut"></div></section>
 
 <section class="card" id="cGen" aria-labelledby="h-gen"><h2 id="h-gen"><span class="badge">4</span>Build the vault</h2>
@@ -350,12 +351,30 @@ function badPaths(files) {
   for (const f of files) { for (const c of f.path.split("/")) { const why = fsBadName(c); if (why) { out.push(`${f.path} (“${c}” ${why})`); break; } } }
   return out;
 }
+const dirCache = new Map();   // folder path -> handle, per root; 23,000 files would otherwise walk the tree 23,000 times
+async function dirFor(root, parts) {
+  let dir = root, key = "";
+  if (!dirCache.has(root)) dirCache.set(root, new Map());
+  const cache = dirCache.get(root);
+  for (const p of parts) { key += "/" + p; let h = cache.get(key); if (!h) { h = await dir.getDirectoryHandle(p, { create: true }); cache.set(key, h); } dir = h; }
+  return dir;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function writeFile(root, path, text) {   // text is a string or a Uint8Array
-  const parts = path.split("/"); let dir = root;
-  try {
-    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
-    const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
-  } catch (e) { e.message = `${e.message} [path: ${path}]`; throw e; }
+  const parts = path.split("/");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const dir = await dirFor(root, parts.slice(0, -1));
+      const w = await (await dir.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(text); await w.close();
+      return;
+    } catch (e) {
+      // "state had changed since it was read from disk" (InvalidStateError) is what a virus scanner, OneDrive or the search indexer causes by touching a new file mid-write: try again
+      const transient = e && (e.name === "InvalidStateError" || e.name === "NoModificationAllowedError" || e.name === "NotReadableError");
+      if (transient && attempt < 6) { dirCache.delete(root); await sleep(60 * 2 ** attempt); continue; }
+      const err = new Error(`${e && e.name ? e.name + ": " : ""}${e && e.message ? e.message : e} [path: ${path}${attempt ? `, after ${attempt + 1} tries` : ""}]`);
+      if (e && e.name) err.name = e.name; throw err;
+    }
+  }
 }
 $("genAdd").addEventListener("click", async () => {
   try {

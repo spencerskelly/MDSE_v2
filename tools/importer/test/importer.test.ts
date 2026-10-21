@@ -262,9 +262,26 @@ test("file names the browser would refuse never reach the writer: device names w
   assert.equal(safeName("Bad\ud800 name\udfff"), "Bad name");
   assert.equal(safeName("Emoji \ud83d\ude80 ok"), "Emoji \ud83d\ude80 ok", "a valid surrogate pair is kept");
   assert.equal(safeName("Tab\there\u0085"), "Tabhere");
-  assert.equal(safeName("x".repeat(160) + "."), "x".repeat(150) + "~a");
+  assert.equal(safeName("x".repeat(160) + "."), "x".repeat(100) + "~a");
   assert.equal(safeName("\u2028\u200e"), "Unnamed");
   const res = await run();
   const bad = res.files.flatMap((f) => f.path.split("/").map((c) => [f.path, c])).filter(([, c]) => !c || /[\u0000-\u001f\u007f-\u009f<>:"\\|?*\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff]|[. ]$/.test(c!) || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(c!.split(".")[0]!));
   assert.deepEqual(bad, []);
+});
+
+test("folder paths are squeezed to fit Windows extraction, the same way for every note in a folder (IMP-103)", async () => {
+  const { squeezeDir, DIR_BUDGET } = await import("../src/naming.ts");
+  const short = ["02 Product", "Power Train"];
+  assert.deepEqual(squeezeDir(short), short);
+  const deep = Array.from({ length: 9 }, (_, i) => `Subsystem ${i} with a long descriptive package name`);
+  const sq = squeezeDir(deep);
+  assert.ok(sq.join("/").length <= DIR_BUDGET, sq.join("/"));
+  assert.deepEqual(squeezeDir(deep), sq, "deterministic");
+  assert.equal(sq[0]!.slice(0, 6), "Subsys");
+  const absurd = Array.from({ length: 40 }, (_, i) => `Level${i}`);
+  const as = squeezeDir(absurd);
+  assert.ok(as.join("/").length <= DIR_BUDGET && as.includes("_") && as[0] === "Level0" && as.at(-1) === "Level39", as.join("/"));
+  const res = await run();
+  const longest = Math.max(...res.files.map((f) => f.path.length));
+  assert.ok(longest < 200, String(longest));
 });
