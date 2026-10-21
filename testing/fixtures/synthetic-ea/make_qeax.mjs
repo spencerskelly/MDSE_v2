@@ -74,7 +74,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   const sigCmd = obj("Signal", "Charge Current Command", prod, { stereotype: "Logical Signal" });
   const weird = obj("Class", "Mystery Thing", prod, { stereotype: "Totally Unmapped Stereotype" });
   // Usages owned by definitions
-  const ctlUse = obj("Part", "controller", prod, { parent: charger, pdata1: G(controller), mult: "1" });
+  const ctlUse = obj("Part", "controller", prod, { parent: charger, pdata1: G(controller), mult: "1", tags: { PN: "SYN-CTRL-1", "Piece Cost": "12.5", Status: "Approved" } });
   const pmUse = obj("Part", "modules", prod, { parent: charger, pdata1: G(pm), mult: "3" });
   obj("Part", "contactors", prod, { parent: charger, pdata1: G(contactor), mult: "2" });
   obj("Part", "", prod, { parent: charger, pdata1: G(contactor) });            // no name of its own: takes the type's name

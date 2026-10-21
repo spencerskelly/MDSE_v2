@@ -254,6 +254,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const phase = (u: { o: EaObject; entry: ElementEntry }): number => (u.entry.native_kind === "ItemUsage" ? 3 : u.entry.native_kind === "PortUsage" ? (isInstancePort(u.o) ? 2 : 1) : 0);
   usageObjs.sort((a, b) => phase(a) - phase(b) || a.o.id - b.o.id);
   const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
+  const tagDispOf = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const));
   const carrierOf = new Map<number, number>();                      // instance port (EA Port under a Part) -> that Part
   const addedPorts = new Map<string, UsageRef>();                   // block + port name -> the port added from assemblies
   const flowIn = new Map<number, number>(), flowOut = new Map<number, number>();
@@ -347,6 +348,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (kind === "PortUsage" && ref.typeDraft && (g.tags.get(e.id) ?? []).some(([k, v]) => /^(is)?conjugat(ed|e)$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.conj = true;   // port conjugation, from an isConjugated tag (EA stores -1 for true)
     if (kind === "PartUsage" || kind === "PortUsage") { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; if (!m.ok) diag = (diag ? diag + ";" : "") + "MULTIPLICITY_UNPARSED"; }
     owner.usages.push(ref); usageByObj.set(e.id, { owner, ref });
+    // IMP-119 (V1 W-136, REG-142): what the EA says about this use of the part (PN, Piece Cost, Style...) belongs to the assembly, as a line on the owner's note
+    if (kind === "PartUsage") {
+      const onUse = (g.tags.get(e.id) ?? []).filter(([k, v]) => !isPlaceholder(v) && tagDispOf.get(k) === "body");
+      if (onUse.length) owner.sourceLines.push(`- On ${ref.kind} ${name}: ${onUse.map(([k, v]) => `${k}: ${v.replace(/\s*\n\s*/g, " ")}`).join("; ")}`);
+    }
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
     if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);

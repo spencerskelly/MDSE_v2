@@ -354,3 +354,10 @@ test("Realisation roles come from element types, not arrow direction (IMP-117); 
   assert.equal((uc.match(/actor mechanic/g) ?? []).length, 1, "the same actor associated twice is one actor usage");
   assert.match(res.files.find((x) => !x.bytes && x.path.endsWith("/Authenticate.md"))!.content, /^participants: \["\[\[Power Module\]\]"\]$/m, "a non-actor part takes part through the YAML link");
 });
+
+test("what a Part says about its use goes on the assembly's note (IMP-119)", async () => {
+  const res = await run();
+  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
+  assert.match(charger, /^- On part controller: PN: SYN-CTRL-1; Piece Cost: 12\.5$/m);
+  assert.doesNotMatch(charger, /Approved/, "a dropped tag stays dropped");
+});

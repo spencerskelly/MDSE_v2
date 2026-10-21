@@ -385,6 +385,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **IMP-116** · Active · P1 — ControlFlow and StateFlow between usages, or between definitions nested in one owner, are a `succession` or `transition` in that owner. Between notes that share no owner they are the `precedes` link on the step before, with trigger, guard and effect as a Source line (V1 W-174, W-175). (D-0038)
 - **IMP-117** · Active · P1 — Realisation finds the part by element type, not arrow direction: part and action is `perform`; requirement and part is `allocate REQ to Part`, never satisfy; part and part is `allocate`. (Test_Vault_ Object/Requirement realization decision; D-0038)
 - **IMP-118** · Active · P2 — An Association between a Use Case and an Actor is an `actor` usage in the use case, once; between a Use Case and another part it is the `participants` link on the use case. An Association between anything else is not evidence of a connection and stays a review row. (Test_Vault_ Association approval, V1 participants; D-0038)
+- **IMP-119** · Active · P1 — Tags on an EA Part whose disposition is `body` (PN, Piece Cost, Style, Quantity...) describe that use of the part in the assembly, so they are written as one `- On part <name>: tag: value; ...` line in the owning assembly's Source section, not lost with the usage and not copied to the part def. (V1 W-136, REG-142; D-0038)
 
 ## BOM — BOM importer
 

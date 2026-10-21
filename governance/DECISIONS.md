@@ -383,4 +383,4 @@ Rules: IMP-101, IMP-104, IMP-105, IMP-106, IMP-107, IMP-108, IMP-109, IMP-111, I
 
 The 2026-10-17 approved decision docs in Test_Vault_ `24_Workbench/docs` (aggregation by kind, repeated aggregations as distinct usages, nested states, activities and requirements, ownership cycles, generated usage names, multiplicity, realisation, association) were not in V2. They are now: IMP-113 to IMP-118. On the mini model the connectors left for review fall from about 1,700 to 370. What is still open and needs a decision: Association between components (no connectivity evidence), Generalization from an interface to a part, flows touching StateNode, Synchronization or Decision nodes that have no owner, PDATA2 redefinition, `isReference` Parts, Part data on the assembly, and the provisional `tracesTo` for Issue and Change links.
 
-Rules: IMP-113, IMP-114, IMP-115, IMP-116, IMP-117, IMP-118.
+Rules: IMP-113, IMP-114, IMP-115, IMP-116, IMP-117, IMP-118, IMP-119.
