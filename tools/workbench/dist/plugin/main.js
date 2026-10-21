@@ -561,7 +561,7 @@ function resolveAll(ix            )       {
       const E = (kind        , target               , symbol        , label = "", detail = "", from = n.path)       =>
         link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
       for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
-      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
       for (const s of d.stmts) {
         ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a  : s.text };
         if (s.kind === "satisfy") E("satisfies", sym(s.a ), s.a );
@@ -578,7 +578,13 @@ function resolveAll(ix            )       {
         }
       }
     }
-    for (const l of n.links) { const t = ix.byName.get(l.target.toLowerCase()) ?? null; link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" }); }
+    // A YAML link that repeats what the SysML block already says (the BOM importer lists hasPart in both) is one relationship, not two; counting both doubles every quantity in the rolled-up parts list.
+    const said = new Set((ix.out.get(n.path) ?? []).filter((e) => e.via === "sysml" && e.to).map((e) => e.kind + "\u0000" + e.to));
+    for (const l of n.links) {
+      const t = ix.byName.get(l.target.toLowerCase()) ?? null;
+      if (t && said.has(l.field + "\u0000" + t)) continue;
+      link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" });
+    }
   }
 }
 
@@ -657,7 +663,7 @@ function structure(ix            , root        , maxDepth = 6, perParent = 40)  
     if (stack.includes(p)) { t.cycle = true; return t; }
     if (stack.length >= maxDepth) return t;
     const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind));
-    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
+    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [measuredText(e.detail)])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
   };
@@ -669,20 +675,33 @@ function structure(ix            , root        , maxDepth = 6, perParent = 40)  
   return { tree: walk(root, n.title, "root", "", []), supers, subs, untyped };
 }
 
-/** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. */
-function bom(ix            , root        , maxDepth = 12)                                                                     {
-  const acc = new Map                                        ();
+/** A usage's `quantity` and `unit` attributes (the BOM importer writes them for material and for lines that are not whole counts). */
+function measuredOf(detail        )                                       {
+  const q = /(?:^|; )quantity=([^;]*)/.exec(detail), u = /(?:^|; )unit=([^;]*)/.exec(detail);
+  if (!q) return null;
+  const n = Number(q[1] .trim()); if (!Number.isFinite(n)) return null;
+  return { qty: n, unit: (u?.[1] ?? "").trim() };
+}
+
+/** "[1.5 Meter]" for a usage that carries a measured quantity, else "". Shown where a count would be. */
+const measuredText = (detail        )         => { const m = measuredOf(detail); return m ? `[${Math.round(m.qty * 1000) / 1000}${m.unit ?  + m.unit : ""}]` : ""; };
+
+/** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. Whole counts and measured amounts
+ *  (4.318 Meter) are kept apart by unit, never added together. A quantity of 0 is a document line and adds nothing. */
+function bom(ix            , root        , maxDepth = 12)                                                                                   {
+  const acc = new Map                                                                    ();
   const walk = (p        , mult        , depth        , stack          )       => {
     if (depth > maxDepth || stack.includes(p)) return;
     for (const e of outgoing(ix, p)) {
       if (e.kind !== "hasPart" || !e.to) continue;
-      const q = mult * qtyOf(e.label), cur = acc.get(e.to);
-      acc.set(e.to, { qty: (cur?.qty ?? 0) + q, depth: Math.min(cur?.depth ?? 99, depth) });
-      walk(e.to, q, depth + 1, [...stack, p]);
+      const m = measuredOf(e.detail), count = mult * qtyOf(e.label), q = m ? mult * m.qty : count, unit = m ? m.unit : "", key = e.to + "\u0000" + unit;
+      const cur = acc.get(key);
+      acc.set(key, { path: e.to, qty: (cur?.qty ?? 0) + q, depth: Math.min(cur?.depth ?? 99, depth), unit });
+      walk(e.to, count, depth + 1, [...stack, p]);
     }
   };
   walk(root, 1, 1, []);
-  return [...acc].map(([path, v]) => ({ path, title: nm(ix, path, path), ...v })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title));
+  return [...acc.values()].map((v) => ({ ...v, title: nm(ix, v.path, v.path) })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title) || a.unit.localeCompare(b.unit));
 }
 
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
@@ -1035,7 +1054,7 @@ function lensTables(ix            , lens      , sel        , o              = {}
     out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no usages.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const b = bom(ix, sel);
-    out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(x.qty), depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
     const w = whereUsed(ix, sel), up                                   = [];
     const walkUp = (t          , level        )       => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
@@ -2415,7 +2434,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -2636,8 +2655,8 @@ function mountWorkbench(root             , host       = {})      {
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("This definition owns no typed usages."));
     if (r.untyped.length) pane.append(h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")));
     const b = V.bom(ix , sel);
-    if (b.length) pane.append(h("h3", {}, "Parts list (rolled up)"), tableOf([["t", "Part"], ["q", "Quantity", true], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(x.qty), String(x.depth)])),
-      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,depth", ...b.map((x) => [x.title, x.qty, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
+    if (b.length) pane.append(h("h3", {}, "Parts list (rolled up)"), tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
+      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
     return pane;
   }
 

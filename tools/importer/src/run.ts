@@ -750,10 +750,14 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const sys = (name: string, content: string): OutFile => ({ path: `${SYSTEM_DIR}/${name}`, content });
   const named = (id: number): string => g.objectsById.get(id)?.name ?? "";
   const deferredElements = ledger.filter((l) => l.source_table === "t_object" && l.disposition === "deferred_review");
-  const elementsCsv = csv(["ea_guid", "ea_type", "ea_stereotype", "name", "package", "author", "created", "note", "diagnostic_code", "operator_action"],
-    deferredElements.map((l) => { const e = g.objects.find((x) => String(x.id) === l.source_pk)!; return [l.ea_guid, l.ea_type, l.ea_stereotype, e.name, pkgPath(e.packageId).join(" > "), e.author, e.created, e.note, l.diagnostic_code, l.operator_action]; }));
-  const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code"],
-    deferredLinks.map(({ c, code, family }) => [c.guid, family, named(c.sourceId), g.objectsById.get(c.sourceId)?.guid ?? "", named(c.destId), g.objectsById.get(c.destId)?.guid ?? "", c.direction, c.name, code]));
+  // Context columns so a row can be understood without the 175 MB source: what the element sits under, what it is typed by, and what each end of a link is.
+  const ctx = (id: number): { type: string; name: string; guid: string } => { const x = g.objectsById.get(id); return x ? { type: x.stereotype ? `${x.type}:${x.stereotype}` : x.type, name: x.name || x.alias, guid: x.guid } : { type: "", name: "", guid: "" }; };
+  const elementsCsv = csv(["ea_guid", "ea_type", "ea_stereotype", "name", "package", "author", "created", "note", "diagnostic_code", "operator_action", "parent_type", "parent_name", "parent_guid", "typed_by", "multiplicity"],
+    deferredElements.map((l) => { const e = g.objects.find((x) => String(x.id) === l.source_pk)!, par = ctx(e.parentId), ty = refObj(e.pdata1) ?? g.objectsById.get(e.classifier);
+      return [l.ea_guid, l.ea_type, l.ea_stereotype, e.name, pkgPath(e.packageId).join(" > "), e.author, e.created, e.note, l.diagnostic_code, l.operator_action, par.type, par.name, par.guid, ty ? `${ty.name} (${ty.type})` : "", e.multiplicity]; }));
+  const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code", "source_type", "target_type", "source_parent", "target_parent"],
+    deferredLinks.map(({ c, code, family }) => { const a = ctx(c.sourceId), b = ctx(c.destId), pa = ctx(g.objectsById.get(c.sourceId)?.parentId ?? 0), pb = ctx(g.objectsById.get(c.destId)?.parentId ?? 0);
+      return [c.guid, family, named(c.sourceId), a.guid, named(c.destId), b.guid, c.direction, c.name, code, a.type, b.type, pa.name ? `${pa.name} (${pa.type})` : "", pb.name ? `${pb.name} (${pb.type})` : ""]; }));
   const manifest = { schema: "mdse-run-manifest/0.1", runDate: o.runDate, source: { name: o.sourceName, lineage: o.lineage, sha256: o.fingerprint }, importerRelease: o.releaseVersion, mappingSchema: resolver.version,
     counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems, errors: errors.length, attachments: attachRows, translation: "Translation Table.md",
     nativeEmission: o.emitNative ? "ON (owner override of emission_enabled=false, D-0016); blocks not parser-checked" : "OFF", diagrams: "never read (ADR-V2-05)" };

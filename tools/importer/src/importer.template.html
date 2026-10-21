@@ -179,7 +179,7 @@ $("bomFile").addEventListener("change", async (ev) => {
 
 /* ---- Step 3: destination ----------------------------------------------------------------------------------------------- */
 function reportVault(files) { // files: [[path, text]]
-  const md = files.filter(([p]) => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p));
+  const md = files.filter(([p]) => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p) && !/^99_System\//.test(p));   // 99_System holds the shipped language notes and templates, which are not engineering notes
   const bad = [], seenUid = new Map(), seenId = new Map(); let withFm = 0, noFm = 0;
   for (const [p, t] of md) {
     let meta; try { meta = MDSE.parse(t).meta; withFm++; } catch (_) { noFm++; continue; }
@@ -293,12 +293,18 @@ async function assemble(existing, writeStage) {
   if (bom) {
     stageAt(2, 0, "Mapping the bill of materials…", true); await tick();
     const fp = await fileSha256(bom.file), pend = files.filter((f) => !f.bytes && /\.md$/i.test(f.path)).map((f) => [f.path, f.content]);
-    const eaTitles = files.filter((f) => /\.md$/i.test(f.path) && !/^(99_System|BOM)\//.test(f.path)).map((f) => f.path.split("/").pop().replace(/\.md$/i, ""));
+    // EA-side keys for the part-number join: the note title, the EA alias (where EA keeps a part number for some classes) and a PN tag. Notes of an EA run in this same pass and notes already in the vault both count.
+    const eaTitles = [], eaSeen = new Set();
+    for (const [p, t] of [...pend, ...(existing && existing.files ? [...existing.files] : [])]) {
+      if (!/\.md$/i.test(p) || /^(99_System|BOM)\//.test(p) || eaSeen.has(p)) continue; eaSeen.add(p);
+      eaTitles.push(p.split("/").pop().replace(/\.md$/i, ""));
+      for (const re of [/^- EA alias: (.+)$/m, /^- (?:PN|Part Number): (.+)$/m]) { const m = re.exec(t); if (m && m[1].trim()) eaTitles.push(m[1].trim()); }
+    }
     bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles });
     const s = bomRes.summary, errs = bomRes.findings.filter((f) => f.level === "error"), warns = bomRes.findings.filter((f) => f.level === "warn");
     summaryHtml += `<h3>Bill of materials (${esc(s.layout)})</h3><table><tr><th>Status</th><td>${bomRes.status}</td></tr><tr><td>New part notes</td><td>${s.parts} · ${s.usages} usages · ${s.drawings} drawing references · ${s.alternates} alternate sources</td></tr>` +
       `<tr><td>Already in the vault</td><td>${s.existing}</td></tr><tr><td>Not imported (latest revision unknown)</td><td>${s.skippedParts}</td></tr><tr><td>Child pinned at an older revision</td><td>${s.conflicts}</td></tr>` +
-      (s.eaMatched || (existing === null && source) ? `<tr><td>Part number found in one EA element name</td><td>${s.eaMatched}</td></tr>` : "") + `<tr><td>Findings</td><td>${errs.length} error · ${warns.length} warning · saved to <code>99_System/11_Import/BOM Findings …</code></td></tr></table>` +
+      (s.eaMatched || (existing === null && source) ? `<tr><td>Part number found in one EA name, alias or PN tag</td><td>${s.eaMatched}</td></tr>` : "") + `<tr><td>Findings</td><td>${errs.length} error · ${warns.length} warning · saved to <code>99_System/11_Import/BOM Findings …</code></td></tr></table>` +
       (bomRes.problems.length ? `<p class="bad">${bomRes.problems.map(esc).join("<br>")}</p>` : "");
     if (bomRes.status === "WRITE_READY") files.push(...bomRes.files);
     log(`BOM ${bomRes.status}: ${JSON.stringify(bomRes.summary)}`);

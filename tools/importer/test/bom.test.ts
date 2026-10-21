@@ -183,3 +183,43 @@ test("the Workbench scanner reads a BOM block: usages with pinned revision, quan
   const wire = def.usages.find((u: any) => u.type?.endsWith("P_01798_006_M"))!;
   assert.deepEqual((wire as any).props.map((p: any) => [p.name, p.value]), [["line", "4"], ["childRevision", "-001"], ["quantity", "0.559"], ["unit", "M"], ["effectiveFrom", "2/Jan/19"]]);
 });
+
+// The three real redlines that the first version could not read (header below a preamble, level column with no header, "Part Number", "Unit" as the quantity, "UOM").
+const cell = (v: string) => ({ v });
+const grid = (rows: string[][]): Grid => rows.map((r) => r.map((v) => (v === "" ? null : cell(v))));
+test("redline variants: preamble rows, unlabelled level column, Part Number, UOM, Unit as quantity", () => {
+  // DVS 400 style: three preamble rows, headers 0..6 + 7, 'Part Number', 'CL 1', 'CL 2', 'Unit' (quantity) and 'Unit Of Measure'
+  const dvs = grid([["ConfigSpec"], ["View"], ["Life Cycle State"], [""],
+    ["Update Drawing", "0", "1", "2", "", "", "Part Number", "CL 1", "CL 2", "Part Name", "Line Number", "Unit", "Unit Of Measure"],
+    ["REV B03", "0", "", "", "", "", "100", "A", "01", "TOP ASSY", "", "", ""],
+    ["", "", "1", "", "", "", "200", "A", "01", "SUB ASSY", "1", "2", "Piece"],
+    ["", "", "", "2", "", "", "300", "A", "01", "WASHER", "1", "8", "Piece"]]);
+  assert.equal(detectLayout(dvs).layout, "redline");
+  const a = parseBom(dvs); assert.equal(a.findings.filter((f) => f.level === "error").length, 0);
+  assert.deepEqual(a.usages.map((u) => [u.parent, u.child, u.amount, u.unit]), [["100", "200", "2", "Piece"], ["200", "300", "8", "Piece"]]);
+  // MVS 800 style: header on row 2, level columns with no header, the structure level just left of Number, 'UOM', misspelt 'Manufacturer Part Nubmer'
+  const mvs = grid([[""],
+    ["New Rev", "", "", "", "", "", "Number", "CL1", "CL2", "Name", "Line Number", "Find Number", "Quantity", "UOM", "Manufacturer", "Manufacturer Part Nubmer"],
+    ["REV D04", "0", "", "", "", "0", "100", "C", "03", "TOP", "", "", "", "", "", ""],
+    ["", "", "1", "", "", "1", "    200", "B", "02", "PANEL", "3", "", "1", "Piece", "", ""],
+    ["", "", "", "2", "", "2", "        300", "A", "01", "WIRE", "1", "", "29.573", "Milliliters", "ACME", "W-1"]]);
+  const b = parseBom(mvs); assert.equal(b.layout, "redline");
+  assert.deepEqual(b.usages.map((u) => [u.parent, u.child, u.amount, u.unit, u.ownSrc?.mpn ?? ""]), [["100", "200", "1", "Piece", ""], ["200", "300", "29.573", "Milliliters", "W-1"]]);
+  // DVS 330 style: the level columns have no header at all; only 'Structure Level' names the level
+  const d3 = grid([["New Rev", "", "", "", "Structure Level", "Number", "CL1", "CL2", "Name", "Line Number", "Quantity", "Unit"],
+    ["", "0", "", "", "0", "100", "B", "01", "TOP", "", "", ""], ["", "", "1", "", "1", "200", "B", "01", "SUB", "1", "2", "Piece"]]);
+  assert.equal(parseBom(d3).usages.length, 1);
+});
+
+test("a second BOM that disagrees with a part already in the vault says so and leaves the note as it is", () => {
+  const head = ["New Rev", "0", "1", "Structure Level", "Number", "CL1", "CL2", "Name", "Line Number", "Quantity", "Unit"];
+  const g = (qty: string): Grid => grid([head, ["", "0", "", "0", "100", "A", "01", "TOP", "", "", ""], ["", "", "1", "1", "200", "A", "01", "WIRE", "1", qty, "Meter"]]);
+  const first = buildBom(g("1.5"), baseOpts); assert.equal(first.status, "WRITE_READY");
+  const existing = { hasVault: true, files: new Map(first.files.filter((f) => f.path.endsWith(".md")).map((f) => [f.path, f.content] as [string, string])) };
+  const second = buildBom(g("2.5"), { ...baseOpts, existing });
+  const f = second.findings.find((x) => x.code === "EXISTING_DIFFERS");
+  assert.ok(f, "the disagreement is reported"); assert.match(f!.message, /100 is already in the vault/); assert.match(f!.message, /1\.5 Meter in the vault, .*2\.5 Meter here/);
+  assert.equal(second.files.filter((x) => x.path.startsWith("BOM/")).length, 0, "nothing is rewritten");
+  const same = buildBom(g("1.5"), { ...baseOpts, existing });
+  assert.equal(same.findings.some((x) => x.code === "EXISTING_DIFFERS"), false);
+});

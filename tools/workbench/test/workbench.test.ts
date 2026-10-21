@@ -263,3 +263,17 @@ test("functional trace lists behaviors with their gaps", () => {
   assert.ok(Array.isArray(rows));
   for (const r of rows) assert.ok(r.gaps.every((g) => g === "no performer" || g === "no requirement"));
 });
+
+test("a BOM parent that lists a child in YAML and in SysML counts it once, and measured amounts keep their unit", () => {
+  const f = (id: string, uid: string, extra: string, body: string): string => `---\ntype: Object\nsubtype: part\nid: ${id}\nuid: ${uid}\nstatus: Draft\neaType: BOM\nsourceRole: authoritative-model\nprimarySymbol: ${id.replace("-", "_")}::P\n${extra}---\n# ${id}\n\n## SysML v2\n\n\`\`\`sysml\n${body}\n\`\`\`\n`;
+  const v = buildIndex(new Map([
+    ["Top.md", f("OBJ-1", "u1", 'hasPart: ["[[Mid]]", "[[Foam]]"]\n', "package OBJ_1 {\n part def P {\n  part mid : OBJ_2::P [2];\n  part foam : OBJ_3::P {\n   attribute quantity = 1.5;\n   attribute unit = \"Meter\";\n  }\n }\n}")],
+    ["Mid.md", f("OBJ-2", "u2", 'hasPart: ["[[Foam]]", "[[Screw]]"]\n', "package OBJ_2 {\n part def P {\n  part foam : OBJ_3::P {\n   attribute quantity = 0.5;\n   attribute unit = \"Meter\";\n  }\n  part screw : OBJ_4::P [4];\n }\n}")],
+    ["Foam.md", f("OBJ-3", "u3", "", "package OBJ_3 {\n part def P;\n}")], ["Screw.md", f("OBJ-4", "u4", "", "package OBJ_4 {\n part def P;\n}")],
+  ]), { classes });
+  const b = V.bom(v, "Top.md");
+  assert.equal(b.find((x) => x.path === "Mid.md")!.qty, 2, "one SysML usage with [2], not 2 + 1 from the YAML link");
+  assert.equal(b.find((x) => x.path === "Screw.md")!.qty, 8);
+  const foam = b.filter((x) => x.path === "Foam.md");
+  assert.equal(foam.length, 1); assert.equal(foam[0]!.unit, "Meter"); assert.equal(foam[0]!.qty, 2.5, "1.5 on top plus 0.5 in each of 2 mids");
+});

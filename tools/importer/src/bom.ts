@@ -54,11 +54,30 @@ function bomColMap(header: Array<Cell | null | undefined>): Map<string, number> 
 }
 const BOM_FLAT_REQ = ["parentpartnumber", "childpartnumber", "linenumber", "amount", "unit"];
 
+/** The part-number column of a redline: `Number` (PLM export) or `Part Number` (the DVS 400 sheet). */
+const bomNumKey = (m: Map<string, number>): string => (m.has("number") ? "number" : m.has("partnumber") ? "partnumber" : "");
+/** Where a redline row's structure level is read from: the Structure/Structure Level/Level column, else the column just left of the part number when it holds only digits
+ *  in the rows below the header (the real redlines have an unlabelled level column there), else the 0..7 level columns. */
+function bomLevelSource(grid: Grid, header: number, m: Map<string, number>): { col: number; byDigits: boolean } {
+  const named = m.get("structure") ?? m.get("structurelevel") ?? m.get("level");
+  if (named !== undefined) return { col: named, byDigits: false };
+  const nk = bomNumKey(m), left = nk ? (m.get(nk) ?? 0) - 1 : -1;
+  if (left >= 0) {
+    let seen = 0, bad = 0;
+    for (let r = header + 1; r < Math.min(grid.length, header + 40); r++) { const v = bomTxt(grid[r]?.[left]); if (!v) continue; seen++; if (!/^\d$/.test(v)) bad++; }
+    if (seen && !bad) return { col: left, byDigits: false };
+  }
+  return { col: -1, byDigits: [...m.keys()].some((k) => /^[0-7]$/.test(k)) };
+}
+
 export function detectLayout(grid: Grid): { layout: "flat" | "redline" | null; headerRow: number; missing: string[] } {
   for (let r = 0; r < Math.min(grid.length, 15); r++) {
     const m = bomColMap(grid[r] ?? []);
     if (m.has("parentpartnumber") && m.has("childpartnumber")) return { layout: "flat", headerRow: r, missing: BOM_FLAT_REQ.filter((k) => !m.has(k)) };
-    if (m.has("number") && m.has("cl1") && m.has("cl2") && [...m.keys()].some((k) => /^[0-7]$/.test(k) || k === "structure")) return { layout: "redline", headerRow: r, missing: ["linenumber", "quantity", "unit"].filter((k) => !m.has(k)) };
+    if (bomNumKey(m) && m.has("cl1") && m.has("cl2")) {
+      const lv = bomLevelSource(grid, r, m);
+      if (lv.col >= 0 || lv.byDigits) return { layout: "redline", headerRow: r, missing: ["linenumber", "quantity", "unit"].filter((k) => !(k === "quantity" ? m.has("quantity") || m.has("amount") || (m.has("unit") && (m.has("unitofmeasure") || m.has("uom"))) : k === "unit" ? m.has("unit") || m.has("unitofmeasure") || m.has("uom") : m.has(k))) };
+    }
   }
   return { layout: null, headerRow: -1, missing: [] };
 }
@@ -90,13 +109,13 @@ export function parseBom(grid: Grid): Parsed {
     return { layout: "flat", usages, parents, findings };
   }
   // redline: the parent of a row is the nearest row above it one level up (the 0..7 columns match Structure)
-  const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]);
+  const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]), lvl = bomLevelSource(grid, d.headerRow, m);
   const stack: Array<{ pn: string; rev: string } | undefined> = []; let last: Usage | null = null;
   for (let r = d.headerRow + 1; r < grid.length; r++) {
     const row = grid[r] ?? []; if (!row.some((c) => bomTxt(c))) continue;
     let level = levelCols.find(([, i]) => bomTxt(row[i]))?.[0] ?? -1;
-    if (level < 0) { const s = bomGet(row, m, "structure"); if (/^\d+$/.test(s)) level = +s; }
-    const num = bomCurPrev(row[m.get("number") ?? -1]), mfr = bomGet(row, m, "manufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber");
+    if (level < 0 && lvl.col >= 0) { const s = bomTxt(row[lvl.col]); if (/^\d+$/.test(s)) level = +s; }
+    const num = bomCurPrev(row[m.get(bomNumKey(m)) ?? -1]), mfr = bomGet(row, m, "manufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber", "manufacturerpartnubmer");
     if (!num.cur && !num.prev) {   // blank number: an alternate source of the line above (BOM-013)
       if ((mfr || mpn) && last) last.alternates.push({ mfr, mpn }); else findings.push({ level: "warn", code: "ALT_NO_PRIMARY", message: `Row ${r + 1}: blank part number and nothing above it to attach to; review only.` }); continue;
     }
@@ -108,7 +127,8 @@ export function parseBom(grid: Grid): Parsed {
     if (level === 0) { parents.push({ pn: num.cur, rev, name, source: "", state: "", drawingLocation: dl }); last = null; continue; }
     const p = stack[level - 1];
     if (!p) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: level ${level} with no row above at level ${level - 1}; skipped.` }); continue; }
-    const q = bomCurPrev(row[m.get("quantity") ?? m.get("amount") ?? -1]), un = bomCurPrev(row[m.get("unit") ?? -1]);
+    const unitCol = m.get("unitofmeasure") ?? m.get("uom") ?? m.get("unit"), qtyCol = m.get("quantity") ?? m.get("amount") ?? (m.has("unitofmeasure") || m.has("uom") ? m.get("unit") : undefined);   // the DVS 400 sheet calls the quantity "Unit" and the unit "Unit Of Measure"
+    const q = bomCurPrev(row[qtyCol ?? -1]), un = bomCurPrev(row[unitCol ?? -1]);
     const u = blank({ parent: p.pn, parentRev: p.rev, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
     usages.push(u); last = u;
     // a child that has lines below it is a parent of those; its own attributes are the ones just read
@@ -148,6 +168,17 @@ export interface BomResult {
   summary: { layout: string; rows: number; parts: number; usages: number; drawings: number; alternates: number; skippedParts: number; existing: number; conflicts: number; eaMatched: number; bomOnly: number };
 }
 
+/** What an earlier BOM note says about its lines: line -> "child revision|count or quantity unit". Used to tell a second BOM that agrees from one that does not. */
+function bomLinesOfNote(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of text.matchAll(/^\s*part\s+\w+\s*:\s*[\w:]+(?:\s*\[(\d+)\])?\s*(?:\{([^}]*)\}|;)/gm)) {
+    const body = m[2] ?? "", at = (k: string): string => { const x = new RegExp(`attribute ${k} = (?:"([^"]*)"|([^;]+));`).exec(body); return x ? (x[1] ?? x[2] ?? "").trim() : ""; };
+    out.set(at("line"), `${at("childRevision")}|${m[1] ?? (at("quantity") ? at("quantity") + " " + at("unit") : "1")}`.trim());
+  }
+  return out;
+}
+const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0 ? (+u.amount === 1 ? "1" : u.amount) : u.amount ? u.amount + " " + u.unit : "1"}`.trim();
+
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
   const blocking = findings.some((f) => f.level === "error");
@@ -186,10 +217,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
 
   // existing notes by part number
-  const existingBy = new Map<string, { id: string; base: string }>();
+  const existingBy = new Map<string, { id: string; base: string; text: string }>();
   for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
     const m = /^- BOM Part Number: (.+)$/m.exec(t); if (!m) continue;
-    const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, "") });
+    const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), text: t });
   }
   // identity: ids continue after the highest in the vault and in the pending EA files; uids avoid every uid there
   const highest = new Map<string, number>(), taken = new Set<string>();
@@ -216,6 +247,13 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   // children per parent, usage names, conflicts, older-revision users
   const link = `\`${o.sourceName}\``, files: OutFile[] = [];
   const byParent = new Map<string, Usage[]>(); for (const u of okUsage) (byParent.get(u.parent) ?? byParent.set(u.parent, []).get(u.parent)!).push(u);
+  // A part number that an earlier BOM already put in the vault is kept as it is; say so when this file does not agree with it (same part number and revision, different lines).
+  for (const pn of partPns) {
+    const ex = existingBy.get(pn), kids = byParent.get(pn); if (!ex || !kids?.length) continue;
+    const old = bomLinesOfNote(ex.text), diffs: string[] = [];
+    for (const u of kids) { if (bomIsDrawing(u)) continue; const was = old.get(u.line); const now = bomUsageSig(u); if (was === undefined) diffs.push(`line ${u.line || "?"} (${u.child}) is new`); else if (was !== now) diffs.push(`line ${u.line} (${u.child}): ${was.replace("|", " pinned, qty ")} in the vault, ${now.replace("|", " pinned, qty ")} here`); }
+    if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.slice(0, 3).join("; ")}${diffs.length > 3 ? "; …" : ""}.` });
+  }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
   const olderUsers = new Map<string, string[]>(); let conflicts = 0;
   for (const u of okUsage) {
@@ -273,7 +311,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const lower = o.eaTitles.map((t) => t.toLowerCase());
     const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     for (const pn of partPns) { const re = new RegExp(`(^|[^a-z0-9])${esc(pn.toLowerCase())}($|[^a-z0-9])`); const hit = lower.filter((t) => re.test(t)).length; if (hit === 1) eaMatched++; else if (hit > 1) findings.push({ level: "warn", code: "EA_AMBIGUOUS", message: `${pn} appears in ${hit} EA element names; no join was made.` }); }
-    findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
+    findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
   if (existingN) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });

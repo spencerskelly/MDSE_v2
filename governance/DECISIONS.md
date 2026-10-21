@@ -402,3 +402,19 @@ Still open for the owner: Association between components (about 106 on the mini 
 Every deferred row now leaves a flag in the vault (IMP-123). The holding note needed a modelCheck subtype, so `Review` was added to the class in `element-types.yaml` (MOD-056 says blank, but the validator rejects a blank subtype and the other subtypes are EA types). On the mini model that is 370 flags for 14,688 connectors and 11,447 elements.
 
 Rules: IMP-120, IMP-121, IMP-122, IMP-123.
+
+## D-0040 — The BOM files, and what the product assembly is missing
+
+2026-10-21 · Spencer · Accepted (code changes); open items are his
+
+The four real BOMs in Engineering_Data (`BOMs/`) were run through the importer for the first time. Only the Power Station file was readable: the DVS 330 IP55, DVS 400 and MVS 800 sheets were refused (header below a preamble or on row 2, no header on the level columns, `Part Number`, `UOM`, `Unit` used as the quantity). All four now parse (about 2,575 lines, 3 layouts). BOM-015 and BOM-017 say what is accepted.
+
+Checked on the Power Station import: the tree is complete: 495 distinct parent-child pairs read straight from the sheet against 490 in the vault, and the differences are struck-out or replaced part numbers and drawing lines. It is 8 levels deep (0 to 7). The Workbench rolled-up parts list was wrong: it counted every BOM child twice because the YAML `hasPart` and the SysML usage both became edges, so quantities were multiplied by 2 at every level (22,774 against 1,361). Fixed (WKB-020), and measured material is now listed with its unit (WKB-021).
+
+The four BOMs share 85 assemblies. In 9 of them the same part number and revision has different quantities or pinned child revisions (e.g. 5913558 rev A02 uses 1.232 m of 01798-009-M in one BOM and 1.029 m in another). The first import wins; the later file now reports `EXISTING_DIFFERS`. Which is right is an engineering question.
+
+What the assembly is missing: nothing joins the BOM to the EA product structure. The EA model has no part numbers on its physical elements (PN tag: 6 values in the mini model, one of them `59xxxxxx`; EA alias holds a part number on 11 elements, mostly BMID). Of 310 Power Station BOM part numbers none appears in an EA name, alias or PN. The Workbench Merge tab (WKB-017) can only offer name matches. The EA side has the products (Power Station OBJ-00375, Power Server MVS 800 OBJ-02558, DVS 400, DVS 330 CE IP55) but a different decomposition from the BOM (EA: electrical, enclosure, PCBA, kits; BOM: 5913537, 5913538, ...).
+
+Open for the owner: the PN for each EA product and major assembly; whether BOM parts should become the leaf definitions under the EA blocks or stay a separate manufacturing structure that is only linked at the top; and whether the 3 remaining BOMs and the full Ampure_all_BoMs history (172,454 lines, 16,472 part numbers, 95,773 lines archived) are in scope.
+
+Rules: BOM-015, BOM-017, WKB-020, WKB-021.

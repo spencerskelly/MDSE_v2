@@ -29,7 +29,7 @@ export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent 
     if (stack.includes(p)) { t.cycle = true; return t; }
     if (stack.length >= maxDepth) return t;
     const kids = outgoing(ix, p).filter((e) => OWNED.includes(e.kind));
-    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [""])[0], [...stack, p]));
+    for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [measuredText(e.detail)])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
   };
@@ -41,20 +41,33 @@ export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent 
   return { tree: walk(root, n.title, "root", "", []), supers, subs, untyped };
 }
 
-/** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. */
-export function bom(ix: ModelIndex, root: string, maxDepth = 12): Array<{ path: string; title: string; qty: number; depth: number }> {
-  const acc = new Map<string, { qty: number; depth: number }>();
+/** A usage's `quantity` and `unit` attributes (the BOM importer writes them for material and for lines that are not whole counts). */
+export function measuredOf(detail: string): { qty: number; unit: string } | null {
+  const q = /(?:^|; )quantity=([^;]*)/.exec(detail), u = /(?:^|; )unit=([^;]*)/.exec(detail);
+  if (!q) return null;
+  const n = Number(q[1]!.trim()); if (!Number.isFinite(n)) return null;
+  return { qty: n, unit: (u?.[1] ?? "").trim() };
+}
+
+/** "[1.5 Meter]" for a usage that carries a measured quantity, else "". Shown where a count would be. */
+const measuredText = (detail: string): string => { const m = measuredOf(detail); return m ? `[${Math.round(m.qty * 1000) / 1000}${m.unit ?  + m.unit : ""}]` : ""; };
+
+/** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. Whole counts and measured amounts
+ *  (4.318 Meter) are kept apart by unit, never added together. A quantity of 0 is a document line and adds nothing. */
+export function bom(ix: ModelIndex, root: string, maxDepth = 12): Array<{ path: string; title: string; qty: number; depth: number; unit: string }> {
+  const acc = new Map<string, { path: string; qty: number; depth: number; unit: string }>();
   const walk = (p: string, mult: number, depth: number, stack: string[]): void => {
     if (depth > maxDepth || stack.includes(p)) return;
     for (const e of outgoing(ix, p)) {
       if (e.kind !== "hasPart" || !e.to) continue;
-      const q = mult * qtyOf(e.label), cur = acc.get(e.to);
-      acc.set(e.to, { qty: (cur?.qty ?? 0) + q, depth: Math.min(cur?.depth ?? 99, depth) });
-      walk(e.to, q, depth + 1, [...stack, p]);
+      const m = measuredOf(e.detail), count = mult * qtyOf(e.label), q = m ? mult * m.qty : count, unit = m ? m.unit : "", key = e.to + "\u0000" + unit;
+      const cur = acc.get(key);
+      acc.set(key, { path: e.to, qty: (cur?.qty ?? 0) + q, depth: Math.min(cur?.depth ?? 99, depth), unit });
+      walk(e.to, count, depth + 1, [...stack, p]);
     }
   };
   walk(root, 1, 1, []);
-  return [...acc].map(([path, v]) => ({ path, title: nm(ix, path, path), ...v })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title));
+  return [...acc.values()].map((v) => ({ ...v, title: nm(ix, v.path, v.path) })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title) || a.unit.localeCompare(b.unit));
 }
 
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
@@ -407,7 +420,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no usages.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const b = bom(ix, sel);
-    out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(x.qty), depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    out.push({ id: "bom", title: "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
     const w = whereUsed(ix, sel), up: Array<Record<string, TableCell>> = [];
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); walkUp(c, level + 1); } };
     walkUp(w.tree, 0);

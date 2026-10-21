@@ -70,7 +70,7 @@ function resolveAll(ix: ModelIndex): void {
       const E = (kind: string, target: string | null, symbol: string, label = "", detail = "", from = n.path): void =>
         link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
       for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
-      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
       for (const s of d.stmts) {
         ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a! : s.text };
         if (s.kind === "satisfy") E("satisfies", sym(s.a!), s.a!);
@@ -87,7 +87,13 @@ function resolveAll(ix: ModelIndex): void {
         }
       }
     }
-    for (const l of n.links) { const t = ix.byName.get(l.target.toLowerCase()) ?? null; link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" }); }
+    // A YAML link that repeats what the SysML block already says (the BOM importer lists hasPart in both) is one relationship, not two; counting both doubles every quantity in the rolled-up parts list.
+    const said = new Set((ix.out.get(n.path) ?? []).filter((e) => e.via === "sysml" && e.to).map((e) => e.kind + "\u0000" + e.to));
+    for (const l of n.links) {
+      const t = ix.byName.get(l.target.toLowerCase()) ?? null;
+      if (t && said.has(l.field + "\u0000" + t)) continue;
+      link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" });
+    }
   }
 }
 

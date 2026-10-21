@@ -226,8 +226,8 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     pane.append(r.tree.children.length ? treeView(r.tree) : empty("This definition owns no typed usages."));
     if (r.untyped.length) pane.append(h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")));
     const b = V.bom(ix!, sel);
-    if (b.length) pane.append(h("h3", {}, "Parts list (rolled up)"), tableOf([["t", "Part"], ["q", "Quantity", true], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(x.qty), String(x.depth)])),
-      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,depth", ...b.map((x) => [x.title, x.qty, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
+    if (b.length) pane.append(h("h3", {}, "Parts list (rolled up)"), tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
+      h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
     return pane;
   }
 
