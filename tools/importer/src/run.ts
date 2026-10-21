@@ -256,6 +256,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
   const tagDispOf = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const));
   const carrierOf = new Map<number, number>();                      // instance port (EA Port under a Part) -> that Part
+  const partIndex = new Map<string, number>();
   const addedPorts = new Map<string, UsageRef>();                   // block + port name -> the port added from assemblies
   const flowIn = new Map<number, number>(), flowOut = new Map<number, number>();
   for (const c of g.connectors) if (connectorKey(c) === "ControlFlow") { flowOut.set(c.sourceId, (flowOut.get(c.sourceId) ?? 0) + 1); flowIn.set(c.destId, (flowIn.get(c.destId) ?? 0) + 1); }
@@ -344,7 +345,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
     const rawName = (e.name || e.alias || "").trim(), wantRaw = /^\d+$/.test(rawName) && ref.typeDraft ? `${ref.typeDraft.title} ${rawName}` : rawName || ref.typeDraft?.title || "";   // IMP-124: a bare number is named after its type (`wire1`), not `_1`
-    const wantId = usageIdent(wantRaw, `${kind.replace("Usage", "").toLowerCase()}${e.id}`), name = scopeOf(owner).take(wantId, ref.typeDraft?.title ?? "");
+    let wantId = usageIdent(wantRaw, `${kind.replace("Usage", "").toLowerCase()}${e.id}`);
+    if (kind === "PartUsage" && !rawName && ref.typeDraft) { const key = `${owner.key}|${ref.typeDraft.key}`, n = (partIndex.get(key) ?? 0) + 1; partIndex.set(key, n); wantId = usageIdent(ref.typeDraft.title, "part") + n; }   // IMP-127: a part with no role name of its own is its type and an index: `wire1`, `wire2`
+    const name = scopeOf(owner).take(wantId, ref.typeDraft?.title ?? "");
     ref.name = name;
     if (rawName && !/^\d+$/.test(rawName) && identLosesName(rawName, wantId)) owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} is named "${rawName}" in EA`);   // IMP-124: the EA name, where the identifier cannot hold it
     if (kind === "PartUsage" && (g.tags.get(e.id) ?? []).some(([k, v]) => /^isReference$/i.test(k.trim()) && /^(true|yes|1|-1)$/i.test(v.trim()))) ref.isRef = true;   // IMP-121: a reference part (REG-293)

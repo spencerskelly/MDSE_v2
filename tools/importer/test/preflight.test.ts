@@ -4,11 +4,17 @@ import { usageIdent, IdentScope, identLosesName } from "../src/naming.ts";
 import { preflight, preflightCsv, flagShape } from "../src/preflight.ts";
 import { toolsetStatus, semverCmp } from "../src/vault_update.ts";
 
-test("IMP-124: a signed or decimal name keeps what makes it different", () => {
-  assert.equal(usageIdent("+3.3VDC"), "plus3p3VDC");
-  assert.equal(usageIdent("3.3VDC"), "_3p3VDC");
-  assert.notEqual(usageIdent("+3.3VDC"), usageIdent("3.3VDC"));
-  assert.equal(usageIdent("-12V"), "minus12V");
+test("IMP-124: a voltage keeps its sign and puts its V at the decimal point", () => {
+  assert.equal(usageIdent("+3.3VDC"), "P3V3DC");
+  assert.equal(usageIdent("-3.3VDC"), "N3V3DC");
+  assert.equal(usageIdent("3.3VDC"), "P3V3DC", "an unsigned voltage that starts the name takes P");
+  assert.equal(usageIdent("12.5V"), "P12V5");
+  assert.equal(usageIdent("12VDC"), "P12VDC");
+  assert.equal(usageIdent("Circuit - Voltage Regulator -13.3VDC Gen3"), "circuitVoltageRegulatorN13V3DCGen3");
+  assert.equal(usageIdent("Output 240VAC Split Phase"), "output240VACSplitPhase", "mid-name, no sign: no prefix needed");
+  assert.equal(usageIdent("24V/Drive"), "P24VDrive");
+  assert.equal(usageIdent("Vref 3.3"), "vref3p3", "a V that is part of a word is not a voltage");
+  assert.equal(usageIdent("-40C"), "minus40C");
   assert.equal(usageIdent("CAN-H"), "CANH", "a hyphen between words still separates them");
   assert.equal(usageIdent("Flexible Conductor"), "flexibleConductor");
   assert.ok(identLosesName("+3.3VDC", usageIdent("+3.3VDC")), "the EA name is recorded when the identifier is not just a respelling");

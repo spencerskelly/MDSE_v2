@@ -221,10 +221,10 @@ test("no EA GUIDs in Source: EA except the note's own identity line (flag callou
   }
 });
 
-test("a usage with no name takes the name of its typed element (IMP-110)", async () => {
+test("a usage with no name is its type and an index (IMP-110, IMP-127)", async () => {
   const res = await run();
   const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## SysML v2")[1]!;
-  assert.match(charger, /part contactor : /);
+  assert.match(charger, /part contactor1 : /, "the Charger has `contactors` (named) and one unnamed Contactor part");
   assert.ok(!/part part\d+/.test(charger.split("mystery")[0]!), "no generated name where the type could name it");
 });
 

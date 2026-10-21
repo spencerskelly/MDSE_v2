@@ -433,3 +433,15 @@ Open for the owner: PDATA2 redefinitions (about 20 on the PT4 circuit alone) are
 
 Rules: IMP-124, IMP-125, IMP-126, WKB-022, WKB-023.
 
+## D-0042 — Voltage names, unnamed parts, port naming still open
+
+2026-10-21 · Spencer · Accepted (voltage, parts, objects); ports open
+
+Voltages: V goes at the decimal point and the sign is a letter, `P` for plus and `N` for minus (option A): `+3.3VDC` is `P3V3DC`, `-3.3VDC` is `N3V3DC`. An unsigned voltage that starts a name also takes `P`. Unnamed parts: type plus index, `wire1`. Objects: the full title is kept.
+
+Counts correction: the figures given on 2026-10-21 for untyped usages (1,178 ports, 2,929 parts) counted `part def` and `port def` lines as usages. The right figures from the MDSE_v2_02git output are 757 untyped of 2,928 ports (332 have no EA name, 420 are named) and 99 untyped of 2,384 parts.
+
+Open: the port standard (flow and type in the name) and a bulk rename and retype sheet.
+
+Rules: IMP-124, IMP-127.
+

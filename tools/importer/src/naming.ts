@@ -37,10 +37,16 @@ export class NameRegistry {
 
 const SYSML_KEYWORDS = new Set(["about", "abstract", "accept", "action", "actor", "after", "alias", "all", "allocate", "allocation", "analysis", "and", "as", "assert", "assign", "assume", "at", "attribute", "bind", "binding", "by", "calc", "case", "comment", "concern", "connect", "connection", "constant", "constraint", "crosses", "decide", "def", "default", "defined", "dependency", "derived", "do", "doc", "else", "end", "entry", "enum", "event", "exhibit", "exit", "expose", "false", "filter", "first", "flow", "for", "fork", "frame", "from", "hastype", "if", "implies", "import", "in", "include", "individual", "inout", "interface", "istype", "item", "join", "language", "loop", "merge", "message", "meta", "metadata", "nonunique", "not", "null", "objective", "occurrence", "of", "or", "ordered", "out", "package", "parallel", "part", "perform", "port", "private", "protected", "public", "redefines", "ref", "references", "render", "rendering", "rep", "require", "requirement", "return", "satisfy", "send", "snapshot", "specializes", "stakeholder", "standard", "state", "subject", "subsets", "succession", "then", "timeslice", "to", "transition", "true", "until", "use", "variant", "variation", "verification", "verify", "via", "view", "viewpoint", "when", "while", "xor"]);
 
-/** Spell out the characters an identifier cannot hold, so `+3.3VDC` and `3.3VDC` stay different names (IMP-124): a leading `+` is Plus, a leading `-` Minus,
- *  a point between digits `p`, `%` Pct, `&` And, `#` No, and a `+` inside a name Plus. A hyphen or slash between words still just separates them. */
+/** Spell out the characters an identifier cannot hold, so names that differ stay different (IMP-124).
+ *  A voltage puts its V at the decimal point and takes its sign as a letter: `+3.3VDC` is `P3V3DC`, `-13.3VDC` is `N13V3DC`, `12.5V` is `12V5`, `12VDC` stays `12VDC`.
+ *  A voltage that starts the name and has no sign takes `P`, because an identifier cannot start with a digit: `3.3VDC` is `P3V3DC`.
+ *  Elsewhere a leading `+` is Plus, a leading `-` Minus, a point between digits `p`, `%` Pct, `&` And, `#` No, and a `+` inside a name Plus. */
 export function spellOut(raw: string): string {
-  return raw.trim().replace(/^\+/, "Plus ").replace(/^-(?=[A-Za-z0-9])/, "Minus ").replace(/(\d)\.(?=\d)/g, "$1p").replace(/\+/g, " Plus ").replace(/%/g, " Pct ").replace(/&/g, " And ").replace(/#/g, " No ");
+  const t = raw.trim();
+  return t.replace(/(^|[^A-Za-z0-9.])([+-]?)(\d+)(?:\.(\d+))?(\s*)V(?![a-z])/g, (_m, pre: string, sign: string, int: string, frac: string | undefined, sp: string, off: number) => {
+    const head = sign === "-" ? "N" : sign === "+" ? "P" : pre === "" && off === 0 ? "P" : "";
+    return `${pre}${head}${int}V${frac ?? ""}${sp ? " " : ""}`;
+  }).replace(/^\+/, "Plus ").replace(/^-(?=[A-Za-z0-9])/, "Minus ").replace(/(\d)\.(?=\d)/g, "$1p").replace(/\+/g, " Plus ").replace(/%/g, " Pct ").replace(/&/g, " And ").replace(/#/g, " No ");
 }
 
 /** A plain SysML identifier (letters, digits, underscore). The engineering name stays in the note title. */
@@ -60,7 +66,7 @@ export const lowerFirst = (s: string): string => (s ? s[0]!.toLowerCase() + s.sl
 /** Identifier for a usage (part, port, action ...): camelCase, never a SysML keyword. */
 export function usageIdent(raw: string, fallback = "unnamed"): string {
   const id = sysmlIdent(spellOut(raw), fallback);
-  const s = /^[A-Z]{2}/.test(id) ? id : lowerFirst(id);                       // an acronym keeps its case: `CAN0`, `USBC`, not `cAN0`, `uSBC` (IMP-112)
+  const s = /^[A-Z]{2}/.test(id) || /^[PN]\d/.test(id) ? id : lowerFirst(id);                       // an acronym keeps its case: `CAN0`, `USBC`, not `cAN0`, `uSBC` (IMP-112)
   return SYSML_KEYWORDS.has(s) ? s + "_" : s;
 }
 
