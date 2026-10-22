@@ -38,9 +38,9 @@ Transclusion is presentation reuse, not SysML part ownership. Customer/supplier 
 
 ## Use cases depending on this function
 
-- [[UC-00006]]
-- [[UC-00011]]
-- [[UC-00015]]
+- [[UC-00006 - View and Export Engineering Information]]
+- [[UC-00011 - Display Linked Elements in Document Viewpoints]]
+- [[UC-00015 - Compose Documentation from Embedded Notes]]
 
 ## Candidate verification outcome
 

@@ -39,7 +39,7 @@ PDF, documents, and images are not automatically a SysML model simply because th
 
 ## Use cases depending on this function
 
-- [[UC-00001]]
+- [[UC-00001 - Import an Engineering Model]]
 
 ## Candidate verification outcome
 

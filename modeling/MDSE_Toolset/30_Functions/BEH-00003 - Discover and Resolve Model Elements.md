@@ -38,11 +38,11 @@ A literal SysML text match is not SysML semantic interpretation; search indexes 
 
 ## Use cases depending on this function
 
-- [[UC-00002]]
-- [[UC-00007]]
-- [[UC-00014]]
-- [[UC-00015]]
-- [[UC-00016]]
+- [[UC-00002 - Search for a Part, Function or Design]]
+- [[UC-00007 - Add Engineering Knowledge]]
+- [[UC-00014 - Search SysML Syntax and Model Properties]]
+- [[UC-00015 - Compose Documentation from Embedded Notes]]
+- [[UC-00016 - Display Flagged Model Data]]
 
 ## Candidate verification outcome
 

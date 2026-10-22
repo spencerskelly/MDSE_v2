@@ -56,6 +56,13 @@ Select model data; render views; export governed information.
 
 Exports are presentation artifacts derived from authoritative notes, and must not automatically become another source of truth.
 
+## Proposed functional coverage
+
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+- [[BEH-00006 - Compose and Exchange Engineering Knowledge]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

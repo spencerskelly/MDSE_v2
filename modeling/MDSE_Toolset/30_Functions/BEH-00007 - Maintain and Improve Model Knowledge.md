@@ -39,11 +39,11 @@ Flag visibility is separate from review authority; deleting a callout alone is n
 
 ## Use cases depending on this function
 
-- [[UC-00001]]
-- [[UC-00007]]
-- [[UC-00008]]
-- [[UC-00009]]
-- [[UC-00016]]
+- [[UC-00001 - Import an Engineering Model]]
+- [[UC-00007 - Add Engineering Knowledge]]
+- [[UC-00008 - Correct or Complete Knowledge]]
+- [[UC-00009 - Review and Resolve Flagged Model Items]]
+- [[UC-00016 - Display Flagged Model Data]]
 
 ## Candidate verification outcome
 

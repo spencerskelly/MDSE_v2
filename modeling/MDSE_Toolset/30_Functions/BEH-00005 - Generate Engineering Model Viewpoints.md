@@ -38,17 +38,17 @@ A viewpoint is not a competing semantic model; equivalent visual and document pr
 
 ## Use cases depending on this function
 
-- [[UC-00002]]
-- [[UC-00003]]
-- [[UC-00004]]
-- [[UC-00005]]
-- [[UC-00006]]
-- [[UC-00009]]
-- [[UC-00010]]
-- [[UC-00011]]
-- [[UC-00012]]
-- [[UC-00013]]
-- [[UC-00016]]
+- [[UC-00002 - Search for a Part, Function or Design]]
+- [[UC-00003 - Explore Element Relationships]]
+- [[UC-00004 - Review Requirements for a Design]]
+- [[UC-00005 - Explore Complete Product Context]]
+- [[UC-00006 - View and Export Engineering Information]]
+- [[UC-00009 - Review and Resolve Flagged Model Items]]
+- [[UC-00010 - Visualize Relationships by Viewpoint]]
+- [[UC-00011 - Display Linked Elements in Document Viewpoints]]
+- [[UC-00012 - Explore Multiple Relationship Hops]]
+- [[UC-00013 - Compare Shared Connections Across Elements]]
+- [[UC-00016 - Display Flagged Model Data]]
 
 ## Candidate verification outcome
 

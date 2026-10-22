@@ -48,6 +48,13 @@ Navigate hierarchy; inspect behavior/interfaces; present actors and external sys
 - Test case and executed evidence: not yet established
 - Formal SysML link to stakeholder need: pending independent parser validation
 
+## Proposed functional coverage
+
+- [[BEH-00004 - Query and Traverse Model Relationships]]
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

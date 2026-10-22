@@ -58,6 +58,13 @@ Search must consider the canonical note title/name, declared aliases, human-visi
 
 Also see [[UC-00014 - Search SysML Syntax and Model Properties]] for full text and field-scoped queries. Field search is distinct from fast primary navigation.
 
+## Proposed functional coverage
+
+- [[BEH-00003 - Discover and Resolve Model Elements]]
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

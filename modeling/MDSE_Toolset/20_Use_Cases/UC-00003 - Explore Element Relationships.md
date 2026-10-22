@@ -57,6 +57,13 @@ Resolve typed links; build relationship views; report dangling links.
 
 These are separate view/query capabilities over **one canonical model graph**, not distinct stores of semantic relationships. A filtered or capped view must disclose the filtering and cannot claim that omitted connections do not exist.
 
+## Proposed functional coverage
+
+- [[BEH-00004 - Query and Traverse Model Relationships]]
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.
