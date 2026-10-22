@@ -40,6 +40,15 @@ Existing `governance/RULESET.md` and `DECISIONS.md` remain the **only normative 
 
 This is a *draft* vertical chain. The synthetic source-row ledger test exists in `tools/importer/test/importer.test.ts`, but its execution against this self-model and independent parser acceptance have not been established here.
 
+## Rules decomposed into engineering-model candidates
+
+- [Complete 386-rule semantic analysis](71_Rule_Analysis/README.md) — 826 preliminary statement segments, with candidate functions, use cases, responsible software parts and review disposition.
+- [332 draft requirement statement notes](72_Derived_Requirements/README.md) — derived only from the 159 Active source rules; these are **not** approved as independently atomic or binding model requirements.
+- [159 draft verification case notes](73_Derived_Verification/README.md) — checklists and test paths to investigate, with **no execution result claimed**.
+- [First engineering review findings](SEMANTIC_REVIEW_FINDINGS.md) — sample decompositions, superseded Active policies, duplicate semantics and release-test gaps.
+
+The authoritative rules and decisions remain in `governance/RULESET.md` and `governance/DECISIONS.md`. This self-model is a structured analysis, not a second ruleset. Parser-validated native SysML connections and verified tool/test allocations are next.
+
 ## Existing governance-rule reference notes
 
 The [current rules reference library](70_Rule_References/README.md) preserves all 386 current rule IDs and their exact source wording, with provisional links to the six functions and sixteen knowledge-base use cases. The original RULESET remains normative; all reference-note associations require review.

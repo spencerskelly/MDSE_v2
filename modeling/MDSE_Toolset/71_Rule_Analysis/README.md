@@ -29,6 +29,12 @@ Clause boundaries generated from punctuation can be wrong. A line in this regist
 
 These are existing tool elements, not new implementations. Functions `BEH-00002`–`BEH-00007` and use cases `UC-00001`–`UC-00016` are linked as **review candidates** based on earlier heuristic classifications.
 
+## Draft model elements now available
+
+- [332 candidate requirement notes](../72_Derived_Requirements/README.md) from Active rules
+- [159 candidate verification notes](../73_Derived_Verification/README.md), none executed
+- [Specific semantic review findings](../SEMANTIC_REVIEW_FINDINGS.md) highlighting conflicting and compound rules
+
 ## Next semantic review
 
 1. Check status and later decisions first; notably V1 Local Model and contradictory active governance.
