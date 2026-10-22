@@ -40,6 +40,10 @@ Existing `governance/RULESET.md` and `DECISIONS.md` remain the **only normative 
 
 This is a *draft* vertical chain. The synthetic source-row ledger test exists in `tools/importer/test/importer.test.ts`, but its execution against this self-model and independent parser acceptance have not been established here.
 
+## Functional architecture — draft
+
+Six shared function notes now trace back to the 16 knowledge-base use cases. See [Functional architecture and coverage](30_Functions/README.md). This is an implementation-independent analysis, not an approved allocation or verified SysML relationship graph.
+
 ## Next steps
 
 1. Review the twelve owner-supplied capability needs in `NEEDS_BASELINE.md`, beginning with **Engineering Knowledge Base**.

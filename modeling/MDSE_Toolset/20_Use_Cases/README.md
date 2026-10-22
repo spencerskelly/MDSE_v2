@@ -31,7 +31,11 @@
 - [[UC-00016 - Display Flagged Model Data]] — surface known gaps/read-only.
 - [[UC-00009 - Review and Resolve Flagged Model Items]] — investigate, correct or disposition flags.
 
-## Common logical functions to derive later
+## Functional decomposition now drafted
+
+Review [the six reusable function definitions and the 16-use-case trace matrix](../30_Functions/README.md). All links and coverage assessments remain proposals.
+
+## Earlier candidate subfunctions for future detailed decomposition
 
 | Function candidate | Used by |
 |---|---|
