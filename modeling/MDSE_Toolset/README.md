@@ -1,57 +1,55 @@
-# MDSE toolset self-model — stakeholder needs pilot
+# MDSE toolset — engineering the engineering tool
 
-**Status:** Draft proposal for owner review on `mdse_v2_cleanup` (2026-10-21). This folder is a *modeling pilot*, not a released vault or approved rule source.
+**Status:** Draft self-model on `mdse_v2_cleanup` (2026-10-21). **Not** an approved normative specification or released vault.
 
-## Why this exists
+## Start here
 
-Use MDSE's own approach to design MDSE: stakeholder intent → use cases → logical functions → derived requirements → software components → verification case → executed evidence. One concept per note with an immutable pilot identity, explicit review status and SysML v2 definition. Use trace links to understand impact and identify missing definitions.
+**[Owner-defined primary stakeholder needs](NEEDS_BASELINE.md)** — twelve capability needs supplied by the owner, with one review note per concept, proposed stakeholder and outcome, existing coverage assessment, and verification gaps.
 
-Existing `governance/RULESET.md` and `DECISIONS.md` remain **normative**. Do not copy existing rule text and silently create another authority. The pilot STK/UC/BEH/REQ/OBJ/VER IDs do **not** replace existing GOV/MOD/IMP/BOM/BAS/BOO/WKB/TST IDs.
+These capabilities cover engineering knowledge, product discovery, requirements, concept and risk analysis, design and architecture, validation, publications, regulation, and engineering change. They are not one software application each.
 
-### Stakeholder needs (review these first)
+The earlier `STK-00001`–`STK-00012` draft statements are preserved, but treated as *provisional cross-cutting qualities / supporting needs* for review, not the primary capability taxonomy. They must not be silently renumbered or reused. New owner-provided primary needs use `STK-00013`–`STK-00024`.
 
-- [[STK-00001 - Accessible Engineering Knowledge]]
-- [[STK-00002 - One Trustworthy Model]]
-- [[STK-00003 - Preserve Imported Knowledge]]
-- [[STK-00004 - Protect Engineer Changes]]
-- [[STK-00005 - Trace Needs to Evidence]]
-- [[STK-00006 - Offline Accessible Operation]]
-- [[STK-00007 - Understand Model Impacts]]
-- [[STK-00008 - Protect Engineering Data]]
-- [[STK-00009 - Deploy Consistent Toolsets]]
-- [[STK-00010 - Understand Decisions and Changes]]
-- [[STK-00011 - Engineer MDSE with MDSE]]
-- [[STK-00012 - Prove Behavior Against Real Data]]
+## Self-model convention
 
-### First vertical example
+One note per concept. Iterate: stakeholder need → use case → logical function → engineering requirement → architectural element → verification case → executed result. Follow relationships in both directions and record gaps explicitly.
+
+Existing `governance/RULESET.md` and `DECISIONS.md` remain the **only normative rules/decision authorities**. This model is an engineering analysis and traceability proposal, not a second ruleset. All native SysML relationships must eventually be parser-validated and managed through the shared writer. Current Markdown links and `TRACE_PROPOSALS.csv` remain review candidates.
+
+## Primary need index
+
+- [[STK-00013 - Engineering Knowledge Base]]
+- [[STK-00014 - Product Discovery Aide]]
+- [[STK-00015 - Requirements Management]]
+- [[STK-00016 - Concept Analysis]]
+- [[STK-00017 - Failure Mode and Effect Analysis]]
+- [[STK-00018 - Design Definition]]
+- [[STK-00019 - Architecture Definition]]
+- [[STK-00020 - Validation definition]]
+- [[STK-00021 - Customer Documentation Builder]]
+- [[STK-00022 - Supplier Documentation Builder]]
+- [[STK-00023 - Regulatory Impact Analysis]]
+- [[STK-00024 - Change Management Tool]]
+
+## Existing proof-of-concept trace (prior supporting quality)
 
 [[STK-00003 - Preserve Imported Knowledge]] → [[UC-00001 - Import an Engineering Model]] → [[BEH-00001 - Reconcile Source Records]] → [[REQ-00001 - Account for Every Source Row]] → [[OBJ-00001 - MDSE Importer]] → [[VER-00001 - Source Row Disposition Test]]
 
-This is a proposed impact chain, *not yet an accepted SysML relationship graph*.
+This is a *draft* vertical chain. The synthetic source-row ledger test exists in `tools/importer/test/importer.test.ts`, but its execution against this self-model and independent parser acceptance have not been established here.
 
-- The candidate source-row accounting test exists in `tools/importer/test/importer.test.ts`, but no test was executed for these new notes.
-- The requirement-to-verification link is proposed in Markdown and the companion CSV; model semantics must eventually be emitted as native SysML v2 and checked by the pinned parser.
-- All other stakeholder needs currently have traceability gaps by design. We should complete and review them before broad tool restructuring.
-- A stakeholder **need** may not be identical to a stakeholder **requirement**. Today's type schema only has `Requirement/stakeholder`; confirm this provisional placement before promoting these notes.
-- The pilot UIDs are isolated candidate allocations. Run identity collision and serialization checks before inclusion in a production vault.
-- This proposal does not add code, duplicate tool implementations or private engineering sources.
+## Next steps
 
-### How we extend it
+1. Review the twelve owner-supplied capability needs in `NEEDS_BASELINE.md`, beginning with **Engineering Knowledge Base**.
+2. Record revised intent, stakeholder actors, success criteria and boundaries in each note.
+3. Create/reuse use-case notes, then derive functions and requirements without prematurely naming implementation components.
+4. Link requirements to existing rule IDs and observed tests without duplicating normative definitions.
+5. Establish checks for unlinked needs, unverified requirements and impacted tests.
+6. Run Workbench and a pinned SysML parser before treating the model as operational. Neither has been executed on these newly drafted notes in this review.
 
-1. Review stakeholder people/roles and approve, split or merge the 12 candidate need statements.
-2. For each need identify a use case and an observable success criterion.
-3. Derive function definitions that describe **what the system does**, rather than naming tools.
-4. Write testable requirements and allocate them to `core`, `importer`, `workbench`, `base-vault`, `bootstrap` or governed testing components.
-5. Connect every formal requirement to a verification case, executable test, and pinned CI evidence, or a clear gap.
-6. Link to existing rule IDs as governing origins; retain one authority and record any approved changes in DECISIONS.md.
-7. Parse/validate formal SysML relationships and open this folder in the offline Workbench. **Neither parser nor Workbench was run on these notes in this commit.**
+## Unresolved modeling decisions
 
-### Decisions required
-
-- **SELF-01:** Are stakeholder needs separate first-class concepts, or do we represent them by draft stakeholder requirements?
-- **SELF-02:** Approve one native SysML v2 relation scheme for the end-to-end chain (avoid claiming Markdown links are model relationships).
-- **SELF-03:** Should the maintained self-model live as a standalone dogfood vault, or as source-controlled notes in MDSE_v2?
-- **SELF-04:** How does a system-model requirement reference an existing rule ID without duplicating the rule's authority?
-- **SELF-05:** Separate Verification Case definition, executable test code, execution results and real-data acceptance.
-
-**First review requested:** the need statements and stakeholder roles, before adding more detail.
+- Stakeholder need versus stakeholder requirement type and status schema
+- Native SysML relationship syntax and endpoint typing for the complete chain
+- Whether this self-model is later materialized as a standalone MDSE-built vault
+- Identity governance and managed provenance for model-to-code/test associations
+- Distinguishing test definitions from executed evidence
