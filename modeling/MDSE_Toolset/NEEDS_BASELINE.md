@@ -4,6 +4,10 @@
 
 These are the **twelve primary capability needs** driving MDSE product definition. They identify engineering lifecycle capabilities to support, not twelve software applications or twelve implementation requirements. A capability may use multiple existing MDSE tools; no new tool is assumed merely because a need is named.
 
+## First need expanded — Engineering Knowledge Base
+
+The owner has defined an engineering-centered, potentially organization-wide knowledge base for all products, with functional/design/structural/contextual information at variable depth. PDM/PLM retains complete CAD; related Jira work can be linked. Eight use cases are now drafted in [Knowledge-base use cases](20_Use_Cases/README.md). These are user-intent definitions, **not yet implementation acceptance evidence**.
+
 ## Primary needs in owner-provided order
 
 | Pilot ID | Stakeholder capability need | Lifecycle area | Definition status |

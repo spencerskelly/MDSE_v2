@@ -10,53 +10,72 @@ primarySymbol: MDSE_STK_00013::EngineeringKnowledgeBase
 ---
 # Engineering Knowledge Base
 
-> [!note] Stakeholder capability need — draft definition
-> The **title** was supplied by the MDSE owner on 2026-10-21. The interpretation, stakeholders, outcomes and tool impact below are proposals for review, not approved requirements.
+> [!note] Stakeholder capability — scope expanded by owner 2026-10-21
+> Engineering-centered, potentially organization-wide use; all products; model detail from system to component as needed; PDM/PLM and Jira boundaries; eight user actions are owner-provided. Formal access policies and verification criteria still require definition.
 
-## Need
+## Stakeholder need
 
-A shared, navigable engineering knowledge base that connects product information, decisions, sources and technical relationships.
+A shared engineering-focused knowledge base available potentially to the entire organization, defining products through functional and design specifications, structure, relationships and operating context. Its depth can vary from system-level definitions to individual components according to engineering needs.
 
-## Stakeholders (proposed)
+## Stakeholders
 
-Engineers; engineering managers; technical reviewers
+- **Primary:** Engineers across hardware, firmware, software, systems, manufacturing and related disciplines; engineering reviewers and architects.
+- **Additional potential users:** Other organizational teams needing product knowledge or information exports.
+- Access, contribution, and review authority for different audiences are not yet defined.
 
-## Desired outcome (proposed)
+## Model content and extent
 
-Find an authoritative topic and navigate linked engineering context without reconstructing it from disconnected files.
+- All products are intended to be represented, although completeness and necessary decomposition vary by product and use.
+- The model holds functional and design specifications, product structure, requirements, interfaces, behavior, and related engineering information.
+- It must support navigation among products, systems, assemblies, modules, components, functions, designs, requirements, external systems and actors.
+- Other stakeholder capabilities use this knowledge foundation; they must not create independent competing model definitions.
+- Detail is added only where useful, potentially down to individual components; absent detail remains visible as a coverage gap.
 
-## Candidate use case
+## Boundaries with external systems
 
-Find and understand existing product knowledge
+| External system | Owns | MDSE role |
+|---|---|---|
+| PDM / PLM | Complete CAD data and managed design documentation | Keep meaningful engineering definition and optionally link to authoritative external records; do not import entire CAD datasets by default |
+| Jira | Tracking of work performed, work items and their workflow | Optionally link relevant engineering elements to Jira work items; do not silently duplicate Jira task state |
+| MDSE | Connected engineering knowledge and semantic relationships | Store and present model elements, source references, and reviewable engineering context |
 
-## Impact on toolset (preliminary)
+The existence of a possible link does not imply an implemented connector, automatic synchronization, or granted access.
 
-Core; Importer; Workbench
+## Owner-identified use cases
 
-## Existing coverage (preliminary)
+1. [[UC-00002 - Search for a Part, Function or Design]] — Search for a part, function, or design.
+2. [[UC-00003 - Explore Element Relationships]] — View how an element is linked to other elements.
+3. [[UC-00004 - Review Requirements for a Design]] — Check which requirements are identified for a design.
+4. [[UC-00005 - Explore Complete Product Context]] — View all aspects of a product and its context including external systems and actors.
+5. [[UC-00006 - View and Export Engineering Information]] — View model data and export it for communication to others.
+6. [[UC-00007 - Add Engineering Knowledge]] — Document additions to engineering knowledge from different vantage points.
+7. [[UC-00008 - Correct or Complete Knowledge]] — Modify information to make the knowledge base correct or complete.
+8. [[UC-00009 - Review and Resolve Flagged Model Items]] — Review flagged elements to improve model accuracy.
 
-Existing architecture, model, importer and Workbench; acceptance incomplete.
+**Supporting source-ingestion use case:** [[UC-00001 - Import an Engineering Model]], already drafted in the earlier pilot. Importing content supports this capability but was not among the eight user actions listed in this review.
 
-## Candidate trace
+## Expected outcomes
 
-- Potential use case: [[UC-00001 - Import an Engineering Model]] (existing model pilot; partial coverage)
-- Related draft quality need: [[STK-00001 - Accessible Engineering Knowledge]]
-- Earlier `STK-00003` pilot describes a supporting *source-preservation* quality, not this whole capability.
+Users can locate engineering elements, navigate explicit relationships, review requirements related to a design, understand product and external context, communicate selected knowledge, make additions and corrections, and inspect and resolve flagged quality concerns.
 
-## Review questions
+## Modeling and implementation review gaps
 
-- Is this the intended stakeholder problem and desired outcome?
-- Which outputs or decisions are in scope, and which are not?
-- What existing functions, rules, implementations and tests should be reused?
+1. Specify how completeness is assessed across all products at variable depth.
+2. Define organization-wide viewing permissions versus engineering edit and review roles.
+3. Decide how external PDM/PLM file references are identified, versioned and checked.
+4. Decide whether Jira linking is manual or later supported by live synchronization.
+5. Define acceptable export formats, scope and information-disclosure safeguards.
+6. Derive reusable functions, testable requirements, allocations and verification cases from these eight use cases.
+7. Validate native SysML relationship syntax and execute model integrity checks before treating these traces as formal.
 
 ## SysML v2
 
-> Draft SysML definition, not parser-certified. Formal cross-element relationships will be added after native syntax/endpoint review; this note is not a release requirement.
+> Draft definition; no independent parser certification for this self-model yet.
 
 ```sysml
 package MDSE_STK_00013 {
     requirement def EngineeringKnowledgeBase {
-        doc /* A shared, navigable engineering knowledge base that connects product information, decisions, sources and technical relationships. */
+        doc /* The organization needs an engineering-centered, connected knowledge base covering product functional, design, structural and contextual information at variable detail, with external authoritative design and work data linked when appropriate. */
     }
 }
 ```
