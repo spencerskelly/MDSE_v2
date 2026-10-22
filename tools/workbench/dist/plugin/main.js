@@ -3608,6 +3608,27 @@ function mountPanel(root             , host           , opt                     
     const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; if (k !== "edit") editEl = null; draw(); } }, label)));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
+      // A direct, all-relationships canvas launcher on the Workbench home screen.
+      // "tables" deliberately selects the Everything profile: all relationship kinds,
+      // incoming and outgoing, rather than the current lens's restricted trace.
+      const allProfile = V.PROFILES.find((p) => p.name === "Everything") ;
+      const allDepth = Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth));
+      const allControls = h("div", { class: "chips", style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
+        h("label", {}, "Connections away ", h("input", {
+          type: "number", min: 1, max: 8, value: allDepth, "aria-label": "All connections canvas depth",
+          style: "width:54px", onchange: (e       ) => {
+            spec = { ...spec, depth: Math.max(1, Math.min(8, Number((e.target                    ).value) || allProfile.depth)) };
+            draw();
+          }
+        })),
+        h("button", { class: "sm pri", disabled: !n || undefined, onclick: (e       ) => {
+          const b = e.currentTarget               ;
+          busy(b, "Creating…", () => host.openCanvas("tables", {
+            ...spec, depth: Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth)),
+            kinds: [] // Empty = all kinds in the Everything profile.
+          }));
+        } }, "All connections canvas"));
+      acts.append(allControls);
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
