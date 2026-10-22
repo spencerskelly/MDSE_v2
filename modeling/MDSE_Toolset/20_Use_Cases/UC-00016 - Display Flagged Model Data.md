@@ -51,6 +51,14 @@ Workbench Review UI indexes flags; broad scoped flag display and acceptance not 
 - Functions, derived requirements and verification: pending review.
 - Relationship links are draft navigation; not independently SysML-parser-certified.
 
+## Proposed functional coverage
+
+- [[BEH-00003 - Discover and Resolve Model Elements]]
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+- [[BEH-00007 - Maintain and Improve Model Knowledge]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft SysML definition; this model's native syntax and relationships have not been independently parser-verified.

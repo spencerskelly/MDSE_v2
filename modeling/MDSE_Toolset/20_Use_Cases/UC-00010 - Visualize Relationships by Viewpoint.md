@@ -51,6 +51,13 @@ Workbench includes synthetic graph/canvas view tests; specific combinations and 
 - Functions, derived requirements and verification: pending review.
 - Relationship links are draft navigation; not independently SysML-parser-certified.
 
+## Proposed functional coverage
+
+- [[BEH-00004 - Query and Traverse Model Relationships]]
+- [[BEH-00005 - Generate Engineering Model Viewpoints]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft SysML definition; this model's native syntax and relationships have not been independently parser-verified.

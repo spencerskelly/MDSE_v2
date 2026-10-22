@@ -51,6 +51,12 @@ Workbench indexes notes and some model fields; comprehensive SysML/property sear
 - Functions, derived requirements and verification: pending review.
 - Relationship links are draft navigation; not independently SysML-parser-certified.
 
+## Proposed functional coverage
+
+- [[BEH-00003 - Discover and Resolve Model Elements]]
+
+These are draft use-case/function relations only. Formal SysML links, requirements, implementation allocation and test evidence remain to be established.
+
 ## SysML v2
 
 > Draft SysML definition; this model's native syntax and relationships have not been independently parser-verified.
