@@ -11,7 +11,7 @@ primarySymbol: MDSE_STK_00013::EngineeringKnowledgeBase
 # Engineering Knowledge Base
 
 > [!note] Stakeholder capability — scope expanded by owner 2026-10-21
-> Engineering-centered, potentially organization-wide use; all products; model detail from system to component as needed; PDM/PLM and Jira boundaries; eight user actions are owner-provided. Formal access policies and verification criteria still require definition.
+> Engineering-centered, potentially organization-wide use; all products; model detail from system to component as needed; PDM/PLM and Jira boundaries; the original eight user actions are owner-provided, with later critical extensions to import, search and viewpoints. Formal access policies and verification criteria still require definition.
 
 ## Stakeholder need
 
@@ -41,6 +41,16 @@ A shared engineering-focused knowledge base available potentially to the entire 
 
 The existence of a possible link does not imply an implemented connector, automatic synchronization, or granted access.
 
+## Critical capabilities added in owner review
+
+- **Import is critical**: import and reconcile knowledge from flexible source types, not only QEAX and Excel; PDF, documents and images may supply evidence or candidate facts. See [[UC-00001 - Import an Engineering Model]].
+- **Find by name or alias**: primary usability path resolves the note carrying the name/alias. See [[UC-00002 - Search for a Part, Function or Design]].
+- **Multiple forms and viewpoints**: visual and document views of connected elements are alternate presentations of one semantic graph.
+- **Graph exploration**: adjustable multi-hop traversal and shared connections among two or more selected elements.
+- **Field/syntax search**: query SysML v2 and properties, separately from primary note-name lookup.
+- **Composition**: use Obsidian `![[...]]` to assemble a note/document/presentation from existing notes; transclusion is presentation reuse, not a new SysML relationship.
+- **Flag visibility**: display flagged records as a read-only discovery function, separate from resolving them.
+
 ## Owner-identified use cases
 
 1. [[UC-00002 - Search for a Part, Function or Design]] — Search for a part, function, or design.
@@ -52,7 +62,17 @@ The existence of a possible link does not imply an implemented connector, automa
 7. [[UC-00008 - Correct or Complete Knowledge]] — Modify information to make the knowledge base correct or complete.
 8. [[UC-00009 - Review and Resolve Flagged Model Items]] — Review flagged elements to improve model accuracy.
 
-**Supporting source-ingestion use case:** [[UC-00001 - Import an Engineering Model]], already drafted in the earlier pilot. Importing content supports this capability but was not among the eight user actions listed in this review.
+**Critical source-ingestion use case:** [[UC-00001 - Import an Engineering Model]] — a core knowledge-base interaction, extended to heterogeneous structured, document and image inputs.
+
+## Additional linked use cases
+
+- [[UC-00010 - Visualize Relationships by Viewpoint]]
+- [[UC-00011 - Display Linked Elements in Document Viewpoints]]
+- [[UC-00012 - Explore Multiple Relationship Hops]]
+- [[UC-00013 - Compare Shared Connections Across Elements]]
+- [[UC-00014 - Search SysML Syntax and Model Properties]]
+- [[UC-00015 - Compose Documentation from Embedded Notes]]
+- [[UC-00016 - Display Flagged Model Data]]
 
 ## Expected outcomes
 

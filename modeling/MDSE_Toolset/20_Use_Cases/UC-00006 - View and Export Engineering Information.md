@@ -48,6 +48,14 @@ Select model data; render views; export governed information.
 - Test case and executed evidence: not yet established
 - Formal SysML link to stakeholder need: pending independent parser validation
 
+## View and composition refinements
+
+- [[UC-00011 - Display Linked Elements in Document Viewpoints]] gives a structured document-form view of selected links and relationships.
+- [[UC-00010 - Visualize Relationships by Viewpoint]] gives a visual counterpart based on the same underlying selection.
+- [[UC-00015 - Compose Documentation from Embedded Notes]] uses Obsidian `![[...]]` transclusion to assemble presentations or documentation without copying a semantic definition.
+
+Exports are presentation artifacts derived from authoritative notes, and must not automatically become another source of truth.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

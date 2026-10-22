@@ -17,7 +17,7 @@ One note per concept. Iterate: stakeholder need → use case → logical functio
 Existing `governance/RULESET.md` and `DECISIONS.md` remain the **only normative rules/decision authorities**. This model is an engineering analysis and traceability proposal, not a second ruleset. All native SysML relationships must eventually be parser-validated and managed through the shared writer. Current Markdown links and `TRACE_PROPOSALS.csv` remain review candidates.
 
 
-**Current review:** [Engineering Knowledge Base — eight use cases](20_Use_Cases/README.md), scoped for a potentially organization-wide but engineering-led audience. PDM/PLM owns complete CAD files, Jira owns work items; MDSE models knowledge and may link to those external systems. Formal trace and tests are pending.
+**Current review:** [Engineering Knowledge Base — critical import, name/alias search, graph and document viewpoints, multi-hop/common links, model-field search, embedded-note composition and flag display](20_Use_Cases/README.md), scoped for a potentially organization-wide but engineering-led audience. PDM/PLM owns complete CAD files, Jira owns work items; MDSE models knowledge and may link to those external systems. Formal trace and tests are pending.
 
 ## Primary need index
 

@@ -6,7 +6,7 @@ These are the **twelve primary capability needs** driving MDSE product definitio
 
 ## First need expanded — Engineering Knowledge Base
 
-The owner has defined an engineering-centered, potentially organization-wide knowledge base for all products, with functional/design/structural/contextual information at variable depth. PDM/PLM retains complete CAD; related Jira work can be linked. Eight use cases are now drafted in [Knowledge-base use cases](20_Use_Cases/README.md). These are user-intent definitions, **not yet implementation acceptance evidence**.
+The owner has defined an engineering-centered, potentially organization-wide knowledge base for all products, with functional/design/structural/contextual information at variable depth. PDM/PLM retains complete CAD; related Jira work can be linked. Eight original user interactions plus a critical import use case and seven further querying, presentation, composition and flag-visibility use cases are now drafted in [Knowledge-base use cases](20_Use_Cases/README.md). These are user-intent definitions, **not yet implementation acceptance evidence**.
 
 ## Primary needs in owner-provided order
 

@@ -48,6 +48,16 @@ Index/search engineering concepts; resolve identities; navigate notes.
 - Test case and executed evidence: not yet established
 - Formal SysML link to stakeholder need: pending independent parser validation
 
+## Critical name and alias lookup refinement
+
+The primary navigation operation is to locate the **note carrying a requested name or alias** and open it. Users should not have to know the filename, folder or internal ID.
+
+Search must consider the canonical note title/name, declared aliases, human-visible names and identifiers, with enough result context to disambiguate. This is a user-facing behavior rather than a suggestion to duplicate authoritative names in separate stores.
+
+**Main success check:** Given an element with a known alias, entering that alias returns the owning note, not an unrelated mention of the text.
+
+Also see [[UC-00014 - Search SysML Syntax and Model Properties]] for full text and field-scoped queries. Field search is distinct from fast primary navigation.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

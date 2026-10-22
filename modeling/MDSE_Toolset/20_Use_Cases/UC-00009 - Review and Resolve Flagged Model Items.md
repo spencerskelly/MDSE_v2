@@ -48,6 +48,10 @@ Collect and filter flags; capture resolution; validate corrective action.
 - Test case and executed evidence: not yet established
 - Formal SysML link to stakeholder need: pending independent parser validation
 
+## Distinction from visibility
+
+[[UC-00016 - Display Flagged Model Data]] covers **finding and displaying** flagged content for readers. This use case covers investigating, correcting or explicitly dispositioning the issue. Making a flag disappear is not proof that the underlying model is correct.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.

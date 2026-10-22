@@ -48,6 +48,15 @@ Resolve typed links; build relationship views; report dangling links.
 - Test case and executed evidence: not yet established
 - Formal SysML link to stakeholder need: pending independent parser validation
 
+## Relationship exploration refinements
+
+- [[UC-00010 - Visualize Relationships by Viewpoint]] — selectable visual perspectives.
+- [[UC-00011 - Display Linked Elements in Document Viewpoints]] — readable structured/document perspectives.
+- [[UC-00012 - Explore Multiple Relationship Hops]] — user-selected relationship depth.
+- [[UC-00013 - Compare Shared Connections Across Elements]] — common linked elements across two or more selections.
+
+These are separate view/query capabilities over **one canonical model graph**, not distinct stores of semantic relationships. A filtered or capped view must disclose the filtering and cannot claim that omitted connections do not exist.
+
 ## SysML v2
 
 > Draft use-case definition only; do not treat Markdown navigation as certified native SysML relationship semantics.
