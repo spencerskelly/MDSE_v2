@@ -40,6 +40,10 @@ Existing `governance/RULESET.md` and `DECISIONS.md` remain the **only normative 
 
 This is a *draft* vertical chain. The synthetic source-row ledger test exists in `tools/importer/test/importer.test.ts`, but its execution against this self-model and independent parser acceptance have not been established here.
 
+## Existing governance-rule reference notes
+
+The [current rules reference library](70_Rule_References/README.md) preserves all 386 current rule IDs and their exact source wording, with provisional links to the six functions and sixteen knowledge-base use cases. The original RULESET remains normative; all reference-note associations require review.
+
 ## Existing implementation baseline
 
 Before adding requirements or rebuilding capabilities, review the [existing-system capability baseline](AS_BUILT_CAPABILITY_BASELINE.md), [one row per existing knowledge-base use case](AS_BUILT_USE_CASE_EVIDENCE.csv), and [five tool implementation notes](50_Architecture/README.md). This is source-and-test inspection; no full test suite, real model import, Obsidian startup or independent SysML parsing was executed for this assessment.
