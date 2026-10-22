@@ -1,0 +1,9 @@
+{
+  "id": "mdse-bootstrap",
+  "name": "MDSE Bootstrap",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Makes an MDSE vault ready on open: checks the shipped plugins against the lock, turns them on, applies governed settings, registers the author.",
+  "author": "MDSE",
+  "isDesktopOnly": false
+}
