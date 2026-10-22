@@ -1,0 +1,6 @@
+from_id,to_id,proposed_relation,status,sysml_verified,test_evidence
+STK-00003,UC-00001,motivates,Draft,NO,
+UC-00001,BEH-00001,requiresFunction,Draft,NO,
+BEH-00001,REQ-00001,constrainedBy,Draft,NO,
+REQ-00001,OBJ-00001,allocatedTo,Draft,NO,
+REQ-00001,VER-00001,verifiedBy,Draft,NO,tools/importer/test/importer.test.ts (inspection only)
