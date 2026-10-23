@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: every BOM note carries an import stamp (`importSource`, `importedOn`, `importHash`) so later update scans can tell a changed BOM from a hand edit without rewriting notes. BOM-031, D-0050.
 - BOM import: replaced part numbers that no BOM lists get a stub note, so `supersedes` always resolves; CI parser job now also accepts a generated BOM sample model (run 40040942222 passed). BOM-030, D-0049.
 - BOM import: all relationships are SysML text (no `hasPart`/`references` YAML; drawings as `ref item`; renumbered parts as `dependency … // supersedes`); manufacturer data as `manufacturer1`, `mfgPn1`, `manufacturer2`, … YAML; assemblies already in the vault are not re-read; findings note capped at 40 rows per code; import order written down. D-0048, BOM-025 to BOM-029.
 - BOM import follows the owner's decisions: every part of every product gets a note; the latest revision is chosen by a stated order (no part is held back); standard units, `YYYY-MM-dd` dates, no lifecycle state, the part name as a `description` property, a Replaces section for renumbered parts, and a `flagValue` callout when one assembly line has two sets of values. D-0047, BOM-018 to BOM-024. Closes OD-10 to OD-13.

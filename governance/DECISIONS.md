@@ -545,3 +545,16 @@ Rules: BOM-016, BOM-023 (changed); BOM-025 to BOM-029 (new).
 
 Rules: BOM-030 (new).
 
+
+## D-0050 — BOM import: every note carries an import stamp, so later updates can be scanned without rewriting notes
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0049)
+
+1. **Why.** The owner wants to re-run imports later to update parts and assemblies, with a scan, a list of changes, and approval by category or one at a time. For that the importer must know what it wrote last time; otherwise it cannot tell a changed BOM from a note edited by hand. The stamp has to exist when the notes are created, or about 16,000 notes would have to be rewritten later.
+2. **The stamp.** Three YAML properties at the end of the frontmatter: `importSource` (the file name), `importedOn` (`YYYY-MM-dd`) and `importHash` (16 hex digits of the SHA-256 of the importer-owned content). (BOM-031)
+3. **What the hash covers.** The `description`, `manufacturerN` and `mfgPnN` properties and the SysML block. Prose, callouts, `status`, `tags` and anything else a person edits are not covered. A later scan recomputes the hash from the note in the vault.
+4. **How a scan will use it** (not built yet). Note hash equals stamp and the new BOM differs: proposed update. Note hash differs from stamp: a person changed it, so it is a conflict, never applied automatically. Categories, approval and apply are a separate piece of work and need no further format change.
+5. **Limits.** The stamp says nothing about notes the importer did not write. Moving or renaming a note does not break it. Merging an EA note into a BOM note (D-0034) keeps the BOM properties and the SysML block, so the hash still matches unless the merge changed them.
+
+Rules: BOM-031 (new).
+

@@ -8,7 +8,8 @@
  * reported rather than misread. */
 import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
-import { renderNote, flagCallout } from "./notes.ts";
+import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
+import { sha256Text } from "./sha256.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -197,6 +198,19 @@ export interface BomResult {
   summary: { layout: string; rows: number; parts: number; usages: number; drawings: number; alternates: number; skippedParts: number; existing: number; conflicts: number; eaMatched: number; bomOnly: number };
 }
 
+/** BOM-031: the part of a BOM note that the importer owns and a later update may compare: the `description`, `manufacturerN` and `mfgPnN` properties and the SysML block.
+ *  Prose, callouts, `status`, `tags` and everything a person edits are not in it. Returns 16 hex digits of the SHA-256. A later scan recomputes this from the note in the vault. */
+export function bomOwnedHash(noteText: string): string {
+  const text = noteText.replace(/\r\n?/g, "\n"), fm = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
+  const yaml = fm.split("\n").filter((l) => /^(description|manufacturer\d+|mfgPn\d+):/.test(l));
+  const sec = text.split(/^## SysML v2\s*$/m)[1] ?? "", fence = /```[^\n]*\n([\s\S]*?)\n```/.exec(sec)?.[1] ?? "";
+  return sha256Text(`${yaml.join("\n")}\n--\n${fence.trim()}`).slice(0, 16);
+}
+/** Adds the three stamp properties at the end of the frontmatter of a freshly rendered BOM note. */
+function bomStamp(noteText: string, source: string, on: string): string {
+  const stamp = [`importSource: ${yamlScalar(source)}`, `importedOn: ${on}`, `importHash: ${bomOwnedHash(noteText)}`].join("\n");
+  return noteText.replace(/\n---\n/, `\n${stamp}\n---\n`);
+}
 /** What an earlier BOM note says about its lines: line -> "child revision|count or quantity unit". Used to tell a second BOM that agrees from one that does not. */
 function bomLinesOfNote(text: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -355,9 +369,9 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
-    files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
+    files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
       relFields: [], extraFields: extra, bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
-      sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }) });
+      sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });
   }
 
   // EA <-> BOM join on part number: a report only, nothing is corrected on either side (BOM-004). The EA key is not settled, so

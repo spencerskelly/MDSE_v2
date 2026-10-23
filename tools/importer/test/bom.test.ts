@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { deflateRawSync } from "node:zlib";
 import MDSE from "../../core/src/mdse_core.js";
-import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomUnit, bomDate } from "../src/bom.ts";
+import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomUnit, bomDate, bomOwnedHash } from "../src/bom.ts";
 import type { Grid } from "../src/bom.ts";
 import { sha256Text } from "../src/sha256.ts";
 import { ROOT } from "./harness.ts";
@@ -276,4 +276,27 @@ test("the findings note lists at most 40 rows per code and counts the rest (BOM-
   assert.equal((note.match(/\| QTY_ZERO \|/g) ?? []).length, 41);
   assert.match(note, /and 20 more with this code/);
   assert.equal(r.findings.filter((f) => f.code === "QTY_ZERO").length, 60);
+});
+
+test("every BOM note carries an import stamp whose hash covers only what the importer owns (BOM-031)", () => {
+  const r = buildBom(parseDelimited(flatText), baseOpts);
+  const notes = r.files.filter((f) => f.path.startsWith("BOM/"));
+  assert.ok(notes.length > 3);
+  for (const f of notes) {
+    assert.match(f.content, /^importSource: bom\.tsv$/m); assert.match(f.content, /^importedOn: 2026-10-20$/m);
+    const h = /^importHash: ([0-9a-f]{16})$/m.exec(f.content)?.[1]; assert.ok(h, f.path);
+    assert.equal(bomOwnedHash(f.content), h, "the stamp is recomputable from the note as written");
+    assert.equal(MDSE.validate(f.content, classes).length, 0, f.path);
+  }
+  const n = notes.find((f) => f.path.endsWith("/01141-002.md"))!.content, h = bomOwnedHash(n);
+  // a person's edits to prose, status, tags and a callout do not change the hash ...
+  const edited = n.replace("status: Draft", "status: Approved").replace("tags: []", "tags: [reviewed]").replace(/\n\n\n\n## Source: EA/, "\n\nMy own note about this part.\n\n\n\n## Source: EA");
+  assert.notEqual(edited, n); assert.equal(bomOwnedHash(edited), h);
+  // ... a change to the description, a manufacturer property or the SysML does
+  assert.notEqual(bomOwnedHash(n.replace(/^description: .*$/m, "description: Something else")), h);
+  assert.notEqual(bomOwnedHash(n.replace("attribute partNumber", "attribute partNumberX")), h);
+  // the same BOM imported again stamps the same hash; a different run date changes only importedOn
+  const again = buildBom(parseDelimited(flatText), { ...baseOpts, runDate: "2026-11-01T09:00:00" });
+  const n2 = again.files.find((f) => f.path.endsWith("/01141-002.md"))!.content;
+  assert.match(n2, /^importedOn: 2026-11-01$/m); assert.equal(bomOwnedHash(n2), h);
 });
