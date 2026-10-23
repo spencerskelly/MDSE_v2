@@ -29,7 +29,7 @@ const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "
 const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 export const baseName = (path: string): string => path.split("/").pop()!.replace(/\.md$/i, "");
 const SYSML_TO_KIND: Record<string, string> = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
-const DEP_KIND: Record<string, string> = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses" };
+const DEP_KIND: Record<string, string> = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path: string, text: string, o: BuildOptions): Note | null {
   let n: ReturnType<typeof MDSE.parse>;
@@ -78,7 +78,7 @@ function resolveAll(ix: ModelIndex): void {
       const E = (kind: string, target: string | null, symbol: string, label = "", detail = "", from = n.path): void =>
         link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
       for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
-      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(u.ref ? "references" : SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
       for (const s of d.stmts) {
         ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a! : s.text };
         if (s.kind === "satisfy") E("satisfies", endpoint(s.a!), s.a!);

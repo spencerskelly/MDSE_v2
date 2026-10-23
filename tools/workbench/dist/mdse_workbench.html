@@ -551,7 +551,7 @@ const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "
 const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 const baseName = (path        )         => path.split("/").pop() .replace(/\.md$/i, "");
 const SYSML_TO_KIND                         = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
-const DEP_KIND                         = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses" };
+const DEP_KIND                         = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path        , text        , o              )              {
   let n                               ;
@@ -600,7 +600,7 @@ function resolveAll(ix            )       {
       const E = (kind        , target               , symbol        , label = "", detail = "", from = n.path)       =>
         link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
       for (const s of d.specializes) { ref = { owner: n.path, kind: "specializes", key: s }; E("specializes", sym(s), s); }
-      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
+      for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(u.ref ? "references" : SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
       for (const s of d.stmts) {
         ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a  : s.text };
         if (s.kind === "satisfy") E("satisfies", endpoint(s.a ), s.a );
@@ -1758,6 +1758,7 @@ function edRelInfo(ix            , ref         )                 {
   if (s.kind === "perform") return mk("perform", { ...base, name: s.name ?? "", target: path(s.b ) });
   if (s.kind === "include") return mk("include", { ...base, name: s.name ?? "", target: path(s.b ) });
   if (s.kind === "optionalUseCase") return mk("extend", { ...base, name: s.name ?? "", target: path(s.b ) });
+  if (s.kind === "dependency" && s.tag && !ED_DEP_KINDS.includes(s.tag)) return mk("", { doc: s.doc ?? "", attrs: s.props ?? [] }, `A dependency tagged "${s.tag}" is edited in the note, not here.`);
   if (s.kind === "dependency") { const first = s.a === d.symbol; const dn = /^#derivation connection (\w+)$/.exec(s.text ?? "")?.[1] ?? ""; return mk(s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", { ...base, depKind: s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", name: dn, ownerFirst: first, target: path(first ? s.b  : s.a ) }); }
   return mk("", base, "This kind of statement is not edited here.");
 }

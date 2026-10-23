@@ -520,3 +520,17 @@ Rules: IMP-129.
 
 Closes OD-10, OD-11, OD-12, OD-13. Rules: BOM-009, BOM-016, BOM-017 (changed); BOM-018 to BOM-024 (new); MOD-163 (flagValue).
 
+
+## D-0048 — BOM import: SysML relationships, manufacturer properties, import order and efficiency
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0047)
+
+1. **Repeats.** Repeated lines in one assembly are treated as differing values: the first stays, the others are `flagValue` callouts for review (BOM-024, unchanged). The "prefer the row with no end date" change was not adopted.
+2. **Order.** The newest BOMs go in first: the Power Station, DVS and MVS redlines, then `Ampure_all_BoMs.xlsx`. Because the first note written wins, the redlines take precedence over the history export. (BOM-029)
+3. **Efficiency.** A part number already in the vault is skipped without per-line findings; findings in the findings note are capped at 40 rows per code. (BOM-026, BOM-027)
+4. **All relationships in SysML.** The `hasPart` and `references` YAML properties are no longer written on BOM notes, because the SysML usages say the same thing (the Workbench already counted each once). A drawing is a `ref item` usage typed by an `item def` in the drawing note, which now carries a small SysML block. A renumbered part is `dependency from new to old; // supersedes` (replaces the `## Replaces` section of D-0047). The Workbench reads a `ref` usage as a `references` edge (it was `hasFlow` for items) and `supersedes` as an edge kind. `supersedes` joins the comment-tag exceptions of D-0045, because SysML v2 has no replaces relationship. (BOM-025)
+5. **Manufacturer data.** YAML properties `manufacturer1`, `mfgPn1`, `manufacturer2`, `mfgPn2`, and so on. (BOM-028)
+6. **Unverified.** `ref item x : Type;` and the `item def` in a Document note have not been run through the pinned SysML parser. A renumbered part's `supersedes` dependency points at an unqualified `P_<old>` when the old part has no note yet; it is not rewritten when that note is imported later (the flat export), so a second pass or a Workbench fix is needed for those.
+
+Rules: BOM-016, BOM-023 (changed); BOM-025 to BOM-029 (new).
+

@@ -129,3 +129,19 @@ test("specialization can be changed and removed", () => {
   assert.ok(!ix2.edges.some((x) => x.from === owner.path && x.kind === "specializes" && x.to === e.to));
   assert.deepEqual(ix2.notes.get(owner.path)!.warnings, []);
 });
+
+test("a BOM note's relationships are all read from SysML: usages, a drawing reference, a supersedes dependency (BOM-025)", async () => {
+  const { buildBom } = await import("../../importer/src/bom.ts");
+  const g = (rows: string[][]) => rows.map((r) => r.map((v) => (v === "" ? null : { v })));
+  const grid = g([["Parent Part Number", "Parent CL1", "Parent CL2", "Parent Part Name", "Linenumber", "Child Part Number", "Child CL1", "Child CL2", "Child Name", "Amount", "Unit"],
+    ["A-1", "A", "01", "TOP", "1", "B-2", "A", "01", "SCREW", "2", "ea"], ["A-1", "A", "01", "TOP", "2", "DWG-9", "A", "01", "DWG TOP", "0", "ea"]]);
+  const r = buildBom(grid as any, { sourceName: "t", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes: classes as any, existing: null, pending: [] });
+  const files = new Map(r.files.filter((f) => f.path.endsWith(".md") && f.path.startsWith("BOM/")).map((f) => [f.path, f.content] as [string, string]));
+  const ix = buildIndex(files, { classes });
+  const top = [...ix.notes.values()].find((n) => n.title === "A-1")!;
+  assert.ok(!/^(hasPart|references):/m.test(files.get(top.path)!), "no relationship in YAML");
+  const kinds = ix.edges.filter((e) => e.from === top.path).map((e) => e.kind).sort();
+  assert.deepEqual(kinds, ["hasPart", "references"]);
+  assert.ok(ix.edges.every((e) => e.via === "sysml"));
+  assert.deepEqual(ix.notes.get(top.path)!.warnings, []);
+});

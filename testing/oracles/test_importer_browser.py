@@ -230,7 +230,7 @@ class RedlineXlsxInBrowser(unittest.TestCase):
             self.assertIn("P_6100148", top); self.assertIn("was 06991 before this release", top); self.assertNotIn("P_06991", top)
             self.assertTrue(any(n.startswith("BOM/Parts/6100148") for n in z.namelist()))
             alt = [z.read(n).decode() for n in z.namelist() if n.startswith("BOM/Parts/6100148")][0]
-            self.assertIn("EATON B-LINE AW250 (alternate)", alt)
+            self.assertIn("manufacturer2: EATON B-LINE", alt); self.assertIn("mfgPn2: AW250", alt)
             b.close()
 
 

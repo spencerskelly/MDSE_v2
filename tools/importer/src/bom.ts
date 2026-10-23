@@ -146,6 +146,7 @@ const bomIsDrawing = (u: Usage): boolean => /^dwg\b/i.test(u.childName);
 const bomIsNum = (s: string): boolean => /^-?\d+(\.\d+)?$/.test(s);
 const bomAttr = (name: string, v: string): string => `attribute ${name} = ${bomIsNum(v) && !/^-?0\d/.test(v) ? v : JSON.stringify(v)};`;
 const bomSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
+const bomDocSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::D_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
 /** camelCase usage name from a part name. ALL-CAPS words are lowered first (CONNECTOR HOUSING -> connectorHousing); at most 40 characters. */
 export function bomIdent(name: string, pn: string): string {
   const words = name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ").filter(Boolean).map((w) => (w === w.toUpperCase() ? w.toLowerCase() : w));
@@ -244,24 +245,31 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (revs.length > 1) findings.push({ level: "info", code: "REV_BY_ORDER", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")} seen${pr ? " as assembly" : " as pinned child"}; ${JSON.stringify(top)} taken as the latest by revision order.` });
   }
   const drawingPns = new Set(parsed.usages.filter(bomIsDrawing).map((u) => u.child));
-  // usages that can be written: parent and child both determined, no duplicate (parent, line)
-  const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
-  for (const u of parsed.usages) {
-    if (undetermined.has(u.parent) || (undetermined.has(u.child) && !bomIsDrawing(u))) continue;
-    const lp = latest.get(u.parent)!;
-    if (lp.rev !== u.parentRev) continue;
-    const k = u.parent + "\0" + u.line;
-    if (u.line && seenLine.has(k)) { const first = firstOf.get(k)!; const diff = bomUsageDiff(first, u); if (diff) { (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff }); findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` }); } continue; }
-    seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length;
-    if (!u.line) findings.push({ level: "warn", code: "NO_LINE", message: `Row ${u.row}: no line number for ${u.child} under ${u.parent}; the usage cannot be identified by line (BOM-008).` });
-  }
-
   // existing notes by part number
   const existingBy = new Map<string, { id: string; base: string; text: string }>();
   for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
     const m = /^- BOM Part Number: (.+)$/m.exec(t); if (!m) continue;
     const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), text: t });
   }
+  // usages that can be written: parent and child both determined, no duplicate (parent, line)
+  const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), existingUsages = new Map<string, Usage[]>(), otherRev = new Set<string>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
+  for (const u of parsed.usages) {
+    if (undetermined.has(u.parent) || (undetermined.has(u.child) && !bomIsDrawing(u))) continue;
+    const lp = latest.get(u.parent)!;
+    if (lp.rev !== u.parentRev) continue;
+    const k = u.parent + "\0" + u.line;
+    const exP = existingBy.get(u.parent);
+    if (exP) {   // BOM-026: an assembly already in the vault is not re-read line by line; only its lines are kept to say where this file disagrees
+      const vr = /attribute revision = (?:"([^"]*)"|([^;]+));/.exec(exP.text), vaultRev = vr ? (vr[1] ?? vr[2] ?? "").trim() : "";
+      if (vaultRev !== lp.rev) { otherRev.add(u.parent); continue; }
+      if (!bomIsDrawing(u) && !(u.line && seenLine.has(k))) { seenLine.add(k); (existingUsages.get(u.parent) ?? existingUsages.set(u.parent, []).get(u.parent)!).push(u); }
+      continue;
+    }
+    if (u.line && seenLine.has(k)) { const first = firstOf.get(k)!; const diff = bomUsageDiff(first, u); if (diff) { (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff }); findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` }); } continue; }
+    seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length;
+    if (!u.line) findings.push({ level: "warn", code: "NO_LINE", message: `Row ${u.row}: no line number for ${u.child} under ${u.parent}; the usage cannot be identified by line (BOM-008).` });
+  }
+
   // identity: ids continue after the highest in the vault and in the pending EA files; uids avoid every uid there
   const highest = new Map<string, number>(), taken = new Set<string>();
   for (const [, t] of [...(o.existing?.files ?? []), ...o.pending]) {
@@ -289,7 +297,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const byParent = new Map<string, Usage[]>(); for (const u of okUsage) (byParent.get(u.parent) ?? byParent.set(u.parent, []).get(u.parent)!).push(u);
   // A part number that an earlier BOM already put in the vault is kept as it is; say so when this file does not agree with it (same part number and revision, different lines).
   for (const pn of partPns) {
-    const ex = existingBy.get(pn), kids = byParent.get(pn); if (!ex || !kids?.length) continue;
+    const ex = existingBy.get(pn), kids = existingUsages.get(pn); if (!ex || !kids?.length) continue;
     const old = bomLinesOfNote(ex.text), diffs: string[] = [];
     for (const u of kids) { if (bomIsDrawing(u)) continue; const was = old.get(u.line); const now = bomUsageSig(u); if (was === undefined) diffs.push(`line ${u.line || "?"} (${u.child}) is new`); else if (was !== now) diffs.push(`line ${u.line} (${u.child}): ${was.replace("|", " pinned, qty ")} in the vault, ${now.replace("|", " pinned, qty ")} here`); }
     if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.` });
@@ -307,14 +315,14 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const inf = info.get(pn)!; if (!inf.fresh) continue;
     const l = latest.get(pn)!, isDoc = !partPns.includes(pn), cls = isDoc ? "Document" : "Object";
     const kids = (byParent.get(pn) ?? []).slice().sort((a, b) => lineKey(a) - lineKey(b) || a.row - b.row), scope = new IdentScope();
-    const body: string[] = [], flags: string[] = [], hasPart: string[] = [], refs: string[] = [], srcLines: string[] = [];
+    const body: string[] = [], flags: string[] = [], srcLines: string[] = [];
     const decl: string[] = [];
     if (!isDoc) {
       decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`, `        ${bomAttr("revision", l.rev)}`);
       if (l.source) decl.push(`        ${bomAttr("source", l.source)}`);
       if (l.drawingLocation) decl.push(`        ${bomAttr("drawingLocation", l.drawingLocation)}`);
       for (const u of kids) {
-        if (bomIsDrawing(u)) { drawingCount++; const dn = info.get(u.child); if (dn) refs.push(dn.base); continue; }
+        if (bomIsDrawing(u)) { drawingCount++; const dn = info.get(u.child); if (dn) decl.push(`        ref item ${scope.take(bomIdent(u.childName, u.child))} : ${bomDocSymOf(dn.id, u.child)};`); continue; }
         usageCount++;
         const cinf = info.get(u.child), name = scope.take(bomIdent(u.childName, u.child)), discrete = BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0;
         const props: string[] = [];
@@ -325,27 +333,27 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         if (u.ssc) props.push(bomAttr("ssc", u.ssc)); if (u.notes) props.push(bomAttr("notes", u.notes));
         const mult = discrete && u.amount !== "1" ? ` [${u.amount}]` : "";
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");
-        if (cinf) hasPart.push(cinf.base);
         const lc = latest.get(u.child);
         if (lc && lc.rev !== u.childRev) flags.push(flagCallout("flagConflict", `Pins ${u.child} at an older revision`, link, [`Line ${u.line || "?"} pins revision ${JSON.stringify(u.childRev)} of ${u.child}; its latest revision is ${JSON.stringify(lc.rev)}.`]));
         if (u.alternates.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")).join("; ")}`);
         if (u.prevChild) srcLines.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
       }
     }
+    if (!isDoc) for (const old of [...(replaces.get(pn) ?? [])].sort()) decl.push(`        dependency from ${bomSymOf(inf.id, pn)} to ${info.get(old) ? bomSymOf(info.get(old)!.id, old) : "P_" + old.replace(/[^A-Za-z0-9]/g, "_")}; // supersedes`);
     const firstUse = parsed.usages.find((u) => u.child === pn), own = firstUse?.ownSrc ?? null, alts = firstUse?.alternates ?? [];
     const sources = [...(own ? [own] : []), ...alts].filter((s) => s.mfr || s.mpn);
-    const sysml = isDoc ? null : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
+    const sysml = isDoc ? `package ${inf.id.replace("-", "_")} {\n    item def D_${pn.replace(/[^A-Za-z0-9]/g, "_")};\n}\n` : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
     const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revision: ${JSON.stringify(l.rev)} (as exported)`];
     if (l.source) head.push(`- Source: ${l.source}`);
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
-    if (sources.length) head.push(`- Manufacturer sources: ${sources.map((s, i) => `${i + 1}. ${[s.mfr, s.mpn].filter(Boolean).join(" ")}${i ? " (alternate)" : ""}`).join("; ")}`);
-    const rep = replaces.get(pn); if (rep) body.push("## Replaces", "", ...[...rep].sort().map((x) => `- ${info.get(x) ? `[[${info.get(x)!.base}]]` : x}`), "");
+    const extra: Array<[string, string]> = [];
+    sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
-      relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
-      ...(isDoc ? {} : { sourceRole: "authoritative-model", primarySymbol: `${inf.id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}` }) }) });
+      relFields: [], extraFields: extra, bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
+      sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }) });
   }
 
   // EA <-> BOM join on part number: a report only, nothing is corrected on either side (BOM-004). The EA key is not settled, so
@@ -358,11 +366,16 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
+  if (otherRev.size) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.` });
   if (existingN) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });
   const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
   const order = { error: 0, warn: 1, info: 2 } as const;
   const sorted = findings.slice().sort((a, b) => order[a.level] - order[b.level]);
-  files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${sorted.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n` });
+  // BOM-027: the findings note shows the first 40 rows of each code and the count of the rest; the callouts in the notes hold the detail
+  const shown = new Map<string, number>(), total = new Map<string, number>(); for (const f of sorted) total.set(f.code, (total.get(f.code) ?? 0) + 1);
+  const grouped: Finding[] = [];
+  for (const f of sorted) { const n = (shown.get(f.code) ?? 0) + 1; shown.set(f.code, n); if (n <= 40) grouped.push(f); else if (n === 41) grouped.push({ level: f.level, code: f.code, message: `… and ${total.get(f.code)! - 40} more with this code (not listed; the count is in the summary).` }); }
+  files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${grouped.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n` });
   const freshParts = newParts.length;
   return { status: "WRITE_READY", files, findings: sorted, problems,
     summary: { layout: parsed.layout, rows: parsed.usages.length, parts: freshParts, usages: usageCount, drawings: drawingCount, alternates, skippedParts: undetermined.size, existing: existingN, conflicts, eaMatched, bomOnly: eaMatched ? partPns.length - eaMatched : 0 } };

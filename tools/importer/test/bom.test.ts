@@ -41,9 +41,9 @@ test("flat BOM: one note per part number, parent-owned usages, pinned revision, 
   assert.match(a, /attribute quantity = 0\.559;\n\s+attribute unit = "m";/);              // measured -> quantity + raw unit
   assert.match(a, /attribute unit = "mL";/);                                              // case kept
   assert.doesNotMatch(a, /01141-91 \{|P_01141_91/);                                       // drawing line is not a usage
-  assert.match(a, /^references: \["\[\[01141-91\]\]"\]$/m);
-  assert.match(a, /^hasPart: \[/m);
-  const dwg = byTitle(r.files, "01141-91").content; assert.match(dwg, /^type: Document$/m); assert.doesNotMatch(dwg, /## SysML v2/);
+  assert.doesNotMatch(a, /^(hasPart|references):/m, "relationships are SysML text, not YAML (BOM-025)");
+  const dwg = byTitle(r.files, "01141-91").content; assert.match(dwg, /^type: Document$/m); assert.match(dwg, /item def D_01141_91;/);
+  assert.match(a, /ref item \w+ : DOC_\d{5}::D_01141_91;/);                              // the drawing is a SysML reference usage
   // leading zeros survive
   assert.match(byTitle(r.files, "01191").content, /BOM Part Number: 01191/);
   assert.equal(r.summary.drawings, 1);
@@ -96,7 +96,7 @@ test("blank part number + manufacturer part number is an alternate of the line a
   const rows = ["PC-0\tA\t1\tFRAME\t1\tPC-100\tA\t1\tPLATE\tCIRCLE AW\tAW 250\t2\tea", "PC-0\tA\t1\tFRAME\t\t\t\t\t\tEATON B-LINE\tAW250\t\t", "PC-0\tA\t1\tFRAME\t\t\t\t\t\tOTHER\tX1\t\t"];
   const r = buildBom(parseDelimited([head, ...rows].join("\n")), baseOpts);
   const plate = byTitle(r.files, "PC-100").content, frame = byTitle(r.files, "PC-0").content;
-  assert.match(plate, /Manufacturer sources: 1\. CIRCLE AW AW 250; 2\. EATON B-LINE AW250 \(alternate\); 3\. OTHER X1 \(alternate\)/);
+  assert.match(plate, /^manufacturer1: CIRCLE AW$/m); assert.match(plate, /^mfgPn1: AW 250$/m); assert.match(plate, /^manufacturer2: EATON B-LINE$/m); assert.match(plate, /^mfgPn2: AW250$/m); assert.match(plate, /^manufacturer3: OTHER$/m); assert.match(plate, /^mfgPn3: X1$/m);
   assert.match(frame, /: OBJ_\d{5}::P_PC_100 \[2\] \{/); assert.equal(r.summary.usages, 1);   // 2 occurrences, not 3
   assert.equal(r.files.filter((f) => f.path.startsWith("BOM/")).length, 2);
 });
@@ -193,7 +193,8 @@ test("redline xlsx: unstruck text is current, struck text is the previous value;
   assert.match(top, /: OBJ_\d{5}::P_6100148 \{\n\s+attribute line = 8;\n\s+attribute childRevision = "A02";\n\s+attribute quantity = 4\.318;\n\s+attribute unit = "m";/);
   assert.match(top, /\[2\]/); assert.match(top, /was 06991 before this release/);
   assert.match(top, /Drawing location: ECO-0437\/Power Station/); assert.match(top, /attribute revision = "B03";/);
-  assert.match(byTitle(r.files, "6100148").content, /Manufacturer sources: 1\. CIRCLE AW AW 250; 2\. EATON B-LINE AW250 \(alternate\)/);
+  assert.match(byTitle(r.files, "6100148").content, /^manufacturer1: CIRCLE AW$/m);
+  assert.match(byTitle(r.files, "6100148").content, /dependency from OBJ_\d{5}::P_6100148 to P_06991; \/\/ supersedes/);   // the renumbered part says what it replaces, in SysML (BOM-023)
 });
 
 test("the stored importer fingerprint helper is available to the BOM path", () => { assert.equal(sha256Text("a").length, 64); });
@@ -203,7 +204,7 @@ test("the Workbench scanner reads a BOM block: usages with pinned revision, quan
   const note = byTitle(buildBom(parseDelimited(flatText), baseOpts).files, "01141-002").content;
   const block = /```sysml\n([\s\S]*?)```/.exec(note)![1]!, s = scanSysml(block);
   assert.deepEqual(s.warnings ?? [], []);
-  const def = s.defs[0]!; assert.equal(def.name, "P_01141_002"); assert.equal(def.usages.length, 4);
+  const def = s.defs[0]!; assert.equal(def.name, "P_01141_002"); assert.equal(def.usages.length, 5);   // four parts and the drawing reference
   const wire = def.usages.find((u: any) => u.type?.endsWith("P_01798_006_M"))!;
   assert.deepEqual((wire as any).props.map((p: any) => [p.name, p.value]), [["line", "4"], ["childRevision", "-001"], ["quantity", "0.559"], ["unit", "m"], ["effectiveFrom", "2019-01-02"]]);
 });
@@ -254,4 +255,24 @@ test("an all-x end marker row is skipped, and a part number is always a quoted s
   assert.ok(r.findings.some((f) => f.code === "END_MARKER"));
   assert.ok(!r.files.some((f) => /\/x\.md$/.test(f.path)), "no part note named x");
   assert.match(byTitle(r.files, "01191").content, /attribute partNumber = "01191";/);
+});
+
+test("an assembly already in the vault is not re-read: no repeat flags, only a comparison when the revision is the same (BOM-026)", () => {
+  const first = buildBom(parseDelimited(flatText), baseOpts);
+  const existing = { hasVault: true, files: new Map(first.files.filter((f) => f.path.endsWith(".md")).map((f) => [f.path, f.content] as [string, string])) };
+  const dup = FLAT_ROWS[2]!.replace("\t0.559\t", "\t0.700\t");
+  const again = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, dup].join("\n")), { ...baseOpts, existing });
+  assert.equal(again.files.filter((f) => f.path.startsWith("BOM/")).length, 0, "nothing new to write");
+  assert.ok(!again.findings.some((f) => f.code === "DUP_LINE" || f.code === "QTY_ZERO"), "no per-line findings for notes already in the vault");
+  const other = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS.map((r) => r.replace(/^01141-002\t-N\t99/, "01141-002\t-N\t98"))].join("\n")), { ...baseOpts, existing });
+  assert.ok(other.findings.some((f) => f.code === "EXISTING_OTHER_REV"));
+});
+
+test("the findings note lists at most 40 rows per code and counts the rest (BOM-027)", () => {
+  const rows = Array.from({ length: 60 }, (_, i) => `ASM-${i}\tA\t01\tASM\tbuy\tP\t1\tP-${i}\tA\t01\tPART\tbuy\tP\t\t\t\t\t\t0\tea\tx`);
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...rows].join("\n")), baseOpts);
+  const note = r.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content;
+  assert.equal((note.match(/\| QTY_ZERO \|/g) ?? []).length, 41);
+  assert.match(note, /and 20 more with this code/);
+  assert.equal(r.findings.filter((f) => f.code === "QTY_ZERO").length, 60);
 });

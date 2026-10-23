@@ -82,6 +82,7 @@ export function edRelInfo(ix: ModelIndex, ref: EdgeRef): RelInfo | null {
   if (s.kind === "perform") return mk("perform", { ...base, name: s.name ?? "", target: path(s.b!) });
   if (s.kind === "include") return mk("include", { ...base, name: s.name ?? "", target: path(s.b!) });
   if (s.kind === "optionalUseCase") return mk("extend", { ...base, name: s.name ?? "", target: path(s.b!) });
+  if (s.kind === "dependency" && s.tag && !ED_DEP_KINDS.includes(s.tag)) return mk("", { doc: s.doc ?? "", attrs: s.props ?? [] }, `A dependency tagged "${s.tag}" is edited in the note, not here.`);
   if (s.kind === "dependency") { const first = s.a === d.symbol; const dn = /^#derivation connection (\w+)$/.exec(s.text ?? "")?.[1] ?? ""; return mk(s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", { ...base, depKind: s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", name: dn, ownerFirst: first, target: path(first ? s.b! : s.a!) }); }
   return mk("", base, "This kind of statement is not edited here.");
 }
