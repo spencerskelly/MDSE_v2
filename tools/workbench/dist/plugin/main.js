@@ -349,7 +349,7 @@ function relations(h        , add                      , isDef = false)       {
 /** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
                                               
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
                                                                                                                                    
 
@@ -390,7 +390,7 @@ function parseItems(s        , start        , close         )                   
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
 const SNAME = "[A-Za-z_]\\w*", SPATH = "[A-Za-z_][\\w:.]*";
 /** [end] [dir] [ref] kind name [relations] [mult] [modifiers]. Relations: `: T`, `: ~T`, `:> a, b`, `:>> c`. */
-const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
+const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|requirement|verification|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
 /** `end supplier : P;` with no kind keyword, as an interface or connection definition writes its ends. */
 const END_USAGE = new RegExp(`^end\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)$`);
 function relationsOf(txt        )                                                                              {
@@ -405,10 +405,11 @@ function relationsOf(txt        )                                               
 }
 const QN = "([A-Za-z_][\\w:.]*)";
 
-function interpret(it      , d            )       {
+function interpret(it      , d            , context         )       {
   const nu = d.usages.length, ns = d.stmts.length;
-  const handled = interpretOne(it, d);
+  const handled = interpretOne(it, d, context);
   if (!handled) { if (it.head) d.raw.push(it.head); return; }
+  const innerContext = d.usages.length > nu ? d.usages[d.usages.length - 1] .name : context;
   const rec                                               = d.usages.length > nu ? d.usages[d.usages.length - 1] : d.stmts.length > ns ? d.stmts[d.stmts.length - 1] : undefined;
   if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) {
     if (rec) {                                                                         // properties of a usage or statement are kept on it, not as usages of the definition (D-0031)
@@ -422,14 +423,14 @@ function interpret(it      , d            )       {
         continue;
       }
     }
-    interpret(c, d);                                                                   // nested members of any construct
+    interpret(c, d, innerContext);                                                    // nested members preserve their typed usage context
   }
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
 let DOCS           = [];
 const docText = (head        )         => (DOCS[Number(/\d+$/.exec(head) [0])] ?? "").replace(/^\s*\*?\s?/gm, "").trim();
-function interpretOne(it      , d            )          {
+function interpretOne(it      , d            , context         )          {
   const h = it.head;
   if (/^doc ~D\d+$/.test(h)) { for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); return true; }
   { const hm = /^(?:constraint|action|state|item|attribute)\s+([A-Za-z_]\w*)\b/.exec(h); const dc = hm && it.body?.find((c) => /^doc ~D\d+$/.test(c.head)); if (dc) d.notes[hm [1] ] = docText(dc.head); }
@@ -448,7 +449,7 @@ function interpretOne(it      , d            )          {
     return true;
   }
   if (it.body && /^objective\b/.test(h)) {
-    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1] , text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
+    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1] , text: c.head, ...(context ? { context } : {}) }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
   if ((m = USAGE.exec(h))) {
@@ -464,7 +465,7 @@ function interpretOne(it      , d            )          {
   }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1] , ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1] , b: m[2] , text: h }); return true; }
-  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h }); return true; }
+  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1] , b: m[2] , text: h, ...(context ? { context } : {}) }); return true; }
   if ((m = new RegExp(`^(#refinement\\s+)?dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[2] , b: m[3] , tag: m[1] ? "refines" : it.tag || "dependsOn", text: h }); return true; }
   if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1] , b: m[3] , ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
   if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1] , b: m[5] , ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
@@ -542,7 +543,7 @@ function scanSysml(block        )             {
 const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "tags", "sourceRole", "primarySymbol", "aliases", "fixture"]);
 const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 const baseName = (path        )         => path.split("/").pop() .replace(/\.md$/i, "");
-const SYSML_TO_KIND                         = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow" };
+const SYSML_TO_KIND                         = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
 const DEP_KIND                         = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses" };
 
 function readNote(path        , text        , o              )              {
@@ -580,6 +581,14 @@ function resolveAll(ix            )       {
   for (const n of ix.notes.values()) {
     const d = n.def;
     if (d) {
+      // A note owns one definition, but its nested usages can be the endpoints of
+      // allocations, verification objectives and performed actions. Resolve local
+      // usage names through their typed definitions so the canvas draws real notes
+      // instead of orphaned "importer" / "repeatImport" ghost cards.
+      const local = new Map(d.usages.filter((u) => u.type).map((u) => [u.name, u.type ]         ));
+      const endpoint = (name        )                =>
+        sym(name) ?? (name === d.name || name === d.symbol ? n.path : null) ??
+        (local.has(name) ? sym(local.get(name) ) : null);
       let ref                     ;
       const E = (kind        , target               , symbol        , label = "", detail = "", from = n.path)       =>
         link(ix, { from, to: target, toSymbol: symbol, kind, label, via: "sysml", detail, ...(ref ? { ref } : {}) });
@@ -587,14 +596,14 @@ function resolveAll(ix            )       {
       for (const u of d.usages) if (u.type) { ref = { owner: n.path, kind: "member", key: u.head }; E(SYSML_TO_KIND[u.kind] ?? "has", sym(u.type), u.type, `${u.dir ? u.dir + " " : ""}${u.name}${u.mult ?? ""}`, (u.props ?? []).map((q) => `${q.name}=${q.value.replace(/^"|"$/g, "")}`).join("; ")); }
       for (const s of d.stmts) {
         ref = { owner: n.path, kind: s.kind === "verify" ? "verify" : "member", key: s.kind === "verify" ? s.a  : s.text };
-        if (s.kind === "satisfy") E("satisfies", sym(s.a ), s.a );
-        else if (s.kind === "verify") E("verifies", sym(s.a ), s.a );
-        else if (s.kind === "perform") E("performs", sym(s.b ), s.b , s.name ?? "");
+        if (s.kind === "satisfy") E("satisfies", endpoint(s.a ), s.a );
+        else if (s.kind === "verify") E("verifies", endpoint(s.a ), s.a , "", "", (s.context && endpoint(s.context)) || n.path);
+        else if (s.kind === "perform") E("performs", endpoint(s.b ), s.b , s.name ?? "", "", (s.context && endpoint(s.context)) || n.path);
         else if (s.kind === "include") E("includes", sym(s.b ), s.b , s.name ?? "");
         else if (s.kind === "optionalUseCase") E("extendedBy", sym(s.b ), s.b , s.name ?? "", s.tag ?? "");
         else if (s.kind === "nestedUseCase") E("has", sym(s.b ), s.b , s.name ?? "", s.tag ?? "");
         else if (s.kind === "allocate" || s.kind === "dependency") {
-          const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = sym(s.a ), b = sym(s.b );
+          const kind = s.kind === "allocate" ? "allocatedTo" : DEP_KIND[s.tag ?? ""] ?? "dependsOn", a = endpoint(s.a ), b = endpoint(s.b );
           if (a) E(kind, b, s.b , "", "", a);                                              // source known: normal edge, target may dangle
           else if (b) link(ix, { from: b, to: null, toSymbol: s.a , kind, label: "", via: "sysml", detail: "", reverse: true, ref });   // source missing: never a self-loop
           else E(kind, null, s.b , "", "", n.path);
