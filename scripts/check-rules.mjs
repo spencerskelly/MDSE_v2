@@ -13,7 +13,7 @@ const CSV = path.join(root, "governance/register/rules-register.csv");
 const STATUS = new Set(["Active", "Proposed", "Check", "Unreviewed"]);
 const PHASE = new Set(["Standing", "P1", "P2", "P3", "Later"]);
 const SECTIONS = new Set(["GOV", "DAT", "MOD", "IMP", "BOM", "BAS", "BOO", "WKB", "AIP", "TST"]);
-const HEAD = /^- \*\*([A-Z]{3})-(\d{3})\*\* · (\S+) · (\S+) — (.*)$/;
+const HEAD = /^- \*\*([A-Z]{3})-(\d{3})\*\* · (\S+) · (\S+)(?: · (live))? — (.*)$/;
 
 // Split "rule text (origin) *Note: ...*" from the right, honouring nested parentheses in the origin.
 function splitTail(rest) {
@@ -39,8 +39,8 @@ fs.readFileSync(RULESET, "utf8").split("\n").forEach((line, i) => {
   if (line.startsWith("### ")) subsection = line.slice(4).trim();
   if (inRetired || !section || !line.startsWith("- **")) return;
   const m = line.match(HEAD);
-  if (!m) { errors.push(`${at}: rule line does not match "- **XXX-NNN** · Status · Phase — text (origin)"`); return; }
-  const [, sec, num, status, phase, rest] = m, id = `${sec}-${num}`;
+  if (!m) { errors.push(`${at}: rule line does not match "- **XXX-NNN** · Status · Phase [· live] — text (origin)"`); return; }
+  const [, sec, num, status, phase, live, rest] = m, id = `${sec}-${num}`;
   if (sec !== section) errors.push(`${at}: ${id} sits under section ${section}`);
   if (seen.has(id)) errors.push(`${at}: duplicate id ${id}`);
   seen.add(id);
@@ -48,12 +48,12 @@ fs.readFileSync(RULESET, "utf8").split("\n").forEach((line, i) => {
   if (!PHASE.has(phase)) errors.push(`${at}: ${id} has unknown phase "${phase}"`);
   const tail = splitTail(rest);
   if (!tail || !tail.origin.trim()) { errors.push(`${at}: ${id} has no origin in parentheses at the end`); return; }
-  rules.push({ id, section: sec, subsection, status, phase, text: tail.text, origin: tail.origin, note: tail.note });
+  rules.push({ id, section: sec, subsection, status, phase, live: live ? "live" : "", text: tail.text, origin: tail.origin, note: tail.note });
 });
 
 const q = (s) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-const csv = ["ID,Section,Subsection,Status,Phase,Rule,Origin,Note", ...rules.map((r) =>
-  [r.id, r.section, r.subsection, r.status, r.phase, r.text, r.origin, r.note].map(q).join(","))].join("\n") + "\n";
+const csv = ["ID,Section,Subsection,Status,Phase,Live,Rule,Origin,Note", ...rules.map((r) =>
+  [r.id, r.section, r.subsection, r.status, r.phase, r.live, r.text, r.origin, r.note].map(q).join(","))].join("\n") + "\n";
 
 if (process.argv.includes("--write")) fs.writeFileSync(CSV, csv);
 else if (!fs.existsSync(CSV) || fs.readFileSync(CSV, "utf8") !== csv)
@@ -61,4 +61,4 @@ else if (!fs.existsSync(CSV) || fs.readFileSync(CSV, "utf8") !== csv)
 
 const count = (k) => [...rules.reduce((m, r) => m.set(r[k], (m.get(r[k]) || 0) + 1), new Map())].map(([a, b]) => `${a} ${b}`).join(", ");
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
-console.log(`${rules.length} rules OK. Status: ${count("status")}. Phase: ${count("phase")}.`);
+console.log(`${rules.length} rules OK (${rules.filter((r) => r.live).length} tagged live). Status: ${count("status")}. Phase: ${count("phase")}.`);

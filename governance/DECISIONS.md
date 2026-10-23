@@ -469,8 +469,22 @@ Rules: WKB-024.
 2. **New library concepts.** Conditional succession (a language construct, added to the language group), requirement derivation, causation, multicausation, trade study, verdict kinds, verification methods, quantities and units, rationale, issue, status and refinement metadata, shape items. Patterns: requirement decomposition, ownership versus reference.
 3. **Corrections.** Succession: simple and guarded (`if`, `else`) are told apart. Use case: SysML v2 has no `extend`; MDSE writes an optional include (`[0..1]`) as a convention and the note says so. Individual definition and usage: `individual` is a prefix on an occurrence definition or usage, metaclass shown as `OccurrenceDefinition (isIndividual = true)`. The review's claim that `individual def` is not a construct was wrong: the grammar allows it.
 4. **Four support levels.** Each note states, separately: documented, recognized by the Workbench scanner (tested), written by the importer (measured), accepted by a SysML v2 parser. The last is not established for any entry, because the pinned parser (IMP-068) has not been run on the examples. A listed construct is not a supported one.
-5. **No change to model output.** The importer and Workbench still write and read `dependency // derivedFrom` and `// refines`. Switching to `#derivation` or `#refinement` is OD-09.
+5. **Model output.** Unchanged in this decision; derivation and refinement forms were settled in D-0045 (OD-09 closed).
 6. **Confidence.** Examples were written from the specification grammar and library files as read through a summarizing fetch. Causation, multicausation, trade study subject, and verification method usage are the least certain forms. Treat them as unchecked until the parser has run.
 7. **Not done.** Geometry beyond shape items, and the spec section number per entry, are not in the catalog. The live vault gets these notes when MDSE_v2_live next syncs from the base vault.
 
 Rules: MOD-165, MOD-166.
+
+
+## D-0045 — Native SysML v2 forms wherever they exist; the `live` rule tag
+
+2026-10-23 · Spencer · Accepted (owner request, chat)
+
+1. **Principle.** The language MDSE writes is as close to native SysML v2 as possible: a keyword, a standard-library element or standard metadata where one exists. A comment tag or MDSE convention is used only where SysML v2 has none. (MOD-168)
+2. **OD-09 closed, option C.** Requirement derivation is written `#derivation connection derive_<original> { end #original ::> <original>; end #derive ::> <derived>; }` in the derived requirement's note. Refinement is written `#refinement dependency from <refining> to <refined>;`. (MOD-169, IMP-128, WKB-025)
+3. **Old forms.** `dependency … // derivedFrom` and `// refines` are still read, so existing notes and vaults load. They are replaced by the native form when the relationship is edited in the Workbench; nothing rewrites them in bulk.
+4. **Exceptions, each because SysML v2 has no native form.** `dependency … // trace`, `// dependsOn` and `// uses` (a trailing comment tag; the dependency itself is native). An optional use case written `use case x : Y[0..1]` where SysML v1 had `extend`. Provisional `tracesTo` links. These stay until a native form is found.
+5. **Unverified.** The library names (`#derivation`, `#original`, `#derive`, `#refinement`) and the connection-with-two-ends layout come from the specification and library files as read through a summarizing fetch. The pinned parser (IMP-068) has not been run on them. If it rejects a form, the form changes here.
+6. **`live` tag.** A rule line may carry `· live` after its Phase. It marks rules new or changed since the live vault's documentation was last updated, so the documentation updates can be found; the register CSV has a Live column. It does not change whether a rule binds. Applied to WKB-024, MOD-165, MOD-166 and the rules added here. The tag is removed once the live documentation is updated.
+
+Rules: MOD-168, MOD-169, IMP-128, WKB-025.

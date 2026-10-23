@@ -551,11 +551,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     if (DERIVE.has(key)) {
       if (src?.keyword !== "requirement def" || dst?.keyword !== "requirement def") { if (noteLink()) return; defer("DERIVE_ENDPOINT_KIND"); return; }
-      addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // derivedFrom`, srcLine("Derived from", dst)); done(src, "Dependency"); return;
+      addStmt(src, `#derivation connection derive_${dst.symbol.replace(/[^A-Za-z0-9_]/g, "_")} {\n            end #original ::> ${dst.symbol};\n            end #derive ::> ${src.symbol};\n        }`, srcLine("Derived from", dst)); done(src, "Dependency"); return;
     }
     if (DEP_WORD[key]) {
       if (!src?.keyword || !dst?.keyword) { if (noteLink()) return; defer("DEPENDENCY_ENDPOINT_KIND"); return; }
-      addStmt(src, `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst)); done(src, "Dependency"); return;
+      addStmt(src, DEP_WORD[key] === "refines" ? `#refinement dependency from ${src.symbol} to ${dst.symbol};` : `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst)); done(src, "Dependency"); return;
     }
     if (key === "Association") {
       // IMP-118: an Actor or Object associated with a Use Case takes part in it. An Actor is an `actor` of the use case (native); another Object goes to the `participants` link. Anything else is not proven to connect.

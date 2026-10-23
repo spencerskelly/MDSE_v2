@@ -2275,7 +2275,7 @@
    "requirements (the derived ones, one or more)"
   ],
   "similar": "dependency",
-  "difference": "A dependency only says one element depends on another. A derivation says specific requirements follow from an original. It is not containment (a requirement usage nested in another requirement) and not satisfaction (a design element meets a requirement). MDSE writes derived-from as a dependency tagged `// derivedFrom` for now; the native form is this one (open decision OD-09).",
+  "difference": "A dependency only says one element depends on another. A derivation says specific requirements follow from an original. It is not containment (a requirement usage nested in another requirement) and not satisfaction (a design element meets a requirement). MDSE writes this native form (D-0045). Older notes may still carry `dependency … // derivedFrom`; the Workbench reads it and rewrites it in this form when the relationship is edited.",
   "example": "#derivation connection { end #original ::> RemoteControl; end #derive ::> RemoteStart; }",
   "category": "library"
  },
@@ -2489,7 +2489,7 @@
    "any element (the less precise one)"
   ],
   "similar": "dependency",
-  "difference": "A plain dependency has no meaning beyond the link. A refinement says the source adds precision to the target. MDSE writes refines as a dependency tagged `// refines` for now; the native form is this one (open decision OD-09).",
+  "difference": "A plain dependency has no meaning beyond the link. A refinement says the source adds precision to the target. MDSE writes this native form (D-0045). Older notes may still carry `dependency … // refines`; the Workbench reads it and rewrites it in this form when the relationship is edited.",
   "example": "#refinement dependency from DetailedCharger to Charger;",
   "category": "library"
  },

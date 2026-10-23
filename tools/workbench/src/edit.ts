@@ -163,9 +163,9 @@ export const ED_RELS: EdRel[] = [
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
   { id: "perform", label: "performs action", help: "`perform action <name> : <action>;` inside a part definition.",
     from: (n) => kw(n) === "part def", to: (n) => kw(n) === "action def", inputs: ["name"] },
-  { id: "derivedFrom", label: "derived from", help: "`dependency from <this> to <target>; // derivedFrom` between two requirements.",
+  { id: "derivedFrom", label: "derived from", help: "`#derivation connection` with `#original` the target and `#derive` this requirement, between two requirements.",
     from: (n) => kw(n) === "requirement def", to: (n, f) => kw(n) === "requirement def" && n.path !== f.path, inputs: [] },
-  { id: "refines", label: "refines", help: "`dependency … // refines`: this adds precision to the target.",
+  { id: "refines", label: "refines", help: "`#refinement dependency from <this> to <target>;`: this adds precision to the target.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
   { id: "trace", label: "traces to", help: "`dependency … // trace`: related, relationship not chosen yet.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
@@ -197,6 +197,7 @@ export function planAddRelationship(ix: ModelIndex, files: Map<string, string>, 
   const uniq = (want: string): string => { let n = 1, nm = want; while (used.has(nm)) { n++; nm = `${want}${n}`; } return nm; };
   const dupKind: Record<string, string> = { perform: "perform", include: "include", extend: "optionalUseCase" };
   if (dupKind[rel.id] && A.stmts.some((x) => x.kind === dupKind[rel.id] && x.b === B.symbol)) return bad("Nothing to change: that relationship is already written.");
+  if ((rel.id === "derivedFrom" || rel.id === "refines") && A.stmts.some((x) => x.kind === "dependency" && x.tag === rel.id && x.a === A.symbol && x.b === B.symbol)) return bad("Nothing to change: that relationship is already written.");
   let stmt = "";
   let headEdit: ((block: string) => string | null) | null = null;
   switch (rel.id) {
@@ -212,7 +213,13 @@ export function planAddRelationship(ix: ModelIndex, files: Map<string, string>, 
     case "satisfy": stmt = `satisfy ${B.symbol};`; break;
     case "allocate": stmt = `allocate ${A.symbol} to ${B.symbol};`; break;
     case "perform": stmt = `perform action ${uniq(edUsageIdent(o.name?.trim() || to.title, "action"))} : ${B.symbol};`; break;
-    case "derivedFrom": case "refines": case "trace": case "dependsOn": stmt = `dependency from ${A.symbol} to ${B.symbol}; // ${rel.id}`; break;
+    case "refines": stmt = `#refinement dependency from ${A.symbol} to ${B.symbol};`; break;
+    case "derivedFrom": {                                                                    // native library form (D-0045): this requirement is the derived end
+      const nm = (n: string): string => `derive_${n.replace(/[^A-Za-z0-9_]/g, "_")}`, taken = new Set(A.stmts.map((x) => /^#derivation connection (\w+)$/.exec(x.text ?? "")?.[1] ?? ""));
+      let n = 1, name = nm(B.symbol); while (taken.has(name) || used.has(name)) { n++; name = `${nm(B.symbol)}${n}`; }
+      stmt = `#derivation connection ${name} {\n    end #original ::> ${B.symbol};\n    end #derive ::> ${A.symbol};\n}`; break;
+    }
+    case "trace": case "dependsOn": stmt = `dependency from ${A.symbol} to ${B.symbol}; // ${rel.id}`; break;
     case "include": stmt = `include use case ${uniq(edUsageIdent(o.name?.trim() || to.title, "include"))} : ${B.symbol};`; break;
     case "extend": stmt = `use case ${uniq(edUsageIdent(o.name?.trim() || to.title, "extension"))} : ${B.symbol}[0..1];`; break;
     case "verify": {

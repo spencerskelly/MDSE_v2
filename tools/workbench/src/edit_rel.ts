@@ -82,7 +82,7 @@ export function edRelInfo(ix: ModelIndex, ref: EdgeRef): RelInfo | null {
   if (s.kind === "perform") return mk("perform", { ...base, name: s.name ?? "", target: path(s.b!) });
   if (s.kind === "include") return mk("include", { ...base, name: s.name ?? "", target: path(s.b!) });
   if (s.kind === "optionalUseCase") return mk("extend", { ...base, name: s.name ?? "", target: path(s.b!) });
-  if (s.kind === "dependency") { const first = s.a === d.symbol; return mk(s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", { ...base, depKind: s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", ownerFirst: first, target: path(first ? s.b! : s.a!) }); }
+  if (s.kind === "dependency") { const first = s.a === d.symbol; const dn = /^#derivation connection (\w+)$/.exec(s.text ?? "")?.[1] ?? ""; return mk(s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", { ...base, depKind: s.tag && ED_DEP_KINDS.includes(s.tag) ? s.tag : "dependsOn", name: dn, ownerFirst: first, target: path(first ? s.b! : s.a!) }); }
   return mk("", base, "This kind of statement is not edited here.");
 }
 
@@ -94,7 +94,8 @@ export function edPropsFor(rel: string, usageKind = ""): { options: PropId[]; cu
     case "owns": return { options: ["name", "mult", ...(usageKind === "item" ? ["dir" as PropId] : []), "ordered", "nonunique", "doc"], custom: true };
     case "perform": case "include": return { options: ["name", "doc"], custom: true };
     case "extend": return { options: ["name", "doc"], custom: true };
-    case "satisfy": case "allocate": case "derivedFrom": case "refines": case "trace": case "dependsOn": return { options: ["doc"], custom: true };
+    case "derivedFrom": return { options: [], custom: false };                              // the two ends are the whole relationship
+    case "satisfy": case "allocate": case "refines": case "trace": case "dependsOn": return { options: ["doc"], custom: true };
     default: return { options: [], custom: false };                                    // specializes, verify: the head is the whole relationship
   }
 }
@@ -119,9 +120,14 @@ export function edRenderMember(f: RelForm, ownerSym: string, targetSym: string, 
     case "perform": head = `perform action ${f.name} : ${targetSym}`; break;
     case "include": head = `include use case ${f.name} : ${targetSym}`; break;
     case "extend": head = `use case ${f.name} : ${targetSym}[0..1]`; break;
+    case "refines": head = f.ownerFirst ? `#refinement dependency from ${ownerSym} to ${targetSym}` : `#refinement dependency from ${targetSym} to ${ownerSym}`; break;
+    case "derivedFrom": {                                                                      // native: the connection is named, its two ends carry the roles (D-0045)
+      const [orig, der] = f.ownerFirst ? [targetSym, ownerSym] : [ownerSym, targetSym];
+      return `#derivation connection ${f.name || "derive_" + orig.replace(/[^A-Za-z0-9_]/g, "_")} {\n${pad}    end #original ::> ${orig};\n${pad}    end #derive ::> ${der};\n${pad}}`;
+    }
     default: head = f.ownerFirst ? `dependency from ${ownerSym} to ${targetSym}` : `dependency from ${targetSym} to ${ownerSym}`;
   }
-  const dep = ED_DEP_KINDS.includes(f.rel) ? ` // ${f.depKind || f.rel}` : "";
+  const dep = f.rel === "trace" || f.rel === "dependsOn" ? ` // ${f.depKind || f.rel}` : "";
   const inner = [...(f.doc.trim() ? [edDocComment(f.doc, pad + "    ")] : []), ...f.attrs.map((a) => attrLine(a, pad + "    "))];
   if (!inner.length) return `${head};${dep}`;
   return `${head} {\n${inner.map((l) => `${pad}    ${l}`).join("\n")}\n${pad}}${dep}`;

@@ -197,8 +197,8 @@ test("extend becomes an optional use case; dependency kinds stay distinct", asyn
   assert.match(body("Charge a Vehicle.md"), /use case \w+ : UC_\d{5}::Authenticate\[0\.\.1\];/);
   assert.match(body("Charge a Vehicle.md"), /include use case authenticate : UC_\d{5}::Authenticate;/);
   const std = body("UL 2594 5.1 Enclosure.md");
-  assert.match(std, /\/\/ trace/); assert.match(std, /\/\/ refines/);
-  assert.match(body("Charge Current Accuracy.md"), /dependency from REQ_\d{5}::ChargeCurrentAccuracy to STD_\d{5}::UL25945p1Enclosure; \/\/ derivedFrom/);
+  assert.match(std, /\/\/ trace/); assert.match(std, /#refinement dependency from /); assert.doesNotMatch(std, /\/\/ refines/);
+  assert.match(body("Charge Current Accuracy.md"), /#derivation connection derive_STD_\d{5}__UL25945p1Enclosure \{\s+end #original ::> STD_\d{5}::UL25945p1Enclosure;\s+end #derive ::> REQ_\d{5}::ChargeCurrentAccuracy;\s+\}/);
   assert.match(readFileSync(new URL("../TRANSLATION.md", import.meta.url), "utf8"), /## Dependency kinds/);
 });
 

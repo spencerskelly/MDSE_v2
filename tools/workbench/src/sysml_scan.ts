@@ -93,6 +93,17 @@ function interpretOne(it: Item, d: Definition): boolean {
   for (const i of classify(h)) if (!d.langs.includes(i)) d.langs.push(i);
   let m: RegExpExecArray | null;
   const st = (s: Stmt): void => { d.stmts.push(s); };
+  if (it.body && /^#derivation\s+connection(?:\s+[A-Za-z_]\w*)?$/.test(h)) {          // native derivation: `end #original ::> A; end #derive ::> B;` (D-0045)
+    let orig = "";
+    const derived: string[] = [];
+    for (const c of it.body) {
+      const e = new RegExp(`^end\\s+#(original|derive)\\s*::>\\s*${QN}$`).exec(c.head);
+      if (e) { if (e[1] === "original") orig = e[2]!; else derived.push(e[2]!); for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); }
+    }
+    if (orig) for (const x of derived) st({ kind: "dependency", a: x, b: orig, tag: "derivedFrom", text: h });
+    else d.raw.push(h);
+    return true;
+  }
   if (it.body && /^objective\b/.test(h)) {
     for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1]!, text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
@@ -111,7 +122,7 @@ function interpretOne(it: Item, d: Definition): boolean {
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1]!, ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1]!, b: m[2]!, text: h }); return true; }
   if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h }); return true; }
-  if ((m = new RegExp(`^dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[1]!, b: m[2]!, tag: it.tag || "dependsOn", text: h }); return true; }
+  if ((m = new RegExp(`^(#refinement\\s+)?dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[2]!, b: m[3]!, tag: m[1] ? "refines" : it.tag || "dependsOn", text: h }); return true; }
   if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1]!, b: m[3]!, ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
   if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1]!, b: m[5]!, ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^(?:(connection|interface)(?:\\s+(${SNAME}))?(?:\\s*:\\s*(${SPATH}))?\\s+)?connect\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)\\s+to\\s+(?:(${SNAME})\\s*::>\\s*)?([\\w.]+)$`).exec(h))) {
