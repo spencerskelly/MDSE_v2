@@ -52,7 +52,7 @@ export interface UidResult { uid: string; evidence: string[] }
 
 /** Allocates a unique 30-character uid per request in (created, guid) order. `taken` holds uids already in the vault. */
 export function allocateUids(reqs: UidRequest[], a: AuthorOptions, taken: Set<string>, fallbackStamp: string): Map<string, UidResult> {
-  const out = new Map<string, UidResult>();
+  const out = new Map<string, UidResult>(), cursor = new Map<string, string>();
   const order = reqs.map((r) => ({ r, stamp: eaTimeStamp(r.created) })).sort((x, y) => {
     const a1 = x.stamp ?? "99999999999999999", b1 = y.stamp ?? "99999999999999999";
     return a1 < b1 ? -1 : a1 > b1 ? 1 : x.r.guid < y.r.guid ? -1 : x.r.guid > y.r.guid ? 1 : 0;
@@ -65,7 +65,10 @@ export function allocateUids(reqs: UidRequest[], a: AuthorOptions, taken: Set<st
     let t = stamp;
     if (!t) { t = fallbackStamp; evidence.push("UID_TIME_FALLBACK"); }
     let shifted = false;
+    const from = t, key = from + who.code, next = cursor.get(key);   // every stamp from `from` up to the cursor is already taken: start there, not at `from` (BOM runs give every part one fallback stamp)
+    if (next) { t = next; shifted = true; }
     while (taken.has(t + who.code)) { t = bumpMillisecond(t); shifted = true; }
+    if (shifted) cursor.set(key, t);
     if (shifted) evidence.push("UID_COLLISION_SHIFTED");
     const uid = t + who.code;
     taken.add(uid);

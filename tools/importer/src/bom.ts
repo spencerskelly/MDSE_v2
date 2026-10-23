@@ -94,6 +94,7 @@ export function parseBom(grid: Grid): Parsed {
     let last: Usage | null = null;
     for (let r = d.headerRow + 1; r < grid.length; r++) {
       const row = grid[r] ?? []; if (!row.some((c) => bomTxt(c))) continue;
+      { const cells = row.map(bomTxt).filter(Boolean); if (cells.length > 4 && cells.every((t) => t === "x")) { findings.push({ level: "info", code: "END_MARKER", message: `Row ${r + 1}: every cell is "x", an end-of-data marker in the export; skipped.` }); continue; } }
       const parent = bomGet(row, m, "parentpartnumber"), child = bomGet(row, m, "childpartnumber"), mfr = bomGet(row, m, "manufacturer", "childmanufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber", "childmanufacturerpartnumber");
       if (!child) {   // BOM-003 / BOM-013: blank PN + manufacturer part number = alternate of the line above
         if (mpn && last && last.parent === parent && last.parentRev === bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2")) { last.alternates.push({ mfr, mpn }); continue; }
@@ -268,7 +269,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const body: string[] = [], flags: string[] = [], hasPart: string[] = [], refs: string[] = [], srcLines: string[] = [];
     const decl: string[] = [];
     if (!isDoc) {
-      decl.push(`        ${bomAttr("partNumber", pn)}`, `        ${bomAttr("revision", l.rev)}`);
+      decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`, `        ${bomAttr("revision", l.rev)}`);
       if (l.source) decl.push(`        ${bomAttr("source", l.source)}`); if (l.state) decl.push(`        ${bomAttr("lifecycleState", l.state)}`);
       if (l.drawingLocation) decl.push(`        ${bomAttr("drawingLocation", l.drawingLocation)}`);
       for (const u of kids) {

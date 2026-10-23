@@ -398,6 +398,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **IMP-126** · Active · P1 — An import into an existing vault shows the MDSE release, schema and every shipped plugin in the vault against the ones in the importer, with a state for each (same, newer in the importer, vault is newer, not installed, same version with different files). Updating the toolset during the import is a choice: ticked by default only when the importer is newer, unticked when the vault is newer, forced on for a new vault. Unticked, the model is imported and the installed tools stay as they are. Ticked, it applies the same update as the maintenance section, with replaced files saved first. (D-0041; D-0024)
 - **IMP-127** · Active · P1 — A part with no role name of its own in EA is named by its type and an index within its owner (`wire1`, `wire2`); a part that has an EA name keeps it. Replaces the type-title name of IMP-110 and the `_2` repeat of IMP-095 for parts. (D-0042)
 - **IMP-128** · Active · P1 · live — The importer writes requirement derivation and refinement in the native forms of MOD-169. Other dependency kinds (trace, depends on, uses) have no native form and keep the trailing comment tag. (D-0045)
+- **IMP-129** · Active · P2 · live — A BOM row whose every cell is `x` is an end-of-data marker and is skipped with the finding `END_MARKER`; it never becomes a part. A part's `partNumber` attribute is always a quoted string, so a numeric part number and one with a leading zero have the same type. (D-0046)
 
 ## BOM — BOM importer
 

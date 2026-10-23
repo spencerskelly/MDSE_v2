@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: tested on the real BOM set. The `x` end-of-data row no longer becomes a part, `partNumber` is always a string, and uid allocation is no longer quadratic (172,000-row export: 189 s to 64 s). Data decisions opened as OD-10 to OD-13. D-0046, IMP-129.
 - Language reference: 123 notes in three groups (109 language constructs, 12 standard-library concepts, 2 modeling patterns). Adds conditional succession, derivation, causation, multicausation, trade study, verdicts, verification methods, quantities and units, rationale/issue/status/refinement metadata, shape items. Corrects the succession, use case and individual notes. Each note separates documented, recognized, written by the importer, and parser-accepted (not established). D-0044, MOD-165, MOD-166. 
 - Native SysML v2 forms: requirement derivation is written `#derivation connection` and refinement `#refinement dependency`, by the importer and the Workbench Edit lens; the old comment-tag forms are still read. Rules can be tagged `live` to find documentation updates. D-0045, MOD-168, MOD-169, IMP-128, WKB-025. Closes OD-09.
 - Workbench: draw a line between two note cards on the canvas preview, pick the relationship kind from a drop-down, review the diff and apply (undoable). WKB-024, D-0043. Tested against the fake Obsidian API only.

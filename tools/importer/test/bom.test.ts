@@ -223,3 +223,11 @@ test("a second BOM that disagrees with a part already in the vault says so and l
   const same = buildBom(g("1.5"), { ...baseOpts, existing });
   assert.equal(same.findings.some((x) => x.code === "EXISTING_DIFFERS"), false);
 });
+
+test("an all-x end marker row is skipped, and a part number is always a quoted string (D-0046)", () => {
+  const marker = Array(FLAT_HEAD.split("\t").length).fill("x").join("\t");
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, marker].join("\n")), baseOpts);
+  assert.ok(r.findings.some((f) => f.code === "END_MARKER"));
+  assert.ok(!r.files.some((f) => /\/x\.md$/.test(f.path)), "no part note named x");
+  assert.match(byTitle(r.files, "01191").content, /attribute partNumber = "01191";/);
+});

@@ -488,3 +488,19 @@ Rules: MOD-165, MOD-166.
 6. **`live` tag.** A rule line may carry `· live` after its Phase. It marks rules new or changed since the live vault's documentation was last updated, so the documentation updates can be found; the register CSV has a Live column. It does not change whether a rule binds. Applied to WKB-024, MOD-165, MOD-166 and the rules added here. The tag is removed once the live documentation is updated.
 
 Rules: MOD-168, MOD-169, IMP-128, WKB-025.
+
+
+## D-0046 — BOM import: findings from the real BOM set, two fixes made, data decisions opened
+
+2026-10-23 · Spencer · Accepted (owner request, chat: "make sure this data can be brought in clean")
+
+The importer's BOM path was run on the five workbooks in the Engineering_Data repository (four redlines and the 172,454-row flat export) in a scratch folder. Nothing from that data was added to this repository.
+
+1. **Redlines.** All four import with no blocking error. Remaining findings: lines with no line number (about 5 per file), quantity 0 lines (6 to 43 per file), and one part number whose revision cannot be told. The same shared sub-assembly appears in two redlines with different quantities (for example wire lengths), so a second redline is left as it is with `EXISTING_DIFFERS`; that is correct, and the people who own the BOMs must reconcile the numbers.
+2. **Flat export.** 12,076 parts and 30,699 usages import, but 2,513 parts are held back: 1,259 assemblies have more than one revision with lines (COMPETING_BOMS), 1,254 parts are pinned at different child revisions (REV_UNDETERMINED), and 748 lines are refused as duplicates (DUP_LINE). The export is an effectivity history, not a single BOM: 19,104 parent-revision-line keys repeat with different child revisions and From/To dates; for 77 % of them exactly one row has an open-ended To.
+3. **Fixed now.** The export ends with a row of `x` in every column; it became a part note named `x`. It is now skipped (END_MARKER). `partNumber` was written unquoted for numeric part numbers and quoted otherwise; it is now always a string. Uid allocation was quadratic for BOM runs (every part shares one fallback stamp): the flat export took 189 s, now 64 s, with identical output.
+4. **Not fixed, needs a decision (OD-10 to OD-13).** Scope of what comes in; how the current row and current revision are chosen; unit and state vocabularies; quantity differences between products.
+5. **Data facts for those decisions.** Units differ by source: the flat export uses codes (ea, M, ML, ZST, Null, x), the redlines use words (Piece, Meter, Milliliters, "Piece (ZST)"). 39,033 flat rows carry a numeric child state (20, 30, 40, 50) instead of a name. Dates are text in mixed locales (for example `Mrz` for March) and `2/Jan/00` appears to be a default. The flat export holds older revisions of the four product roots than the redlines do, so the redlines are newer than the flat data for the same products.
+
+Rules: IMP-129.
+
