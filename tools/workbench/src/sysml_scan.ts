@@ -5,7 +5,7 @@
 /** Properties written inside a usage or statement body: a doc comment and `attribute name = value;` members (D-0031). */
 export interface Prop { name: string; value: string }
 export interface Usage { kind: string; name: string; type?: string; mult?: string; dir?: string; /** typed by the conjugate of the definition: `port p : ~PortDef` */ conj?: boolean; /** an interface or connection definition end: `end supplier : P` */ end?: boolean; /** `ref part x` */ ref?: boolean; subsets?: string[]; redefines?: string[]; /** the declaration as written, whitespace collapsed */ head: string; /** `ordered` / `nonunique` modifiers */ mods?: string[]; props?: Prop[]; doc?: string }
-export interface Stmt { kind: string; a?: string; b?: string; name?: string; tag?: string; /** connect: `interface` | `connection` | `plain`; flow and connect: the definition or item type (`flow of Signal`, `interface i : Def`) */ form?: string; type?: string; /** connect: end names in `connect e1 ::> a.p to e2 ::> b.p` */ endA?: string; endB?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; props?: Prop[]; doc?: string; text: string }
+export interface Stmt { context?: string; kind: string; a?: string; b?: string; name?: string; tag?: string; /** connect: `interface` | `connection` | `plain`; flow and connect: the definition or item type (`flow of Signal`, `interface i : Def`) */ form?: string; type?: string; /** connect: end names in `connect e1 ::> a.p to e2 ::> b.p` */ endA?: string; endB?: string; /** transition / guarded succession: names of the helper usages (IMP-098) */ trigger?: string; guard?: string; effect?: string; props?: Prop[]; doc?: string; text: string }
 export interface Definition { keyword: string; pkg: string; name: string; symbol: string; specializes: string[]; usages: Usage[]; stmts: Stmt[]; raw: string[]; /** text of the definition own doc comment (requirement wording) */ doc?: string; /** wording of helper usages by name (guard constraints, trigger items, effect actions) */ notes: Record<string, string>; /** catalog ids of every construct seen inside (governance/language/catalog.json) */ langs: string[] }
 export interface ScanResult { defs: Definition[]; warnings: string[]; /** catalog ids of every construct in the block */ langs: string[] }
 import { classify } from "./sysml_lang.ts";
@@ -47,7 +47,7 @@ function parseItems(s: string, start: number, close: boolean): { items: Item[]; 
 const DEF = /^(?:(?:abstract|variation|public|private|protected)\s+)*(part|port|action|state|item|attribute|requirement|use case|verification|constraint|occurrence|interface|connection|allocation|enum|calc|analysis|view|viewpoint|concern|metadata|flow|rendering|individual|case)\s+def\s+([A-Za-z_]\w*)\s*(?::>\s*(.+))?$/;
 const SNAME = "[A-Za-z_]\\w*", SPATH = "[A-Za-z_][\\w:.]*";
 /** [end] [dir] [ref] kind name [relations] [mult] [modifiers]. Relations: `: T`, `: ~T`, `:> a, b`, `:>> c`. */
-const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
+const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|requirement|verification|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
 /** `end supplier : P;` with no kind keyword, as an interface or connection definition writes its ends. */
 const END_USAGE = new RegExp(`^end\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)$`);
 function relationsOf(txt: string): { type?: string; conj?: boolean; subsets?: string[]; redefines?: string[] } {
@@ -62,10 +62,11 @@ function relationsOf(txt: string): { type?: string; conj?: boolean; subsets?: st
 }
 const QN = "([A-Za-z_][\\w:.]*)";
 
-function interpret(it: Item, d: Definition): void {
+function interpret(it: Item, d: Definition, context?: string): void {
   const nu = d.usages.length, ns = d.stmts.length;
-  const handled = interpretOne(it, d);
+  const handled = interpretOne(it, d, context);
   if (!handled) { if (it.head) d.raw.push(it.head); return; }
+  const innerContext = d.usages.length > nu ? d.usages[d.usages.length - 1]!.name : context;
   const rec: { props?: Prop[]; doc?: string } | undefined = d.usages.length > nu ? d.usages[d.usages.length - 1] : d.stmts.length > ns ? d.stmts[d.stmts.length - 1] : undefined;
   if (it.body && !/^objective\b/.test(it.head)) for (const c of it.body) {
     if (rec) {                                                                         // properties of a usage or statement are kept on it, not as usages of the definition (D-0031)
@@ -79,14 +80,14 @@ function interpret(it: Item, d: Definition): void {
         continue;
       }
     }
-    interpret(c, d);                                                                   // nested members of any construct
+    interpret(c, d, innerContext);                                                    // nested members preserve their typed usage context
   }
 }
 
 /** The statements the importer writes get their own record; returns false only for a head nothing recognizes. */
 let DOCS: string[] = [];
 const docText = (head: string): string => (DOCS[Number(/\d+$/.exec(head)![0])] ?? "").replace(/^\s*\*?\s?/gm, "").trim();
-function interpretOne(it: Item, d: Definition): boolean {
+function interpretOne(it: Item, d: Definition, context?: string): boolean {
   const h = it.head;
   if (/^doc ~D\d+$/.test(h)) { for (const i of classify("doc")) if (!d.langs.includes(i)) d.langs.push(i); return true; }
   { const hm = /^(?:constraint|action|state|item|attribute)\s+([A-Za-z_]\w*)\b/.exec(h); const dc = hm && it.body?.find((c) => /^doc ~D\d+$/.test(c.head)); if (dc) d.notes[hm![1]!] = docText(dc.head); }
@@ -105,7 +106,7 @@ function interpretOne(it: Item, d: Definition): boolean {
     return true;
   }
   if (it.body && /^objective\b/.test(h)) {
-    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1]!, text: c.head }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
+    for (const c of it.body) { const v = new RegExp(`^verify\\s+(?:requirement\\s+)?${QN}$`).exec(c.head); if (v) { st({ kind: "verify", a: v[1]!, text: c.head, ...(context ? { context } : {}) }); if (!d.langs.includes("verify-requirement-usage")) d.langs.push("verify-requirement-usage"); } else { for (const i of classify(c.head)) if (!d.langs.includes(i)) d.langs.push(i); if (!classify(c.head).length) d.raw.push(c.head); } }
     return true;
   }
   if ((m = USAGE.exec(h))) {
@@ -121,7 +122,7 @@ function interpretOne(it: Item, d: Definition): boolean {
   }
   if ((m = new RegExp(`^satisfy\\s+(?:requirement\\s+)?${QN}(?:\\s+by\\s+${QN})?$`).exec(h))) { st({ kind: "satisfy", a: m[1]!, ...(m[2] ? { b: m[2] } : {}), text: h }); return true; }
   if ((m = new RegExp(`^allocate\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "allocate", a: m[1]!, b: m[2]!, text: h }); return true; }
-  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h }); return true; }
+  if ((m = new RegExp(`^perform\\s+action\\s+([A-Za-z_]\\w*)\\s*:\\s*${QN}$`).exec(h))) { st({ kind: "perform", name: m[1]!, b: m[2]!, text: h, ...(context ? { context } : {}) }); return true; }
   if ((m = new RegExp(`^(#refinement\\s+)?dependency\\s+from\\s+${QN}\\s+to\\s+${QN}$`).exec(h))) { st({ kind: "dependency", a: m[2]!, b: m[3]!, tag: m[1] ? "refines" : it.tag || "dependsOn", text: h }); return true; }
   if ((m = /^succession\s+first\s+([\w.]+)(?:\s+if\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "succession", a: m[1]!, b: m[3]!, ...(m[2] ? { guard: m[2] } : {}), text: h }); return true; }
   if ((m = /^transition\s+first\s+([\w.]+)(?:\s+accept\s+([\w.]+))?(?:\s+if\s+([\w.]+))?(?:\s+do\s+([\w.]+))?\s+then\s+([\w.]+)$/.exec(h))) { st({ kind: "transition", a: m[1]!, b: m[5]!, ...(m[2] ? { trigger: m[2] } : {}), ...(m[3] ? { guard: m[3] } : {}), ...(m[4] ? { effect: m[4] } : {}), text: h }); return true; }
