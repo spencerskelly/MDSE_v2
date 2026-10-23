@@ -311,3 +311,57 @@ test("a measured quantity prints its unit, never NaN", () => {
   const t = V.structure(v, "T.md", 6, 40, ["hasPart"]);
   assert.equal(t.tree.children[0]!.detail, "[1.5 Meter]");
 });
+
+test("local usages in a toolset resolve to their typed definition notes and canvases", () => {
+  const mk = (id: string, type: string, pkg: string, keyword: string, body: string): string =>
+    `---
+type: ${type}
+subtype: software
+id: ${id}
+uid: 20261023141300001skellyspencer
+status: Draft
+primarySymbol: ${pkg}::${id}
+---
+# ${id}
+
+## SysML v2
+
+\`\`\`sysml
+package ${pkg} {
+    ${keyword} ${id} {
+${body}
+    }
+}
+\`\`\`
+`;
+  const docs = new Map<string, string>([
+    ["Root.md", mk("Root", "Object", "M", "part def", `        part importer : P::Importer;
+        requirement r : Q::Req;
+        verification check : V::Check {
+            objective coverage {
+                verify r;
+            }
+        }
+        allocate r to importer;`)],
+    ["Importer.md", mk("Importer", "Object", "P", "part def", `        part engine : S::Engine {
+            perform action run : B::Act;
+        }`)],
+    ["Engine.md", mk("Engine", "Object", "S", "part def", "")],
+    ["Req.md", mk("Req", "Requirement", "Q", "requirement def", "")],
+    ["Check.md", mk("Check", "Verification", "V", "verification def", "")],
+    ["Act.md", mk("Act", "Behavior", "B", "action def", "")],
+    ["UseCase.md", mk("Demo", "Use Case", "U", "use case def", `        dependency from Demo to B::Act;`)]
+  ]);
+  const local = buildIndex(docs);
+  const has = (from: string, to: string, kind: string) =>
+    local.edges.some((e) => e.from === from && e.to === to && e.kind === kind);
+  assert.ok(has("Req.md", "Importer.md", "allocatedTo"), "allocation resolves both typed usage endpoints");
+  assert.ok(has("Check.md", "Req.md", "verifies"), "verification objective belongs to its typed case");
+  assert.ok(has("Engine.md", "Act.md", "performs"), "owned software role performs the action");
+  assert.ok(has("UseCase.md", "Act.md", "dependsOn"), "definition-scoped dependency resolves local source");
+  assert.ok(!local.edges.some((e) => e.kind === "allocatedTo" && !e.to), "no orphaned allocation ghost");
+  const canvas = toCanvas(local, "Req.md", V.PROFILES.find((p) => p.name === "Everything")!, { depth: 2, cap: 20 });
+  const labels = canvas.doc.edges.map((e) => e.label ?? "");
+  assert.ok(labels.some((x) => x.includes("allocatedTo")), "canvas draws the allocation");
+  assert.ok(labels.some((x) => x.includes("verifies")), "canvas draws the verification");
+});
