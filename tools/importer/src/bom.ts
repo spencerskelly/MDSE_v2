@@ -244,6 +244,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (all.length > 1) revsSeen.set(pn, all);
     if (revs.length > 1) findings.push({ level: "info", code: "REV_BY_ORDER", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")} seen${pr ? " as assembly" : " as pinned child"}; ${JSON.stringify(top)} taken as the latest by revision order.` });
   }
+  // A part number a redline struck out and replaced is named by the BOM, so it gets a note too (BOM-022); without one the supersedes dependency would point at nothing.
+  const stubs = new Map<string, string[]>();
+  for (const u of parsed.usages) if (u.prevChild && u.prevChild !== u.child && !allPns.has(u.prevChild)) (stubs.get(u.prevChild) ?? stubs.set(u.prevChild, []).get(u.prevChild)!).push(u.child);
+  for (const pn of [...stubs.keys()].sort()) { allPns.add(pn); latest.set(pn, { rev: "", name: "", source: "", state: "", drawingLocation: "" }); }
   const drawingPns = new Set(parsed.usages.filter(bomIsDrawing).map((u) => u.child));
   // existing notes by part number
   const existingBy = new Map<string, { id: string; base: string; text: string }>();
@@ -318,7 +322,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const body: string[] = [], flags: string[] = [], srcLines: string[] = [];
     const decl: string[] = [];
     if (!isDoc) {
-      decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`, `        ${bomAttr("revision", l.rev)}`);
+      decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`); if (l.rev) decl.push(`        ${bomAttr("revision", l.rev)}`);
       if (l.source) decl.push(`        ${bomAttr("source", l.source)}`);
       if (l.drawingLocation) decl.push(`        ${bomAttr("drawingLocation", l.drawingLocation)}`);
       for (const u of kids) {
@@ -343,7 +347,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const firstUse = parsed.usages.find((u) => u.child === pn), own = firstUse?.ownSrc ?? null, alts = firstUse?.alternates ?? [];
     const sources = [...(own ? [own] : []), ...alts].filter((s) => s.mfr || s.mpn);
     const sysml = isDoc ? `package ${inf.id.replace("-", "_")} {\n    item def D_${pn.replace(/[^A-Za-z0-9]/g, "_")};\n}\n` : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
-    const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revision: ${JSON.stringify(l.rev)} (as exported)`];
+    const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, ...(l.rev ? [`- Revision: ${JSON.stringify(l.rev)} (as exported)`] : [`- No BOM lists this part number; it is named as the previous number of ${[...new Set(stubs.get(pn) ?? [])].join(", ")}.`])];
     if (l.source) head.push(`- Source: ${l.source}`);
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);

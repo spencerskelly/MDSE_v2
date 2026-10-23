@@ -82,6 +82,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Assemble the BOM importer sample model
+        run: node --no-warnings testing/fixtures/bom-sample/assemble_bom_sysml.mjs "$RUNNER_TEMP/bom-sample.sysml"
       - name: Extract and assemble the Golden Charger model
         run: |
           python3 testing/fixtures/golden-charger/extract_sysml.py --check
@@ -91,6 +96,9 @@ jobs:
       - name: Accept the baseline model
         working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
         run: ./validate-sysml "$RUNNER_TEMP/golden-charger.sysml"
+      - name: Accept the BOM importer sample model
+        working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
+        run: ./validate-sysml "$RUNNER_TEMP/bom-sample.sysml"
       - name: Reject malformed syntax and unresolved types
         working-directory: ${{ runner.temp }}/sysml-parser/sysmlv2-validator
         run: python3 "$GITHUB_WORKSPACE/testing/fixtures/golden-charger/semantic_regression.py" --source "$RUNNER_TEMP/golden-charger.sysml" --validator "./validate-sysml {model}"
@@ -106,5 +114,6 @@ jobs:
             ${{ runner.temp }}/sysml-parser/parser-provenance.txt
             ${{ runner.temp }}/sysml-parser/parser-sha256.txt
             ${{ runner.temp }}/golden-charger.sysml
+            ${{ runner.temp }}/bom-sample.sysml
           if-no-files-found: warn
           retention-days: 30

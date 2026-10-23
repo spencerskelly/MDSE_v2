@@ -194,7 +194,8 @@ test("redline xlsx: unstruck text is current, struck text is the previous value;
   assert.match(top, /\[2\]/); assert.match(top, /was 06991 before this release/);
   assert.match(top, /Drawing location: ECO-0437\/Power Station/); assert.match(top, /attribute revision = "B03";/);
   assert.match(byTitle(r.files, "6100148").content, /^manufacturer1: CIRCLE AW$/m);
-  assert.match(byTitle(r.files, "6100148").content, /dependency from OBJ_\d{5}::P_6100148 to P_06991; \/\/ supersedes/);   // the renumbered part says what it replaces, in SysML (BOM-023)
+  assert.match(byTitle(r.files, "6100148").content, /dependency from OBJ_\d{5}::P_6100148 to OBJ_\d{5}::P_06991; \/\/ supersedes/);   // the renumbered part says what it replaces, in SysML (BOM-023)
+  assert.match(byTitle(r.files, "06991").content, /No BOM lists this part number; it is named as the previous number of 6100148/);   // the old number gets a note, so the reference resolves
 });
 
 test("the stored importer fingerprint helper is available to the BOM path", () => { assert.equal(sha256Text("a").length, 64); });
