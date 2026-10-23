@@ -365,3 +365,47 @@ ${body}
   assert.ok(labels.some((x) => x.includes("allocatedTo")), "canvas draws the allocation");
   assert.ok(labels.some((x) => x.includes("verifies")), "canvas draws the verification");
 });
+
+test("use case scenarios index typed actions, refinements and supporting prerequisites separately", () => {
+  const note = (id: string, type: string, pkg: string, kind: string, name: string, members = "") =>
+    `---
+type: ${type}
+subtype: review
+id: ${id}
+uid: 20261023140000001skellyspencer
+status: Draft
+primarySymbol: ${pkg}::${name}
+---
+# ${id}
+
+## SysML v2
+
+\`\`\`sysml
+package ${pkg} {
+    ${kind} ${name} {
+${members}
+    }
+}
+\`\`\`
+`;
+  const examples = new Map<string, string>([
+    ["UseCase.md", note("UC-9", "Use Case", "U", "use case def", "InspectModel", `
+        action discoverModelElements : F::Discover;
+        action generateModelViewpoints : F2::Display;
+        #refinement dependency from InspectModel to N::FindNeed;
+        dependency from InspectModel to N2::DataProtection;`)],
+    ["Search.md", note("BEH-3", "Behavior", "F", "action def", "Discover")],
+    ["Display.md", note("BEH-5", "Behavior", "F2", "action def", "Display")],
+    ["FindNeed.md", note("STK-1", "Requirement", "N", "requirement def", "FindNeed")],
+    ["DataProtection.md", note("STK-8", "Requirement", "N2", "requirement def", "DataProtection")]
+  ]);
+  const x = buildIndex(examples);
+  const own = x.out.get("UseCase.md") ?? [];
+  assert.deepEqual(own.map(e => e.kind).sort(), ["dependsOn", "hasAction", "hasAction", "refines"].sort());
+  assert.ok(own.every(e => e.to && e.to !== "UseCase.md"), "all typed endpoints resolve");
+  const cc = toCanvas(x, "UseCase.md", V.PROFILES.find(p => p.name === "Everything")!, { depth: 1, cap: 10 });
+  assert.equal(cc.doc.edges.length, 4, "Canvas includes distinct action, refinement and prerequisite links");
+  assert.equal(cc.unresolved, 0, "No unsupported or imaginary endpoints");
+  assert.ok(cc.doc.edges.some(e => e.label === "refines"), "need refinement gets an explicit canvas kind");
+  assert.ok(cc.doc.edges.some(e => e.label === "hasAction discoverModelElements"), "action usage is not a dependency");
+});
