@@ -433,6 +433,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **BOM-027** · Active · P2 · live — The BOM findings note shows the first 40 rows of each finding code and the count of the rest. The detail of repeated lines is in the `flagValue` callouts in the assembly notes. (D-0048)
 - **BOM-028** · Active · P2 · live — Manufacturer data is YAML properties on the part note, numbered in order: `manufacturer1`, `mfgPn1`, `manufacturer2`, `mfgPn2` and so on. Number 1 is the manufacturer on the part's own line; the alternates follow in file order. A value that is blank is not written. (D-0048)
 - **BOM-029** · Active · P2 · live — Import order is newest first, because the first note written wins and nothing later overrides it: the redlines first (Power Station, DVS 400, DVS 330, MVS800), then `Ampure_all_BoMs.xlsx`. Before each write, "Check for flags first" is run and its errors are cleared. The importer reads the first sheet that has a recognised BOM header and ignores the rest (compare sheets). Re-running an unchanged file writes nothing new. (D-0048)
+- **BOM-030** · Active · P2 · live — A part number named only as the previous number of another part (listed in no BOM) gets a stub note without a revision, so the `supersedes` dependency of the new part resolves. Any change to the importer's SysML output is re-run through the parser gate on the BOM sample (D-0049)
 
 ## BAS — Base Vault and release
 

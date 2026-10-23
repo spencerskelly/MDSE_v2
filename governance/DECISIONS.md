@@ -534,3 +534,14 @@ Closes OD-10, OD-11, OD-12, OD-13. Rules: BOM-009, BOM-016, BOM-017 (changed); B
 
 Rules: BOM-016, BOM-023 (changed); BOM-025 to BOM-029 (new).
 
+
+## D-0049 — BOM import: stub notes for replaced part numbers, and the BOM sample is parser-gated
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0048)
+
+1. **Stub notes.** A part number named as the previous number of another part, but listed in no BOM, still gets a note (no revision, head line says no BOM lists it). Otherwise the `supersedes` dependency of the new part would point at nothing. (BOM-030)
+2. **Parser gate.** CI assembles a synthetic redline plus flat BOM through the real importer into one `.sysml` file and runs the pinned validator on it (`testing/fixtures/bom-sample`). This covers `part def`, usages with multiplicity and quantity, `ref item`, `item def` in Document notes, `#derivation`, `#refinement` and `supersedes`. Run 40040942222: accepted, all jobs successful. The parser job stays manual (`workflow_dispatch`, `parser=true`); run it again whenever the importer's SysML output changes.
+3. **Still unconfirmed.** The revision order (BOM-018) against the PLM; cross-file differing values (findings only, no callouts); the 14.5k notes in one folder and the 1.2 GB Workbench index heap on the real set; the browser handling of the 48 MB file.
+
+Rules: BOM-030 (new).
+
