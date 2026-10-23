@@ -445,3 +445,17 @@ Open: the port standard (flow and type in the name) and a bulk rename and retype
 
 Rules: IMP-124, IMP-127.
 
+
+## D-0043 — Workbench: draw a line on the canvas to add a relationship
+
+2026-10-22 · Spencer · Accepted (owner request, chat)
+
+1. **Gesture.** On the canvas preview, drag a line from one note card to another. After a moment the Workbench opens a dialog: a drop-down of the relationship kinds the two notes allow, the inputs that kind takes (name, quantity, direction), and the diff. Apply writes it; Cancel removes the line.
+2. **Direction.** The line runs from the note that holds the relationship to the note it points at, as in the Edit lens: from a part to a requirement it satisfies. A line drawn backwards is not refused, because the generic kinds (allocated to, refines, traces to, depends on) work both ways; the dialog says which kinds would fit if it were drawn the other way.
+3. **Same safety as the Edit lens.** The write is the Edit lens plan (WKB-009): previewed, applied on a click, refused if the file changed, undoable. The relationship goes into the source note's `## SysML v2` block (D-0003). A line is a picture and never becomes model meaning by itself.
+4. **Refused lines.** A line that touches a card that is not a note in the vault (free text, a group card, a "not in vault" card), two ends on one note, or a pair with no kind that can be written now, is removed with the reason shown.
+5. **Where it works.** The preview canvas only (the one scratch file). A saved canvas is an ordinary canvas.
+6. **After Apply.** The line stays, labelled with the kind. It has no edit handle until the preview is opened again, because that is when the lines get their relationship references.
+7. **Not yet verified.** Tested against the fake Obsidian API only. Removing or labelling a line is done by editing the canvas file while the canvas is open; real Obsidian may keep its own copy of the line and write it back.
+
+Rules: WKB-024.

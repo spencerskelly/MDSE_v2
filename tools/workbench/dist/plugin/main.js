@@ -1557,6 +1557,77 @@ function edDiff(before               , after        )                           
   return { removed: a.slice(s, ea), added: b.slice(s, eb) };
 }
 
+/* canvas_draw.ts */
+/* Draw-to-relate (D-0043). A line the person draws between two note cards on the canvas preview becomes a relationship
+ * only through the same previewed, undoable plan the Edit lens uses (WKB-009). Pure functions: find the lines the person
+ * drew, work out which relationship kinds the two notes allow, and tidy the scratch canvas afterwards. The Obsidian shell
+ * (plugin.ts) shows the dropdown and applies the plan. A canvas line is a picture; it never becomes model meaning by itself. */
+
+
+
+
+/** Ids of every line already in the doc (the ones the Workbench drew). Anything else that appears later was drawn by the person. */
+const cdEdgeIds = (doc           )              => new Set(doc.edges.map((e) => e.id));
+
+/** The note a card stands for: a file card, or a requirement card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
+function cdNotePath(node                        )                {
+  if (!node) return null;
+  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
+  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
+  return m ? (/\.md$/i.test(m[1] ) ? m[1]  : m[1] + ".md") : null;
+}
+
+                                                                                                            
+/** Lines in `doc` whose id is not in `known`, with the note at each end (null when that card is not a note). */
+function cdDrawnLines(doc           , known             )              {
+  const card = new Map(doc.nodes.map((n) => [n.id, n]));
+  return doc.edges.filter((e) => !known.has(e.id)).map((e) => ({ id: e.id, fromCard: e.fromNode, toCard: e.toNode, from: cdNotePath(card.get(e.fromNode)), to: cdNotePath(card.get(e.toNode)) }));
+}
+
+                                                                                                                                                                                                                                                                       
+/** Every relationship kind the source allows toward the target, each tried once so the list holds only kinds that can be written now. */
+function cdChoices(ix            , files                     , from        , to        )               {
+  const a = ix.notes.get(from), b = ix.notes.get(to);
+  if (!a || !b || from === to) return [];
+  return ED_RELS.filter((r) => r.from(a) && r.to(b, a)).map((rel) => {
+    const plan = planAddRelationship(ix, files, { rel: rel.id, from, to });
+    return { rel, plan, ok: !plan.problems.length, problem: plan.problems[0] ?? "", usageKind: rel.id === "owns" ? edUsageKinds(b)[0] ?? "" : "" };
+  });
+}
+
+/** Why a drawn line cannot become a relationship, or "" when at least one kind fits. */
+function cdWhyNot(ix            , files                     , from        , to        )         {
+  const a = ix.notes.get(from), b = ix.notes.get(to);
+  if (!a || !b) return "Both ends of the line must be notes in the vault.";
+  if (from === to) return "A relationship needs two different notes.";
+  const fwd = cdChoices(ix, files, from, to);
+  if (fwd.some((c) => c.ok)) return "";
+  if (fwd.length) return `Already written or not possible: ${fwd[0] .problem}`;
+  const what = (n      )         => `${n.type}${n.subtype ? "/" + n.subtype : ""}${n.def ? " (" + n.def.keyword + ")" : " (no SysML block)"}`;
+  return `No relationship fits from ${what(a)} to ${what(b)}.`;
+}
+
+/** Kinds that fit only when the line points the other way (for example a part satisfies a requirement, never the reverse). The dropdown always offers the generic kinds, so a line drawn backwards is not refused; this tells the person. */
+function cdOtherWay(ix            , files                     , from        , to        )           {
+  const here = new Set(cdChoices(ix, files, from, to).filter((c) => c.ok).map((c) => c.rel.id));
+  return cdChoices(ix, files, to, from).filter((c) => c.ok && !here.has(c.rel.id)).map((c) => c.rel.label);
+}
+
+/** The canvas text without the line `id` (the person cancelled, or the line cannot be a relationship). null when it is not there. */
+function cdDropLine(text        , id        )                {
+  let doc           ;
+  try { doc = JSON.parse(text); } catch { return null; }
+  if (!Array.isArray(doc.edges) || !doc.edges.some((e            ) => e.id === id)) return null;
+  return JSON.stringify({ ...doc, edges: doc.edges.filter((e            ) => e.id !== id) }, null, 2);
+}
+/** The canvas text with the line `id` labelled as the relationship now written, so the picture matches the model. */
+function cdLabelLine(text        , id        , label        )                {
+  let doc           ;
+  try { doc = JSON.parse(text); } catch { return null; }
+  if (!Array.isArray(doc.edges) || !doc.edges.some((e            ) => e.id === id)) return null;
+  return JSON.stringify({ ...doc, edges: doc.edges.map((e            ) => e.id === id ? { ...e, label: label.slice(0, 60) } : e) }, null, 2);
+}
+
 /* edit_rel.ts */
 /* Change and remove relationships, and their properties (D-0031). A relationship is a member of a note's `## SysML v2`
  * block (a usage, a statement, a `:>` entry or a `verify` line); the index gives each edge an EdgeRef naming the note and
@@ -3660,7 +3731,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -3680,6 +3751,10 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                           
                                                                
                                                                        
+                                                                                                                                                      
+                                                                                                                                                                                              
+                                                                                                                                                                                                                                                                                                                 
+                                                                                                                                                                      
                                                                                                                                                                        
   
 const obsidian = require("obsidian");
@@ -3720,7 +3795,7 @@ async function writePreview(plugin     , r                                      
   const text = JSON.stringify(r.doc, null, 2);
   let file = app.vault.getAbstractFileByPath(path);
   if (file) await app.vault.modify(file, text); else file = await app.vault.create(path, text);
-  plugin.preview = { fileName: r.fileName };
+  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc) };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   const open = app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === path);
   if (open) app.workspace.revealLeaf(open); else await mainLeaf(app).openFile(file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
@@ -3746,6 +3821,48 @@ class PickModal extends obsidian.FuzzySuggestModal      {
   getItems() { return this.items; }
   getItemText(x     ) { return this.label(x); }
   onChooseItem(x     ) { this.onPick(x); }
+}
+
+/** The dropdown a drawn canvas line opens (D-0043): the relationship kinds the two notes allow, the inputs that kind takes, and the diff. Closing without Apply cancels. */
+class RelateModal extends obsidian.Modal {
+  plugin     ; line                              ; settle                                                  ; result                                      = null;
+  constructor(app     , plugin     , line                              , settle                                                  ) { super(app); this.plugin = plugin; this.line = line; this.settle = settle; }
+  onOpen() {
+    const p = this.plugin, ix = p.ix, { from, to } = this.line, el = this.contentEl;
+    const choices = WB.cdChoices(ix, p.files, from, to).filter((c) => c.ok);
+    const st = { rel: choices[0] .rel.id, name: "", mult: "", dir: "" };
+    const cur = () => choices.find((c) => c.rel.id === st.rel) ;
+    el.empty();
+    el.createEl("h3", { text: "New relationship" });
+    el.createEl("p", { text: `${ix.notes.get(from).title}  →  ${ix.notes.get(to).title}` });
+    const other = WB.cdOtherWay(ix, p.files, from, to);
+    if (other.length) el.createEl("p", { cls: "setting-item-description", text: `Drawn the other way, this line could be: ${other.join("; ")}. Cancel and draw it from the other card if that is what you meant.` });
+    new obsidian.Setting(el).setName("Relationship").setDesc("Only the kinds these two notes allow are listed.").addDropdown((d     ) => {
+      for (const c of choices) d.addOption(c.rel.id, c.rel.label);
+      d.setValue(st.rel).onChange((v        ) => { st.rel = v; st.name = ""; st.mult = ""; st.dir = ""; inputs(); show(); });
+    });
+    const help = el.createEl("p", { cls: "setting-item-description" }), box = el.createDiv(), pre = el.createEl("pre"), bar = el.createDiv({ cls: "modal-button-container" });
+    pre.style.whiteSpace = "pre-wrap"; pre.style.maxHeight = "14em"; pre.style.overflow = "auto";
+    const apply = bar.createEl("button", { text: "Apply", cls: "mod-cta" }), cancel = bar.createEl("button", { text: "Cancel" });
+    let plan      = null;
+    const inputs = () => {
+      box.empty(); const c = cur(); help.setText(c.rel.help);
+      if (c.rel.inputs.includes("name")) new obsidian.Setting(box).setName("Name").setDesc("Optional. Blank takes the target's name.").addText((t     ) => t.setValue(st.name).onChange((v        ) => { st.name = v; show(); }));
+      if (c.rel.inputs.includes("mult")) new obsidian.Setting(box).setName("Quantity").setDesc("Optional, like 4 or 0..1 or 1..*.").addText((t     ) => t.setValue(st.mult).onChange((v        ) => { st.mult = v; show(); }));
+      if (c.rel.inputs.includes("dir") && c.usageKind === "item") new obsidian.Setting(box).setName("Direction").addDropdown((d     ) => { d.addOption("", "none"); for (const x of ["in", "out", "inout"]) d.addOption(x, x); d.setValue(st.dir).onChange((v        ) => { st.dir = v; show(); }); });
+    };
+    const show = () => {
+      plan = WB.planAddRelationship(ix, p.files, { rel: st.rel, from, to, name: st.name, mult: st.mult, usageKind: cur().usageKind, dir: st.dir });
+      const w = plan.writes[0];
+      if (plan.problems.length || !w) { pre.setText(plan.problems[0] ?? "Nothing to write."); apply.disabled = true; return; }
+      const d = WB.edDiff(w.before, w.after);
+      pre.setText([`${w.path}`, ...d.removed.map((l        ) => `- ${l}`), ...d.added.map((l        ) => `+ ${l}`)].join("\n")); apply.disabled = false;
+    };
+    apply.onclick = () => { if (plan && !plan.problems.length) { this.result = { plan, label: cur().rel.label }; this.close(); } };
+    cancel.onclick = () => this.close();
+    inputs(); show();
+  }
+  onClose() { this.contentEl.empty(); this.settle(this.result); }
 }
 
 class MdseSettingTab extends obsidian.PluginSettingTab {
@@ -3814,8 +3931,48 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files                      = new Map(); ix      = null; building                       = null; apps           = new Set(); selected = ""; rebuildTimer      = null;
-  preview                              = null; settings                                                = { defaultFolder: "", lastFolder: "" };
-  author = "";
+  preview                                                    = null; settings                                                = { defaultFolder: "", lastFolder: "" };
+  author = ""; drawTimer      = null; drawBusy              = new Set(); drawQueue                = Promise.resolve();
+
+  /* ---- draw a line, get a relationship (D-0043) ---- */
+  /** Changes the scratch canvas file; a line that is not found leaves it as it is. */
+  async editPreview(fn                                 )                {
+    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+    if (f) await this.app.vault.process(f, (t        ) => fn(t) ?? t);
+  }
+  /** The canvas file changed (Obsidian saves a moment after a line is drawn or a card is moved). Any line the Workbench did not draw is the person's. */
+  previewChanged() {
+    clearTimeout(this.drawTimer);
+    this.drawTimer = setTimeout(async () => {
+      const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+      if (!f || !this.preview) return;
+      let doc     ; try { doc = JSON.parse(await this.app.vault.read(f)); } catch { return; }
+      for (const line of WB.cdDrawnLines(doc, this.preview.edgeIds)) {
+        if (this.drawBusy.has(line.id)) continue;
+        this.drawBusy.add(line.id);
+        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
+      }
+    }, 700);
+  }
+  async relateDrawnLine(line                                                        )                {
+    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id)).catch(() => {});
+    try {
+      await this.ensureIndex();
+      if (!line.from || !line.to) { new obsidian.Notice("MDSE: a relationship joins two notes. This line has a card that is not a note in the vault, so it was removed.", 8000); await drop(); return; }
+      const why = WB.cdWhyNot(this.ix, this.files, line.from, line.to);
+      if (why) { new obsidian.Notice("MDSE: " + why, 10000); await drop(); return; }
+      const picked                                      = await new Promise((resolve) => new RelateModal(this.app, this, { from: line.from , to: line.to  }, resolve).open());
+      if (!picked) { await drop(); return; }
+      const res = await this.applyPlan(picked.plan);
+      this.preview?.edgeIds.add(line.id);
+      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label));
+      const frag = document.createDocumentFragment(), btn = document.createElement("button");
+      btn.textContent = "Undo"; btn.style.marginLeft = "0.5em";
+      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); this.preview?.edgeIds.delete(line.id); await drop(); } catch (e     ) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
+      frag.append("MDSE: " + res.message + " ", btn);
+      new obsidian.Notice(frag, 15000);
+    } catch (e     ) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); await drop(); }
+  }
   /** Opens the Edit lens in the right panel on one relationship (from a main-window table or a canvas line). */
   async editRelationship(ref         )                {
     await this.openPanel(); await this.ensureIndex();
@@ -4005,6 +4162,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       menu.addItem((i     ) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f     ) => this.onFileOpen(f)));
+    this.registerEvent(this.app.vault.on("modify", (f     ) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session
       this.app.workspace.detachLeavesOfType?.(OLD_VIEW);                          // the pre-0.6 main-window view
@@ -4012,5 +4170,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { clearTimeout(this.rebuildTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };

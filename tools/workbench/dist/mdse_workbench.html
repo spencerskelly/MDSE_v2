@@ -1564,6 +1564,77 @@ function edDiff(before               , after        )                           
   return { removed: a.slice(s, ea), added: b.slice(s, eb) };
 }
 
+/* canvas_draw.ts */
+/* Draw-to-relate (D-0043). A line the person draws between two note cards on the canvas preview becomes a relationship
+ * only through the same previewed, undoable plan the Edit lens uses (WKB-009). Pure functions: find the lines the person
+ * drew, work out which relationship kinds the two notes allow, and tidy the scratch canvas afterwards. The Obsidian shell
+ * (plugin.ts) shows the dropdown and applies the plan. A canvas line is a picture; it never becomes model meaning by itself. */
+
+
+
+
+/** Ids of every line already in the doc (the ones the Workbench drew). Anything else that appears later was drawn by the person. */
+const cdEdgeIds = (doc           )              => new Set(doc.edges.map((e) => e.id));
+
+/** The note a card stands for: a file card, or a requirement card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
+function cdNotePath(node                        )                {
+  if (!node) return null;
+  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
+  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
+  return m ? (/\.md$/i.test(m[1] ) ? m[1]  : m[1] + ".md") : null;
+}
+
+                                                                                                            
+/** Lines in `doc` whose id is not in `known`, with the note at each end (null when that card is not a note). */
+function cdDrawnLines(doc           , known             )              {
+  const card = new Map(doc.nodes.map((n) => [n.id, n]));
+  return doc.edges.filter((e) => !known.has(e.id)).map((e) => ({ id: e.id, fromCard: e.fromNode, toCard: e.toNode, from: cdNotePath(card.get(e.fromNode)), to: cdNotePath(card.get(e.toNode)) }));
+}
+
+                                                                                                                                                                                                                                                                       
+/** Every relationship kind the source allows toward the target, each tried once so the list holds only kinds that can be written now. */
+function cdChoices(ix            , files                     , from        , to        )               {
+  const a = ix.notes.get(from), b = ix.notes.get(to);
+  if (!a || !b || from === to) return [];
+  return ED_RELS.filter((r) => r.from(a) && r.to(b, a)).map((rel) => {
+    const plan = planAddRelationship(ix, files, { rel: rel.id, from, to });
+    return { rel, plan, ok: !plan.problems.length, problem: plan.problems[0] ?? "", usageKind: rel.id === "owns" ? edUsageKinds(b)[0] ?? "" : "" };
+  });
+}
+
+/** Why a drawn line cannot become a relationship, or "" when at least one kind fits. */
+function cdWhyNot(ix            , files                     , from        , to        )         {
+  const a = ix.notes.get(from), b = ix.notes.get(to);
+  if (!a || !b) return "Both ends of the line must be notes in the vault.";
+  if (from === to) return "A relationship needs two different notes.";
+  const fwd = cdChoices(ix, files, from, to);
+  if (fwd.some((c) => c.ok)) return "";
+  if (fwd.length) return `Already written or not possible: ${fwd[0] .problem}`;
+  const what = (n      )         => `${n.type}${n.subtype ? "/" + n.subtype : ""}${n.def ? " (" + n.def.keyword + ")" : " (no SysML block)"}`;
+  return `No relationship fits from ${what(a)} to ${what(b)}.`;
+}
+
+/** Kinds that fit only when the line points the other way (for example a part satisfies a requirement, never the reverse). The dropdown always offers the generic kinds, so a line drawn backwards is not refused; this tells the person. */
+function cdOtherWay(ix            , files                     , from        , to        )           {
+  const here = new Set(cdChoices(ix, files, from, to).filter((c) => c.ok).map((c) => c.rel.id));
+  return cdChoices(ix, files, to, from).filter((c) => c.ok && !here.has(c.rel.id)).map((c) => c.rel.label);
+}
+
+/** The canvas text without the line `id` (the person cancelled, or the line cannot be a relationship). null when it is not there. */
+function cdDropLine(text        , id        )                {
+  let doc           ;
+  try { doc = JSON.parse(text); } catch { return null; }
+  if (!Array.isArray(doc.edges) || !doc.edges.some((e            ) => e.id === id)) return null;
+  return JSON.stringify({ ...doc, edges: doc.edges.filter((e            ) => e.id !== id) }, null, 2);
+}
+/** The canvas text with the line `id` labelled as the relationship now written, so the picture matches the model. */
+function cdLabelLine(text        , id        , label        )                {
+  let doc           ;
+  try { doc = JSON.parse(text); } catch { return null; }
+  if (!Array.isArray(doc.edges) || !doc.edges.some((e            ) => e.id === id)) return null;
+  return JSON.stringify({ ...doc, edges: doc.edges.map((e            ) => e.id === id ? { ...e, label: label.slice(0, 60) } : e) }, null, 2);
+}
+
 /* edit_rel.ts */
 /* Change and remove relationships, and their properties (D-0031). A relationship is a member of a note's `## SysML v2`
  * block (a usage, a statement, a `:>` entry or a `verify` line); the index gives each edge an EdgeRef naming the note and
@@ -3667,7 +3738,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 </script>
 <script>

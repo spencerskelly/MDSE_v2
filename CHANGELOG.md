@@ -2,6 +2,10 @@
 
 Notable changes to the toolchain and its governance. Newest first. Tool releases are also recorded in the release manifest once `tools/base-vault` exists.
 
+## Unreleased
+
+- Workbench: draw a line between two note cards on the canvas preview, pick the relationship kind from a drop-down, review the diff and apply (undoable). WKB-024, D-0043. Tested against the fake Obsidian API only.
+
 ## 2026-10-21 — Release 0.9.0: Workbench views, import checks, toolset version, usage naming
 
 - Workbench 0.9.0: separate Structure, Design types, Internal, Function, States and Requirements views; every section and list group folds; Notes list can be grouped; measured quantities print their unit (was `NaN`). WKB-022, WKB-023.

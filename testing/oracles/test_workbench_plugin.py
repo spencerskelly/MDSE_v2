@@ -16,13 +16,17 @@ PCE = ROOT / "tools/workbench/test/fixtures/PCE25.md"
 PCE_PATH = "00 Product Definition/MHE/PCE25/PCE25.md"
 
 FAKE = r"""
-window.__files = {}; window.__dirs = {}; window.__notices = []; window.__opened = []; window.__cmds = {}; window.__menu = 0; window.__data = null; window.__ev = {}; window.__where = []; window.__active = null; let views = {};
+window.__files = {}; window.__dirs = {}; window.__notices = []; window.__opened = []; window.__cmds = {}; window.__menu = 0; window.__data = null; window.__ev = {}; window.__where = []; window.__active = null; window.__evs = {}; let views = {};
 class ItemView { constructor(leaf) { this.leaf = leaf; this.app = window.__app; this.contentEl = document.createElement('div'); this.contentEl.empty = function () { this.replaceChildren(); }; document.body.append(this.contentEl); } }
 class Plugin { constructor(app) { this.app = app; } addCommand(c) { window.__cmds[c.id] = c; } registerView(t, f) { views[t] = f; } addRibbonIcon() {} registerEvent(e) { return e; } addSettingTab(t) { window.__tab = t; } async loadData() { return window.__data; } async saveData(d) { window.__data = JSON.parse(JSON.stringify(d)); } }
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.containerEl = document.createElement('div'); this.containerEl.empty = function () { this.replaceChildren(); }; } }
-class Setting { constructor(el) { this.el = el; } setName() { return this; } setDesc() { return this; } addText(f) { const inp = document.createElement('input'); this.el.append(inp); const api = { setPlaceholder() { return api; }, setValue(v) { inp.value = v; return api; }, onChange(cb) { inp.oncb = cb; return api; } }; f(api); return this; } }
+const deco = (e) => { e.empty = function () { this.replaceChildren(); }; e.setText = function (t) { this.textContent = t; }; e.createEl = function (tag, o = {}) { const c = deco(document.createElement(tag)); if (o.text) c.textContent = o.text; if (o.cls) c.className = o.cls; this.append(c); return c; }; e.createDiv = function (o = {}) { return this.createEl('div', o); }; return e; };
+class Setting { constructor(el) { this.el = el; this.name = ''; } setName(n) { this.name = n; return this; } setDesc() { return this; }
+  addText(f) { const inp = document.createElement('input'); inp.setAttribute('aria-label', this.name); this.el.append(inp); const api = { setPlaceholder() { return api; }, setValue(v) { inp.value = v; return api; }, onChange(cb) { inp.oncb = cb; inp.addEventListener('input', () => cb(inp.value)); return api; } }; f(api); return this; }
+  addDropdown(f) { const sel = document.createElement('select'); sel.setAttribute('aria-label', this.name); this.el.append(sel); const api = { addOption(v, l) { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.append(o); return api; }, setValue(v) { sel.value = v; return api; }, onChange(cb) { sel.addEventListener('change', () => cb(sel.value)); return api; } }; f(api); return this; } }
+class Modal { constructor(app) { this.app = app; this.contentEl = deco(document.createElement('div')); this.contentEl.className = 'fake-modal'; document.body.append(this.contentEl); } open() { window.__relate = this; this.onOpen(); } close() { this.onClose && this.onClose(); this.contentEl.remove(); } }
 class FuzzySuggestModal { constructor(app) {} setPlaceholder() {} open() { window.__modal = this; } close() { this.onClose && this.onClose(); } }
-class Notice { constructor(m) { window.__notices.push(m); } }
+class Notice { constructor(m) { if (typeof m === 'string') window.__notices.push(m); else { window.__notices.push(m.textContent); const d = document.createElement('div'); d.className = 'fake-notice'; d.append(m); document.body.append(d); } } }
 const isDir = (p) => p in window.__dirs;
 const exists = (p) => p in window.__notes || p in window.__files || isDir(p);
 const fileOf = (path) => isDir(path) ? { path, children: [] } : { path, extension: path.split('.').pop() };
@@ -42,7 +46,7 @@ window.__app = {
     modify: async (f, t) => { window.__files[f.path] = t; },
     process: async (f, fn) => { const cur = read(f); const next = fn(cur); if (f.path in window.__notes) window.__notes[f.path] = next; else window.__files[f.path] = next; return next; },
     delete: async (f) => { delete window.__files[f.path]; delete window.__notes[f.path]; },
-    on: (ev, fn) => { window.__ev['vault:' + ev] = fn; return {}; },
+    on: (ev, fn) => { window.__ev['vault:' + ev] = fn; (window.__evs['vault:' + ev] ||= []).push(fn); return {}; },
   },
   workspace: {
     rootSplit: {}, getMostRecentLeaf: () => rootLeaf, setActiveLeaf() {},
@@ -55,7 +59,7 @@ window.__app = {
   },
 };
 window.__leaves = leaves;
-window.__run = async (code) => { const module = { exports: {} }; const O = { ItemView, Plugin, PluginSettingTab, Setting, FuzzySuggestModal, Notice }; new Function('module', 'require', code)(module, (id) => id === 'obsidian' ? O : {}); const P = module.exports; window.__plugin = new P(window.__app); await window.__plugin.onload(); };
+window.__run = async (code) => { const module = { exports: {} }; const O = { ItemView, Plugin, PluginSettingTab, Setting, FuzzySuggestModal, Modal, Notice }; new Function('module', 'require', code)(module, (id) => id === 'obsidian' ? O : {}); const P = module.exports; window.__plugin = new P(window.__app); await window.__plugin.onload(); };
 undefined;
 """
 
@@ -256,6 +260,72 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("select[aria-label='Add property']")
             b.close()
         self.assertEqual(errors, [])
+
+    def test_a_line_drawn_on_the_canvas_becomes_a_relationship_through_the_dropdown(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        PREVIEW = "99_System/22_Views/Workbench Preview.canvas"
+        A, B = "10_Model/Controller.md", "10_Model/Power Module.md"
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("p => { window.__active = p; }", "10_Model/Charger.md")
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
+            pg.wait_for_selector("header >> text=Charger")
+            pg.evaluate("(window.__oc = window.__plugin.openCanvas('structure', {}), 0)")
+            pg.wait_for_function("p => p in window.__files", arg=PREVIEW)
+
+            def draw(edge_id, a, b_):
+                """What Obsidian writes when the person drags a line between two cards (its own random id)."""
+                pg.evaluate("""([p, id, a, b]) => {
+                    const doc = JSON.parse(window.__files[p]);
+                    const card = (path) => { let n = doc.nodes.find((x) => x.file === path); if (!n) { n = { id: 'c' + doc.nodes.length, type: 'file', x: 0, y: 800, width: 280, height: 90, file: path }; doc.nodes.push(n); } return n.id; };
+                    doc.edges.push({ id, fromNode: card(a), toNode: card(b), fromSide: 'right', toSide: 'left', toEnd: 'arrow' });
+                    window.__files[p] = JSON.stringify(doc);
+                    for (const f of window.__evs['vault:modify']) f({ path: p, extension: 'canvas' });
+                }""", [PREVIEW, edge_id, a, b_])
+
+            # draw, pick a kind from the dropdown, see the diff, apply: the note gets the relationship and the line is labelled
+            before = pg.evaluate("p => window.__notes[p]", A)
+            draw("9f3a1c7e5b2d4a60", A, B)
+            pg.wait_for_selector(".fake-modal select[aria-label=Relationship]")
+            kinds = pg.evaluate("[...document.querySelectorAll('.fake-modal select[aria-label=Relationship] option')].map(o => o.value)")
+            self.assertIn("dependsOn", kinds)
+            pg.select_option(".fake-modal select[aria-label=Relationship]", "dependsOn")
+            pg.wait_for_function("document.querySelector('.fake-modal pre').textContent.includes('+ ') && document.querySelector('.fake-modal pre').textContent.includes('dependency from')")
+            self.assertEqual(pg.evaluate("p => window.__notes[p]", A), before, "nothing is written until Apply")
+            pg.click(".fake-modal button:has-text('Apply')")
+            pg.wait_for_function("p => /dependency from .* to .*PowerModule.*dependsOn/.test(window.__notes[p])", arg=A)
+            pg.wait_for_selector(".fake-notice button:has-text('Undo')")
+            doc = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
+            self.assertEqual([e.get("label") for e in doc["edges"] if e["id"] == "9f3a1c7e5b2d4a60"], ["depends on"])
+
+            # undo restores the note and takes the line off the canvas
+            pg.click(".fake-notice button:has-text('Undo')")
+            pg.wait_for_function("([p, t]) => window.__notes[p] === t", arg=[A, before])
+            pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '9f3a1c7e5b2d4a60')", arg=PREVIEW)
+
+            # cancel: nothing written, line removed
+            draw("11aa22bb33cc44dd", A, B)
+            pg.wait_for_selector(".fake-modal button:has-text('Cancel')")
+            pg.click(".fake-modal button:has-text('Cancel')")
+            pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '11aa22bb33cc44dd')", arg=PREVIEW)
+            self.assertEqual(pg.evaluate("p => window.__notes[p]", A), before)
+
+            # a line that is not between two notes is refused with a reason and removed
+            pg.evaluate("""p => { const doc = JSON.parse(window.__files[p]); doc.nodes.push({ id: 'free1', type: 'text', x: 0, y: 1200, width: 200, height: 80, text: 'just a thought' }); doc.edges.push({ id: '77ee88ff99aa00bb', fromNode: doc.nodes[0].id, toNode: 'free1', fromSide: 'right', toSide: 'left', toEnd: 'arrow' }); window.__files[p] = JSON.stringify(doc); for (const f of window.__evs['vault:modify']) f({ path: p, extension: 'canvas' }); }""", PREVIEW)
+            pg.wait_for_function("window.__notices.some((n) => /joins two notes/.test(n))")
+            pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '77ee88ff99aa00bb')", arg=PREVIEW)
+            self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
         notes = {f"10_Model/{q.name}": q.read_text() for q in (ROOT / "testing/fixtures/charger-ports").glob("*.md")}

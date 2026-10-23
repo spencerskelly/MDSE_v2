@@ -16,6 +16,10 @@ declare const WB: {
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
+  cdEdgeIds: (doc: any) => Set<string>; cdDrawnLines: (doc: any, known: Set<string>) => Array<{ id: string; from: string | null; to: string | null }>;
+  cdChoices: (ix: any, files: Map<string, string>, from: string, to: string) => Array<{ rel: { id: string; label: string; help: string; inputs: string[] }; ok: boolean; usageKind: string }>;
+  cdWhyNot: (ix: any, files: Map<string, string>, from: string, to: string) => string; cdOtherWay: (ix: any, files: Map<string, string>, from: string, to: string) => string[]; cdDropLine: (text: string, id: string) => string | null; cdLabelLine: (text: string, id: string, label: string) => string | null;
+  planAddRelationship: (ix: any, files: Map<string, string>, o: any) => any; edDiff: (before: string | null, after: string) => { removed: string[]; added: string[] };
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
 };
 const obsidian = require("obsidian");
@@ -56,7 +60,7 @@ async function writePreview(plugin: any, r: { doc: unknown; fileName: string; no
   const text = JSON.stringify(r.doc, null, 2);
   let file = app.vault.getAbstractFileByPath(path);
   if (file) await app.vault.modify(file, text); else file = await app.vault.create(path, text);
-  plugin.preview = { fileName: r.fileName };
+  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc) };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   const open = app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === path);
   if (open) app.workspace.revealLeaf(open); else await mainLeaf(app).openFile(file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
@@ -82,6 +86,48 @@ class PickModal extends obsidian.FuzzySuggestModal<any> {
   getItems() { return this.items; }
   getItemText(x: any) { return this.label(x); }
   onChooseItem(x: any) { this.onPick(x); }
+}
+
+/** The dropdown a drawn canvas line opens (D-0043): the relationship kinds the two notes allow, the inputs that kind takes, and the diff. Closing without Apply cancels. */
+class RelateModal extends obsidian.Modal {
+  plugin: any; line: { from: string; to: string }; settle: (r: { plan: any; label: string } | null) => void; result: { plan: any; label: string } | null = null;
+  constructor(app: any, plugin: any, line: { from: string; to: string }, settle: (r: { plan: any; label: string } | null) => void) { super(app); this.plugin = plugin; this.line = line; this.settle = settle; }
+  onOpen() {
+    const p = this.plugin, ix = p.ix, { from, to } = this.line, el = this.contentEl;
+    const choices = WB.cdChoices(ix, p.files, from, to).filter((c) => c.ok);
+    const st = { rel: choices[0]!.rel.id, name: "", mult: "", dir: "" };
+    const cur = () => choices.find((c) => c.rel.id === st.rel)!;
+    el.empty();
+    el.createEl("h3", { text: "New relationship" });
+    el.createEl("p", { text: `${ix.notes.get(from).title}  →  ${ix.notes.get(to).title}` });
+    const other = WB.cdOtherWay(ix, p.files, from, to);
+    if (other.length) el.createEl("p", { cls: "setting-item-description", text: `Drawn the other way, this line could be: ${other.join("; ")}. Cancel and draw it from the other card if that is what you meant.` });
+    new obsidian.Setting(el).setName("Relationship").setDesc("Only the kinds these two notes allow are listed.").addDropdown((d: any) => {
+      for (const c of choices) d.addOption(c.rel.id, c.rel.label);
+      d.setValue(st.rel).onChange((v: string) => { st.rel = v; st.name = ""; st.mult = ""; st.dir = ""; inputs(); show(); });
+    });
+    const help = el.createEl("p", { cls: "setting-item-description" }), box = el.createDiv(), pre = el.createEl("pre"), bar = el.createDiv({ cls: "modal-button-container" });
+    pre.style.whiteSpace = "pre-wrap"; pre.style.maxHeight = "14em"; pre.style.overflow = "auto";
+    const apply = bar.createEl("button", { text: "Apply", cls: "mod-cta" }), cancel = bar.createEl("button", { text: "Cancel" });
+    let plan: any = null;
+    const inputs = () => {
+      box.empty(); const c = cur(); help.setText(c.rel.help);
+      if (c.rel.inputs.includes("name")) new obsidian.Setting(box).setName("Name").setDesc("Optional. Blank takes the target's name.").addText((t: any) => t.setValue(st.name).onChange((v: string) => { st.name = v; show(); }));
+      if (c.rel.inputs.includes("mult")) new obsidian.Setting(box).setName("Quantity").setDesc("Optional, like 4 or 0..1 or 1..*.").addText((t: any) => t.setValue(st.mult).onChange((v: string) => { st.mult = v; show(); }));
+      if (c.rel.inputs.includes("dir") && c.usageKind === "item") new obsidian.Setting(box).setName("Direction").addDropdown((d: any) => { d.addOption("", "none"); for (const x of ["in", "out", "inout"]) d.addOption(x, x); d.setValue(st.dir).onChange((v: string) => { st.dir = v; show(); }); });
+    };
+    const show = () => {
+      plan = WB.planAddRelationship(ix, p.files, { rel: st.rel, from, to, name: st.name, mult: st.mult, usageKind: cur().usageKind, dir: st.dir });
+      const w = plan.writes[0];
+      if (plan.problems.length || !w) { pre.setText(plan.problems[0] ?? "Nothing to write."); apply.disabled = true; return; }
+      const d = WB.edDiff(w.before, w.after);
+      pre.setText([`${w.path}`, ...d.removed.map((l: string) => `- ${l}`), ...d.added.map((l: string) => `+ ${l}`)].join("\n")); apply.disabled = false;
+    };
+    apply.onclick = () => { if (plan && !plan.problems.length) { this.result = { plan, label: cur().rel.label }; this.close(); } };
+    cancel.onclick = () => this.close();
+    inputs(); show();
+  }
+  onClose() { this.contentEl.empty(); this.settle(this.result); }
 }
 
 class MdseSettingTab extends obsidian.PluginSettingTab {
@@ -150,8 +196,48 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
-  preview: { fileName: string } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
-  author = "";
+  preview: { fileName: string; edgeIds: Set<string> } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
+  author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
+
+  /* ---- draw a line, get a relationship (D-0043) ---- */
+  /** Changes the scratch canvas file; a line that is not found leaves it as it is. */
+  async editPreview(fn: (text: string) => string | null): Promise<void> {
+    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+    if (f) await this.app.vault.process(f, (t: string) => fn(t) ?? t);
+  }
+  /** The canvas file changed (Obsidian saves a moment after a line is drawn or a card is moved). Any line the Workbench did not draw is the person's. */
+  previewChanged() {
+    clearTimeout(this.drawTimer);
+    this.drawTimer = setTimeout(async () => {
+      const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+      if (!f || !this.preview) return;
+      let doc: any; try { doc = JSON.parse(await this.app.vault.read(f)); } catch { return; }
+      for (const line of WB.cdDrawnLines(doc, this.preview.edgeIds)) {
+        if (this.drawBusy.has(line.id)) continue;
+        this.drawBusy.add(line.id);
+        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
+      }
+    }, 700);
+  }
+  async relateDrawnLine(line: { id: string; from: string | null; to: string | null }): Promise<void> {
+    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id)).catch(() => {});
+    try {
+      await this.ensureIndex();
+      if (!line.from || !line.to) { new obsidian.Notice("MDSE: a relationship joins two notes. This line has a card that is not a note in the vault, so it was removed.", 8000); await drop(); return; }
+      const why = WB.cdWhyNot(this.ix, this.files, line.from, line.to);
+      if (why) { new obsidian.Notice("MDSE: " + why, 10000); await drop(); return; }
+      const picked: { plan: any; label: string } | null = await new Promise((resolve) => new RelateModal(this.app, this, { from: line.from!, to: line.to! }, resolve).open());
+      if (!picked) { await drop(); return; }
+      const res = await this.applyPlan(picked.plan);
+      this.preview?.edgeIds.add(line.id);
+      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label));
+      const frag = document.createDocumentFragment(), btn = document.createElement("button");
+      btn.textContent = "Undo"; btn.style.marginLeft = "0.5em";
+      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); this.preview?.edgeIds.delete(line.id); await drop(); } catch (e: any) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
+      frag.append("MDSE: " + res.message + " ", btn);
+      new obsidian.Notice(frag, 15000);
+    } catch (e: any) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); await drop(); }
+  }
   /** Opens the Edit lens in the right panel on one relationship (from a main-window table or a canvas line). */
   async editRelationship(ref: unknown): Promise<void> {
     await this.openPanel(); await this.ensureIndex();
@@ -341,6 +427,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       menu.addItem((i: any) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
+    this.registerEvent(this.app.vault.on("modify", (f: any) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session
       this.app.workspace.detachLeavesOfType?.(OLD_VIEW);                          // the pre-0.6 main-window view
@@ -348,5 +435,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { clearTimeout(this.rebuildTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };
