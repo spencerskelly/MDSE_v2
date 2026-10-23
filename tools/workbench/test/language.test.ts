@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { scanSysml } from "../src/sysml_scan.ts";
 import { classify } from "../src/sysml_lang.ts";
 
-const catalog = JSON.parse(readFileSync(new URL("../../../governance/language/catalog.json", import.meta.url), "utf8")) as Array<{ id: string; name: string; kind: string; keyword: string; tier: string; example: string; wrap: string; similar: string; description: string; difference: string; from: string[]; to: string[] }>;
+const catalog = JSON.parse(readFileSync(new URL("../../../governance/language/catalog.json", import.meta.url), "utf8")) as Array<{ id: string; name: string; kind: string; keyword: string; tier: string; example: string; wrap: string; similar: string; description: string; difference: string; from: string[]; to: string[]; category: string; library?: string; recognizedAs?: string[] }>;
 const ids = new Set(catalog.map((c) => c.id));
 
 test("catalog: ids are unique, every entry is complete and every 'similar' resolves", () => {
@@ -14,6 +14,9 @@ test("catalog: ids are unique, every entry is complete and every 'similar' resol
     assert.ok(c.from.length && c.to.length, `${c.id}: eligible from/to`);
     assert.ok(ids.has(c.similar) && c.similar !== c.id, `${c.id}: similar ${c.similar}`);
     assert.ok(["core", "common", "occasional", "rare"].includes(c.tier), c.id);
+    assert.ok(["language", "library", "pattern"].includes(c.category), `${c.id}: category`);
+    assert.equal(c.category === "library", !!c.library, `${c.id}: library field only on library entries`);
+    assert.equal(c.category === "pattern", !!c.recognizedAs?.length, `${c.id}: recognizedAs only on pattern entries`);
   }
 });
 
@@ -24,7 +27,7 @@ test("the scanner recognizes every example in the catalog as that construct, wit
     const src = c.wrap === "pkg" ? `package P { ${body} }` : `package P { part def Ctx { ${body} } }`;
     const r = scanSysml(src);
     if (r.warnings.length) bad.push(`${c.id}: warnings ${r.warnings.join("; ")}`);
-    else if (!r.langs.includes(c.id)) bad.push(`${c.id}: got ${r.langs.join(", ")} for ${c.example}`);
+    else if (c.recognizedAs ? !c.recognizedAs.every((id) => r.langs.includes(id) && ids.has(id)) : !r.langs.includes(c.id)) bad.push(`${c.id}: got ${r.langs.join(", ")} for ${c.example}`);
   }
   assert.deepEqual(bad, []);
 });
@@ -55,4 +58,14 @@ test("transition trigger, guard and effect are read from SysML v2 syntax (IMP-09
   assert.deepEqual([t.trigger, t.guard, t.effect], ["trig", "ok", "fx"]);
   assert.equal(d.notes["ok"], "voltage ok");
   assert.equal(d.stmts.find((s) => s.kind === "succession")!.guard, "ok");
+});
+
+test("a conditional succession is told apart from a simple one, and library concepts are named by their tag", () => {
+  assert.deepEqual(classify("succession first a then b"), ["succession"]);
+  assert.deepEqual(classify("succession first a if ok then b"), ["conditional-succession"]);
+  assert.ok(classify("#derivation connection d").includes("derivation-connection"));
+  assert.ok(classify("#causation connection c").includes("causation-connection"));
+  assert.ok(classify("@Rationale { text = \"x\"; }").includes("rationale-metadata"));
+  assert.ok(classify("attribute p : ISQ::PowerValue = 30 [SI::kW]").includes("quantity-unit"));
+  assert.ok(classify("return verdict : VerdictKind").includes("verdict-kind"));
 });

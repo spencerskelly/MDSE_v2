@@ -459,3 +459,18 @@ Rules: IMP-124, IMP-127.
 7. **Not yet verified.** Tested against the fake Obsidian API only. Removing or labelling a line is done by editing the canvas file while the canvas is open; real Obsidian may keep its own copy of the line and write it back.
 
 Rules: WKB-024.
+
+
+## D-0044 — Language catalog: corrections, standard-library concepts, modeling patterns, support levels
+
+2026-10-23 · Spencer · Accepted (owner request, chat, from a language coverage review)
+
+1. **Three groups.** Every catalog entry has a `category`: `language` (a construct of the SysML v2 textual language, 109), `library` (a concept from the SysML v2 standard library, written with those constructs, not a keyword, 12; each names its `library`) or `pattern` (a rule of use that decides which construct to pick, adds no syntax, 2; each lists the constructs it `recognizedAs`).
+2. **New library concepts.** Conditional succession (a language construct, added to the language group), requirement derivation, causation, multicausation, trade study, verdict kinds, verification methods, quantities and units, rationale, issue, status and refinement metadata, shape items. Patterns: requirement decomposition, ownership versus reference.
+3. **Corrections.** Succession: simple and guarded (`if`, `else`) are told apart. Use case: SysML v2 has no `extend`; MDSE writes an optional include (`[0..1]`) as a convention and the note says so. Individual definition and usage: `individual` is a prefix on an occurrence definition or usage, metaclass shown as `OccurrenceDefinition (isIndividual = true)`. The review's claim that `individual def` is not a construct was wrong: the grammar allows it.
+4. **Four support levels.** Each note states, separately: documented, recognized by the Workbench scanner (tested), written by the importer (measured), accepted by a SysML v2 parser. The last is not established for any entry, because the pinned parser (IMP-068) has not been run on the examples. A listed construct is not a supported one.
+5. **No change to model output.** The importer and Workbench still write and read `dependency // derivedFrom` and `// refines`. Switching to `#derivation` or `#refinement` is OD-09.
+6. **Confidence.** Examples were written from the specification grammar and library files as read through a summarizing fetch. Causation, multicausation, trade study subject, and verification method usage are the least certain forms. Treat them as unchecked until the parser has run.
+7. **Not done.** Geometry beyond shape items, and the spec section number per entry, are not in the catalog. The live vault gets these notes when MDSE_v2_live next syncs from the base vault.
+
+Rules: MOD-165, MOD-166.

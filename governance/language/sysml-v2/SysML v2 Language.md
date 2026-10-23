@@ -3,13 +3,17 @@ type: Language Index
 id: sysml-v2-language
 status: Draft
 ---
-# SysML v2 language in MDSE
+# SysML v2 in MDSE
 
-108 constructs, one note each: what it is, which elements it can come from and go to, and what separates it from the most similar construct. Source: the OMG SysML v2 specification; keywords and forms checked against the Pilot Implementation grammar (`SysML.xtext`).
+123 notes in three groups: **109 language constructs**, **12 standard-library concepts** and **2 modeling patterns**. Each note says what it is, which elements it can come from and go to, and what separates it from the most similar one. Source: the OMG SysML v2 specification and the SysML v2 standard library; keywords and forms checked against the Pilot Implementation grammar (`SysML.xtext`) and library files.
 
-Every construct is available. Engineers use a handful of them most of the time, so the notes carry a use level: **Everyday** (28), **Common** (38), **Occasional** (27), **Rare** (15).
+Do not read "listed here" as "supported". Every note states four separate things: documented, recognized by the Workbench scanner, written by the importer, accepted by a SysML v2 parser. Parser acceptance is not established for any entry until the pinned parser (IMP-068) has been run on its example.
 
-## Everyday
+## 1. Language constructs
+
+Every construct is available. Engineers use a handful most of the time, so each carries a use level: **Everyday** (28), **Common** (39), **Occasional** (27), **Rare** (15).
+
+### Everyday
 
 | Construct | Kind | Written as | Use |
 |---|---|---|---|
@@ -42,7 +46,7 @@ Every construct is available. Engineers use a handful of them most of the time, 
 | [[Succession]] | Relationship | `first a then b;` | States that one occurrence (action, state, event) ends before another starts. |
 | [[Expression]] | Structure | `a + b;  v <= 480 [V];  x.y.z;  x ? a : b` | Operators, feature chains and units that compute or compare values. |
 
-## Common
+### Common
 
 | Construct | Kind | Written as | Use |
 |---|---|---|---|
@@ -84,8 +88,9 @@ Every construct is available. Engineers use a handful of them most of the time, 
 | [[Send]] | Statement | `send p via port;` | An action that sends a payload through a port or to a target. |
 | [[Decide, merge, fork, join]] | Statement | `decide; merge; fork; join;` | Control nodes in an action: `decide` chooses one branch, `merge` rejoins branches, `fork` starts parallel branches, `join` waits for all. |
 | [[Entry, do, exit]] | Statement | `entry action a; do action b; exit action c;` | The actions a state runs when entered, while in it, and when left. |
+| [[Conditional succession]] | Relationship | `first a if guard then b;` | A succession that only happens when a guard condition is true: `succession first check if ready then charge;`. |
 
-## Occasional
+### Occasional
 
 | Construct | Kind | Written as | Use |
 |---|---|---|---|
@@ -117,7 +122,7 @@ Every construct is available. Engineers use a handful of them most of the time, 
 | [[If]] | Statement | `if cond { } else { }` | Runs one block of actions or another depending on a condition. |
 | [[While, loop, for]] | Statement | `while c { } / loop { } until c; / for x in xs { }` | Repeats a block of actions while a condition holds, until one does, or for each item. |
 
-## Rare
+### Rare
 
 | Construct | Kind | Written as | Use |
 |---|---|---|---|
@@ -137,8 +142,36 @@ Every construct is available. Engineers use a handful of them most of the time, 
 | [[Render]] | Statement | `render asTree;` | Selects how a view is displayed. |
 | [[Terminate]] | Statement | `terminate;` | Ends the enclosing occurrence early, before its normal end, and everything it contains. |
 
+## 2. Standard-library concepts
+
+Defined in the SysML v2 standard library, written with the language constructs above. They are not new keywords and not MDSE inventions.
+
+| Concept | Library | Written as | Use |
+|---|---|---|---|
+| [[Requirement derivation]] | RequirementDerivation, DerivationConnections | `#derivation connection { end #original ::> A; end #derive ::> B; }` | States that one or more requirements were derived from an original requirement. |
+| [[Causation]] | CauseAndEffect, CausationConnections | `#causation connection { end #cause ::> A; end #effect ::> B; }` | States that one occurrence causes another: a cause and an effect. |
+| [[Multicausation]] | CauseAndEffect, CausationConnections | `#multicausation connection { end #cause ::> A; end #cause ::> B; end #effect ::> C; }` | States that several causes together bring about one or more effects. |
+| [[Trade study]] | TradeStudies | `analysis name : TradeStudy { subject = (A, B); objective : MaximizeObjective; }` | A standard analysis case that compares alternatives and selects one. |
+| [[Verdict]] | VerificationCases | `return verdict : VerdictKind;` | The result of running a verification case. |
+| [[Verification method]] | VerificationCases | `@VerificationMethod { kind = VerificationMethodKind::test; }` | Metadata that records how a verification case checks its requirement. |
+| [[Quantity and unit]] | ISQ, SI, USCustomaryUnits, Quantities, MeasurementReferences | `attribute x : ISQ::PowerValue = 30 [SI::kW];` | A number with a unit. |
+| [[Rationale]] | ModelingMetadata | `@Rationale { text = "..."; }` | Metadata that records why a choice or decision was made, with a `text` and an optional reference to the element that explains it. |
+| [[Issue]] | ModelingMetadata | `@Issue { text = "..."; }` | Metadata that records a concern about the element it annotates. |
+| [[Status information]] | ModelingMetadata | `@StatusInfo { status = StatusKind::open; }` | Metadata that records the work status of an element: `status` is one of `open`, `tbd`, `tbr`, `tbc`, `done`, `closed`, with an optional originator, owner and risk. |
+| [[Refinement]] | ModelingMetadata | `#refinement dependency from A to B;` | Marks a dependency as a refinement: the source element is more precise than the target (for example a detailed design refining a requirement). |
+| [[Shape items]] | ShapeItems, SpatialItems | `item x : ShapeItems::RectangularCuboid;` | Standard geometric shapes (lines, circles, rectangles, spheres, cylinders, cuboids and others) that give an item dimensions such as length, width, height or radius. |
+
+## 3. Modeling patterns
+
+Rules of use that decide which construct to pick. They add no syntax.
+
+| Construct | Kind | Written as | Use |
+|---|---|---|---|
+| [[Requirement decomposition]] | Structure | `requirement def R { requirement sub : S; ref requirement other : T; }` | A requirement is broken into parts by nesting requirement usages inside it. |
+| [[Ownership and reference]] | Structure | `part x : T;  ref part y : T;` | A usage declared without `ref` is owned by the definition that holds it (part, port, action, state). |
+
 ## How MDSE uses these notes
 
 - The `## SysML v2` block of a note is authoritative (D-0003). These notes define the language that block is written in; they are not model notes and the Workbench index skips `99_System`.
-- The Workbench scanner recognizes every construct listed here; a statement it does not recognize is reported, not dropped. Which constructs become relationships is stated in each note.
-- Add or correct a construct in `governance/language/catalog.json` and run `node scripts/build-language.mjs --write`.
+- The Workbench scanner recognizes every entry listed here; a statement it does not recognize is reported, not dropped. Which entries become relationships is stated in each note.
+- Add or correct an entry in `governance/language/catalog.json` and run `node scripts/build-language.mjs --write`.

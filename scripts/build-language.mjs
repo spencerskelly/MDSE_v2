@@ -34,9 +34,10 @@ try {
 } finally { reader.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 
 // Constructs the Workbench turns into a relationship or a view (tools/workbench/src/index.ts, views.ts)
-const DRAWN = new Set(["specialization", "feature-typing", "part-usage", "port-usage", "action-usage", "state-usage", "item-usage", "satisfy-requirement-usage", "verify-requirement-usage", "perform-action-usage", "include-use-case-usage", "use-case-usage", "allocation-usage", "dependency", "succession", "transition-usage", "connection-usage"]);
+const DRAWN = new Set(["specialization", "feature-typing", "part-usage", "port-usage", "action-usage", "state-usage", "item-usage", "satisfy-requirement-usage", "verify-requirement-usage", "perform-action-usage", "include-use-case-usage", "use-case-usage", "allocation-usage", "dependency", "succession", "conditional-succession", "transition-usage", "connection-usage"]);
 
 const TIER = { core: "Everyday", common: "Common", occasional: "Occasional", rare: "Rare" };
+const CATEGORY = { language: "Language construct", library: "Standard library concept", pattern: "Modeling pattern" };
 const KIND = { definition: "Definition", usage: "Usage", relationship: "Relationship", statement: "Statement", structure: "Structure", annotation: "Annotation" };
 const link = (id) => `[[${byId.get(id).name}]]`;
 const q2 = (s) => JSON.stringify(s);
@@ -46,18 +47,20 @@ function note(c) {
   const [lf, lt] = labels(c.kind);
   const importer = emitted.has(c.id) ? "Yes. The importer writes it (seen in its output on the synthetic model)." : "No. The importer does not write it; engineers add it by hand or a later import step will.";
   const wb = DRAWN.has(c.id) ? "Recognized, and drawn: it becomes a relationship or view in the Workbench." : "Recognized and kept: the Workbench scanner classifies it and shows it in the SysML block; no relationship or view is drawn from it yet.";
+  const origin = c.category === "library" ? `SysML v2 standard library (${c.library}), not a language keyword` : c.category === "pattern" ? "Modeling pattern built from language constructs, not a construct of its own" : `SysML v2 metaclass \`${c.metaclass}\``;
   return `---
 type: Language Element
 id: ${c.id}
+category: ${c.category}
 kind: ${c.kind}
 keyword: ${q2(c.keyword)}
-metaclass: ${c.metaclass}
+metaclass: ${q2(c.metaclass)}${c.library ? `\nlibrary: ${q2(c.library)}` : ""}
 usage: ${c.tier}
 status: Draft
 ---
 # ${c.name}
 
-**${KIND[c.kind]}** · **${TIER[c.tier]}** · \`${c.keyword}\` · SysML v2 metaclass \`${c.metaclass}\`
+**${CATEGORY[c.category]}** · **${KIND[c.kind]}** · **${TIER[c.tier]}** · \`${c.keyword}\` · ${origin}${c.category === "library" ? `. Metaclass: \`${c.metaclass}\`` : ""}
 
 ${c.description}
 
@@ -79,49 +82,71 @@ ${c.difference}
 ${c.example}
 \`\`\`
 
-## In MDSE
+## Support in MDSE
 
-- **Importer:** ${importer}
-- **Workbench:** ${wb}
-- **Everyday use:** ${TIER[c.tier]}.
+Four different things can be true of a construct. Only the first three are measured here.
+
+- **Documented:** yes, this note.
+- **Recognized:** yes. The Workbench scanner classifies it, and a test scans this note's example and requires no warnings. The scanner is a recognizer, not a parser.
+- **Written by the importer:** ${importer}
+- **Modeled in the Workbench:** ${wb}
+- **Accepted by a SysML v2 parser:** not established. The pinned parser (IMP-068) has not been run on this example, so treat the example as written from the specification, not as checked.
 `;
 }
 
 function index() {
-  const group = (tiers) => catalog.filter((c) => tiers.includes(c.tier));
+  const lang = catalog.filter((c) => c.category === "language"), lib = catalog.filter((c) => c.category === "library"), pat = catalog.filter((c) => c.category === "pattern");
+  const group = (tiers) => lang.filter((c) => tiers.includes(c.tier));
   const rows = (cs) => `| Construct | Kind | Written as | Use |\n|---|---|---|---|\n${cs.map((c) => `| [[${c.name}]] | ${KIND[c.kind]} | \`${c.keyword.replace(/\|/g, "\\|")}\` | ${c.description.split(/(?<=\.)\s/)[0].replace(/\|/g, "\\|")} |`).join("\n")}`;
+  const libRows = (cs) => `| Concept | Library | Written as | Use |\n|---|---|---|---|\n${cs.map((c) => `| [[${c.name}]] | ${c.library} | \`${c.keyword.replace(/\|/g, "\\|")}\` | ${c.description.split(/(?<=\.)\s/)[0].replace(/\|/g, "\\|")} |`).join("\n")}`;
   return `---
 type: Language Index
 id: sysml-v2-language
 status: Draft
 ---
-# SysML v2 language in MDSE
+# SysML v2 in MDSE
 
-${catalog.length} constructs, one note each: what it is, which elements it can come from and go to, and what separates it from the most similar construct. Source: the OMG SysML v2 specification; keywords and forms checked against the Pilot Implementation grammar (\`SysML.xtext\`).
+${catalog.length} notes in three groups: **${lang.length} language constructs**, **${lib.length} standard-library concepts** and **${pat.length} modeling patterns**. Each note says what it is, which elements it can come from and go to, and what separates it from the most similar one. Source: the OMG SysML v2 specification and the SysML v2 standard library; keywords and forms checked against the Pilot Implementation grammar (\`SysML.xtext\`) and library files.
 
-Every construct is available. Engineers use a handful of them most of the time, so the notes carry a use level: **Everyday** (${group(["core"]).length}), **Common** (${group(["common"]).length}), **Occasional** (${group(["occasional"]).length}), **Rare** (${group(["rare"]).length}).
+Do not read "listed here" as "supported". Every note states four separate things: documented, recognized by the Workbench scanner, written by the importer, accepted by a SysML v2 parser. Parser acceptance is not established for any entry until the pinned parser (IMP-068) has been run on its example.
 
-## Everyday
+## 1. Language constructs
+
+Every construct is available. Engineers use a handful most of the time, so each carries a use level: **Everyday** (${group(["core"]).length}), **Common** (${group(["common"]).length}), **Occasional** (${group(["occasional"]).length}), **Rare** (${group(["rare"]).length}).
+
+### Everyday
 
 ${rows(group(["core"]))}
 
-## Common
+### Common
 
 ${rows(group(["common"]))}
 
-## Occasional
+### Occasional
 
 ${rows(group(["occasional"]))}
 
-## Rare
+### Rare
 
 ${rows(group(["rare"]))}
+
+## 2. Standard-library concepts
+
+Defined in the SysML v2 standard library, written with the language constructs above. They are not new keywords and not MDSE inventions.
+
+${libRows(lib)}
+
+## 3. Modeling patterns
+
+Rules of use that decide which construct to pick. They add no syntax.
+
+${rows(pat)}
 
 ## How MDSE uses these notes
 
 - The \`## SysML v2\` block of a note is authoritative (D-0003). These notes define the language that block is written in; they are not model notes and the Workbench index skips \`99_System\`.
-- The Workbench scanner recognizes every construct listed here; a statement it does not recognize is reported, not dropped. Which constructs become relationships is stated in each note.
-- Add or correct a construct in \`governance/language/catalog.json\` and run \`node scripts/build-language.mjs --write\`.
+- The Workbench scanner recognizes every entry listed here; a statement it does not recognize is reported, not dropped. Which entries become relationships is stated in each note.
+- Add or correct an entry in \`governance/language/catalog.json\` and run \`node scripts/build-language.mjs --write\`.
 `;
 }
 

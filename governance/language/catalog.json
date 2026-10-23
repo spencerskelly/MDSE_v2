@@ -18,7 +18,8 @@
   "similar": "item-def",
   "difference": "An item can be a thing that flows or is carried (material, energy, data) but is not a structural component of the system; a part is the thing that is assembled and decomposed.",
   "example": "part def Charger;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "part-usage",
@@ -39,7 +40,8 @@
   "similar": "item-usage",
   "difference": "A part usage is a structural member of its owner (the controller inside the charger). An item usage is something that moves or is handled and is not decomposed as part of the system.",
   "example": "part controller : Controller;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "attribute-def",
@@ -60,7 +62,8 @@
   "similar": "enum-def",
   "difference": "An enumeration is a closed list of named values. An attribute definition is an open data type.",
   "example": "attribute def PowerValue;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "attribute-usage",
@@ -81,7 +84,8 @@
   "similar": "reference-usage",
   "difference": "An attribute usage is a value owned by its parent. A reference usage only points at something owned elsewhere.",
   "example": "attribute ratedPower : PowerValue;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "item-def",
@@ -102,7 +106,8 @@
   "similar": "part-def",
   "difference": "A part definition is a structural component with ports and parts. An item definition is what moves between or through parts.",
   "example": "item def Current;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "item-usage",
@@ -123,7 +128,8 @@
   "similar": "part-usage",
   "difference": "An item usage is typically the payload of a flow or something held; a part usage is a component in the decomposition.",
   "example": "item cableAssembly : Cable;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "port-def",
@@ -144,7 +150,8 @@
   "similar": "interface-def",
   "difference": "An interface definition describes a connection between two ports. A port definition describes one end.",
   "example": "port def PowerPort;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "port-usage",
@@ -164,7 +171,8 @@
   "similar": "part-usage",
   "difference": "A port is a boundary of its owner; a part is a component inside it.",
   "example": "port acIn : PowerPort;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "connection-def",
@@ -185,7 +193,8 @@
   "similar": "interface-def",
   "difference": "An interface definition constrains connections between ports. A connection definition is a link between any features, with no port requirement.",
   "example": "connection def CableLink;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "connection-usage",
@@ -204,7 +213,8 @@
   "similar": "interface-usage",
   "difference": "An interface usage connects ports. A connection usage connects any features.",
   "example": "connect controller.out to module.in;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "interface-def",
@@ -225,7 +235,8 @@
   "similar": "connection-def",
   "difference": "An interface definition ends on ports and is about what crosses a boundary. A connection definition ends on any feature.",
   "example": "interface def PowerInterface;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "interface-usage",
@@ -244,7 +255,8 @@
   "similar": "connection-usage",
   "difference": "An interface usage is a connection restricted to ports and typed by an interface definition.",
   "example": "interface : PowerInterface connect charger.out to vehicle.in;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "allocation-def",
@@ -265,7 +277,8 @@
   "similar": "satisfy-requirement-usage",
   "difference": "Satisfy says a design element meets a requirement. Allocate maps any element (function, requirement, part) onto another and carries no obligation to prove it.",
   "example": "allocation def LogicalToPhysical;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "allocation-usage",
@@ -284,7 +297,8 @@
   "similar": "satisfy-requirement-usage",
   "difference": "Allocate maps any element onto any other and asserts nothing about meeting a need. Satisfy relates a design element to a requirement and says the need is met.",
   "example": "allocate controlSoftware to ecu;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "flow-def",
@@ -305,7 +319,8 @@
   "similar": "connection-def",
   "difference": "A flow definition is about something moving. A connection definition is a link with no direction of travel.",
   "example": "flow def CurrentFlow;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "flow-usage",
@@ -324,7 +339,8 @@
   "similar": "succession-flow-usage",
   "difference": "A flow transfers a payload and implies no order. A succession flow also fixes that the source finishes first.",
   "example": "flow of Current from a.out to b.in;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "occurrence-def",
@@ -345,7 +361,8 @@
   "similar": "part-def",
   "difference": "A part definition is an occurrence that is also a structural component. A plain occurrence has time extent only.",
   "example": "occurrence def Charge;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "occurrence-usage",
@@ -365,16 +382,17 @@
   "similar": "part-usage",
   "difference": "Use the specific usage (part, item, action) when one fits; a plain occurrence is the generic parent.",
   "example": "occurrence charging : Charge;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "individual-def",
   "name": "Individual definition",
   "kind": "definition",
   "keyword": "individual def",
-  "metaclass": "IndividualDefinition",
+  "metaclass": "OccurrenceDefinition (isIndividual = true)",
   "tier": "rare",
-  "description": "A definition of a single, particular thing (this serial number, this vehicle) rather than a class.",
+  "description": "A definition of a single, particular thing (this serial number, this vehicle) rather than a class. `individual` is a prefix on an occurrence-type definition, so `individual def X` and `individual part def X` are both written; the result is an occurrence definition limited to one instance.",
   "from": [
    "a package",
    "a library package",
@@ -386,14 +404,15 @@
   "similar": "part-def",
   "difference": "A part definition is a class of things. An individual definition is one particular thing.",
   "example": "individual def TestUnit001;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "individual-usage",
   "name": "Individual usage",
   "kind": "usage",
   "keyword": "individual name : Type",
-  "metaclass": "IndividualUsage",
+  "metaclass": "OccurrenceUsage (isIndividual = true)",
   "tier": "rare",
   "description": "A usage that refers to one individual over its life; combine with `snapshot` and `timeslice` for states in time.",
   "from": [
@@ -406,7 +425,8 @@
   "similar": "part-usage",
   "difference": "Use an individual only when one concrete thing matters (a test article); otherwise model the class.",
   "example": "individual part unit1 : TestUnit001;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "action-def",
@@ -427,7 +447,8 @@
   "similar": "state-def",
   "difference": "A state definition describes what a thing is in over time, with entry, do and exit. An action definition is what happens, step by step.",
   "example": "action def ChargeVehicle;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "action-usage",
@@ -448,7 +469,8 @@
   "similar": "perform-action-usage",
   "difference": "An action usage is a step owned by its parent. A perform usage says that a part performs an action defined elsewhere.",
   "example": "action charge : ChargeVehicle;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "state-def",
@@ -469,7 +491,8 @@
   "similar": "action-def",
   "difference": "An action definition describes behaviour that finishes. A state definition describes a condition that persists until a transition leaves it.",
   "example": "state def ChargerStates;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "state-usage",
@@ -490,7 +513,8 @@
   "similar": "exhibit-state-usage",
   "difference": "A state usage belongs to its owner. An exhibit usage says a part exhibits a state machine defined elsewhere.",
   "example": "state ready;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "constraint-def",
@@ -511,7 +535,8 @@
   "similar": "calc-def",
   "difference": "A calculation definition returns a value. A constraint definition returns true or false.",
   "example": "constraint def MaxVoltage { in v; v <= 480 [V] }",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "constraint-usage",
@@ -531,7 +556,8 @@
   "similar": "assert-constraint-usage",
   "difference": "A constraint usage states a condition. An assert constraint usage asserts it must hold (or not, with `not`).",
   "example": "constraint maxV : MaxVoltage;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "requirement-def",
@@ -552,7 +578,8 @@
   "similar": "constraint-def",
   "difference": "A requirement definition is a constraint with a subject, an id and a text that stakeholders own. A constraint definition is a pure condition with no stakeholder.",
   "example": "requirement def RemoteControl { doc /* ... */ }",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "requirement-usage",
@@ -573,7 +600,8 @@
   "similar": "satisfy-requirement-usage",
   "difference": "A requirement usage is the requirement itself in a tree. A satisfy relationship says a design element meets it.",
   "example": "requirement remote : RemoteControl;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "concern-def",
@@ -594,7 +622,8 @@
   "similar": "requirement-def",
   "difference": "A requirement states what must hold. A concern states what someone cares about, before it is turned into requirements.",
   "example": "concern def Serviceability;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "concern-usage",
@@ -614,7 +643,8 @@
   "similar": "framed-concern-usage",
   "difference": "A concern usage is a standalone interest. A framed concern usage is a concern placed inside a viewpoint or requirement via `frame`.",
   "example": "concern serviceability : Serviceability;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "calc-def",
@@ -635,7 +665,8 @@
   "similar": "constraint-def",
   "difference": "A constraint definition yields true or false. A calculation definition yields any value.",
   "example": "calc def Power { in v; in i; return v*i; }",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "calc-usage",
@@ -655,7 +686,8 @@
   "similar": "attribute-usage",
   "difference": "An attribute usage holds a value. A calculation usage computes it from inputs.",
   "example": "calc p : Power;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "case-def",
@@ -676,7 +708,8 @@
   "similar": "use-case-def",
   "difference": "A use case definition is a case about actors and a subject using a system. A plain case is the generic parent.",
   "example": "case def GenericCase;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "case-usage",
@@ -696,7 +729,8 @@
   "similar": "use-case-usage",
   "difference": "Prefer use case, analysis or verification; use plain case only for something that fits none.",
   "example": "case c : GenericCase;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "analysis-def",
@@ -717,7 +751,8 @@
   "similar": "verification-def",
   "difference": "A verification case checks a requirement against a subject and produces a verdict. An analysis case computes values and need not judge anything.",
   "example": "analysis def ThermalAnalysis;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "analysis-usage",
@@ -737,7 +772,8 @@
   "similar": "verification-usage",
   "difference": "An analysis usage computes. A verification usage decides pass or fail against requirements.",
   "example": "analysis thermal : ThermalAnalysis;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "verification-def",
@@ -758,7 +794,8 @@
   "similar": "analysis-def",
   "difference": "A verification case ends in a verdict on requirements. An analysis case ends in a computed result.",
   "example": "verification def TestCharger;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "verification-usage",
@@ -778,7 +815,8 @@
   "similar": "verify-requirement-usage",
   "difference": "A verification usage is the planned test or inspection. A verify usage inside its objective names the requirement it checks.",
   "example": "verification test1 : TestCharger;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "use-case-def",
@@ -799,7 +837,8 @@
   "similar": "action-def",
   "difference": "An action definition is behaviour. A use case definition is the goal of actors using a subject, which then refers to actions.",
   "example": "use case def ChargeVehicleUseCase;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "use-case-usage",
@@ -819,7 +858,8 @@
   "similar": "include-use-case-usage",
   "difference": "A use case usage is a goal. An include usage embeds another use case inside it.",
   "example": "use case charge : ChargeVehicleUseCase;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "view-def",
@@ -840,7 +880,8 @@
   "similar": "viewpoint-def",
   "difference": "A viewpoint definition says what view is needed and for whom. A view definition is the thing that shows it.",
   "example": "view def PowerView;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "view-usage",
@@ -860,7 +901,8 @@
   "similar": "viewpoint-usage",
   "difference": "A view usage selects and renders content. A viewpoint usage states the stakeholder need that the view answers.",
   "example": "view powerView : PowerView;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "viewpoint-def",
@@ -881,7 +923,8 @@
   "similar": "view-def",
   "difference": "A viewpoint holds concerns. A view holds the content.",
   "example": "viewpoint def SafetyViewpoint;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "viewpoint-usage",
@@ -901,7 +944,8 @@
   "similar": "view-usage",
   "difference": "A viewpoint holds the concerns; a view holds the content that answers them.",
   "example": "viewpoint safety : SafetyViewpoint;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "rendering-def",
@@ -922,7 +966,8 @@
   "similar": "view-def",
   "difference": "A view selects content. A rendering decides how it looks.",
   "example": "rendering def AsTable;",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "rendering-usage",
@@ -942,7 +987,8 @@
   "similar": "view-usage",
   "difference": "A view selects content; a rendering decides how that content looks.",
   "example": "rendering r : AsTable;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "metadata-def",
@@ -963,7 +1009,8 @@
   "similar": "attribute-def",
   "difference": "An attribute definition describes data inside the model. A metadata definition describes data about model elements and can be applied to them.",
   "example": "metadata def Safety { attribute level : Integer; }",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "metadata-usage",
@@ -983,7 +1030,8 @@
   "similar": "attribute-usage",
   "difference": "Metadata annotates another element; an attribute is a value of its own element.",
   "example": "metadata safety : Safety;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "enum-def",
@@ -1004,7 +1052,8 @@
   "similar": "attribute-def",
   "difference": "An attribute definition allows any value of its type. An enumeration allows only its named values.",
   "example": "enum def Mode { enum on; enum off; }",
-  "wrap": "pkg"
+  "wrap": "pkg",
+  "category": "language"
  },
  {
   "id": "enum-usage",
@@ -1024,7 +1073,8 @@
   "similar": "attribute-usage",
   "difference": "An attribute usage may hold any value of its type; an enumeration usage holds one of the named values only.",
   "example": "enum mode : Mode;",
-  "wrap": "def"
+  "wrap": "def",
+  "category": "language"
  },
  {
   "id": "specialization",
@@ -1043,7 +1093,8 @@
   "wrap": "pkg",
   "from": [
    "a definition"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "feature-typing",
@@ -1062,7 +1113,8 @@
   "wrap": "def",
   "from": [
    "a usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "subsetting",
@@ -1081,7 +1133,8 @@
   "wrap": "def",
   "from": [
    "a usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "redefinition",
@@ -1100,7 +1153,8 @@
   "wrap": "def",
   "from": [
    "a usage in a specializing definition"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "reference-subsetting",
@@ -1119,7 +1173,8 @@
   "wrap": "def",
   "from": [
    "a usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "cross-subsetting",
@@ -1138,7 +1193,8 @@
   "wrap": "def",
   "from": [
    "a connection end"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "conjugation",
@@ -1157,7 +1213,8 @@
   "wrap": "def",
   "from": [
    "a port usage, or a conjugated port definition"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "dependency",
@@ -1176,7 +1233,8 @@
   "wrap": "def",
   "from": [
    "any element (client, one or more)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "import-membership",
@@ -1195,7 +1253,8 @@
   "wrap": "pkg",
   "from": [
    "a package or namespace"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "import-namespace",
@@ -1214,7 +1273,8 @@
   "wrap": "pkg",
   "from": [
    "a package or namespace"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "alias",
@@ -1233,7 +1293,8 @@
   "wrap": "pkg",
   "from": [
    "a package or namespace"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "filter",
@@ -1252,7 +1313,8 @@
   "wrap": "pkg",
   "from": [
    "a package"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "package",
@@ -1272,7 +1334,8 @@
   "from": [
    "the model root",
    "another package"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "library-package",
@@ -1292,7 +1355,8 @@
   "from": [
    "the model root",
    "another package"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "comment",
@@ -1311,7 +1375,8 @@
   "wrap": "def",
   "from": [
    "any element or namespace"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "documentation",
@@ -1330,7 +1395,8 @@
   "wrap": "pkg",
   "from": [
    "any element (owner)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "textual-representation",
@@ -1349,7 +1415,8 @@
   "wrap": "def",
   "from": [
    "any element"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "prefix-metadata",
@@ -1368,7 +1435,8 @@
   "wrap": "def",
   "from": [
    "any element declaration"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "metadata-feature",
@@ -1387,7 +1455,8 @@
   "wrap": "def",
   "from": [
    "any element"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "visibility",
@@ -1406,7 +1475,8 @@
   "wrap": "def",
   "from": [
    "a member declaration"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "modifiers",
@@ -1425,7 +1495,8 @@
   "wrap": "pkg",
   "from": [
    "a definition or usage declaration"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "multiplicity",
@@ -1444,7 +1515,8 @@
   "wrap": "def",
   "from": [
    "a usage declaration"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "value",
@@ -1463,7 +1535,8 @@
   "wrap": "def",
   "from": [
    "an attribute or reference usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "variation",
@@ -1482,7 +1555,8 @@
   "wrap": "pkg",
   "from": [
    "a definition or usage marked `variation`"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "reference-usage",
@@ -1501,7 +1575,8 @@
   "wrap": "def",
   "from": [
    "a definition or usage body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "parameter",
@@ -1520,7 +1595,8 @@
   "wrap": "def",
   "from": [
    "a usage in an action, calc, constraint, case or port"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "return",
@@ -1539,7 +1615,8 @@
   "wrap": "pkg",
   "from": [
    "a calc, case or expression"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "event-occurrence-usage",
@@ -1558,7 +1635,8 @@
   "wrap": "def",
   "from": [
    "an occurrence, part, state or action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "snapshot-usage",
@@ -1577,7 +1655,8 @@
   "wrap": "def",
   "from": [
    "an individual or occurrence body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "timeslice-usage",
@@ -1596,7 +1675,8 @@
   "wrap": "def",
   "from": [
    "an individual or occurrence body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "actor-usage",
@@ -1615,7 +1695,8 @@
   "wrap": "def",
   "from": [
    "a use case, requirement, verification or analysis body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "stakeholder-usage",
@@ -1634,7 +1715,8 @@
   "wrap": "def",
   "from": [
    "a requirement or viewpoint body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "subject-usage",
@@ -1653,7 +1735,8 @@
   "wrap": "pkg",
   "from": [
    "a requirement, case or view body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "objective-usage",
@@ -1672,7 +1755,8 @@
   "wrap": "pkg",
   "from": [
    "a case, analysis or verification body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "assert-constraint-usage",
@@ -1691,7 +1775,8 @@
   "wrap": "def",
   "from": [
    "a definition or usage body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "require-constraint-usage",
@@ -1710,7 +1795,8 @@
   "wrap": "pkg",
   "from": [
    "a requirement definition or usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "framed-concern-usage",
@@ -1729,7 +1815,8 @@
   "wrap": "pkg",
   "from": [
    "a requirement or viewpoint body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "expose",
@@ -1748,7 +1835,8 @@
   "wrap": "def",
   "from": [
    "a view usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "render",
@@ -1767,7 +1855,8 @@
   "wrap": "def",
   "from": [
    "a view usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "perform-action-usage",
@@ -1786,7 +1875,8 @@
   "wrap": "def",
   "from": [
    "a part definition or part usage (the performer)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "exhibit-state-usage",
@@ -1805,7 +1895,8 @@
   "wrap": "def",
   "from": [
    "a part definition or usage (the exhibitor)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "include-use-case-usage",
@@ -1819,12 +1910,13 @@
    "a use case"
   ],
   "similar": "use-case-usage",
-  "difference": "An include is mandatory reuse inside a use case. A plain use case usage `[0..1]` is optional (the MDSE extend form).",
+  "difference": "An include is mandatory reuse inside a use case. SysML v2 has no extend relationship (its grammar has no `extend` keyword), so a v1 extend is not translated to a v2 construct. MDSE writes it as a plain use case usage with multiplicity `[0..1]`, which is an MDSE convention that other SysML v2 tools read as an optional nested use case.",
   "example": "include use case pay : Pay;",
   "wrap": "def",
   "from": [
    "a use case"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "satisfy-requirement-usage",
@@ -1843,7 +1935,8 @@
   "wrap": "def",
   "from": [
    "a part, action, state or other definition or usage (the satisfier)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "verify-requirement-usage",
@@ -1862,7 +1955,8 @@
   "wrap": "pkg",
   "from": [
    "a verification case objective"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "bind",
@@ -1881,7 +1975,8 @@
   "wrap": "def",
   "from": [
    "a feature"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "succession",
@@ -1890,17 +1985,18 @@
   "keyword": "first a then b;",
   "metaclass": "SuccessionAsUsage",
   "tier": "core",
-  "description": "States that one occurrence (action, state, event) ends before another starts.",
+  "description": "States that one occurrence (action, state, event) ends before another starts. The simple form has no condition; add a guard and it is a conditional succession.",
   "to": [
    "an action, state or other occurrence usage"
   ],
   "similar": "transition-usage",
-  "difference": "A succession orders two occurrences with no trigger or guard. A transition moves between states and can carry a trigger, guard and effect.",
+  "difference": "A simple succession only orders two occurrences. A conditional succession adds a guard (`if`). A transition moves between states and can also carry a trigger and an effect.",
   "example": "first start then charge;",
   "wrap": "def",
   "from": [
    "an action, state or other occurrence usage"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "transition-usage",
@@ -1919,7 +2015,8 @@
   "wrap": "def",
   "from": [
    "a state (the source)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "succession-flow-usage",
@@ -1938,7 +2035,8 @@
   "wrap": "def",
   "from": [
    "an output of an occurrence"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "message",
@@ -1957,7 +2055,8 @@
   "wrap": "def",
   "from": [
    "an event occurrence (sender)"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "accept-action-usage",
@@ -1976,7 +2075,8 @@
   "wrap": "def",
   "from": [
    "an action or state body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "send-action-usage",
@@ -1995,7 +2095,8 @@
   "wrap": "def",
   "from": [
    "an action or state body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "assign-action-usage",
@@ -2014,7 +2115,8 @@
   "wrap": "def",
   "from": [
    "an action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "decision-node",
@@ -2033,7 +2135,8 @@
   "wrap": "def",
   "from": [
    "an action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "if-action-usage",
@@ -2052,7 +2155,8 @@
   "wrap": "def",
   "from": [
    "an action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "loop-action-usage",
@@ -2071,7 +2175,8 @@
   "wrap": "def",
   "from": [
    "an action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "terminate-action-usage",
@@ -2090,7 +2195,8 @@
   "wrap": "def",
   "from": [
    "an action body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "state-action",
@@ -2109,7 +2215,8 @@
   "wrap": "def",
   "from": [
    "a state body"
-  ]
+  ],
+  "category": "language"
  },
  {
   "id": "expression",
@@ -2128,6 +2235,331 @@
   "wrap": "def",
   "from": [
    "a constraint, calc, value binding, guard or condition"
-  ]
+  ],
+  "category": "language"
+ },
+ {
+  "id": "conditional-succession",
+  "name": "Conditional succession",
+  "kind": "relationship",
+  "keyword": "first a if guard then b;",
+  "metaclass": "SuccessionAsUsage (with a guard)",
+  "tier": "common",
+  "description": "A succession that only happens when a guard condition is true: `succession first check if ready then charge;`. A default branch after the guarded ones is written `else name;`.",
+  "from": [
+   "an action, state or other occurrence usage"
+  ],
+  "to": [
+   "an action, state or other occurrence usage"
+  ],
+  "similar": "succession",
+  "difference": "A simple succession always follows. A conditional succession follows only when its guard holds. A transition belongs to a state machine and can also carry a trigger (`accept`) and an effect (`do`).",
+  "example": "succession first check if ready then charge;",
+  "wrap": "def",
+  "category": "language"
+ },
+ {
+  "kind": "relationship",
+  "tier": "common",
+  "wrap": "def",
+  "id": "derivation-connection",
+  "name": "Requirement derivation",
+  "keyword": "#derivation connection { end #original ::> A; end #derive ::> B; }",
+  "metaclass": "ConnectionUsage typed by Derivation (RequirementDerivation library)",
+  "library": "RequirementDerivation, DerivationConnections",
+  "description": "States that one or more requirements were derived from an original requirement. It is a standard-library concept, not a language keyword: the `Derivation` connection definition plus the `#derivation`, `#original` and `#derive` metadata. The original is one requirement; the derived side is one or more. Only requirements take part.",
+  "from": [
+   "a requirement (the original, exactly one)"
+  ],
+  "to": [
+   "requirements (the derived ones, one or more)"
+  ],
+  "similar": "dependency",
+  "difference": "A dependency only says one element depends on another. A derivation says specific requirements follow from an original. It is not containment (a requirement usage nested in another requirement) and not satisfaction (a design element meets a requirement). MDSE writes derived-from as a dependency tagged `// derivedFrom` for now; the native form is this one (open decision OD-09).",
+  "example": "#derivation connection { end #original ::> RemoteControl; end #derive ::> RemoteStart; }",
+  "category": "library"
+ },
+ {
+  "kind": "relationship",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "causation-connection",
+  "name": "Causation",
+  "keyword": "#causation connection { end #cause ::> A; end #effect ::> B; }",
+  "metaclass": "ConnectionUsage typed by Causation (CauseAndEffect library)",
+  "library": "CauseAndEffect, CausationConnections",
+  "description": "States that one occurrence causes another: a cause and an effect. A standard-library concept (the `Causation` connection definition and the `#causation`, `#cause`, `#effect` metadata). The connection can carry `isNecessary`, `isSufficient` and a `probability` through `CausationMetadata`. Used for failure and fault analysis.",
+  "from": [
+   "an occurrence usage (the cause)"
+  ],
+  "to": [
+   "an occurrence usage (the effect)"
+  ],
+  "similar": "succession",
+  "difference": "A succession orders two occurrences in time. A causation says one brings about the other, which is stronger and says nothing by itself about order of steps in a behavior.",
+  "example": "#causation connection { end #cause ::> overheat; end #effect ::> shutdown; }",
+  "category": "library"
+ },
+ {
+  "kind": "relationship",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "multicausation-connection",
+  "name": "Multicausation",
+  "keyword": "#multicausation connection { end #cause ::> A; end #cause ::> B; end #effect ::> C; }",
+  "metaclass": "ConnectionUsage typed by Multicausation (CauseAndEffect library)",
+  "library": "CauseAndEffect, CausationConnections",
+  "description": "States that several causes together bring about one or more effects. A standard-library concept: `Multicausation` has one or more cause ends and one or more effect ends, and the causes and effects must be disjoint. `Causation` is its one-cause, one-effect form.",
+  "from": [
+   "occurrence usages (the causes, one or more)"
+  ],
+  "to": [
+   "occurrence usages (the effects, one or more)"
+  ],
+  "similar": "causation-connection",
+  "difference": "A causation links one cause to one effect. A multicausation groups several causes (and effects) in one statement, so a failure analysis can say that two conditions together lead to a hazard.",
+  "example": "#multicausation connection { end #cause ::> overcurrent; end #cause ::> overtemp; end #effect ::> trip; }",
+  "category": "library"
+ },
+ {
+  "kind": "usage",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "trade-study",
+  "name": "Trade study",
+  "keyword": "analysis name : TradeStudy { subject = (A, B); objective : MaximizeObjective; }",
+  "metaclass": "AnalysisCaseUsage typed by TradeStudy (TradeStudies library)",
+  "library": "TradeStudies",
+  "description": "A standard analysis case that compares alternatives and selects one. It has a subject (the alternatives), an evaluation function that scores each alternative, and an objective that is `MaximizeObjective` or `MinimizeObjective`; the result is the selected alternative.",
+  "from": [
+   "a definition body that allows an analysis case usage",
+   "a package (as a top-level usage)"
+  ],
+  "to": [
+   "TradeStudy, or a definition that specializes it",
+   "alternatives (the subject)",
+   "MaximizeObjective or MinimizeObjective"
+  ],
+  "similar": "analysis-usage",
+  "difference": "A general analysis case computes any result about a subject. A trade study is the library's pattern for choosing among alternatives with an evaluation function and a maximize or minimize objective.",
+  "example": "analysis chargerStudy : TradeStudy { subject : Charger = (chargerA, chargerB); objective : MaximizeObjective; }",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "common",
+  "wrap": "pkg",
+  "id": "verdict-kind",
+  "name": "Verdict",
+  "keyword": "return verdict : VerdictKind;",
+  "metaclass": "EnumerationDefinition VerdictKind (VerificationCases library)",
+  "library": "VerificationCases",
+  "description": "The result of running a verification case. `VerdictKind` has four values: `pass`, `fail`, `inconclusive` and `error`. The library function `PassIf` turns a Boolean into pass or fail.",
+  "from": [
+   "a verification case definition or usage (its return)"
+  ],
+  "to": [
+   "VerdictKind"
+  ],
+  "similar": "verification-def",
+  "difference": "A verification case definition says how a requirement is checked. The verdict is what one execution of it returned. The definition and the result are different things; MDSE keeps the definition in the model and leaves results to the test record.",
+  "example": "verification def TestCharger { return verdict : VerdictKind; }",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "common",
+  "wrap": "pkg",
+  "id": "verification-method",
+  "name": "Verification method",
+  "keyword": "@VerificationMethod { kind = VerificationMethodKind::test; }",
+  "metaclass": "MetadataUsage of VerificationMethod (VerificationCases library)",
+  "library": "VerificationCases",
+  "description": "Metadata that records how a verification case checks its requirement. The library names four kinds: `inspect`, `analyze`, `demo` and `test`.",
+  "from": [
+   "a verification case definition or usage"
+  ],
+  "to": [
+   "VerificationMethodKind values (inspect, analyze, demo, test)"
+  ],
+  "similar": "verification-def",
+  "difference": "The method says how (inspection, analysis, demonstration, test). The verification case says what is checked and returns the verdict.",
+  "example": "verification def TestCharger { @VerificationMethod { kind = VerificationMethodKind::test; } }",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "common",
+  "wrap": "def",
+  "id": "quantity-unit",
+  "name": "Quantity and unit",
+  "keyword": "attribute x : ISQ::PowerValue = 30 [SI::kW];",
+  "metaclass": "AttributeUsage typed by a quantity value (ISQ, SI, Quantities libraries)",
+  "library": "ISQ, SI, USCustomaryUnits, Quantities, MeasurementReferences",
+  "description": "A number with a unit. A quantity kind such as `ISQ::PowerValue` says what is measured, a unit such as `SI::kW` says how, and a dimension says what kind of quantity a unit measures. Units can be converted and scales (for example temperature) are separate from units.",
+  "from": [
+   "an attribute usage"
+  ],
+  "to": [
+   "a quantity kind (ISQ), a unit (SI, USCustomaryUnits), a dimension"
+  ],
+  "similar": "value",
+  "difference": "A plain value is just a number. A quantity carries a unit and a quantity kind, so 30 kW and 30 W are never confused. Never guess a unit from a name (IMP rules); write the unit the source states.",
+  "example": "attribute ratedPower : ISQ::PowerValue = 30 [SI::kW];",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "rationale-metadata",
+  "name": "Rationale",
+  "keyword": "@Rationale { text = \"...\"; }",
+  "metaclass": "MetadataUsage of Rationale (ModelingMetadata library)",
+  "library": "ModelingMetadata",
+  "description": "Metadata that records why a choice or decision was made, with a `text` and an optional reference to the element that explains it.",
+  "from": [
+   "any element"
+  ],
+  "to": [
+   "Rationale"
+  ],
+  "similar": "metadata-usage",
+  "difference": "Rationale explains a decision. A comment is free text with no meaning; an Issue records a concern.",
+  "example": "@Rationale { text = \"Meets the standard.\"; }",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "issue-metadata",
+  "name": "Issue",
+  "keyword": "@Issue { text = \"...\"; }",
+  "metaclass": "MetadataUsage of Issue (ModelingMetadata library)",
+  "library": "ModelingMetadata",
+  "description": "Metadata that records a concern about the element it annotates.",
+  "from": [
+   "any element"
+  ],
+  "to": [
+   "Issue"
+  ],
+  "similar": "rationale-metadata",
+  "difference": "An Issue is a concern still to be resolved. A Rationale is a reason already given. An MDSE Issue note is a separate model note with a status; this metadata is a small annotation inside a block.",
+  "example": "@Issue { text = \"Derating curve not confirmed.\"; }",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "status-info-metadata",
+  "name": "Status information",
+  "keyword": "@StatusInfo { status = StatusKind::open; }",
+  "metaclass": "MetadataUsage of StatusInfo (ModelingMetadata library)",
+  "library": "ModelingMetadata",
+  "description": "Metadata that records the work status of an element: `status` is one of `open`, `tbd`, `tbr`, `tbc`, `done`, `closed`, with an optional originator, owner and risk.",
+  "from": [
+   "any element"
+  ],
+  "to": [
+   "StatusInfo",
+   "StatusKind values"
+  ],
+  "similar": "rationale-metadata",
+  "difference": "StatusInfo is the SysML v2 library's own status vocabulary. An MDSE note's `status` property (Draft, Retired and so on) is a different property and the two are not synchronized.",
+  "example": "@StatusInfo { status = StatusKind::open; }",
+  "category": "library"
+ },
+ {
+  "kind": "relationship",
+  "tier": "occasional",
+  "wrap": "def",
+  "id": "refinement-metadata",
+  "name": "Refinement",
+  "keyword": "#refinement dependency from A to B;",
+  "metaclass": "Dependency annotated with Refinement (ModelingMetadata library)",
+  "library": "ModelingMetadata",
+  "description": "Marks a dependency as a refinement: the source element is more precise than the target (for example a detailed design refining a requirement).",
+  "from": [
+   "any element (the more precise one)"
+  ],
+  "to": [
+   "any element (the less precise one)"
+  ],
+  "similar": "dependency",
+  "difference": "A plain dependency has no meaning beyond the link. A refinement says the source adds precision to the target. MDSE writes refines as a dependency tagged `// refines` for now; the native form is this one (open decision OD-09).",
+  "example": "#refinement dependency from DetailedCharger to Charger;",
+  "category": "library"
+ },
+ {
+  "kind": "annotation",
+  "tier": "rare",
+  "wrap": "def",
+  "id": "shape-items",
+  "name": "Shape items",
+  "keyword": "item x : ShapeItems::RectangularCuboid;",
+  "metaclass": "ItemUsage typed by a ShapeItems definition (Geometry library)",
+  "library": "ShapeItems, SpatialItems",
+  "description": "Standard geometric shapes (lines, circles, rectangles, spheres, cylinders, cuboids and others) that give an item dimensions such as length, width, height or radius. Spatial items place items in space.",
+  "from": [
+   "an item or part usage"
+  ],
+  "to": [
+   "a ShapeItems definition (for example RectangularCuboid, CircularCylinder, Sphere)"
+  ],
+  "similar": "item-usage",
+  "difference": "An item usage says something exists and flows or is held. A shape item says what geometry it has. Use shapes when size and placement matter to the engineering question.",
+  "example": "item housing : ShapeItems::RectangularCuboid;",
+  "category": "library"
+ },
+ {
+  "kind": "structure",
+  "tier": "common",
+  "wrap": "pkg",
+  "id": "requirement-decomposition",
+  "name": "Requirement decomposition",
+  "keyword": "requirement def R { requirement sub : S; ref requirement other : T; }",
+  "metaclass": "RequirementUsage (nested) and ReferenceUsage",
+  "description": "A requirement is broken into parts by nesting requirement usages inside it. The parent owns the nested ones. A requirement that lives elsewhere is pointed at with `ref requirement` and is not owned.",
+  "from": [
+   "a requirement definition or usage"
+  ],
+  "to": [
+   "requirement definitions (nested usages) or any requirement (references)"
+  ],
+  "similar": "derivation-connection",
+  "difference": "Decomposition is ownership: the parts are inside the parent, so removing the parent removes them. Derivation links two requirements that each stand alone. Satisfaction links a requirement to the design that meets it. Do not use nesting to say one requirement came from another.",
+  "example": "requirement def Charging { requirement overTemp : OverTemperatureLimit; ref requirement standard : UL2594; }",
+  "recognizedAs": [
+   "requirement-usage",
+   "reference-usage"
+  ],
+  "category": "pattern"
+ },
+ {
+  "kind": "structure",
+  "tier": "common",
+  "wrap": "pkg",
+  "id": "ownership-vs-reference",
+  "name": "Ownership and reference",
+  "keyword": "part x : T;  ref part y : T;",
+  "metaclass": "PartUsage and ReferenceUsage",
+  "description": "A usage declared without `ref` is owned by the definition that holds it (part, port, action, state). A `ref` usage points at something owned elsewhere and owns nothing. This decides whether a part is counted in an assembly.",
+  "from": [
+   "a definition or usage body"
+  ],
+  "to": [
+   "definitions of the same kind"
+  ],
+  "similar": "reference-usage",
+  "difference": "An owned part belongs to the assembly and is counted in its parts list. A referenced part belongs to something else and is not counted twice.",
+  "example": "part def Charger { part controller : Controller; ref part supply : PowerSource; }",
+  "recognizedAs": [
+   "part-usage",
+   "reference-usage"
+  ],
+  "category": "pattern"
  }
 ]

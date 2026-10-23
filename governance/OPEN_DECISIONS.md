@@ -13,6 +13,7 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 | OD-05 | P1 | Repo | License for a public repository. Without one, the code is "all rights reserved" and others may not reuse it. Options: proprietary notice, MIT, Apache-2.0, or make the repo private. |
 | OD-06 | P1 | Repo | Repository visibility: public requires synthetic-only content (DAT-002). Private removes that constraint for fixtures but not for real data, which never goes in any repo. |
 | OD-08 | P1 | Model | `local-model.yaml` was not carried. Confirm Local Model is V1-only and replaced by SysML usages, then retire the MOD Local Model rules. |
+| OD-09 | P1 | Model | Native form for derivation, refinement and causation. The importer writes `dependency from a to b; // derivedFrom` and `// refines` (provisional, translation.ts). SysML v2 has `#derivation connection { end #original ::> a; end #derive ::> b; }` and `#refinement dependency` in its standard library. Options: (A) keep the dependency comment form; (B) write `#refinement dependency` for refines only (a dependency with metadata, same shape as today); (C) write `#derivation connection` for derivedFrom (changes element kind from dependency to connection, so Workbench relationship reading and the Edit lens change too). Needs a pinned-parser check of the library names before C. Language notes document all forms either way (D-0044). |
 
 ### OD-01 proposed split of relationships.yaml
 
