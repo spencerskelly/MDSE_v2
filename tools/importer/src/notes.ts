@@ -1,7 +1,7 @@
 /* Note text in the ADR-V2-06 layout: frontmatter, title, user zone, three blank lines, `## Source: EA`, `## SysML v2` last. */
 import MDSE from "../../core/src/mdse_core.js";
 
-export type FlagType = "flagImport" | "flagConflict" | "flagLink" | "flagNote";
+export type FlagType = "flagImport" | "flagConflict" | "flagLink" | "flagNote" | "flagValue";
 
 export interface NoteModel {
   type: string;
@@ -15,6 +15,8 @@ export interface NoteModel {
   /** MDSE-only relationship fields, written after tags (MOD-028). Values are note file names. */
   relFields: Array<[string, string[]]>;
   bodyText: string;
+  /** One-line description, written as a YAML property (BOM part name). */
+  description?: string;
   flags: string[];               // already rendered callouts
   sourceLines: string[];         // lines of `## Source: EA`
   sysml: string | null;
@@ -41,6 +43,7 @@ export function renderNote(n: NoteModel): string {
     `type: ${yamlScalar(n.type)}`, `subtype:${n.subtype ? " " + yamlScalar(n.subtype) : ""}`, `id: ${n.id}`, `uid: ${n.uid}`, `status: Draft`,
     `eaType: ${yamlScalar(n.eaType)}`, `tags: []`,
   ];
+  if (n.description) fm.push(`description: ${yamlScalar(n.description)}`);
   if (n.sourceRole) fm.push(`sourceRole: ${n.sourceRole}`);
   if (n.primarySymbol) fm.push(`primarySymbol: ${yamlScalar(n.primarySymbol)}`);
   for (const [k, v] of n.relFields) if (v.length) fm.push(`${k}: [${v.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);

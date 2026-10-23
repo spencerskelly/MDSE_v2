@@ -504,3 +504,19 @@ The importer's BOM path was run on the five workbooks in the Engineering_Data re
 
 Rules: IMP-129.
 
+
+## D-0047 — BOM import: the owner's decisions on scope, revisions, units, dates, states and duplicates
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0046)
+
+1. **Scope (OD-10).** Every part gets a note, for all products. (BOM-022)
+2. **Latest revision (OD-11).** The latest revision is the active one; older revisions and old part numbers named in the BOM are identified in the part note, and the assembly note identifies the older revision it pins. The owner did not give an order for revisions; BOM-018 is an assumption (placeholders lowest, then letters, then the number) and every choice it makes is listed as `REV_BY_ORDER`. Lifecycle states are ignored (BOM-021).
+3. **Replaced part numbers.** The new part number gets the note, with a `## Replaces` section naming the old one. The importer can only see this where a redline strikes out the old number; the flat export has no such marker. (BOM-023)
+4. **Names and merging.** The file name is the part number. The part description is the `description` YAML property. The EA element is matched to its BOM part later and by hand: the two notes are joined with `aliasOf` and merged with the existing Workbench alias and merge operation (D-0034, MOD-167). Nothing new is built for that.
+5. **Vocabularies (OD-12).** Units: BOM-019. Dates: BOM-020, text only. States: ignored.
+6. **Different values (OD-13).** First imported is kept; the other is added as a `flagValue` callout for review (BOM-024, MOD-163). Within one file this is done in the assembly note. Across two files (the same assembly in two redlines) the first file's note stays untouched, so the difference is listed in the findings note as `EXISTING_DIFFERS`, not as a callout; writing a callout into an existing note is not done.
+7. **Result on the real BOM set** (scratch run, nothing committed): the flat export now imports 14,539 parts and 50,200 usages with none held back (was 12,076 parts with 2,513 held back). 16,074 repeated lines are flagged for review. The four redlines import with the same findings as before plus the unit and date changes.
+8. **Known weakness.** First-imported is not always the current row: in the flat export the first of a repeated line has no end date in only 18 % of cases (all revisions counted). The flag shows both so a person can choose, but a rule such as "prefer the row with no end date, else the first" would keep the right row far more often. Not adopted; the owner decides.
+
+Closes OD-10, OD-11, OD-12, OD-13. Rules: BOM-009, BOM-016, BOM-017 (changed); BOM-018 to BOM-024 (new); MOD-163 (flagValue).
+

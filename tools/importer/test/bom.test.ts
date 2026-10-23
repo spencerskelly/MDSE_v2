@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { deflateRawSync } from "node:zlib";
 import MDSE from "../../core/src/mdse_core.js";
-import { buildBom, parseDelimited, detectLayout, parseBom } from "../src/bom.ts";
+import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomUnit, bomDate } from "../src/bom.ts";
 import type { Grid } from "../src/bom.ts";
 import { sha256Text } from "../src/sha256.ts";
 import { ROOT } from "./harness.ts";
@@ -38,8 +38,8 @@ test("flat BOM: one note per part number, parent-owned usages, pinned revision, 
   assert.match(a, /attribute revision = "-N99";/);
   assert.match(a, /part connectorHousingWireWireShroud2pin : OBJ_\d{5}::P_01191 \{\n\s+attribute line = 1;\n\s+attribute childRevision = "-099";/);
   assert.match(a, /: OBJ_\d{5}::P_01797 \[2\] \{/);                                       // discrete count -> multiplicity
-  assert.match(a, /attribute quantity = 0\.559;\n\s+attribute unit = "M";/);              // measured -> quantity + raw unit
-  assert.match(a, /attribute unit = "ML";/);                                              // case kept
+  assert.match(a, /attribute quantity = 0\.559;\n\s+attribute unit = "m";/);              // measured -> quantity + raw unit
+  assert.match(a, /attribute unit = "mL";/);                                              // case kept
   assert.doesNotMatch(a, /01141-91 \{|P_01141_91/);                                       // drawing line is not a usage
   assert.match(a, /^references: \["\[\[01141-91\]\]"\]$/m);
   assert.match(a, /^hasPart: \[/m);
@@ -58,13 +58,37 @@ test("pinned child revision that is not the child's latest: flagConflict on the 
   assert.equal(r.summary.conflicts, 1);
 });
 
-test("a part number whose latest revision cannot be told is reported and not imported, with its usages (BOM-009)", () => {
-  const extra = "01653\t-C\t99\tTANK\tbuy\tP\t1\t05274\t-0\t99\tTANK EXP\tbuy\tP\t\t\t\t\t\t1\tea\t01653-C99\n01654\t-C\t99\tTANK2\tbuy\tP\t1\t05274\t-1\t99\tTANK EXP\tbuy\tP\t\t\t\t\t\t1\tea\t01654-C99";
+test("the latest revision is the highest by revision order, and the part is imported with the other revisions named (D-0047)", () => {
+  const extra = "01653\t-C\t99\tTANK\tbuy\tP\t1\t05274\t-0\t99\tTANK EXP\tbuy\tP\t\t\t\t\t\t1\tea\t01653-C99\n01654\t-C\t99\tTANK2\tbuy\tP\t1\t05274\tA\t01\tTANK EXP\tbuy\tP\t\t\t\t\t\t1\tea\t01654-C99";
   const r = buildBom(parseDelimited(flatText + "\n" + extra), baseOpts);
-  assert.ok(!r.files.some((f) => f.path.startsWith("BOM/") && f.content.includes("BOM Part Number: 05274")));
-  assert.ok(r.findings.some((f) => f.code === "REV_UNDETERMINED" && f.message.startsWith("05274")));
-  assert.ok(!byTitle(r.files, "01653").content.includes("05274"));
-  assert.equal(r.summary.skippedParts, 1);
+  const t = byTitle(r.files, "05274").content;
+  assert.match(t, /attribute revision = "A01";/);                                           // the placeholder -099 ranks below a real revision
+  assert.match(t, /Revisions in the BOM: "-099", "A01"; the latest is "A01"/);
+  assert.match(byTitle(r.files, "01653").content, /Pins 05274 at an older revision/);       // the assembly that pins the placeholder says so
+  assert.ok(r.findings.some((f) => f.code === "REV_BY_ORDER" && f.message.startsWith("05274")));
+  assert.equal(r.summary.skippedParts, 0);
+  assert.deepEqual([["-099", "A01"], ["A01", "B02"], ["-V01", "-V02"], ["A02", "A10"], ["Z99", "A01"]].map(([a, b]) => bomRevCompare(a!, b!)), [-1, -1, -1, -1, -1]);
+});
+
+test("units are standard, ZST is dropped, dates are YYYY-MM-dd text, states are not written, the description is YAML (D-0047)", () => {
+  assert.deepEqual(["ea", "Piece", "Piece (ZST)", "M", "Meter", "Milliliters", "ML", "ZST", "Null", "x", "Furlong"].map((u) => bomUnit(u).unit), ["ea", "ea", "ea", "m", "m", "mL", "mL", "", "", "", "Furlong"]);
+  assert.equal(bomUnit("Furlong").known, false);
+  assert.deepEqual(["2/Jan/19", "10/Mrz/24", "4/Nov/21", "2024-03-10", "n/a"].map(bomDate), ["2019-01-02", "2024-03-10", "2021-11-04", "2024-03-10", "n/a"]);
+  const a = byTitle(buildBom(parseDelimited(flatText), baseOpts).files, "01141-002").content;
+  assert.doesNotMatch(a, /lifecycleState|PRODUCTIONPREPARATION/);
+  assert.match(a, /^description: CABLE ASSY THERMISTOR 10\.00IN PWRSTN$/m);
+  assert.match(a, /attribute effectiveFrom = "2019-01-02";/);
+});
+
+test("a line that appears twice in one assembly keeps the first and flags the other with flagValue (D-0047)", () => {
+  const second = FLAT_ROWS[2]!.replace("\t0.559\t", "\t0.700\t");
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, second].join("\n")), baseOpts);
+  const a = byTitle(r.files, "01141-002").content;
+  assert.match(a, /attribute quantity = 0\.559;/); assert.doesNotMatch(a, /attribute quantity = 0\.7;/);
+  assert.match(a, /> \[!flagValue\] Line 4 has two sets of values/); assert.match(a, /quantity 0\.700 m/);
+  assert.ok(r.findings.some((f) => f.code === "DUP_LINE" && f.level === "warn"));
+  const same = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, FLAT_ROWS[2]!].join("\n")), baseOpts);
+  assert.ok(!same.findings.some((f) => f.code === "DUP_LINE"), "an identical repeat is dropped silently");
 });
 
 test("blank part number + manufacturer part number is an alternate of the line above, not a part (BOM-003/013)", () => {
@@ -166,7 +190,7 @@ test("redline xlsx: unstruck text is current, struck text is the previous value;
   assert.equal(p.usages[0]!.child, "6100148"); assert.equal(p.usages[0]!.prevChild, "06991"); assert.equal(p.usages[0]!.alternates.length, 1);
   assert.ok(p.findings.some((f) => f.code === "LINE_REMOVED" && f.message.includes("07777")));
   const r = buildBom(g, baseOpts), top = byTitle(r.files, "5913538").content;
-  assert.match(top, /: OBJ_\d{5}::P_6100148 \{\n\s+attribute line = 8;\n\s+attribute childRevision = "A02";\n\s+attribute quantity = 4\.318;\n\s+attribute unit = "Meter";/);
+  assert.match(top, /: OBJ_\d{5}::P_6100148 \{\n\s+attribute line = 8;\n\s+attribute childRevision = "A02";\n\s+attribute quantity = 4\.318;\n\s+attribute unit = "m";/);
   assert.match(top, /\[2\]/); assert.match(top, /was 06991 before this release/);
   assert.match(top, /Drawing location: ECO-0437\/Power Station/); assert.match(top, /attribute revision = "B03";/);
   assert.match(byTitle(r.files, "6100148").content, /Manufacturer sources: 1\. CIRCLE AW AW 250; 2\. EATON B-LINE AW250 \(alternate\)/);
@@ -181,7 +205,7 @@ test("the Workbench scanner reads a BOM block: usages with pinned revision, quan
   assert.deepEqual(s.warnings ?? [], []);
   const def = s.defs[0]!; assert.equal(def.name, "P_01141_002"); assert.equal(def.usages.length, 4);
   const wire = def.usages.find((u: any) => u.type?.endsWith("P_01798_006_M"))!;
-  assert.deepEqual((wire as any).props.map((p: any) => [p.name, p.value]), [["line", "4"], ["childRevision", "-001"], ["quantity", "0.559"], ["unit", "M"], ["effectiveFrom", "2/Jan/19"]]);
+  assert.deepEqual((wire as any).props.map((p: any) => [p.name, p.value]), [["line", "4"], ["childRevision", "-001"], ["quantity", "0.559"], ["unit", "m"], ["effectiveFrom", "2019-01-02"]]);
 });
 
 // The three real redlines that the first version could not read (header below a preamble, level column with no header, "Part Number", "Unit" as the quantity, "UOM").
@@ -218,7 +242,7 @@ test("a second BOM that disagrees with a part already in the vault says so and l
   const existing = { hasVault: true, files: new Map(first.files.filter((f) => f.path.endsWith(".md")).map((f) => [f.path, f.content] as [string, string])) };
   const second = buildBom(g("2.5"), { ...baseOpts, existing });
   const f = second.findings.find((x) => x.code === "EXISTING_DIFFERS");
-  assert.ok(f, "the disagreement is reported"); assert.match(f!.message, /100 is already in the vault/); assert.match(f!.message, /1\.5 Meter in the vault, .*2\.5 Meter here/);
+  assert.ok(f, "the disagreement is reported"); assert.match(f!.message, /100 is already in the vault/); assert.match(f!.message, /1\.5 m in the vault, .*2\.5 m here/);
   assert.equal(second.files.filter((x) => x.path.startsWith("BOM/")).length, 0, "nothing is rewritten");
   const same = buildBom(g("1.5"), { ...baseOpts, existing });
   assert.equal(same.findings.some((x) => x.code === "EXISTING_DIFFERS"), false);

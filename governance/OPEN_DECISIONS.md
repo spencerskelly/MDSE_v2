@@ -13,10 +13,6 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 | OD-05 | P1 | Repo | License for a public repository. Without one, the code is "all rights reserved" and others may not reuse it. Options: proprietary notice, MIT, Apache-2.0, or make the repo private. |
 | OD-06 | P1 | Repo | Repository visibility: public requires synthetic-only content (DAT-002). Private removes that constraint for fixtures but not for real data, which never goes in any repo. |
 | OD-08 | P1 | Model | `local-model.yaml` was not carried. Confirm Local Model is V1-only and replaced by SysML usages, then retire the MOD Local Model rules. |
-| OD-10 | P2 | BOM | Scope of the BOM import. Options: (A) everything in the flat export (12,076 parts, mostly archived history); (B) only parts reachable from the four product roots at the revisions in the newest redlines (recommended: the vault holds the latest revision of each product, BOM-006); (C) B plus anything the EA model already names. The root list is already in the flat export's side columns. |
-| OD-11 | P2 | BOM | How the current line and current revision are chosen when the export repeats them. Proposed: for a repeated line take the single row with an open To date; for an assembly with several revisions take the only one not ARCHIVED, INVALID or CANCELLED; treat placeholder revisions (`-099`, `_99`, `Z99`) as lower than any real revision; anything still tied stays an error. This resolves about 948 of 1,259 competing assemblies and 77 % of repeated lines; the rest need a person. |
-| OD-12 | P2 | BOM | Controlled vocabularies. (a) Unit: one canonical spelling per unit across both sources, and whether quantities become typed SysML quantities (see D-0044). (b) Lifecycle state: what numeric child states 20, 30, 40, 50 mean. (c) Dates: one format (ISO 8601); what `2/Jan/00` means. |
-| OD-13 | P2 | BOM | The same shared sub-assembly has different quantities in different product BOMs. Which product's BOM is the source for a shared part, or are both right and the part needs a variant? |
 
 ### OD-01 proposed split of relationships.yaml
 

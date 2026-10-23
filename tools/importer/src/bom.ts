@@ -153,6 +153,33 @@ export function bomIdent(name: string, pn: string): string {
   if (!s) s = "p" + pn.replace(/[^A-Za-z0-9]/g, "");
   return usageIdent(/^[0-9]/.test(s) ? "p" + s : s, "part");
 }
+/** Revision order (D-0047). A placeholder revision (`-099`, `_99`, `Z99`: a part nobody revises) ranks below every real one. Otherwise the letters compare first and the trailing number second, so `A02` < `B01` < `B02` and `-V01` < `-V02`. */
+const bomPlaceholder = (rev: string): boolean => /^(?:-0|_|Z)99$/.test(rev);
+export function bomRevCompare(a: string, b: string): number {
+  const pa = bomPlaceholder(a), pb = bomPlaceholder(b);
+  if (pa !== pb) return pa ? -1 : 1;
+  const ma = /^(.*?)(\d+)$/.exec(a), mb = /^(.*?)(\d+)$/.exec(b);
+  if (ma && mb) { if (ma[1] !== mb[1]) return ma[1]! < mb[1]! ? -1 : 1; if (+ma[2]! !== +mb[2]!) return +ma[2]! < +mb[2]! ? -1 : 1; }
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
+/** One spelling per unit (D-0047): ea for a count, SI and common abbreviations otherwise. `ZST`, `Null` and `x` are not units and are dropped; null in the result means "no unit". */
+const BOM_UNITS: Record<string, string> = { ea: "ea", each: "ea", piece: "ea", pieces: "ea", pc: "ea", pcs: "ea", m: "m", meter: "m", meters: "m", metre: "m", metres: "m", mm: "mm", millimeter: "mm", millimeters: "mm", cm: "cm", centimeter: "cm", in: "in", inch: "in", inches: "in", ft: "ft", foot: "ft", feet: "ft", yd: "yd", yard: "yd", yards: "yd",
+  ml: "mL", milliliter: "mL", milliliters: "mL", l: "L", liter: "L", liters: "L", litre: "L", g: "g", gram: "g", grams: "g", kg: "kg", kilogram: "kg", kilograms: "kg", oz: "oz", ounce: "oz", ounces: "oz", lb: "lb", lbs: "lb", pound: "lb", pounds: "lb", m2: "m2", m3: "m3" };
+export function bomUnit(raw: string): { unit: string; known: boolean } {
+  const t = raw.replace(/\(\s*zst\s*\)/gi, "").trim().toLowerCase();
+  if (!t || t === "zst" || t === "null" || t === "x") return { unit: "", known: true };
+  const u = BOM_UNITS[t];
+  return u ? { unit: u, known: true } : { unit: raw.replace(/\(\s*zst\s*\)/gi, "").trim(), known: false };
+}
+
+/** A BOM date as `YYYY-MM-dd` text (D-0047). Reads `2/Jan/19` with English or German month abbreviations and a two-digit year; anything else is returned as exported. */
+const BOM_MONTHS: Record<string, string> = { jan: "01", feb: "02", mar: "03", mrz: "03", apr: "04", may: "05", mai: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", okt: "10", nov: "11", dec: "12", dez: "12" };
+export function bomDate(raw: string): string {
+  const m = /^(\d{1,2})\/([A-Za-z]{3})\/(\d{2}|\d{4})$/.exec(raw.trim()), mo = m ? BOM_MONTHS[m[2]!.toLowerCase()] : undefined;
+  if (m && mo) return `${m[3]!.length === 4 ? m[3] : (+m[3]! <= 69 ? "20" : "19") + m[3]}-${mo}-${m[1]!.padStart(2, "0")}`;
+  return raw;
+}
 const bomStampOf = (iso: string): string => iso.replace(/[-:T]/g, "").slice(0, 14) + "000";
 
 export interface BomOptions {
@@ -178,10 +205,21 @@ function bomLinesOfNote(text: string): Map<string, string> {
   }
   return out;
 }
+/** What differs between two rows for the same line of the same assembly, in words; "" when they agree. */
+function bomUsageDiff(a: Usage, b: Usage): string {
+  const f: Array<[string, string, string]> = [["child", a.child, b.child], ["child revision", a.childRev, b.childRev], ["quantity", a.amount, b.amount], ["unit", a.unit, b.unit], ["reference designator", a.refDes, b.refDes], ["from", a.from, b.from], ["to", a.to, b.to]];
+  return f.filter(([, x, y]) => x !== y).map(([n, x, y]) => `${n} ${JSON.stringify(x)} kept, ${JSON.stringify(y)} other`).join("; ");
+}
 const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0 ? (+u.amount === 1 ? "1" : u.amount) : u.amount ? u.amount + " " + u.unit : "1"}`.trim();
 
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
+  const unknownUnits = new Map<string, number>();
+  for (const u of parsed.usages) {
+    const un = bomUnit(u.unit); if (!un.known) unknownUnits.set(un.unit, (unknownUnits.get(un.unit) ?? 0) + 1);
+    u.unit = un.unit; u.from = bomDate(u.from); u.to = bomDate(u.to);
+  }
+  for (const [x, n] of [...unknownUnits].sort()) findings.push({ level: "warn", code: "UNIT_UNKNOWN", message: `Unit ${JSON.stringify(x)} (${n} line${n === 1 ? "" : "s"}) is not in the unit list; kept as exported. Add it to the list.` });
   const blocking = findings.some((f) => f.level === "error");
   const empty = { layout: parsed.layout, rows: parsed.usages.length, parts: 0, usages: 0, drawings: 0, alternates: 0, skippedParts: 0, existing: 0, conflicts: 0, eaMatched: 0, bomOnly: 0 };
   if (blocking || !parsed.usages.length) { if (!blocking) findings.push({ level: "error", code: "BOM_EMPTY", message: "The sheet has a header but no usable lines." }); return { status: "FAILED", files: [], findings, problems: findings.filter((f) => f.level === "error").map((f) => f.message), summary: empty }; }
@@ -194,26 +232,27 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   for (const u of parsed.usages) put(asChild, u.child, u.childRev, { rev: u.childRev, name: u.childName, source: u.childSource, state: u.childState, drawingLocation: u.drawingLocation });
   const allPns = new Set([...asParent.keys(), ...asChild.keys()]);
 
-  // BOM-006/007/009: the latest revision is the one the part has as an assembly; a leaf part has the one every parent pins
-  const latest = new Map<string, Obs>(), undetermined = new Set<string>();
+  // D-0047: the latest revision is the highest by bomRevCompare, among the revisions the part has as an assembly, else among those its parents pin.
+  const latest = new Map<string, Obs>(), undetermined = new Set<string>(), revsSeen = new Map<string, string[]>();
   for (const pn of [...allPns].sort()) {
     const pr = asParent.get(pn), cr = asChild.get(pn);
-    const revs = pr ? [...pr.keys()] : cr ? [...cr.keys()] : [];
-    if (revs.length === 1) {
-      const base = (pr ?? cr)!.get(revs[0]!)!, name = base.name || cr?.get(revs[0]!)?.name || "";
-      latest.set(pn, { ...base, name, source: base.source || cr?.get(revs[0]!)?.source || "", state: base.state || cr?.get(revs[0]!)?.state || "" });
-    } else { undetermined.add(pn); findings.push({ level: "error", code: pr ? "COMPETING_BOMS" : "REV_UNDETERMINED", message: `${pn}: ${revs.length} revisions (${revs.map((x) => JSON.stringify(x)).join(", ")}) ${pr ? "are each the revision of an assembly with its own lines (BOM-002)" : "are pinned by different parents and the part is not an assembly here"}. The latest cannot be told, so the part and the lines that use or belong to it were not imported (BOM-009).` }); }
+    const revs = (pr ? [...pr.keys()] : cr ? [...cr.keys()] : []).sort(bomRevCompare), top = revs[revs.length - 1]!;
+    const base = (pr ?? cr)!.get(top)!, name = base.name || cr?.get(top)?.name || pr?.get(top)?.name || "";
+    latest.set(pn, { ...base, name, source: base.source || cr?.get(top)?.source || "", state: "" });
+    const all = [...new Set([...(pr?.keys() ?? []), ...(cr?.keys() ?? [])])].sort(bomRevCompare);
+    if (all.length > 1) revsSeen.set(pn, all);
+    if (revs.length > 1) findings.push({ level: "info", code: "REV_BY_ORDER", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")} seen${pr ? " as assembly" : " as pinned child"}; ${JSON.stringify(top)} taken as the latest by revision order.` });
   }
   const drawingPns = new Set(parsed.usages.filter(bomIsDrawing).map((u) => u.child));
   // usages that can be written: parent and child both determined, no duplicate (parent, line)
-  const okUsage: Usage[] = [], seenLine = new Set<string>(); let alternates = 0;
+  const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
   for (const u of parsed.usages) {
     if (undetermined.has(u.parent) || (undetermined.has(u.child) && !bomIsDrawing(u))) continue;
     const lp = latest.get(u.parent)!;
     if (lp.rev !== u.parentRev) continue;
     const k = u.parent + "\0" + u.line;
-    if (u.line && seenLine.has(k)) { findings.push({ level: "error", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} already has a line ${u.line}; the second was not imported (BOM-008).` }); continue; }
-    seenLine.add(k); okUsage.push(u); alternates += u.alternates.length;
+    if (u.line && seenLine.has(k)) { const first = firstOf.get(k)!; const diff = bomUsageDiff(first, u); if (diff) { (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff }); findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` }); } continue; }
+    seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length;
     if (!u.line) findings.push({ level: "warn", code: "NO_LINE", message: `Row ${u.row}: no line number for ${u.child} under ${u.parent}; the usage cannot be identified by line (BOM-008).` });
   }
 
@@ -253,7 +292,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const ex = existingBy.get(pn), kids = byParent.get(pn); if (!ex || !kids?.length) continue;
     const old = bomLinesOfNote(ex.text), diffs: string[] = [];
     for (const u of kids) { if (bomIsDrawing(u)) continue; const was = old.get(u.line); const now = bomUsageSig(u); if (was === undefined) diffs.push(`line ${u.line || "?"} (${u.child}) is new`); else if (was !== now) diffs.push(`line ${u.line} (${u.child}): ${was.replace("|", " pinned, qty ")} in the vault, ${now.replace("|", " pinned, qty ")} here`); }
-    if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.slice(0, 3).join("; ")}${diffs.length > 3 ? "; …" : ""}.` });
+    if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.` });
   }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
   const olderUsers = new Map<string, string[]>(); let conflicts = 0;
@@ -261,6 +300,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const l = latest.get(u.child); if (!l || bomIsDrawing(u)) continue;
     if (l.rev !== u.childRev) { conflicts++; (olderUsers.get(u.child) ?? olderUsers.set(u.child, []).get(u.child)!).push(`- [[${info.get(u.parent)?.base ?? u.parent}]] line ${u.line || "?"} pins revision ${JSON.stringify(u.childRev)}; the latest is ${JSON.stringify(l.rev)}.`); }
   }
+  const replaces = new Map<string, Set<string>>();
+  for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
   let usageCount = 0, drawingCount = 0;
   for (const pn of [...partPns, ...newDrawings.filter((x) => !partPns.includes(x))]) {
     const inf = info.get(pn)!; if (!inf.fresh) continue;
@@ -270,7 +311,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const decl: string[] = [];
     if (!isDoc) {
       decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`, `        ${bomAttr("revision", l.rev)}`);
-      if (l.source) decl.push(`        ${bomAttr("source", l.source)}`); if (l.state) decl.push(`        ${bomAttr("lifecycleState", l.state)}`);
+      if (l.source) decl.push(`        ${bomAttr("source", l.source)}`);
       if (l.drawingLocation) decl.push(`        ${bomAttr("drawingLocation", l.drawingLocation)}`);
       for (const u of kids) {
         if (bomIsDrawing(u)) { drawingCount++; const dn = info.get(u.child); if (dn) refs.push(dn.base); continue; }
@@ -295,13 +336,15 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const sources = [...(own ? [own] : []), ...alts].filter((s) => s.mfr || s.mpn);
     const sysml = isDoc ? null : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
     const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revision: ${JSON.stringify(l.rev)} (as exported)`];
-    if (l.source || l.state) head.push(`- Source / state: ${l.source || "-"} / ${l.state || "-"}`);
+    if (l.source) head.push(`- Source: ${l.source}`);
+    const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     if (sources.length) head.push(`- Manufacturer sources: ${sources.map((s, i) => `${i + 1}. ${[s.mfr, s.mpn].filter(Boolean).join(" ")}${i ? " (alternate)" : ""}`).join("; ")}`);
-    if (l.name) body.push(l.name, "");
+    const rep = replaces.get(pn); if (rep) body.push("## Replaces", "", ...[...rep].sort().map((x) => `- ${info.get(x) ? `[[${info.get(x)!.base}]]` : x}`), "");
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
+    for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
-      relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), flags, sourceLines: [...head, ...srcLines], sysml,
+      relFields: [...(hasPart.length ? [["hasPart", [...new Set(hasPart)]] as [string, string[]]] : []), ...(refs.length ? [["references", [...new Set(refs)]] as [string, string[]]] : [])], bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
       ...(isDoc ? {} : { sourceRole: "authoritative-model", primarySymbol: `${inf.id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}` }) }) });
   }
 
