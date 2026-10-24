@@ -10,6 +10,7 @@ import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
+import { bomCategoryOf, bomRoleOf, bomPartFolder, NO_CATEGORY } from "./bom_category.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -337,12 +338,16 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const uids = allocateUids(idReq.map((r) => ({ key: r.key, created: "", guid: r.guid, author: "" })), { authorMap: {}, fallbackCode: o.authorCode, unmappedNames: [""] }, taken, bomStampOf(o.runDate));
   const names = new NameRegistry([...(o.existing?.allPaths ?? []), ...(o.existing?.files.keys() ?? []), ...o.pending.map(([p]) => p)]);
   const dir = o.dir ?? "BOM";
+  // D-0072: which parts have child lines and which are a child somewhere in the file, for the folder and for bomRole
+  const childrenOf = new Map<string, number>(), parentOf = new Set<string>();
+  for (const u of okUsage) { childrenOf.set(u.parent, (childrenOf.get(u.parent) ?? 0) + 1); parentOf.add(u.child); }
   const info = new Map<string, { id: string; base: string; path: string; fresh: boolean }>();
   for (const pn of [...partPns, ...newDrawings.filter((x) => !partPns.includes(x))]) {
     const ex = existingBy.get(pn);
     if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: o.update ? ex.path : "", fresh: !!o.update }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
-    const path = names.claim(key.startsWith("d:") ? `${dir}/Drawings` : `${dir}/Parts`, safeName(pn, pn), ".md");
+    const isD = key.startsWith("d:"), kids = (childrenOf.get(pn) ?? 0) > 0;
+    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, bomCategoryOf(l.name), kids, l.source), safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
@@ -414,7 +419,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.source) head.push(`- Source: ${l.source}`);
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
-    const extra: Array<[string, string]> = [];
+    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", bomCategoryOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
@@ -431,6 +436,11 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     for (const pn of partPns) { const re = new RegExp(`(^|[^a-z0-9])${esc(pn.toLowerCase())}($|[^a-z0-9])`); const hit = lower.filter((t) => re.test(t)).length; if (hit === 1) eaMatched++; else if (hit > 1) findings.push({ level: "warn", code: "EA_AMBIGUOUS", message: `${pn} appears in ${hit} EA element names; no join was made.` }); }
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
+  }
+  {   // D-0072: how the new parts were sorted, so the rules can be improved from the unmatched count
+    const cc = new Map<string, number>(); let nParts = 0;
+    for (const pn of partPns) { if (existingBy.has(pn) && !o.update) continue; const c = bomCategoryOf(latest.get(pn)?.name ?? ""); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++; }
+    if (nParts) findings.push({ level: "info", code: "CATEGORIES", message: `${nParts} part note(s) sorted by description words: ${[...cc].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. "${NO_CATEGORY}" are the parts no rule matched (BOM-041).` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
   if (otherRev.size && !o.update) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.${HINT_UPDATE}` });

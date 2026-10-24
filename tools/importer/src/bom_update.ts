@@ -8,12 +8,12 @@ import type { BomOptions, BomResult, Grid } from "./bom.ts";
 import type { OutFile } from "./merge.ts";
 import { yamlScalar } from "./notes.ts";
 
-export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES" | "EARLIER_REVISIONS" | "PART_NUMBER";
+export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES" | "EARLIER_REVISIONS" | "PART_NUMBER" | "CATEGORY";
 export type HoldCode = "CONFLICT" | "NO_BASELINE" | "OLDER_IN_FILE" | "NOT_OWNED";
 export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
   NEW_PART: "New part (a note is created)", NEW_REVISION: "New revision of an assembly (becomes the active one)", DESCRIPTION: "Part description changed", MANUFACTURER: "Manufacturer data changed",
   PART_ATTRIBUTES: "Part source or drawing location changed", LINE_ADDED: "Assembly line added", LINE_REMOVED: "Assembly line no longer listed", LINE_CHANGED: "Assembly line changed (quantity, unit, revision, dates ...)",
-  DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one", EARLIER_REVISIONS: "Lines of earlier assembly revisions added to the note body", PART_NUMBER: "partNumber property added (D-0065)",
+  DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one", EARLIER_REVISIONS: "Lines of earlier assembly revisions added to the note body", PART_NUMBER: "partNumber property added (D-0065)", CATEGORY: "Category and role of the part (D-0072)",
 };
 export const HOLD_TEXT: Record<HoldCode, string> = {
   CONFLICT: "SysML block not in the layout the importer writes: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
@@ -112,11 +112,16 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
       const want = /^partNumber: (.+)$/m.exec(f.content)?.[1]; if (!want || /^partNumber:/m.test(old)) return false;
       const was = curEdited; curEdited = false; add("PART_NUMBER", f.path, pn, `${pn}: partNumber property added`, "", `partNumber: ${want}`, "", "add"); curEdited = was; return true;
     };
+    const catItem = (): boolean => {   // D-0072: bomCategory follows the description in the file; bomRole depends on every BOM read, so a single file only adds it when the note has none and never changes it. Neither is in the hash.
+      const g = (t: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(t)?.[1] ?? "", wc = g(f.content, "bomCategory"), wr = g(f.content, "bomRole"), hc = g(old, "bomCategory"), hr = g(old, "bomRole");
+      if (!wc || (wc === hc && hr)) return false;
+      const was = curEdited; curEdited = false; add("CATEGORY", f.path, pn, `${pn}: ${hc ? (wc === hc ? `role ${wr} added` : `category ${hc} becomes ${wc}`) : `category ${wc}, role ${wr} added`}`, hc ? `bomCategory: ${hc}` : "", `bomCategory: ${wc}${hr ? "" : `\nbomRole: ${wr}`}`, "", hc && wc !== hc ? "change" : "add"); curEdited = was; return true;
+    };
     if (!owns.size) { out.holds.push({ code: "NOT_OWNED", path: f.path, pn, message: `${pn}: at the merge the model was given every area of this note (bomOwns is empty), so BOM changes are not applied.` }); continue; }
     // BOM-033: a hand edit to BOM-owned content no longer parks the note. The note is compared with the file as usual, so the file's value is offered
     // back (nothing is ticked by default) and every item carries the marker. The shortcut below is skipped for an edited note: an unchanged file still differs from the edit.
     curEdited = bomOwnedHash(old) !== stamp;
-    if (!curEdited && bomOwnedHash(f.content) === stamp) { const e1 = earlierItem(), e2 = pnItem(); if (!e1 && !e2) out.unchanged++; continue; }
+    if (!curEdited && bomOwnedHash(f.content) === stamp) { const e1 = earlierItem(), e2 = pnItem(), e3 = catItem(); if (!e1 && !e2 && !e3) out.unchanged++; continue; }
     const so = sysmlOf(old), sn = sysmlOf(f.content), po = so ? splitSysml(so) : null, pnw = sn ? splitSysml(sn) : null;
     if (!po || !pnw) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the SysML block is not in the layout the importer writes, so it is not compared.` }); continue; }
     const yo = yamlOwned(old), yn = yamlOwned(f.content);
@@ -127,7 +132,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
       const uo = ownedOf(po, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length;
       add("NEW_REVISION", f.path, pn, `${pn}: revision ${ro ? JSON.stringify(ro) : "(none)"} → ${JSON.stringify(rn)} (${uo} → ${un} lines)`, `revision ${ro || "(none)"}, ${uo} lines`, `revision ${rn}, ${un} lines`);
-      out.replaced.set(f.path, replacedLines(po, owns, ro, nameOfId)); earlierItem(); pnItem();
+      out.replaced.set(f.path, replacedLines(po, owns, ro, nameOfId)); earlierItem(); pnItem(); catItem();
       continue;
     }
     const mo = new Map(ownedOf(po, owns).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw, owns).map((d) => [d.key, d]));
@@ -143,7 +148,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
         add("LINE_CHANGED", f.path, pn, `${pn}: ${lineWord(d)}: ${[typeChanged ? "part changed" : "", ...diffs].filter(Boolean).join("; ") || "multiplicity"}`, was.lines.join("\n"), d.lines.join("\n"), d.key);
       }
     }
-    earlierItem(); pnItem();
+    earlierItem(); pnItem(); catItem();
     if (isAssembly) for (const d of ownedOf(po, owns)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key, "remove");
     if (!out.items.some((x) => x.path === f.path) && !out.holds.some((x) => x.path === f.path)) out.unchanged++;
   }
@@ -234,6 +239,7 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
     if (cats.has("PART_NUMBER")) { const line = /^partNumber: .+$/m.exec(gen)![0]; if (!/^partNumber:/m.test(note)) { const ls = note.split("\n"), close = ls.indexOf("---", 1); let at = ls.findIndex((l, i) => i < close && /^tags:/.test(l)); at = at < 0 ? close : at + 1; while (at < close && /^(name|aliases):/.test(ls[at]!)) at++; ls.splice(at, 0, line); note = ls.join("\n"); } }
     // D-0068: a part number this one replaces is an alias; names already in the note's aliases stay
     if (cats.has("SUPERSEDES")) { const ga = /^aliases: \[(.*)\]$/m.exec(gen); if (ga) { const parse = (t: string): string[] => [...t.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`) as string); const ls = note.split("\n"), close = ls.indexOf("---", 1), ai = ls.findIndex((l, i) => i < close && /^aliases:/.test(l)); const have = ai >= 0 ? parse(ls[ai]!) : [], all = [...have]; for (const a of parse(ga[1]!)) if (!all.includes(a)) all.push(a); const line = `aliases: [${all.map((a) => JSON.stringify(a)).join(", ")}]`; if (ai >= 0) ls[ai] = line; else { let at = ls.findIndex((l, i) => i < close && /^name:/.test(l)); if (at < 0) at = ls.findIndex((l, i) => i < close && /^tags:/.test(l)); ls.splice(at < 0 ? close : at + 1, 0, line); } note = ls.join("\n"); } }
+    if (cats.has("CATEGORY")) { const wc = /^bomCategory: .+$/m.exec(gen)?.[0], wr = /^bomRole: .+$/m.exec(gen)?.[0]; if (wc) { const ls = note.split("\n"), close = ls.indexOf("---", 1), keepRole = ls.slice(1, close).find((l) => /^bomRole:/.test(l)), fm = ls.slice(1, close).filter((l) => !/^(bomCategory|bomRole):/.test(l)); let at = fm.findIndex((l) => /^description:/.test(l)); if (at < 0) at = fm.findIndex((l) => /^partNumber:/.test(l)); if (at < 0) at = fm.findIndex((l) => /^tags:/.test(l)); fm.splice(at < 0 ? fm.length : at + 1, 0, wc, ...((keepRole ?? wr) ? [(keepRole ?? wr)!] : [])); note = [ls[0], ...fm, ...ls.slice(close)].join("\n"); } }
     if (cats.has("DESCRIPTION")) note = setYamlOwned(note, yo.description, null);
     if (cats.has("MANUFACTURER")) note = setYamlOwned(note, null, yo.mfr);
     // the Source section is the importer's own: refresh it, keeping a line about a replaced revision

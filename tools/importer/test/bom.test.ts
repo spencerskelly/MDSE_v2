@@ -397,3 +397,17 @@ test("a row on line 1xx beside line xx is an alternate of that line, not a usage
   assert.match(asm, /P_150/, "line 150 has no line 50, so it stays a usage");
   assert.equal(r.summary.alternates, 2); assert.ok(!r.files.some((f) => /P-1ALT/.test(f.path)), "no note is created for an alternate-only part");
 });
+
+test("a part is sorted into a folder by description words, child lines and make or buy, and carries bomCategory and bomRole (D-0072)", () => {
+  const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2";
+  const row = (p: string, pn: string, l: string, c: string, cn: string, cs: string): string => [p, "-A", "01", pn, "make", "PRODUCTION", l, c, "-A", "01", cn, cs, "PRODUCTION", "", "", "", "", "", "1", "ea", p + "-A01"].join("\t");
+  const g = parseDelimited([H, row("TOP-1", "CHARGER ASSY", "1", "CAB-1", "CABLE ASSY 3M", "make"), row("TOP-1", "CHARGER ASSY", "2", "SCR-1", "SCREW M4", "buy"), row("CAB-1", "CABLE ASSY 3M", "1", "ODD-1", "THINGAMAJIG", "")].join("\n"));
+  const r = buildBom(g, baseOpts), f = (pn: string) => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!;
+  assert.equal(f("TOP-1").path, "BOM/Parts/Chargers and systems/Assemblies/make/TOP-1.md");
+  assert.equal(f("CAB-1").path, "BOM/Parts/Cables and harnesses/Assemblies/make/CAB-1.md");
+  assert.equal(f("SCR-1").path, "BOM/Parts/Fasteners/Parts/buy/SCR-1.md");
+  assert.equal(f("ODD-1").path, "BOM/Parts/Uncategorized/Parts/other/ODD-1.md");
+  assert.match(f("TOP-1").content, /^bomCategory: Chargers and systems\nbomRole: final$/m);
+  assert.match(f("CAB-1").content, /^bomRole: sub$/m); assert.match(f("SCR-1").content, /^bomRole: part$/m);
+  assert.ok(r.findings.some((x) => x.code === "CATEGORIES" && /Uncategorized 1/.test(x.message)));
+});

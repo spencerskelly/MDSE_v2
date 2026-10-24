@@ -179,3 +179,16 @@ test("a note written before the partNumber property is offered it as an addition
   assert.match(out, /^tags: \[\]\npartNumber: "B-200"\n/m); assert.equal(bomOwnedHash(out), bomOwnedHash(note));
   const again = new Map(old); again.set(path, out); assert.deepEqual(scan(again, V1).items, []);
 });
+
+test("a note written before bomCategory gets it and bomRole as an addition; a changed value is a change; the stamp is unaffected (D-0072)", () => {
+  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/B-200.md"))!, note = v.get(path)!;
+  assert.match(note, /^bomCategory: /m); assert.match(note, /^bomRole: part$/m);
+  const old = new Map(v); old.set(path, note.replace(/^bomCategory: .*\n/m, "").replace(/^bomRole: .*\n/m, ""));
+  const s = scan(old, V1); assert.deepEqual(cats(s), ["CATEGORY"]); const it = s.items[0]!; assert.equal(it.kind, "add");
+  const out = applyBomUpdate(s, { approved: new Set([it.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === path)!.content;
+  assert.match(out, /^bomCategory: .+\nbomRole: part$/m); assert.equal(bomOwnedHash(out), bomOwnedHash(note));
+  const again = new Map(old); again.set(path, out); assert.deepEqual(scan(again, V1).items, []);
+  assert.deepEqual(scan(new Map(v).set(path, note.replace(/^bomRole: .*$/m, "bomRole: unused")), V1).items, [], "a single file never changes a role");
+  const ch = new Map(v); ch.set(path, note.replace(/^bomCategory: .*$/m, "bomCategory: Fasteners")); const s2 = scan(ch, V1); assert.deepEqual(cats(s2), ["CATEGORY"]); assert.equal(s2.items[0]!.kind, "change");
+  const o2 = applyBomUpdate(s2, { approved: new Set([s2.items[0]!.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === path)!.content; assert.match(o2, /^bomCategory: Uncategorized\nbomRole: part$/m);
+});

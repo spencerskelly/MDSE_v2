@@ -829,3 +829,16 @@ Rules: ~IMP-115, ~MOD-028. MOD-073 remains Active, REG-024 remains Retired. D-00
 
 Rules: IMP-130 (Active).
 
+## D-0072 — BOM parts are sorted by description words, child lines and make or buy
+
+2026-10-24 · Spencer · Accepted (owner, chat: "let's bring in categories to help organize"; sort order "description words, has children, make/buy"; property named `bomCategory`). Settles the layout of `BOM/Parts` after the first real import put 14,229 parts in one folder.
+
+1. **Sort order.** `BOM/Parts/<category>/<Assemblies|Parts>/<buy|make|other>/<PN>.md`. Drawings stay in `BOM/Drawings`.
+2. **Category.** An ordered table of 15 categories, each with description words, first match wins, whole words only; no match is `Uncategorized`. On the 14,229 parts of the first import the table placed 84% (measured before this build, on the draft table). The table lives in `tools/importer/src/bom_category.ts`; a vault-owned copy the owner can edit is a later step.
+3. **Properties.** `bomCategory` and `bomRole` (final, sub, part, unused) are written on every BOM part note and listed in the property dictionary. Neither is in the ownership hash.
+4. **Updates.** The update scan offers them as one CATEGORY item. `bomRole` is only ever added, never changed, because one BOM file cannot know every parent. An existing note keeps its path.
+5. **Findings.** The Findings note gives the count per category and the count left in `Uncategorized`.
+6. **Not covered.** What `ssc` (A, B, C) means, and whether number ranges like 35xxxxx mean a kind of part, are unknown and not used. The categories have not been checked by a person against the real parts. `bomRole` for a part used only in BOMs not yet read says `final` or `unused` until they are read. A finalASM folder was not made; `bomRole: final` is the way to list them.
+
+Rules: BOM-016, BOM-041, BOM-042 (Active).
+

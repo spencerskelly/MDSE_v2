@@ -28,7 +28,7 @@ const apply = (f: Map<string, string>, p: EditPlan): Map<string, string> => {
   return m;
 };
 const ix0 = build(base);
-const CTRL = "02 Product/Controller~2.md", PART = "BOM/Parts/SYN-CTRL-1.md";
+const CTRL = "02 Product/Controller~2.md", PART = [...base.keys()].find((k) => k.startsWith("BOM/Parts/") && k.endsWith("/SYN-CTRL-1.md"))!;
 
 test("the BOM part is named by its part number and the EA controller carries the same number", () => {
   assert.ok(base.has(PART), [...base.keys()].filter((k) => k.startsWith("BOM")).join());

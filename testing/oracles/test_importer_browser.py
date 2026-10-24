@@ -93,6 +93,7 @@ async () => {
   await put('10_Model/Charger.md', 'my note\n');
   window.showDirectoryPicker = async () => root;
   window.confirm = () => true;
+  window.__readPart = async (pn) => { const walk = async (d, pre) => { for await (const [n, h] of d.entries()) { if (h.kind === 'directory') { const r = await walk(h, pre + n + '/'); if (r) return r; } else if (n === pn + '.md' && pre.startsWith('BOM/Parts/')) return await (await h.getFile()).text(); } return null; }; return await walk(root, ''); };
   window.__read = async (path) => { try { let d = root; const ps = path.split('/'); for (const p of ps.slice(0, -1)) d = await d.getDirectoryHandle(p); return await (await (await d.getFileHandle(ps.at(-1))).getFile()).text(); } catch (_) { return null; } };
 }
 """
@@ -206,7 +207,7 @@ class BomUpdateBrowser(unittest.TestCase):
             self.assertTrue(pg.is_disabled("#bomScan"), "needs a BOM")
             pg.set_input_files("#bomFile", str(v1)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom1.tsv')")
             pg.uncheck("#toolUpd"); pg.click("#genAdd"); pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Wrote')")
-            note = pg.evaluate("window.__read('BOM/Parts/01141-002.md')")
+            note = pg.evaluate("window.__readPart('01141-002')")
             self.assertIn("importHash:", note); self.assertIn("importSource: bom1.tsv", note)
             # the same file again: nothing to change
             pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
@@ -220,7 +221,7 @@ class BomUpdateBrowser(unittest.TestCase):
             pg.check("input.cat[data-cat=DESCRIPTION]")
             self.assertFalse(pg.is_disabled("#bomApply")); self.assertIn("Apply 1 ticked", pg.inner_text("#bomApply"))
             pg.click("#bomApply"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Applied')")
-            note = pg.evaluate("window.__read('BOM/Parts/01141-002.md')")
+            note = pg.evaluate("window.__readPart('01141-002')")
             self.assertIn("description: CABLE ASSEMBLY", note); self.assertIn("importSource: bom2.tsv", note)
             self.assertIn("[2]", note, "the quantity change was not ticked, so it is untouched")
             names = pg.evaluate("(async () => { const r = await navigator.storage.getDirectory(); const d = await (await r.getDirectoryHandle('99_System')).getDirectoryHandle('11_Import'); const o = []; for await (const [n] of d.entries()) o.push(n); return o; })()")
@@ -248,17 +249,17 @@ class BomUpdateBrowser(unittest.TestCase):
             pg.click("#pick"); pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('no vault yet')")
             pg.set_input_files("#bomFile", str(v1)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom1.tsv')")
             pg.click("#genAdd"); pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Wrote')")
-            first = pg.evaluate("window.__read('BOM/Parts/01141-002.md')"); vy = pg.evaluate("window.__read('.vault.yaml')")
+            first = pg.evaluate("window.__readPart('01141-002')"); vy = pg.evaluate("window.__read('.vault.yaml')")
             pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")   # the page reads the folder again after writing
             # the same folder, no new pick: a second BOM
             pg.set_input_files("#bomFile", str(v2)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom2.tsv')")
             pg.click("#genAdd"); pg.wait_for_function("/Wrote|Nothing to change|nothing written/.test(document.getElementById('genStatus').textContent)")
-            self.assertEqual(pg.evaluate("window.__read('BOM/Parts/01141-002.md')"), first, "an existing part is not replaced")
+            self.assertEqual(pg.evaluate("window.__readPart('01141-002')"), first, "an existing part is not replaced")
             self.assertEqual(pg.evaluate("window.__read('.vault.yaml')"), vy, "the vault identity is not rewritten")
             self.assertFalse(pg.is_disabled("#bomScan"), "the update scan is available")
             # a write that would put a different note on an existing path, or reuse an id, is refused
-            clash = pg.evaluate("""() => { const t = (id, uid) => `---\nid: ${id}\nuid: ${uid}\n---\n`; const old = vaultFiles.find(([p]) => p === 'BOM/Parts/01141-002.md')[1]; const id = /^id: (\\S+)$/m.exec(old)[1]; const uid = /^uid: (\\S+)$/m.exec(old)[1];
-              return [writeClashes([{ path: 'BOM/Parts/01141-002.md', content: t(id, uid) }]), writeClashes([{ path: 'BOM/Parts/01141-002.md', content: t(id, 'other') }]), writeClashes([{ path: 'BOM/Parts/ZZ.md', content: t(id, 'u2') }])]; }""")
+            clash = pg.evaluate("""() => { const t = (id, uid) => `---\nid: ${id}\nuid: ${uid}\n---\n`; const [pp, old] = vaultFiles.find(([p]) => p.endsWith('/01141-002.md')); const id = /^id: (\\S+)$/m.exec(old)[1]; const uid = /^uid: (\\S+)$/m.exec(old)[1];
+              return [writeClashes([{ path: pp, content: t(id, uid) }]), writeClashes([{ path: pp, content: t(id, 'other') }]), writeClashes([{ path: 'BOM/Parts/ZZ.md', content: t(id, 'u2') }])]; }""")
             self.assertEqual(clash[0], []); self.assertIn("different note", clash[1][0]); self.assertIn("already belongs", clash[2][0])
             b.close()
         self.assertEqual(errors, [])
@@ -298,7 +299,7 @@ class BomUpdateBrowser(unittest.TestCase):
             self.assertTrue(pg.is_disabled("#bomApply"), "with every type unticked nothing is selected")
             pg.check("input.kind[data-kind=add]")
             pg.click("#bomApply"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Applied')")
-            note = pg.evaluate("window.__read('BOM/Parts/01141-002.md')")
+            note = pg.evaluate("window.__readPart('01141-002')")
             self.assertIn("09999", note, "the new line was written")
             self.assertIn("[2]", note, "the quantity change was not ticked, so it is untouched")
             b.close()
@@ -343,10 +344,10 @@ class RedlineXlsxInBrowser(unittest.TestCase):
             with pg.expect_download() as dl:
                 pg.click("#genNew")
             z = zipfile.ZipFile(dl.value.path())
-            top = [z.read(n).decode() for n in z.namelist() if n.startswith("BOM/Parts/5913538")][0]
+            top = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and n.endswith("/5913538.md"))][0]
             self.assertIn("P_6100148", top); self.assertIn("was 06991 before this release", top); self.assertNotIn("P_06991", top)
-            self.assertTrue(any(n.startswith("BOM/Parts/6100148") for n in z.namelist()))
-            alt = [z.read(n).decode() for n in z.namelist() if n.startswith("BOM/Parts/6100148")][0]
+            self.assertTrue(any((n.startswith("BOM/Parts/") and n.endswith("/6100148.md")) for n in z.namelist()))
+            alt = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and n.endswith("/6100148.md"))][0]
             self.assertIn("manufacturer2: EATON B-LINE", alt); self.assertIn("mfgPn2: AW250", alt)
             b.close()
 

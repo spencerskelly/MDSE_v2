@@ -95,6 +95,20 @@
       "source": "BOM name column"
     },
     {
+      "name": "bomCategory",
+      "owner": "bom",
+      "appliesTo": "BOM part notes",
+      "meaning": "Category from the words of the description, by the ordered rules in tools/importer/src/bom_category.ts. \"Uncategorized\" when no rule matches.",
+      "source": "BOM description"
+    },
+    {
+      "name": "bomRole",
+      "owner": "bom",
+      "appliesTo": "BOM part notes",
+      "meaning": "final (has child lines, no parent in the BOMs read), sub (both), part (no child lines, used somewhere), unused (neither).",
+      "source": "BOM structure"
+    },
+    {
       "name": "sourceRole",
       "owner": "tool",
       "appliesTo": "BOM part notes",
