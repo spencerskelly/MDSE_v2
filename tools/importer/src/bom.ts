@@ -351,6 +351,14 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
+  const keptDates = (parent: string, line: string): { from: string; to: string } => {
+    const t = existingBy.get(parent)?.text ?? ""; if (!line || !t) return { from: "", to: "" };
+    for (const m of t.matchAll(/^ {8}part \w+ : [^\n]*\{\n([\s\S]*?)\n {8}\}/gm)) {
+      const b = m[1]!, ln = /attribute line = "?([^";\n]*)"?;/.exec(b)?.[1];
+      if (ln === line) return { from: /attribute effectiveFrom = "([^"]*)";/.exec(b)?.[1] ?? "", to: /attribute effectiveTo = "([^"]*)";/.exec(b)?.[1] ?? "" };
+    }
+    return { from: "", to: "" };
+  };
   // children per parent, usage names, conflicts, older-revision users
   const link = `\`${o.sourceName}\``, files: OutFile[] = [];
   const byParent = new Map<string, Usage[]>(); for (const u of okUsage) (byParent.get(u.parent) ?? byParent.set(u.parent, []).get(u.parent)!).push(u);
@@ -399,7 +407,9 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         if (u.line) props.push(bomAttr("line", u.line)); props.push(bomAttr("childRevision", u.childRev));
         if (!discrete && u.amount) { props.push(bomAttr("quantity", u.amount)); if (u.unit) props.push(bomAttr("unit", u.unit)); else if (!/^\d+$/.test(u.amount)) findings.push({ level: "warn", code: "QTY_NO_UNIT", message: `Row ${u.row}: quantity ${u.amount} for ${u.child} has no unit; none was assumed.` }); }
         if (!discrete && u.amount === "0") findings.push({ level: "warn", code: "QTY_ZERO", message: `Row ${u.row}: ${u.child} under ${u.parent} has quantity 0 and is not a drawing line.` });
-        if (u.refDes) props.push(bomAttr("refDes", u.refDes)); if (u.from) props.push(bomAttr("effectiveFrom", u.from)); if (u.to) props.push(bomAttr("effectiveTo", u.to));
+        // D-0074: the redline layout has no effectivity columns, so a blank there is not a removal: the dates the vault already holds for this line stay
+        const kept = parsed.layout === "redline" && o.update && !u.from && !u.to ? keptDates(pn, u.line) : { from: "", to: "" };
+        if (u.refDes) props.push(bomAttr("refDes", u.refDes)); if (u.from || kept.from) props.push(bomAttr("effectiveFrom", u.from || kept.from)); if (u.to || kept.to) props.push(bomAttr("effectiveTo", u.to || kept.to));
         if (u.ssc) props.push(bomAttr("ssc", u.ssc)); if (u.notes) props.push(bomAttr("notes", u.notes));
         const mult = discrete && u.amount !== "1" ? ` [${u.amount}]` : "";
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");

@@ -114,7 +114,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     };
     const catItem = (): boolean => {   // D-0072: bomCategory follows the description in the file; bomRole depends on every BOM read, so a single file only adds it when the note has none and never changes it. Neither is in the hash.
       const g = (t: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(t)?.[1] ?? "", wc = g(f.content, "bomCategory"), wr = g(f.content, "bomRole"), hc = g(old, "bomCategory"), hr = g(old, "bomRole");
-      if (!wc || (wc === hc && hr)) return false;
+      if (!wc || !/^description: /m.test(f.content) || (wc === hc && hr)) return false;   // a file that gives no name for the part says nothing about its category
       const was = curEdited; curEdited = false; add("CATEGORY", f.path, pn, `${pn}: ${hc ? (wc === hc ? `role ${wr} added` : `category ${hc} becomes ${wc}`) : `category ${wc}, role ${wr} added`}`, hc ? `bomCategory: ${hc}` : "", `bomCategory: ${wc}${hr ? "" : `\nbomRole: ${wr}`}`, "", hc && wc !== hc ? "change" : "add"); curEdited = was; return true;
     };
     if (!owns.size) { out.holds.push({ code: "NOT_OWNED", path: f.path, pn, message: `${pn}: at the merge the model was given every area of this note (bomOwns is empty), so BOM changes are not applied.` }); continue; }

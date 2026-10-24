@@ -192,3 +192,21 @@ test("a note written before bomCategory gets it and bomRole as an addition; a ch
   const ch = new Map(v); ch.set(path, note.replace(/^bomCategory: .*$/m, "bomCategory: Fasteners")); const s2 = scan(ch, V1); assert.deepEqual(cats(s2), ["CATEGORY"]); assert.equal(s2.items[0]!.kind, "change");
   const o2 = applyBomUpdate(s2, { approved: new Set([s2.items[0]!.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === path)!.content; assert.match(o2, /^bomCategory: Uncategorized\nbomRole: part$/m);
 });
+
+test("a redline sheet has no dates or part names for some lines: it never clears the dates a line has, and a part it gives no name for keeps its category (D-0074)", () => {
+  const RL = ["0", "1", "2", "Structure", "Number", "Name", "CL1", "CL2", "New Rev", "Manufacturer", "Manufacturer Part Number", "Drawing Location", "Line Number", "Quantity", "Unit"];
+  const cells = [RL,
+    ["0", null, null, "0", "A-100", "ASSY A-100", "-A", "99", null, null, null, null, null, null, null],
+    [null, "1", null, "1", "B-200", "PART B-200", "-A", "99", null, null, null, null, "1", "5", "ea"],
+    [null, "1", null, "1", "C-300", null, "-A", "99", null, null, null, null, "2", "1", "ea"],
+    [null, "1", null, "1", "D-400", "PART D-400", "-A", "99", null, null, null, null, "3", "5", "m"]];
+  const grid = cells.map((r) => r.map((c) => (c === null ? null : { v: c })));
+  const v = vaultFrom(bom(V1)), ap = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!;
+  assert.match(v.get(ap)!, /effectiveFrom = "2019-01-02"/);
+  const s = scanBomUpdate(grid as never, opts(v, { sourceName: "rl.xlsx", runDate: "2026-11-01T09:00:00" }));
+  assert.ok(s.items.length > 0, "the quantity change is found");
+  assert.ok(!s.items.some((i) => /effective(From|To) "[^"]*" → ""/.test(i.summary)), "no item clears an effectivity date");
+  assert.ok(!s.items.some((i) => i.category === "CATEGORY"), "no category item from a file that gives no name");
+  const out = applyBomUpdate(s, { approved: new Set(s.items.map((i) => i.id)), sourceName: "rl.xlsx", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === ap)!.content;
+  assert.match(out, /effectiveFrom = "2019-01-02"/, "the date is still on the line after the update is applied");
+});

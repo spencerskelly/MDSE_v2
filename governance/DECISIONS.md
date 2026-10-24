@@ -852,3 +852,14 @@ Rules: BOM-016, BOM-041, BOM-042 (Active).
 4. **Tests.** Importer fixture asserts that the cross-owner flow leaves `flagLink`, no new `precedes` YAML, `deferred_review` with GUID, and guard evidence. Workbench tests refuse new provisional trace and refuse retagging another dependency as provisional, while preserving legacy scanned statements.
 
 Rules: ~IMP-116. Related: MOD-073, MOD-117, IMP-098, IMP-115. OD-01 remains open.
+
+## D-0074 — A redline update does not clear dates or categories it has no data for
+
+2026-10-24 · Spencer · Accepted (owner, chat: the first redline scan after a clean import proposed to remove the categories). Applies D-0056 (add data, do not drop it) to the redline layout.
+
+1. **Cause.** The first redline scan proposed 1,153 changes. 441 turned a category into `Uncategorized` because the sheet gives no name for those parts and the category was worked out from nothing. 294 turned an `effectiveFrom` date into blank because the redline has no date columns.
+2. **Category.** `bomCategory` is offered only when the file gives a description for the part (BOM-043).
+3. **Dates.** In a redline update the dates the vault holds for a line are carried into the line the update writes, so they stay even when other changes to the line are applied.
+4. **Not covered.** About 150 "new revision" items are in the same scan; at least three of them (`06905`, `08459`, `08459-52`) differ only by a leading dash (`-F01` against `F01`). What the dash means is not known to me, so revisions are still compared as written. The "Manufacturer data changed" group mixes additions and changes under one title; only the Tick by type boxes tell them apart. Whether the 249 manufacturer items are correct is not checked.
+
+Rules: BOM-043 (Active).
