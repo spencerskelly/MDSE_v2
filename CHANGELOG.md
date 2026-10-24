@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM updates after an EA merge: the importer owns only its own members and properties inside a part note and never reads or changes what the model added; the Workbench merge keeps the BOM description, manufacturer data and import stamp; revisions are always written as text. BOM-031 (changed), BOM-035, WKB-026, OD-14, D-0052.
 - Importer: "Update an existing vault from a BOM". A later BOM file is scanned against the vault, changes are listed by category, and the owner ticks a category or single items; only those are written, with a report note. Edited and unstamped notes are left alone. BOM-032 to BOM-034, D-0051.
 - BOM import: every BOM note carries an import stamp (`importSource`, `importedOn`, `importHash`) so later update scans can tell a changed BOM from a hand edit without rewriting notes. BOM-031, D-0050.
 - BOM import: replaced part numbers that no BOM lists get a stub note, so `supersedes` always resolves; CI parser job now also accepts a generated BOM sample model (run 40040942222 passed). BOM-030, D-0049.

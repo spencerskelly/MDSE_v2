@@ -1,7 +1,7 @@
 /* BOM update scan and apply (D-0051). A later BOM import is read against the vault, the differences are listed by category, and only what the owner approves is written.
  * The scan never writes. A note is only proposed for change when it still matches its import stamp (BOM-031); a note a person changed, or one with no stamp, is reported and left alone. */
 import MDSE from "../../core/src/mdse_core.js";
-import { buildBom, bomOwnedHash, bomRevCompare, parseBom } from "./bom.ts";
+import { buildBom, bomOwnedHash, bomRevCompare, parseBom, bomSplitSysml, bomAttrOf } from "./bom.ts";
 import type { BomOptions, BomResult, Grid } from "./bom.ts";
 import type { OutFile } from "./merge.ts";
 import { yamlScalar } from "./notes.ts";
@@ -26,34 +26,12 @@ export interface UpdateScan {
   current: Map<string, string>;
 }
 
-/* ---- reading the SysML declaration of a part note ---- */
-interface Decl { key: string; kind: "attr" | "usage" | "ref" | "dep"; lines: string[] }
+/* ---- reading the SysML declaration of a part note (members come from bom.ts; only the importer's own are compared or changed) ---- */
+type Decl = { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[] };
 interface Parts { head: string[]; decl: Decl[]; tail: string[] }
-const ATTR = (lines: string[], k: string): string => { const m = new RegExp(`attribute ${k} = (?:"((?:[^"\\\\]|\\\\.)*)"|([^;]+));`).exec(lines.join("\n")); return m ? (m[1] ?? m[2] ?? "").trim() : ""; };
-
+const ATTR = bomAttrOf;
 function sysmlOf(note: string): string | null { return MDSE.extractSysml(note) as string | null; }
-function splitSysml(sysml: string): Parts | null {
-  const lines = sysml.replace(/\n+$/, "").split("\n"), open = lines.findIndex((l) => /^ {4}part def \w+ \{$/.test(l));
-  if (open < 0) return { head: lines, decl: [], tail: [] };
-  let close = -1; for (let i = lines.length - 1; i > open; i--) if (lines[i] === "    }") { close = i; break; }
-  if (close < 0) return null;
-  const decl: Decl[] = [], body = lines.slice(open + 1, close), seen = new Map<string, number>();
-  for (let i = 0; i < body.length; i++) {
-    const first = body[i]!; if (!/^ {8}\S/.test(first)) return null;
-    const blk = [first];
-    if (/\{$/.test(first)) { while (++i < body.length && body[i] !== "        }") blk.push(body[i]!); if (i >= body.length) return null; blk.push("        }"); }
-    let key = "", kind: Decl["kind"];
-    const am = /^ {8}attribute (\w+) /.exec(first), um = /^ {8}part (\w+) : (\S+)/.exec(first), rm = /^ {8}ref item (\w+) : (\S+);/.exec(first), dm = /^ {8}dependency from (\S+) to (\S+);/.exec(first);
-    if (am) { kind = "attr"; key = "attr:" + am[1]; }
-    else if (um) { kind = "usage"; const line = ATTR(blk, "line"); key = line ? "usage:" + line : "usage:~" + um[2]; }
-    else if (rm) { kind = "ref"; key = "ref:" + rm[2]; }
-    else if (dm) { kind = "dep"; key = "dep:" + dm[2]; }
-    else return null;
-    const n = seen.get(key) ?? 0; seen.set(key, n + 1); if (n) key += "#" + n;
-    decl.push({ key, kind, lines: blk });
-  }
-  return { head: lines.slice(0, open + 1), decl, tail: lines.slice(close) };
-}
+function splitSysml(sysml: string): Parts | null { const r = bomSplitSysml(sysml); return r ? { head: r.head, decl: r.members, tail: r.tail } : null; }
 /** The text of an entry with its own name blanked, so a renamed usage with the same content does not count as a change. */
 const bodyOf = (d: Decl): string => d.lines.map((l, i) => (i === 0 ? l.replace(/^( {8}(?:part|ref item) )\w+/, "$1_") : l)).join("\n");
 const attrsOf = (d: Decl): Array<[string, string]> => [...d.lines.join("\n").matchAll(/attribute (\w+) = (?:"((?:[^"\\]|\\.)*)"|([^;]+));/g)].map((m) => [m[1]!, (m[2] ?? m[3] ?? "").trim()]);
@@ -64,6 +42,7 @@ function yamlOwned(note: string): { description: string; mfr: Array<[string, str
 }
 const importHashOf = (note: string): string | null => /^importHash: ([0-9a-f]{16})$/m.exec(note)?.[1] ?? null;
 const revOf = (p: Parts): string => ATTR(p.decl.filter((d) => d.key === "attr:revision").flatMap((d) => d.lines), "revision");
+const ownedOf = (p: Parts): Decl[] => p.decl.filter((d) => d.owned);
 const lineWord = (d: Decl): string => { const l = ATTR(d.lines, "line"); const m = /^ {8}(?:part \w+ : (\S+)|ref item \w+ : (\S+))/.exec(d.lines[0]!); return `${l ? "line " + l + " " : ""}${(m?.[1] ?? m?.[2] ?? "").replace(/^.*::[PD]_/, "")}`; };
 const mfrText = (m: Array<[string, string]>): string => m.map(([k, v]) => `${k}: ${v}`).join("; ") || "(none)";
 
@@ -94,12 +73,12 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     const ro = revOf(po), rn = revOf(pnw), isAssembly = asParent.has(pn);
     if (rn !== ro && !(rn === "" && ro !== "")) {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
-      const uo = po.decl.filter((d) => d.kind === "usage" || d.kind === "ref").length, un = pnw.decl.filter((d) => d.kind === "usage" || d.kind === "ref").length;
+      const uo = ownedOf(po).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw).filter((d) => d.kind === "usage" || d.kind === "ref").length;
       add("NEW_REVISION", f.path, pn, `${pn}: revision ${ro ? JSON.stringify(ro) : "(none)"} → ${JSON.stringify(rn)} (${uo} → ${un} lines)`, `revision ${ro || "(none)"}, ${uo} lines`, `revision ${rn}, ${un} lines`);
       continue;
     }
-    const mo = new Map(po.decl.map((d) => [d.key, d])), mn = new Map(pnw.decl.map((d) => [d.key, d]));
-    for (const d of pnw.decl) {
+    const mo = new Map(ownedOf(po).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw).map((d) => [d.key, d]));
+    for (const d of ownedOf(pnw)) {
       const was = mo.get(d.key);
       if (d.kind === "attr") { if (d.key === "attr:revision") continue; if (!was) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)} added`, "(none)", ATTR(d.lines, d.key.slice(5)), d.key); else if (bodyOf(was) !== bodyOf(d)) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)}`, ATTR(was.lines, d.key.slice(5)), ATTR(d.lines, d.key.slice(5)), d.key); continue; }
       if (d.kind === "dep") { if (!was) add("SUPERSEDES", f.path, pn, `${pn}: replaces ${d.key.slice(4).replace(/^.*::P_/, "")}`, "", d.lines[0]!.trim(), d.key); continue; }
@@ -111,7 +90,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
         add("LINE_CHANGED", f.path, pn, `${pn}: ${lineWord(d)}: ${[typeChanged ? "part changed" : "", ...diffs].filter(Boolean).join("; ") || "multiplicity"}`, was.lines.join("\n"), d.lines.join("\n"), d.key);
       }
     }
-    if (isAssembly) for (const d of po.decl) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key);
+    if (isAssembly) for (const d of ownedOf(po)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key);
     if (!out.items.some((x) => x.path === f.path) && !out.holds.some((x) => x.path === f.path)) out.unchanged++;
   }
   return out;
@@ -137,8 +116,9 @@ export function closeApproval(scan: UpdateScan, approved: Set<string>): { all: S
   return { all, extra };
 }
 
+const FOREIGN_NAME = /^ {8}(?:#\w+ )?(?:(?:in|out|inout|ref|abstract|readonly|derived|conjugated)\s+)*(?:port|part|attribute|item|action|state|constraint|requirement|calc|connection|interface|allocation|flow|perform|exhibit|occurrence|individual|snapshot|timeslice|enum|metadata|view|viewpoint|concern|verification|analysis|use case|satisfy|connect|bind|succession|transition|then|first|doc)\s+~?(\w+)/;
 function renameClashes(decl: Decl[]): void {
-  const seen = new Set<string>();
+  const seen = new Set<string>(decl.filter((d) => !d.owned).map((d) => FOREIGN_NAME.exec(d.lines[0]!)?.[1] ?? "").filter(Boolean));   // a usage must not take a name the model already uses in the same definition
   for (const d of decl) {
     if (d.kind !== "usage" && d.kind !== "ref") continue;
     const m = /^( {8}(?:part|ref item) )(\w+)/.exec(d.lines[0]!)!; let name = m[2]!, k = 2;
@@ -166,11 +146,15 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
     if (items.some((i) => i.category === "NEW_PART")) { writes.push({ path, content: gen }); continue; }
     const old = scan.current.get(path)!, cats = new Set(items.map((i) => i.category)), po = splitSysml(sysmlOf(old)!)!, pnw = splitSysml(sysmlOf(gen)!)!;
     let note = old, decl: Decl[];
-    if (cats.has("NEW_REVISION")) decl = pnw.decl.map((d) => ({ ...d, lines: [...d.lines] }));
+    if (cats.has("NEW_REVISION")) {   // the importer's members are replaced as a set, at the place of the first one; the model's members stay where they are
+      const fresh = ownedOf(pnw).map((d) => ({ ...d, lines: [...d.lines] })), firstOwned = po.decl.findIndex((d) => d.owned); decl = [];
+      po.decl.forEach((d, i) => { if (i === firstOwned || (firstOwned < 0 && i === 0)) decl.push(...fresh); if (!d.owned) decl.push({ ...d, lines: [...d.lines] }); });
+      if (!decl.length || po.decl.length === 0) decl.push(...fresh);
+    }
     else {
       decl = po.decl.map((d) => ({ ...d, lines: [...d.lines] }));
-      const newKeys = pnw.decl.map((d) => d.key), keyed = new Map(items.filter((i) => i.key).map((i) => [i.key, i]));
-      for (const d of pnw.decl) {
+      const newKeys = ownedOf(pnw).map((d) => d.key), keyed = new Map(items.filter((i) => i.key).map((i) => [i.key, i]));
+      for (const d of ownedOf(pnw)) {
         const it = keyed.get(d.key); if (!it || it.category === "LINE_REMOVED") continue;
         const at = decl.findIndex((x) => x.key === d.key);
         if (at >= 0) {   // changed in place: the new text, under the name the note already uses
@@ -181,7 +165,7 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
           decl.splice(before + 1, 0, { ...d, lines: [...d.lines] });
         }
       }
-      for (const it of items) if (it.key && (it.category === "LINE_REMOVED" || (it.category === "DRAWING" && !pnw.decl.some((x) => x.key === it.key)))) decl = decl.filter((x) => x.key !== it.key);
+      for (const it of items) if (it.key && (it.category === "LINE_REMOVED" || (it.category === "DRAWING" && !ownedOf(pnw).some((x) => x.key === it.key)))) decl = decl.filter((x) => x.key !== it.key);
     }
     renameClashes(decl);
     const sysml = [...(po.head), ...decl.flatMap((d) => d.lines), ...po.tail].join("\n") + "\n";

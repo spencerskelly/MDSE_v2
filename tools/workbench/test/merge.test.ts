@@ -141,3 +141,53 @@ test("many aliases at once: every pair is checked, and one bad pair names itself
   assert.match(M.planAliasMarkMany(ix0, base, [...sug, sug[0]!]).problems[0]!, /appears twice/);
 });
 
+
+/* ---- BOM update after the merge (D-0052): the importer changes only its own members and properties ---- */
+import { scanBomUpdate, applyBomUpdate } from "../../importer/src/bom_update.ts";
+import { bomOwnedHash } from "../../importer/src/bom.ts";
+const bomOpts = (files: Map<string, string>, extra: object = {}) => ({ sourceName: "bom2.tsv", fingerprint: "b".repeat(64), runDate: "2026-11-01T09:00:00", authorCode: "skellyspencer", classes, existing: { hasVault: true, files }, pending: [] as Array<[string, string]>, ...extra });
+const gridV2 = (ctrlName: string, fanQty: string, ctrlRev = "-0"): string =>
+  [HEAD, row("ASM-100", 1, "SYN-CTRL-1", ctrlName, "1").replace(/\t-0\t99\t/, `\t${ctrlRev}\t99\t`), row("ASM-100", 2, "FAN-77", "FAN 40MM", fanQty)].join("\n");
+const modelOnly = (note: string): string[] => (MDSE.extractSysml(note) as string).split("\n").filter((l) => /^ {8}(port|satisfy|connect|bind|dependency from .*dependsOn)/.test(l));
+
+test("the merge keeps the BOM note's description, manufacturer and import properties", () => {
+  const m = f2.get(PART)!;
+  assert.match(m, /^description: CHARGE CONTROLLER BOARD$/m);
+  assert.match(m, /^importSource: bom\.tsv$/m); assert.match(m, /^importHash: [0-9a-f]{16}$/m);
+});
+
+test("after the merge the stamp still matches the importer's own members, so the part is not seen as edited", () => {
+  const m = f2.get(PART)!;
+  assert.equal(bomOwnedHash(m), /^importHash: (\w+)$/m.exec(m)![1]);
+  const s = scanBomUpdate(parseDelimited(GRID), bomOpts(f2));
+  assert.deepEqual(s.holds, []); assert.deepEqual(s.items, []);
+});
+
+test("a changed BOM updates a merged part without touching what the model added to it", () => {
+  const before = modelOnly(f2.get(PART)!); assert.ok(before.length >= 5, "ports, satisfy, connect and bind came from the EA note");
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(f2));
+  assert.deepEqual(s.holds, []);
+  const mine = s.items.filter((i) => i.pn === "SYN-CTRL-1"); assert.deepEqual(mine.map((i) => i.category).sort(), ["DESCRIPTION", "NEW_REVISION"]);
+  const r = applyBomUpdate(s, { approved: new Set(mine.map((i) => i.id)), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" });
+  const n = r.writes.find((w) => w.path === PART)!.content;
+  assert.match(n, /^description: CONTROLLER BOARD V2$/m); assert.match(n, /attribute revision = "-199";/);
+  assert.deepEqual(modelOnly(n), before, "the model's members are exactly as they were");
+  assert.match(n, /:> OBJ_00003::GenericModule/, "the specialization added by the merge stays");
+  assert.match(n, /## Merged from Controller/); assert.match(n, /Synthetic charge controller\./);
+  assert.match(n, /^eaType: Class:Hardware Component$/m);
+  assert.equal(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1]);
+  assert.match(n, /^importSource: bom2\.tsv$/m);
+  assert.deepEqual(MDSE.validate(n, classes), []);
+  // scanning again: nothing is left
+  const f3 = new Map(f2); for (const w of r.writes) f3.set(w.path, w.content);
+  assert.deepEqual(scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(f3)).items.filter((i) => i.pn === "SYN-CTRL-1"), []);
+});
+
+test("a person's change to a member the BOM owns is a conflict; a change to one the model owns is not", () => {
+  const edited = new Map(f2), m = f2.get(PART)!;
+  edited.set(PART, m.replace('attribute source = "buy";', 'attribute source = "make";'));
+  assert.equal(scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(edited)).holds.map((h) => h.code).join(), "CONFLICT");
+  const model = new Map(f2); model.set(PART, m.replace("port spare : OBJ_00010::CANInterface;", "port spare : OBJ_00010::CANInterface; // checked by me"));
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(model));
+  assert.deepEqual(s.holds, []); assert.ok(s.items.some((i) => i.category === "DESCRIPTION"));
+});

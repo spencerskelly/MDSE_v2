@@ -145,7 +145,9 @@ export function parseBom(grid: Grid): Parsed {
 const BOM_DISCRETE = new Set(["", "ea", "each", "piece", "pieces", "pc", "pcs"]);
 const bomIsDrawing = (u: Usage): boolean => /^dwg\b/i.test(u.childName);
 const bomIsNum = (s: string): boolean => /^-?\d+(\.\d+)?$/.test(s);
-const bomAttr = (name: string, v: string): string => `attribute ${name} = ${bomIsNum(v) && !/^-?0\d/.test(v) ? v : JSON.stringify(v)};`;
+/** Revisions are labels, never numbers: "-199" is revision "-1" at level 99, so it is always text. Quantities and line numbers stay numbers. */
+const BOM_TEXT_ATTRS = new Set(["revision", "childRevision", "partNumber", "source", "drawingLocation", "refDes", "ssc", "notes", "effectiveFrom", "effectiveTo", "unit"]);
+const bomAttr = (name: string, v: string): string => `attribute ${name} = ${!BOM_TEXT_ATTRS.has(name) && bomIsNum(v) && !/^-?0\d/.test(v) ? v : JSON.stringify(v)};`;
 const bomSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
 const bomDocSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::D_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
 /** camelCase usage name from a part name. ALL-CAPS words are lowered first (CONNECTOR HOUSING -> connectorHousing); at most 40 characters. */
@@ -200,13 +202,48 @@ export interface BomResult {
   summary: { layout: string; rows: number; parts: number; usages: number; drawings: number; alternates: number; skippedParts: number; existing: number; conflicts: number; eaMatched: number; bomOnly: number };
 }
 
-/** BOM-031: the part of a BOM note that the importer owns and a later update may compare: the `description`, `manufacturerN` and `mfgPnN` properties and the SysML block.
- *  Prose, callouts, `status`, `tags` and everything a person edits are not in it. Returns 16 hex digits of the SHA-256. A later scan recomputes this from the note in the vault. */
+/* ---- Ownership inside a BOM note (BOM-031, BOM-035). After an EA note is merged into a BOM note the part definition holds both the importer's members and the model's
+ * (ports, satisfy, connect, other dependencies, ...). The importer owns only the members it writes: partNumber, revision, source and drawingLocation attributes, part usages
+ * that carry `childRevision`, `ref item` drawings and `// supersedes` dependencies. Everything else in the block is the model's and is never read or changed by an update. ---- */
+export interface SysmlMember { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[] }
+export interface SysmlParts { head: string[]; members: SysmlMember[]; tail: string[] }
+const OWNED_ATTRS = new Set(["partNumber", "revision", "source", "drawingLocation"]);
+export function bomAttrOf(lines: string[], k: string): string { const m = new RegExp(`attribute ${k} = (?:"((?:[^"\\\\]|\\\\.)*)"|([^;]+));`).exec(lines.join("\n")); return m ? (m[1] ?? m[2] ?? "").trim() : ""; }
+/** Splits the SysML of a BOM note into the lines around the part definition's members and the members themselves; null when the members are not in a layout this can read. */
+export function bomSplitSysml(sysml: string): SysmlParts | null {
+  const lines = sysml.replace(/\n+$/, "").split("\n"), open = lines.findIndex((l) => /^ {4}part def \w+(?: :> [^{]+?)? \{$/.test(l));
+  if (open < 0) return { head: lines, members: [], tail: [] };
+  let close = -1; for (let i = lines.length - 1; i > open; i--) if (lines[i] === "    }") { close = i; break; }
+  if (close < 0) return null;
+  const members: SysmlMember[] = [], body = lines.slice(open + 1, close), seen = new Map<string, number>(); let other = 0;
+  for (let i = 0; i < body.length; i++) {
+    const first = body[i]!; if (first.trim() === "") continue;
+    if (!/^ {8}\S/.test(first)) return null;
+    const blk = [first]; let depth = (first.match(/\{/g) ?? []).length - (first.match(/\}/g) ?? []).length;
+    if (/\/\*(?!.*\*\/)/.test(first)) return null;
+    while (depth > 0) { if (++i >= body.length) return null; const l = body[i]!; blk.push(l); depth += (l.match(/\{/g) ?? []).length - (l.match(/\}/g) ?? []).length; }
+    if (depth < 0) return null;
+    let key: string, kind: SysmlMember["kind"], owned = false;
+    const am = /^ {8}attribute (\w+) /.exec(first), um = /^ {8}part (\w+) : (\S+)/.exec(first), rm = /^ {8}ref item (\w+) : (\S+);/.exec(first), dm = /^ {8}dependency from (\S+) to (\S+);(.*)$/.exec(first);
+    if (am && OWNED_ATTRS.has(am[1]!)) { kind = "attr"; key = "attr:" + am[1]; owned = true; }
+    else if (um && /attribute childRevision = /.test(blk.join("\n"))) { kind = "usage"; const line = bomAttrOf(blk, "line"); key = line ? "usage:" + line : "usage:~" + um[2]; owned = true; }
+    else if (rm && /::D_/.test(rm[2]!)) { kind = "ref"; key = "ref:" + rm[2]; owned = true; }
+    else if (dm && /\/\/ supersedes\s*$/.test(dm[3]!)) { kind = "dep"; key = "dep:" + dm[2]; owned = true; }
+    else { kind = "other"; key = "other:" + other++; }
+    if (owned) { const n = seen.get(key) ?? 0; seen.set(key, n + 1); if (n) key += "#" + n; }
+    members.push({ key, kind, owned, lines: blk });
+  }
+  return { head: lines.slice(0, open + 1), members, tail: lines.slice(close) };
+}
+const bomFence = (noteText: string): string => { const sec = noteText.replace(/\r\n?/g, "\n").split(/^## SysML v2\s*$/m)[1] ?? ""; return /```[^\n]*\n([\s\S]*?)\n```/.exec(sec)?.[1] ?? ""; };
+/** BOM-031: the part of a BOM note that the importer owns and a later update may compare: the `description`, `manufacturerN` and `mfgPnN` properties and the importer's own members of the
+ *  SysML block (all of it for a Document note). Prose, callouts, `status`, `tags`, specializations and every member the model added are not in it. Returns 16 hex digits of the SHA-256.
+ *  A later scan recomputes this from the note in the vault, merged or not. */
 export function bomOwnedHash(noteText: string): string {
   const text = noteText.replace(/\r\n?/g, "\n"), fm = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
-  const yaml = fm.split("\n").filter((l) => /^(description|manufacturer\d+|mfgPn\d+):/.test(l));
-  const sec = text.split(/^## SysML v2\s*$/m)[1] ?? "", fence = /```[^\n]*\n([\s\S]*?)\n```/.exec(sec)?.[1] ?? "";
-  return sha256Text(`${yaml.join("\n")}\n--\n${fence.trim()}`).slice(0, 16);
+  const yaml = fm.split("\n").filter((l) => /^(description|manufacturer\d+|mfgPn\d+):/.test(l)), fence = bomFence(text).trim(), parts = fence ? bomSplitSysml(fence) : null;
+  const owned = !parts ? fence : parts.members.length === 0 && parts.head.length === fence.split("\n").length ? fence : parts.members.filter((m) => m.owned).map((m) => m.lines.join("\n")).join("\n");
+  return sha256Text(`${yaml.join("\n")}\n--\n${owned}`).slice(0, 16);
 }
 /** Adds the three stamp properties at the end of the frontmatter of a freshly rendered BOM note. */
 function bomStamp(noteText: string, source: string, on: string): string {

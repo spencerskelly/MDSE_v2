@@ -78,7 +78,7 @@ ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
 <p id="genStatus" style="margin:10px 0 0"></p><div id="genOut"></div></section>
 
 <section class="card" id="cBomUpd" aria-labelledby="h-bu"><h2 id="h-bu">Update an existing vault from a BOM</h2>
-<p class="lead">For a later BOM export. Choose the BOM in step 2 and the vault folder in step 3 (read &amp; write), then scan. Nothing is written by the scan. You get the changes grouped by category and tick what to apply, a whole category or single items. Notes that were edited after the last import, and notes with no import stamp, are listed and left alone.</p>
+<p class="lead">For a later BOM export. Choose the BOM in step 2 and the vault folder in step 3 (read &amp; write), then scan. Nothing is written by the scan. You get the changes grouped by category and tick what to apply, a whole category or single items. Only what the BOM wrote is compared and changed: in a note merged with its EA element, the ports, satisfy, connect and everything else from the model stay as they are. Notes whose BOM-written parts were edited after the last import, and notes with no import stamp, are listed and left alone.</p>
 <div class="row"><button id="bomScan" class="alt" disabled>Scan for BOM changes</button><button id="bomApply" disabled>Apply ticked changes</button></div>
 <p id="bomUpdStatus" style="margin:8px 0 0"></p><div id="bomUpdOut"></div></section>
 

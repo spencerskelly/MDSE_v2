@@ -262,9 +262,15 @@ function mgMergeFrontmatter(s: MgNote, a: MgNote, names: Map<string, string>, su
       if (f.key === "tags" && lacksSymbol && symbol) out.push("sourceRole: authoritative-model", `primarySymbol: ${symbol}`);          // an older BOM note had none
       continue;
     }
+    if (!f.lines.some((x) => x.includes("[["))) { out.push(...f.lines); done.add(f.key); continue; }   // WKB-026: a plain property of the surviving note (BOM description, manufacturers, import stamp) is kept as it is
     const l = merged.get(f.key);
     if (l && l.length) out.push(`${f.key}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
     done.add(f.key);
+  }
+  for (const f of a.fm) {   // plain properties only the removed note has are carried over; the import stamp never is, it describes the survivor's own content
+    if (done.has(f.key) || MG_CORE.has(f.key) || f.key === "aliasOf" || /^import(Source|edOn|Hash)$/.test(f.key) || f.lines.some((x) => x.includes("[["))) continue;
+    if (s.fm.some((x) => x.key === f.key)) continue;
+    out.push(...f.lines); done.add(f.key); notes.push(`property ${f.key} carried over`);
   }
   for (const [k, l] of merged) if (!done.has(k) && l.length) out.push(`${k}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
   return out;
