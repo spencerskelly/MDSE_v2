@@ -646,7 +646,7 @@ Owner: "We are collecting data from multiple sources, we should not be dropping 
    - The update scan ticks nothing by default (BOM-032); the principle asks for additions to be offered ticked and changes unticked.
    - Rows skipped as `ROW_NO_CHILD`, `ROW_NO_PARENT` and `ALT_NO_PRIMARY` keep only their row number in the finding; the row's content is not kept.
    - A redline row struck out with no replacement (`LINE_REMOVED`) is reported but its content is not kept.
-   - Manufacturer data comes from the first line that uses a part; other lines' manufacturers and alternates are not read (to be confirmed with a probe).
+   - Manufacturer data comes from the first line that uses a part; other lines' manufacturers and alternates are not read. **Confirmed with a probe and fixed the same day:** manufacturer data from every line that uses the part is now added, exact repeats once (BOM-028).
    - Lifecycle states are ignored by decision (BOM-021, D-0047); that is a decided drop and stays unless the owner changes it.
    - The `drop` option for earlier-revision lines, and the choice per type and per item generally, have no control in the page.
 5. **Not decided.** The shape of the per-type and per-item choice in the page (a list of information types, each with add or leave out, and a per-item override in the scan).

@@ -385,8 +385,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
       }
     }
     if (!isDoc) for (const old of [...(replaces.get(pn) ?? [])].sort()) decl.push(`        dependency from ${bomSymOf(inf.id, pn)} to ${info.get(old) ? bomSymOf(info.get(old)!.id, old) : "P_" + old.replace(/[^A-Za-z0-9]/g, "_")}; // supersedes`);
-    const firstUse = parsed.usages.find((u) => u.child === pn), own = firstUse?.ownSrc ?? null, alts = firstUse?.alternates ?? [];
-    const sources = [...(own ? [own] : []), ...alts].filter((s) => s.mfr || s.mpn);
+    // D-0056 (BOM-028): manufacturer data is added from every line that uses the part, not only the first. Number 1 stays the first line's own manufacturer; an exact repeat of a pair is written once.
+    const srcSeen = new Set<string>(), srcAll: Src[] = [];
+    for (const u of parsed.usages) if (u.child === pn) for (const s of [...(u.ownSrc ? [u.ownSrc] : []), ...u.alternates]) { if (!s.mfr && !s.mpn) continue; const k = `${s.mfr.toLowerCase()}\0${s.mpn.toLowerCase()}`; if (!srcSeen.has(k)) { srcSeen.add(k); srcAll.push(s); } }
+    const sources = srcAll;
     const sysml = isDoc ? `package ${inf.id.replace("-", "_")} {\n    item def D_${pn.replace(/[^A-Za-z0-9]/g, "_")};\n}\n` : `package ${inf.id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n${decl.join("\n")}\n    }\n}\n`;
     const head = [`- BOM Part Number: ${pn}`, ...(l.name ? [`- Name: ${l.name}`] : []), `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, ...(l.rev ? [`- Revision: ${JSON.stringify(l.rev)} (as exported)`] : [`- No BOM lists this part number; it is named as the previous number of ${[...new Set(stubs.get(pn) ?? [])].join(", ")}.`])];
     if (l.source) head.push(`- Source: ${l.source}`);

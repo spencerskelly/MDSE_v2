@@ -360,3 +360,17 @@ test("an assembly already in the vault gets a warning that its earlier-revision 
   const r = buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts({ existing: { hasVault: true, files: vault } }));
   const f = r.findings.find((x) => x.code === "EARLIER_REV_NOT_ADDED")!; assert.equal(f.level, "warn"); assert.match(f.message, /A-1: the file has 3 line\(s\)/);
 });
+
+/* ---- BOM-028: manufacturer data is added from every line that uses the part ---- */
+const MFR_HEAD = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tManufacturer\tManufacturer Part Number";
+const mfrRow = (p: string, l: string, c: string, m: string, mpn: string): string => [p, "-A", "99", "ASSY " + p, "buy", "X", l, c, "-A", "99", "PART " + c, "buy", "X", "", "", "", "", "", "1", "ea", m, mpn].join("\t");
+const mfrAlt = (p: string, m: string, mpn: string): string => [p, "-A", "99", "ASSY " + p, "buy", "X", "", "", "", "", "", "", "", "", "", "", "", "", "", "", m, mpn].join("\t");
+
+test("manufacturer data from every line that uses a part is added, first line first, exact repeats once (BOM-028, D-0056)", () => {
+  const rows = [mfrRow("A-1", "1", "B-2", "ACME", "ACM-1"), mfrAlt("A-1", "ALPHA", "ALP-1"), mfrRow("X-1", "1", "B-2", "BETA", "BET-9"), mfrAlt("X-1", "GAMMA", "GAM-7"), mfrRow("Z-1", "1", "B-2", "acme", "acm-1")];
+  const r = buildBom(parseDelimited([MFR_HEAD, ...rows].join("\n")), { sourceName: "m.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes, existing: null, pending: [] as Array<[string, string]> });
+  const note = r.files.find((f) => /\/B-2\.md$/.test(f.path))!.content;
+  const got = note.split("\n").filter((l) => /^(manufacturer|mfgPn)\d+:/.test(l));
+  assert.deepEqual(got, ["manufacturer1: ACME", "mfgPn1: ACM-1", "manufacturer2: ALPHA", "mfgPn2: ALP-1", "manufacturer3: BETA", "mfgPn3: BET-9", "manufacturer4: GAMMA", "mfgPn4: GAM-7"]);
+  assert.equal(MDSE.validate(note, classes).length, 0);
+});
