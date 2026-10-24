@@ -619,3 +619,15 @@ Reason (owner): people are not always right. A hand edit to BOM-owned content mu
 6. **Not decided.** Whether an engineer can keep an edit without seeing it offered again (a re-stamp or an ownership change, the other options discussed) is left open.
 
 Rules: BOM-031, BOM-033 (changed).
+
+## D-0055 — BOM import: a part number named two ways is flagged, not silently resolved
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0054)
+
+1. **Problem.** When one part number at one revision appeared with different names on several rows, the first row's name was used and the others were dropped without a word. The part note then showed one name with no sign that the file disagreed with itself.
+2. **Decision.** The first name is still used (D-0047 is unchanged), and the importer raises one `NAME_CONFLICT` warning per part number, revision and side, naming the first name with its row and the other names with their row counts. The warning is for review; nothing in the note changes.
+3. **What is not a conflict.** Names that differ only in case or spacing. A part's name as a parent is not compared with its name as a child, because the two columns follow different conventions.
+4. **Part numbers already in the vault.** An import leaves such a part as it is (BOM-026) and raises nothing. An update scan reports it, because the scan compares the file with the vault.
+5. **Not decided.** Whether the warning should offer a choice of name, and whether parent-side and child-side names should ever be compared. Both would need real BOM files to judge; none was used here.
+
+Rules: BOM-037 (new).

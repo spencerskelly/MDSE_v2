@@ -238,9 +238,19 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   // observations per part number
   type Obs = { rev: string; name: string; source: string; state: string; drawingLocation: string };
   const asParent = new Map<string, Map<string, Obs>>(), asChild = new Map<string, Map<string, Obs>>();
-  const put = (m: Map<string, Map<string, Obs>>, pn: string, rev: string, ob: Obs): void => { const r = m.get(pn) ?? m.set(pn, new Map()).get(pn)!; const cur = r.get(rev); if (!cur) r.set(rev, ob); else for (const k of Object.keys(ob) as Array<keyof Obs>) if (!cur[k] && ob[k]) cur[k] = ob[k]; };
-  for (const p of parsed.parents) put(asParent, p.pn, p.rev, { rev: p.rev, name: p.name, source: p.source, state: p.state, drawingLocation: p.drawingLocation });
-  for (const u of parsed.usages) put(asChild, u.child, u.childRev, { rev: u.childRev, name: u.childName, source: u.childSource, state: u.childState, drawingLocation: u.drawingLocation });
+  // BOM-037: one part number at one revision that is named two ways on the same side (as a child, or as a parent) keeps the first name and says so.
+  // A difference of case or spacing only is not a conflict. The key is side, part number and revision.
+  const nameKey = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const nameSeen = new Map<string, { side: string; pn: string; rev: string; first: string; firstRow: number | null; others: Map<string, number> }>();
+  const put = (m: Map<string, Map<string, Obs>>, pn: string, rev: string, ob: Obs, side: string, row: number | null): void => {
+    const r = m.get(pn) ?? m.set(pn, new Map()).get(pn)!; const cur = r.get(rev), k0 = `${side}\0${pn}\0${rev}`;
+    if (!cur) { r.set(rev, ob); if (ob.name) nameSeen.set(k0, { side, pn, rev, first: ob.name, firstRow: row, others: new Map() }); return; }
+    if (ob.name) { const seen = nameSeen.get(k0); if (!seen) nameSeen.set(k0, { side, pn, rev, first: ob.name, firstRow: row, others: new Map() }); else if (nameKey(seen.first) !== nameKey(ob.name)) seen.others.set(ob.name, (seen.others.get(ob.name) ?? 0) + 1); }
+    for (const k of Object.keys(ob) as Array<keyof Obs>) if (!cur[k] && ob[k]) cur[k] = ob[k];
+  };
+  for (const p of parsed.parents) put(asParent, p.pn, p.rev, { rev: p.rev, name: p.name, source: p.source, state: p.state, drawingLocation: p.drawingLocation }, "parent", null);
+  for (const u of parsed.usages) put(asChild, u.child, u.childRev, { rev: u.childRev, name: u.childName, source: u.childSource, state: u.childState, drawingLocation: u.drawingLocation }, "child", u.row);
+  const nameConflicts = [...nameSeen.values()].filter((x) => x.others.size).sort((a, b) => (a.pn < b.pn ? -1 : a.pn > b.pn ? 1 : a.rev < b.rev ? -1 : a.rev > b.rev ? 1 : a.side < b.side ? -1 : 1));
   const allPns = new Set([...asParent.keys(), ...asChild.keys()]);
 
   // D-0047: the latest revision is the highest by bomRevCompare, among the revisions the part has as an assembly, else among those its parents pin.
@@ -264,6 +274,11 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
     const m = /^- BOM Part Number: (.+)$/m.exec(t); if (!m) continue;
     const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), text: t, path: p, uid: /^uid: (\S+)$/m.exec(t)?.[1] ?? "" });
+  }
+  // BOM-037, reported after the vault is read: a part number that already has a note is left as it is (BOM-026) and raises nothing here, except in an update scan.
+  for (const s of nameConflicts) {
+    if (!o.update && existingBy.has(s.pn)) continue;
+    findings.push({ level: "warn", code: "NAME_CONFLICT", message: `${s.pn} revision ${JSON.stringify(s.rev)} is named ${JSON.stringify(s.first)}${s.firstRow ? ` (row ${s.firstRow})` : ""} and also ${[...s.others].map(([n, c]) => `${JSON.stringify(n)} (${c} more row${c === 1 ? "" : "s"})`).join(", ")} as a ${s.side}; the first name was used. Review which is right.` });
   }
   // usages that can be written: parent and child both determined, no duplicate (parent, line)
   const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), existingUsages = new Map<string, Usage[]>(), otherRev = new Set<string>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;

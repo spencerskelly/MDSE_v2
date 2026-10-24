@@ -301,3 +301,30 @@ test("every BOM note carries an import stamp whose hash covers only what the imp
   const n2 = again.files.find((f) => f.path.endsWith("/01141-002.md"))!.content;
   assert.match(n2, /^importedOn: 2026-11-01$/m); assert.equal(bomOwnedHash(n2), h);
 });
+
+/* ---- BOM-037: one part number at one revision named two ways on the same side ---- */
+const nameRow = (p: string, pname: string, line: string, c: string, cname: string, crev = "-A01"): string => [p, "-A", "99", pname, "buy", "X", line, c, crev.slice(0, 2), crev.slice(2), cname, "buy", "X", "", "", "", "", "", "1", "ea", p + "-A99"].join("\t");
+const nameOpts = (existing: Map<string, string> | null, update = false) => ({ sourceName: "n.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes, existing: existing ? { hasVault: true, files: existing } : null, pending: [] as Array<[string, string]>, ...(update ? { update: true } : {}) });
+const nameGrid = (rows: string[]) => parseDelimited([FLAT_HEAD, ...rows].join("\n"));
+
+test("a part number at one revision named two ways as a child keeps the first name and raises NAME_CONFLICT (BOM-037)", () => {
+  const r = buildBom(nameGrid([nameRow("A-1", "ASSY A-1", "1", "B-2", "NAME ONE"), nameRow("X-1", "ASSY X-1", "1", "B-2", "NAME TWO"), nameRow("Z-1", "ASSY Z-1", "1", "B-2", "NAME TWO")]), nameOpts(null));
+  const f = r.findings.filter((x) => x.code === "NAME_CONFLICT");
+  assert.equal(f.length, 1); assert.equal(f[0]!.level, "warn");
+  assert.match(f[0]!.message, /^B-2 revision "-A01" is named "NAME ONE" \(row 2\) and also "NAME TWO" \(2 more rows\) as a child; the first name was used/);
+  const note = r.files.find((x) => /\/B-2\.md$/.test(x.path))!.content;
+  assert.match(note, /^description: NAME ONE$/m); assert.doesNotMatch(note, /NAME TWO/);
+});
+
+test("names that differ only in case or spacing, or between the parent and child side, are not a conflict (BOM-037)", () => {
+  const r = buildBom(nameGrid([nameRow("A-1", "ASSY A-1", "1", "B-2", "Name  One"), nameRow("X-1", "ASSY X-1", "1", "B-2", "NAME ONE"), nameRow("B-2", "B-2 ASSEMBLY", "1", "C-3", "PART C")]), nameOpts(null));
+  assert.deepEqual(r.findings.filter((x) => x.code === "NAME_CONFLICT"), []);
+});
+
+test("a part number already in the vault raises no NAME_CONFLICT in an import, but does in an update scan (BOM-037, BOM-026)", () => {
+  const rows = [nameRow("A-1", "ASSY A-1", "1", "B-2", "NAME ONE"), nameRow("X-1", "ASSY X-1", "1", "B-2", "NAME TWO")];
+  const first = buildBom(nameGrid(rows), nameOpts(null)), vault = new Map(first.files.map((f) => [f.path, f.content] as [string, string]));
+  assert.equal(first.findings.filter((x) => x.code === "NAME_CONFLICT").length, 1);
+  assert.deepEqual(buildBom(nameGrid(rows), nameOpts(vault)).findings.filter((x) => x.code === "NAME_CONFLICT"), []);
+  assert.equal(buildBom(nameGrid(rows), nameOpts(vault, true)).findings.filter((x) => x.code === "NAME_CONFLICT").length, 1);
+});
