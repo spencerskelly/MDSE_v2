@@ -660,7 +660,7 @@ Rules: BOM-002 (retired), BOM-006 (rewritten), BOM-038, BOM-039 (new).
 1. **Each item has a kind.** An addition puts data in the note that it lacks (a new part, a new line, a new drawing reference, a replaced-part dependency, a part attribute the note did not have, a description the note did not have, manufacturer data that only gains pairs). A change replaces a value (a changed quantity, a new name over an old one, a new revision). A removal takes a line out.
 2. **Defaults.** In the page, additions are ticked and changes and removals are not. A category whose items are all additions is ticked as a whole, so items beyond the 200 shown are included. In a category that mixes kinds, only the shown additions are ticked. Applying still needs the button and the confirmation, and nothing is written by the scan.
 3. **Unchanged.** A hand-edited note still marks its items (D-0054); an addition to it is ticked, and the file's value offered back over the edit is a change and is not.
-4. **Not decided.** Whether a removal that the file clearly intends (a redline strikes the line out) should be ticked, and the per-type and per-item choice in D-0056 item 5.
+4. **Removals stay unticked** (working default set 2026-10-24 under D-0056, "the default is to add data": taking a line out is not an addition, and a redline strike is only one of the ways a line stops being listed). The owner can reverse this; it is one setting in `bom_update.ts`/the page. The per-type and per-item choice in D-0056 item 5 is not decided.
 
 Rules: BOM-032 (changed).
 
