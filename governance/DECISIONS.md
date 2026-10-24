@@ -885,3 +885,13 @@ Rules: BOM-041 (Active).
 4. **Not covered.** Editing the file does not move notes already in the vault; the update scan offers their new `bomCategory`. No Workbench screen edits the list; it is an ordinary note. The built-in table is still the default and still lives in `tools/importer/src/bom_category.ts`.
 
 Rules: BOM-041, BOM-044 (Active).
+
+## D-0077 — The write check reads ids and uids from the frontmatter only
+
+2026-10-24 · Spencer · Accepted (owner, chat: pasted log of an EA import into the review vault that stopped with "id REQ-00042 already belongs to 99_System/02_AI/AI_INSTRUCTIONS.md").
+
+1. **Cause.** The clash check added in D-0071 (IMP-130) took the first `id:` line anywhere in a vault file. `AI_INSTRUCTIONS.md` shows an example `id: REQ-00042` in a code block, so the real note REQ-00042 looked like a duplicate and the whole write was refused. Nothing was written.
+2. **Fix.** An `id` or `uid` counts only inside the frontmatter block at the top of a file. A file without frontmatter holds none.
+3. **Not covered.** Other places that read `id:` with a line pattern (the BOM reader looks only at notes that carry a BOM part number) were not changed. Only this check was seen to fail.
+
+Rules: IMP-130 (Active).

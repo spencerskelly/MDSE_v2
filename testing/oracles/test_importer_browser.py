@@ -259,8 +259,8 @@ class BomUpdateBrowser(unittest.TestCase):
             self.assertFalse(pg.is_disabled("#bomScan"), "the update scan is available")
             # a write that would put a different note on an existing path, or reuse an id, is refused
             clash = pg.evaluate("""() => { const t = (id, uid) => `---\nid: ${id}\nuid: ${uid}\n---\n`; const [pp, old] = vaultFiles.find(([p]) => p.endsWith('/01141-002.md')); const id = /^id: (\\S+)$/m.exec(old)[1]; const uid = /^uid: (\\S+)$/m.exec(old)[1];
-              return [writeClashes([{ path: pp, content: t(id, uid) }]), writeClashes([{ path: pp, content: t(id, 'other') }]), writeClashes([{ path: 'BOM/Parts/ZZ.md', content: t(id, 'u2') }])]; }""")
-            self.assertEqual(clash[0], []); self.assertIn("different note", clash[1][0]); self.assertIn("already belongs", clash[2][0])
+              return [writeClashes([{ path: pp, content: t(id, uid) }]), writeClashes([{ path: pp, content: t(id, 'other') }]), writeClashes([{ path: 'BOM/Parts/ZZ.md', content: t(id, 'u2') }]), (vaultFiles.push(['99_System/02_AI/EX.md', '# x\\n```\\nid: REQ-00042\\nuid: 1\\n```\\n']), writeClashes([{ path: 'REQ/REQ-00042.md', content: t('REQ-00042', 'u3') }]))]; }""")
+            self.assertEqual(clash[0], []); self.assertIn("different note", clash[1][0]); self.assertIn("already belongs", clash[2][0]); self.assertEqual(clash[3], [], "an id in an example in the text is not a note's id (D-0077)")
             b.close()
         self.assertEqual(errors, [])
 

@@ -229,14 +229,15 @@ async function rescanVault() {
   $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
 }
 /* Refuses a write that would replace a note with a different one (another uid) or reuse an id that another note holds. */
+function fmOf(t) { const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(t); return m ? m[1] : ""; }   // D-0077: an id or uid counts only in the frontmatter, not in an example inside the text
 function writeClashes(files) {
   const byPath = new Map(), byId = new Map();
-  for (const [p, t] of vaultFiles || []) { byPath.set(p, t); const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) byId.set(id, p); }
+  for (const [p, t] of vaultFiles || []) { byPath.set(p, t); const id = /^id: (\S+)$/m.exec(fmOf(t))?.[1]; if (id) byId.set(id, p); }
   const out = [];
   for (const f of files) {
     if (f.bytes || !/\.md$/i.test(f.path) || /^99_System\//.test(f.path)) continue;
-    const id = /^id: (\S+)$/m.exec(f.content)?.[1], uid = /^uid: (\S+)$/m.exec(f.content)?.[1], old = byPath.get(f.path);
-    if (old !== undefined) { const ouid = /^uid: (\S+)$/m.exec(old)?.[1]; if (ouid && uid && ouid !== uid) { out.push(`${f.path}: a different note (uid ${ouid}) is already here`); continue; } }
+    const fm = fmOf(f.content), id = /^id: (\S+)$/m.exec(fm)?.[1], uid = /^uid: (\S+)$/m.exec(fm)?.[1], old = byPath.get(f.path);
+    if (old !== undefined) { const ouid = /^uid: (\S+)$/m.exec(fmOf(old))?.[1]; if (ouid && uid && ouid !== uid) { out.push(`${f.path}: a different note (uid ${ouid}) is already here`); continue; } }
     if (id && byId.has(id) && byId.get(id) !== f.path) out.push(`${f.path}: id ${id} already belongs to ${byId.get(id)}`);
   }
   return out;
