@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { CATEGORY_RULES_PATH, renderCategoryRules } from "../../importer/src/bom_category.ts";
 
 const TEXT = /\.(md|yaml|yml|json|txt)$/i;
 const JUNK = /(^|\/)(\.DS_Store|Thumbs\.db)$/;
@@ -122,6 +123,7 @@ desktop.ini
 `);
   put("99_System/22_Views/README.md", "# Temporary views\n\nThe Workbench writes one scratch canvas here (`Workbench Preview.canvas`) each time you preview a view. Every preview overwrites it, it is deleted when the Workbench loads or unloads, and Git ignores this folder. Use Save canvas in the Workbench to keep a view; it goes to `99_System/23_Saved_Views` unless you pick another folder.\n");
   put("99_System/23_Saved_Views/README.md", "# Saved views\n\nCanvases you chose to save from the Workbench. This is the default folder; you can save into any project folder instead. Views are pictures of the model, not model content: delete or regenerate them at any time.\n");
+  put(CATEGORY_RULES_PATH, renderCategoryRules());   // D-0076: yours to edit; a vault update never overwrites it
   put("99_System/11_Import/README.md", "# Import\n\nRun records, ledgers and review tables written by the importer. Do not edit; fix the source or the mapping and re-import.\n");
   put("README.md", `# MDSE vault\n\nMarkdown Systems Engineering vault (release ${o.release}). SysML v2 text in the last \`## SysML v2\` block of a note is authoritative; everything else is YAML and Markdown.\n\n- AI tools: start at \`99_System/02_AI/AI_INSTRUCTIONS.md\`.\n- Schemas: \`99_System/03_Schemas\`.\n- Imports: \`99_System/11_Import\`.\n`);
   return Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));

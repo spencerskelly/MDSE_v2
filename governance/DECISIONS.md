@@ -874,3 +874,14 @@ Rules: BOM-043 (Active).
 
 Rules: BOM-041 (Active).
 
+
+## D-0076 — The category list is a note in the vault that the owner edits
+
+2026-10-24 · Spencer · Accepted (owner, chat: "let's make improvements to the toolset … start at the top"; the first item was the vault-owned rules file named in D-0072 item 2 and D-0075 item 3).
+
+1. **File.** `99_System/06_Config/BOM Categories.md`, one rule per line written `- Category name: WORD WORD`. Order is priority; the first rule with a word in the description wins; the same category may repeat. It ships in the Base Vault with the built-in table, so a new vault has it. It is a seed file (D-0024): a vault update adds it when missing and never overwrites it.
+2. **Use.** Each BOM run reads the file from the vault (or from the files the same run is about to write) and uses it in place of the built-in table. A vault without the file uses the built-in table. The BOM update scan inherits it, so its CATEGORY items follow the file.
+3. **Bad file.** One unusable line (a category that cannot be a folder name, no words, a word under two characters or starting with a digit, a rule for `Uncategorized`) means none of the file is used. The built-in table applies and a `CATEGORY_RULES_BAD` warning names the lines. A partly read file could silently move parts.
+4. **Not covered.** Editing the file does not move notes already in the vault; the update scan offers their new `bomCategory`. No Workbench screen edits the list; it is an ordinary note. The built-in table is still the default and still lives in `tools/importer/src/bom_category.ts`.
+
+Rules: BOM-041, BOM-044 (Active).

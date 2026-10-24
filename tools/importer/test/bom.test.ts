@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { deflateRawSync } from "node:zlib";
 import MDSE from "../../core/src/mdse_core.js";
+import { CATEGORY_RULES_PATH, DEFAULT_CATEGORY_RULES, renderCategoryRules, parseCategoryRules } from "../src/bom_category.ts";
 import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomUnit, bomDate } from "../src/bom.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
 import type { Grid } from "../src/bom.ts";
@@ -410,4 +411,23 @@ test("a part is sorted into a folder by description words, child lines and make 
   assert.match(f("TOP-1").content, /^bomCategory: Chargers and systems\nbomRole: final$/m);
   assert.match(f("CAB-1").content, /^bomRole: sub$/m); assert.match(f("SCR-1").content, /^bomRole: part$/m);
   assert.ok(r.findings.some((x) => x.code === "CATEGORIES" && /Uncategorized 1/.test(x.message)));
+});
+
+test("the vault's own category list sorts the parts; a bad list is ignored with a warning (D-0076)", () => {
+  const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParent Rev";
+  const row = (p: string, pn: string, l: string, c: string, cn: string): string => [p, "-A", "01", pn, "make", "PRODUCTION", l, c, "-A", "01", cn, "buy", "PRODUCTION", "", "", "", "", "", "1", "ea", p + "-A01"].join("\t");
+  const g = parseDelimited([H, row("TOP-1", "CHARGER ASSY", "1", "GRM-1", "GIZMO WIDGET")].join("\n"));
+  const find = (r: { files: Array<{ path: string }> }, pn: string): string => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!.path;
+  const rt = parseCategoryRules(renderCategoryRules());
+  assert.deepEqual(rt.rules, DEFAULT_CATEGORY_RULES.map((r) => ({ category: r.category, words: r.words })), "the shipped file reads back to the built-in table");
+  const vault = (text: string) => ({ ...baseOpts, existing: { hasVault: true, files: new Map([[CATEGORY_RULES_PATH, text]]) } });
+  assert.equal(find(buildBom(g, baseOpts), "GRM-1"), "BOM/Parts/Uncategorized/Parts/buy/GRM-1.md");
+  const own = buildBom(g, vault(renderCategoryRules([{ category: "Widgets", words: ["WIDGET"] }, ...DEFAULT_CATEGORY_RULES])));
+  assert.equal(find(own, "GRM-1"), "BOM/Parts/Widgets/Parts/buy/GRM-1.md");
+  assert.match(own.files.find((x) => x.path.endsWith("/GRM-1.md"))!.content, /^bomCategory: Widgets$/m);
+  const bad = buildBom(g, vault("# x\n- Widgets: WIDGET\n- Bad/Name: FOO\n- Empty: \n"));
+  assert.equal(find(bad, "GRM-1"), "BOM/Parts/Uncategorized/Parts/buy/GRM-1.md", "one bad line and none of the file is used");
+  assert.ok(bad.findings.some((x) => x.code === "CATEGORY_RULES_BAD" && x.level === "warn" && /Bad\/Name/.test(x.message)));
+  assert.equal(parseCategoryRules("nothing here").rules, null);
+  assert.ok(parseCategoryRules("- Uncategorized: FOO").problems.length === 1 && parseCategoryRules("- Parts: A").rules === null, "words need two characters");
 });

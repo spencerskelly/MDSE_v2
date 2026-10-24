@@ -10,7 +10,7 @@ import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
-import { bomCategoryOf, bomRoleOf, bomPartFolder, NO_CATEGORY } from "./bom_category.ts";
+import { bomCategoryOf, bomRoleOf, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -250,6 +250,11 @@ const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.un
 
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
+  // D-0076: the vault's own category list when it has one (a pending file of the same run counts), else the built-in table.
+  const rulesText = [...(o.existing?.files ?? []), ...o.pending].find(([p]) => p === CATEGORY_RULES_PATH)?.[1];
+  const parsedRules = rulesText === undefined ? null : parseCategoryRules(rulesText), catRules = parsedRules?.rules ?? DEFAULT_CATEGORY_RULES;
+  if (parsedRules && !parsedRules.rules) findings.push({ level: "warn", code: "CATEGORY_RULES_BAD", message: `${CATEGORY_RULES_PATH} was not used, so the built-in categories apply: ${parsedRules.problems.slice(0, 3).join("; ")}${parsedRules.problems.length > 3 ? `; and ${parsedRules.problems.length - 3} more` : ""}.` });
+  const catOf = (d: string): string => bomCategoryOf(d, catRules);
   const unknownUnits = new Map<string, number>();
   for (const u of parsed.usages) {
     const un = bomUnit(u.unit); if (!un.known) unknownUnits.set(un.unit, (unknownUnits.get(un.unit) ?? 0) + 1);
@@ -347,7 +352,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: o.update ? ex.path : "", fresh: !!o.update }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
     const isD = key.startsWith("d:"), kids = (childrenOf.get(pn) ?? 0) > 0;
-    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, bomCategoryOf(l.name), kids, l.source), safeName(pn, pn), ".md");
+    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, catOf(l.name), kids, l.source), safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
@@ -429,7 +434,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.source) head.push(`- Source: ${l.source}`);
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
-    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", bomCategoryOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
+    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
@@ -449,7 +454,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   {   // D-0072: how the new parts were sorted, so the rules can be improved from the unmatched count
     const cc = new Map<string, number>(); let nParts = 0;
-    for (const pn of partPns) { if (existingBy.has(pn) && !o.update) continue; const c = bomCategoryOf(latest.get(pn)?.name ?? ""); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++; }
+    for (const pn of partPns) { if (existingBy.has(pn) && !o.update) continue; const c = catOf(latest.get(pn)?.name ?? ""); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++; }
     if (nParts) findings.push({ level: "info", code: "CATEGORIES", message: `${nParts} part note(s) sorted by description words: ${[...cc].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. "${NO_CATEGORY}" are the parts no rule matched (BOM-041).` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
