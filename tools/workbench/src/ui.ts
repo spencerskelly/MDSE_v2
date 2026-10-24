@@ -1,6 +1,6 @@
 /* The Workbench user interface. Plain DOM, no framework, no network. Every string from the vault goes in as text, never
  * as markup. Used unchanged by the standalone page and by the Obsidian plugin; the host supplies what differs. */
-import { toCanvas } from "./canvas.ts";
+import { toCanvas, pickCanvas, MAX_PICK } from "./canvas.ts";
 import type { CanvasResult } from "./canvas.ts";
 import { buildIndexAsync } from "./index.ts";
 import type { ModelIndex, Note } from "./index.ts";
@@ -83,14 +83,14 @@ export function download(name: string, text: string): void {
 }
 
 const TABS: Array<[string, string, boolean]> = [
-  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["design", "Design types", true], ["internal", "Internal", true], ["function", "Function", true], ["states", "States", true], ["reqs", "Requirements", true],
+  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["pick", "Pick for canvas", false], ["note", "Note", true], ["structure", "Structure", true], ["design", "Design types", true], ["internal", "Internal", true], ["function", "Function", true], ["states", "States", true], ["reqs", "Requirements", true],
   ["where", "Where used", true], ["trace", "Traceability", false], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false], ["guide", "Guide", false],
 ];
 
 export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
-  let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
+  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set<string>(); let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
   let tableGroup: "" | "type" | "folder" = "";
   const secs = new Map<string, boolean>();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
@@ -176,6 +176,46 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       bars("By type", d.byType, (k) => { tableF = { sort: "id", type: k }; tab = "table"; draw(); }), bars("By status", d.byStatus, (k) => { tableF = { sort: "id", status: k === "(none)" ? "" : k }; tab = "table"; draw(); }),
       bars("Flags", d.flags, () => { tab = "review"; draw(); }), bars("Relationships by kind", d.edgeKinds, (k) => { relKinds = [k]; tab = "rels"; draw(); })));
     pane.append(h("h3", {}, "Requirement coverage"), h("div", {}, `${d.requirements.satisfied} of ${d.requirements.total} satisfied · ${d.requirements.verified} of ${d.requirements.total} verified`));
+    return pane;
+  }
+
+  /* D-0078: search by word or phrase in name or description, tick notes, place them on a canvas. */
+  function vPick(): HTMLElement {
+    const pane = h("div", { class: "pane" }, h("h2", {}, "Pick notes for a canvas"));
+    const types = [...new Set([...ix!.notes.values()].map((n) => n.type))].sort();
+    const found = V.pickRows(ix!, pickText, pickType), notes = found.notes;
+    const count = h("span", { class: "mut" }), boxes = new Map<string, HTMLInputElement>();
+    const upd = (): void => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
+    pane.append(h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."));
+    pane.append(h("div", { class: "row" },
+      h("input", { type: "search", placeholder: "Word or phrase", value: pickText, "aria-label": "Search for notes to place on a canvas", onchange: (e: Event) => { pickText = (e.target as HTMLInputElement).value; draw(); } }),
+      h("select", { "aria-label": "Type", onchange: (e: Event) => { pickType = (e.target as HTMLSelectElement).value; draw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: pickType === t }, t)))));
+    pane.append(h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search to see the rest)` : ""}`));
+    const bar = h("div", { class: "row" },
+      h("button", { onclick: () => tickAll(true) }, "Tick all listed"), h("button", { onclick: () => tickAll(false) }, "Untick listed"), h("button", { onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships between them"), count);
+    if (host.makeCanvas) {
+      const place = h("button", { title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Place on canvas");
+      place.addEventListener("click", () => {
+        if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
+        place.setAttribute("disabled", ""); place.textContent = "Creating…";
+        const r = pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText });
+        host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
+      });
+      bar.append(place);
+      if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => { host.saveCanvas!().then((m) => { canvasMsg = m; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); }); bar.append(save); }
+      if (canvasMsg) bar.append(h("span", { class: "mut" }, canvasMsg));
+    } else bar.append(h("span", { class: "mut" }, "Placing on a canvas works inside Obsidian."));
+    upd(); pane.append(bar);
+    const heads: Array<[string, string, boolean?]> = [["", ""], ["type", "Type"], ["title", "Name"], ["desc", "Description"], ["id", "ID"]];
+    const rowOf = (n: typeof notes[number]): Child[] => {
+      const b = h("input", { type: "checkbox", "aria-label": "Tick " + n.title, checked: pickSel.has(n.path), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) pickSel.add(n.path); else pickSel.delete(n.path); upd(); } }) as HTMLInputElement;
+      boxes.set(n.path, b);
+      const d = String(n.meta.description ?? ""), name = String(n.meta.name ?? "");
+      return [b, n.type + (n.subtype ? "/" + n.subtype : ""), lnk(n.path, name || n.title), d.length > 140 ? d.slice(0, 140) + " …" : d, n.id];
+    };
+    pane.append(tableOf(heads, notes.map(rowOf)));
     return pane;
   }
 
@@ -440,7 +480,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   }
 
   /* ---- shell ---- */
-  const views: Record<string, () => HTMLElement> = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, design: vDesign, internal: vInternal, function: vFunction, states: vStates, reqs: vReqs, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
+  const views: Record<string, () => HTMLElement> = { dashboard: vDashboard, table: vTable, pick: vPick, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, design: vDesign, internal: vInternal, function: vFunction, states: vStates, reqs: vReqs, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
   function draw(): void {
     const header = h("header", {}, h("b", {}, "MDSE Workbench"), ix ? h("span", { class: "pill" }, `${ix.notes.size} notes · ${ix.edges.length} links · built in ${ix.builtMs} ms`) : null,
       ix ? h("span", { class: "pill " + (ix.parser === "passed" ? "ok" : ix.parser === "failed" ? "bad" : "warn") }, ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked") : null,

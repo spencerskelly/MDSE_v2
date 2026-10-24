@@ -14,6 +14,7 @@ declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string }) => any;
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
+  pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
   cdEdgeIds: (doc: any) => Set<string>; cdDrawnLines: (doc: any, known: Set<string>) => Array<{ id: string; from: string | null; to: string | null }>;
@@ -146,6 +147,7 @@ function hostFor(plugin: any): any {
     openNote: (p: string) => plugin.app.workspace.openLinkText(p, "", false),
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
+    openPickCanvas: (paths: string[], label: string, relations: boolean) => plugin.openPickCanvas(paths, label, relations),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
@@ -307,6 +309,11 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const prof = WB.PROFILES.find((p) => p.name === WB.LENS_PROFILE[lens]);
     if (!prof) throw new Error("No canvas for this view.");
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
+  }
+
+  async openPickCanvas(paths: string[], label: string, relations: boolean): Promise<string> {
+    await this.ensureIndex();
+    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label }));
   }
 
   /* ---- saving a preview ---- */

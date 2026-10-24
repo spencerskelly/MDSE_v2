@@ -431,6 +431,18 @@ export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);
 }
 
+/** Notes to pick from for a canvas (D-0078): every note whose name, description, id, part number, alias or type holds each word of the text, in name order. `total` counts all matches; `notes` is cut at `limit`. */
+export function pickRows(ix: ModelIndex, text: string, type = "", limit = 500): { notes: Note[]; total: number } {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean), out: Note[] = [];
+  for (const n of ix.notes.values()) {
+    if (type && n.type !== type) continue;
+    if (words.length) { const hay = `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""} ${n.meta.aliases ?? ""}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
+    out.push(n);
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title) || a.path.localeCompare(b.path));
+  return { notes: out.slice(0, limit), total: out.length };
+}
+
 /** Statuses a person can set: the ones already used in the vault plus the two the rules name (Draft is the template default, Retired is how a note ends). */
 export const statusChoices = (ix: ModelIndex): string[] => [...new Set(["Draft", ...[...ix.notes.values()].map((n) => n.status).filter(Boolean), "Retired"])];
 
@@ -459,11 +471,11 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "edit";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["edit", "Edit"]];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", edit: "Everything" };
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "pick" | "edit";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["edit", "Edit"]];
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", edit: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
-export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit";
+export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick";
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
 export type TableCell = Cell | Cell[] | string;

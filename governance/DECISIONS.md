@@ -895,3 +895,14 @@ Rules: BOM-041, BOM-044 (Active).
 3. **Not covered.** Other places that read `id:` with a line pattern (the BOM reader looks only at notes that carry a BOM part number) were not changed. Only this check was seen to fail.
 
 Rules: IMP-130 (Active).
+
+## D-0078 — The Workbench can search for notes and place the ticked ones on a canvas
+
+2026-10-24 · Spencer · Accepted (owner, chat: "a workbench function to add elements from a search … search a word or phrase and all elements with that in the name or description would list. I could then select some or all to place on a canvas").
+
+1. **Lens.** A "Pick notes" lens in the panel, and a "Pick for canvas" tab in the standalone Workbench. It takes a word or phrase and an optional type. A note is listed when every word is found in its name, description, id, part number or aliases (not case sensitive). Up to 500 are listed; the count of all matches is shown.
+2. **Choosing.** Each row has a tick box; "Tick all listed", "Untick listed" and "Clear all" act on the list. Ticks survive a new search, so a canvas can gather notes from several searches.
+3. **Canvas.** "Place on canvas" writes the ticked notes to the same single scratch preview as every other canvas (the preview and Save canvas… behave as for the other canvases). Cards are in a grid, at most 6 across and 200 in all; a requirement shows its wording as on other canvases (IMP-097). Relationships that run between two ticked notes are drawn unless the person unticks "draw relationships". Nothing is added to the model; the canvas is disposable (D-0003).
+4. **Not covered.** No fuzzy matching or ranking by closeness. No "also add the neighbours of the ticked notes". The scratch canvas holds one view at a time, so a second Place on canvas replaces the first until it is saved.
+
+Rules: WKB-029 (Active).

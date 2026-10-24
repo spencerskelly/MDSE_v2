@@ -116,7 +116,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
-import { toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { toCanvas, pickCanvas, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -428,4 +428,30 @@ test("a note is shown by name, else description, else heading, else file name, a
   assert.equal(V.search(w, "01141-002")[0]!.path, "BOM/Parts/01141-002.md", "search finds a note by part number and file name");
   assert.equal(V.search(w, "OBJ-90002")[0]!.path, "Model/OBJ-90002.md", "search finds a note by file name");
   assert.equal(V.tableRows(w, { text: "plug" }).length, 1, "the table filter reads aliases");
+});
+
+test("a search for a word or phrase lists the notes with it in the name or description, and the ticked ones become a canvas (D-0078)", () => {
+  const every = V.pickRows(ix, "");
+  assert.equal(every.total, ix.notes.size, "no text lists everything");
+  const charger = V.pickRows(ix, "charger");
+  assert.ok(charger.total >= 1 && charger.notes.every((n) => `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""} ${n.meta.aliases ?? ""}`.toLowerCase().includes("charger")));
+  assert.equal(V.pickRows(ix, "charger zzzznotaword").total, 0, "every word must match");
+  assert.equal(V.pickRows(ix, "CHARGER").total, charger.total, "case does not matter");
+  const t = charger.notes[0]!.type; assert.ok(V.pickRows(ix, "charger", t).notes.every((n) => n.type === t));
+  assert.equal(V.pickRows(ix, "", "", 3).notes.length, 3); assert.equal(V.pickRows(ix, "", "", 3).total, ix.notes.size, "the limit cuts the list, not the count");
+  // a word found only in a description
+  const withDesc = [...ix.notes.values()].find((n) => n.meta.description && !n.title.toLowerCase().includes(String(n.meta.description).toLowerCase().split(/\s+/).at(-1)!));
+  if (withDesc) { const w = String(withDesc.meta.description).toLowerCase().split(/\s+/).at(-1)!; assert.ok(V.pickRows(ix, w).notes.some((n) => n.path === withDesc.path), "found by its description"); }
+  // canvas
+  const picked = charger.notes.map((n) => n.path), r = pickCanvas(ix, picked, { relations: true, label: "charger" });
+  assert.equal(r.doc.nodes.length, picked.length); assert.equal(r.notes, picked.length); assert.equal(r.capped, false);
+  assert.ok(r.doc.nodes.every((n) => (n.type === "file" ? picked.includes(n.file!) : /\[\[/.test(n.text!))));
+  const ids = new Set(r.doc.nodes.map((n) => n.id)); assert.ok(r.doc.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)), "only lines between ticked notes");
+  assert.equal(pickCanvas(ix, picked, { relations: false, label: "charger" }).doc.edges.length, 0);
+  const all = pickCanvas(ix, [...ix.notes.keys()], { relations: true, label: "" });
+  assert.ok(all.doc.edges.length > 0, "the model's relationships between ticked notes are drawn");
+  assert.equal(all.doc.nodes.length, Math.min(MAX_PICK, ix.notes.size)); assert.equal(all.capped, ix.notes.size > MAX_PICK);
+  assert.equal(pickCanvas(ix, ["nope.md"], { relations: true, label: "x" }).doc.nodes.length, 0, "a path not in the index is skipped");
+  const boxes = r.doc.nodes.map((n) => [n.x, n.y, n.x + n.width, n.y + n.height]); // no two cards overlap
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i]!, b = boxes[j]!; assert.ok(a[2]! <= b[0]! || b[2]! <= a[0]! || a[3]! <= b[1]! || b[3]! <= a[1]!, "cards do not overlap"); }
 });

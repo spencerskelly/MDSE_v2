@@ -28,6 +28,39 @@ const safe = (s: string): string => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace
 
 const hash = (s: string): string => { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(16).slice(0, 4); };
 
+/** The card for one note: a file card, or for a requirement a text card carrying its name, subtype and wording (IMP-097). Position is set by the caller. */
+function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, color = TYPE_COLOR[n.type];
+  if (isRequirement(n)) {
+    const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
+    return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
+  }
+  return { ...base, type: "file", file: path, ...(color ? { color } : {}) };
+}
+const sideOf = (a: CanvasNode, b: CanvasNode): { fromSide: CanvasEdge["fromSide"]; toSide: CanvasEdge["toSide"] } =>
+  b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+
+/** Notes the person picked from a search, as a canvas (D-0078): a grid of cards, the relationships between the picked notes drawn when asked.
+ * At most MAX_PICK cards; `capped` says some were left off. */
+export const MAX_PICK = 200;
+export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: boolean; label: string }): CanvasResult {
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK), cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length))));
+  const nodes: CanvasNode[] = [], at = new Map<string, CanvasNode>();
+  let y = 0;
+  for (let i = 0; i < use.length; i += cols) {
+    const row = use.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
+    row.forEach((cn, j) => { cn.x = j * (W + GX); cn.y = y; nodes.push(cn); });
+    y += rowH + GY;
+  }
+  const edges: CanvasEdge[] = [];
+  if (opts.relations) for (const e of ix.edges) {
+    if (!e.to || e.reverse) continue;
+    const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+  }
+  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups: 0, hidden: 0 };
+}
+
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?: Partial<ViewSpec>): CanvasResult {
   const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;
@@ -62,12 +95,7 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
       const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m)!.title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
     }
-    if (it.path && isRequirement(ix.notes.get(it.path)!)) {                    // requirements show name, subtype and wording on the card (IMP-097)
-      const n = ix.notes.get(it.path)!, txt = requirementText(n), color = TYPE_COLOR[n.type];
-      const clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
-      return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
-    }
-    if (it.path) { const color = TYPE_COLOR[ix.notes.get(it.path)!.type]; return { ...base, type: "file", file: it.path, ...(color ? { color } : {}) }; }
+    if (it.path) return noteCard(ix, it.path, it.key);
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
   };
   for (const [d, list] of [...cols].sort((a, b) => a[0] - b[0])) {
@@ -77,11 +105,9 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
   }
 
   const edges: CanvasEdge[] = [];
-  const side = (a: CanvasNode, b: CanvasNode): { fromSide: CanvasEdge["fromSide"]; toSide: CanvasEdge["toSide"] } =>
-    b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
   const push = (from: string, to: string, e: Edge): void => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   };
   for (const e of g.edges) push(id.get(e.from)!, id.get(e.to!)!, e);
   for (const x of ghosts) { const anchor = id.get(x.anchor)!; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }

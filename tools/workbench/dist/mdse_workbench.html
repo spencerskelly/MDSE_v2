@@ -1268,6 +1268,18 @@ function search(ix            , q        , limit = 50)         {
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);
 }
 
+/** Notes to pick from for a canvas (D-0078): every note whose name, description, id, part number, alias or type holds each word of the text, in name order. `total` counts all matches; `notes` is cut at `limit`. */
+function pickRows(ix            , text        , type = "", limit = 500)                                   {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean), out         = [];
+  for (const n of ix.notes.values()) {
+    if (type && n.type !== type) continue;
+    if (words.length) { const hay = `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""} ${n.meta.aliases ?? ""}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
+    out.push(n);
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title) || a.path.localeCompare(b.path));
+  return { notes: out.slice(0, limit), total: out.length };
+}
+
 /** Statuses a person can set: the ones already used in the vault plus the two the rules name (Draft is the template default, Retired is how a note ends). */
 const statusChoices = (ix            )           => [...new Set(["Draft", ...[...ix.notes.values()].map((n) => n.status).filter(Boolean), "Retired"])];
 
@@ -1296,11 +1308,11 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                 
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["edit", "Edit"]];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", edit: "Everything" };
+                                                                                                                                                          
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["edit", "Edit"]];
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", edit: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
-const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit";
+const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick";
 
                                                                                                                                                    
                                         
@@ -1410,6 +1422,39 @@ const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace
 
 const hash = (s        )         => { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(16).slice(0, 4); };
 
+/** The card for one note: a file card, or for a requirement a text card carrying its name, subtype and wording (IMP-097). Position is set by the caller. */
+function noteCard(ix            , path        , key        )             {
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , color = TYPE_COLOR[n.type];
+  if (isRequirement(n)) {
+    const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
+    return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
+  }
+  return { ...base, type: "file", file: path, ...(color ? { color } : {}) };
+}
+const sideOf = (a            , b            )                                                                     =>
+  b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+
+/** Notes the person picked from a search, as a canvas (D-0078): a grid of cards, the relationships between the picked notes drawn when asked.
+ * At most MAX_PICK cards; `capped` says some were left off. */
+const MAX_PICK = 200;
+function pickCanvas(ix            , paths          , opts                                       )               {
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK), cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length))));
+  const nodes               = [], at = new Map                    ();
+  let y = 0;
+  for (let i = 0; i < use.length; i += cols) {
+    const row = use.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
+    row.forEach((cn, j) => { cn.x = j * (W + GX); cn.y = y; nodes.push(cn); });
+    y += rowH + GY;
+  }
+  const edges               = [];
+  if (opts.relations) for (const e of ix.edges) {
+    if (!e.to || e.reverse) continue;
+    const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+  }
+  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups: 0, hidden: 0 };
+}
+
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 function toCanvas(ix            , start        , profile         , spec                    )               {
   const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;
@@ -1444,12 +1489,7 @@ function toCanvas(ix            , start        , profile         , spec         
       const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m) .title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
     }
-    if (it.path && isRequirement(ix.notes.get(it.path) )) {                    // requirements show name, subtype and wording on the card (IMP-097)
-      const n = ix.notes.get(it.path) , txt = requirementText(n), color = TYPE_COLOR[n.type];
-      const clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
-      return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
-    }
-    if (it.path) { const color = TYPE_COLOR[ix.notes.get(it.path) .type]; return { ...base, type: "file", file: it.path, ...(color ? { color } : {}) }; }
+    if (it.path) return noteCard(ix, it.path, it.key);
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
   };
   for (const [d, list] of [...cols].sort((a, b) => a[0] - b[0])) {
@@ -1459,11 +1499,9 @@ function toCanvas(ix            , start        , profile         , spec         
   }
 
   const edges               = [];
-  const side = (a            , b            )                                                                     =>
-    b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
   const push = (from        , to        , e      )       => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...side(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   };
   for (const e of g.edges) push(id.get(e.from) , id.get(e.to ) , e);
   for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
@@ -2881,7 +2919,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, internalStructure, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, internalStructure, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -2959,14 +2997,14 @@ function download(name        , text        )       {
 }
 
 const TABS                                   = [
-  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["note", "Note", true], ["structure", "Structure", true], ["design", "Design types", true], ["internal", "Internal", true], ["function", "Function", true], ["states", "States", true], ["reqs", "Requirements", true],
+  ["dashboard", "Dashboard", false], ["table", "Notes", false], ["pick", "Pick for canvas", false], ["note", "Note", true], ["structure", "Structure", true], ["design", "Design types", true], ["internal", "Internal", true], ["function", "Function", true], ["states", "States", true], ["reqs", "Requirements", true],
   ["where", "Where used", true], ["trace", "Traceability", false], ["graph", "Graph", true], ["rels", "Relationships", false], ["review", "Review", false], ["guide", "Guide", false],
 ];
 
 function mountWorkbench(root             , host       = {})      {
   const style = h("style"); style.textContent = STYLE;
   let ix                    = null, sel = "", tab = "dashboard", sidebar                       = "folders", query = "";
-  let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
+  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set        (); let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
   let tableGroup                         = "";
   const secs = new Map                 ();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis                     ).app !== "undefined" ? " obs" : "") });
@@ -3052,6 +3090,46 @@ function mountWorkbench(root             , host       = {})      {
       bars("By type", d.byType, (k) => { tableF = { sort: "id", type: k }; tab = "table"; draw(); }), bars("By status", d.byStatus, (k) => { tableF = { sort: "id", status: k === "(none)" ? "" : k }; tab = "table"; draw(); }),
       bars("Flags", d.flags, () => { tab = "review"; draw(); }), bars("Relationships by kind", d.edgeKinds, (k) => { relKinds = [k]; tab = "rels"; draw(); })));
     pane.append(h("h3", {}, "Requirement coverage"), h("div", {}, `${d.requirements.satisfied} of ${d.requirements.total} satisfied · ${d.requirements.verified} of ${d.requirements.total} verified`));
+    return pane;
+  }
+
+  /* D-0078: search by word or phrase in name or description, tick notes, place them on a canvas. */
+  function vPick()              {
+    const pane = h("div", { class: "pane" }, h("h2", {}, "Pick notes for a canvas"));
+    const types = [...new Set([...ix .notes.values()].map((n) => n.type))].sort();
+    const found = V.pickRows(ix , pickText, pickType), notes = found.notes;
+    const count = h("span", { class: "mut" }), boxes = new Map                          ();
+    const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
+    pane.append(h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."));
+    pane.append(h("div", { class: "row" },
+      h("input", { type: "search", placeholder: "Word or phrase", value: pickText, "aria-label": "Search for notes to place on a canvas", onchange: (e       ) => { pickText = (e.target                    ).value; draw(); } }),
+      h("select", { "aria-label": "Type", onchange: (e       ) => { pickType = (e.target                     ).value; draw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: pickType === t }, t)))));
+    pane.append(h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search to see the rest)` : ""}`));
+    const bar = h("div", { class: "row" },
+      h("button", { onclick: () => tickAll(true) }, "Tick all listed"), h("button", { onclick: () => tickAll(false) }, "Untick listed"), h("button", { onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships between them"), count);
+    if (host.makeCanvas) {
+      const place = h("button", { title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Place on canvas");
+      place.addEventListener("click", () => {
+        if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
+        place.setAttribute("disabled", ""); place.textContent = "Creating…";
+        const r = pickCanvas(ix , [...pickSel], { relations: pickRel, label: pickText });
+        host.makeCanvas (r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw());
+      });
+      bar.append(place);
+      if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => { host.saveCanvas ().then((m) => { canvasMsg = m; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw()); }); bar.append(save); }
+      if (canvasMsg) bar.append(h("span", { class: "mut" }, canvasMsg));
+    } else bar.append(h("span", { class: "mut" }, "Placing on a canvas works inside Obsidian."));
+    upd(); pane.append(bar);
+    const heads                                    = [["", ""], ["type", "Type"], ["title", "Name"], ["desc", "Description"], ["id", "ID"]];
+    const rowOf = (n                      )          => {
+      const b = h("input", { type: "checkbox", "aria-label": "Tick " + n.title, checked: pickSel.has(n.path), onchange: (e       ) => { if ((e.target                    ).checked) pickSel.add(n.path); else pickSel.delete(n.path); upd(); } })                    ;
+      boxes.set(n.path, b);
+      const d = String(n.meta.description ?? ""), name = String(n.meta.name ?? "");
+      return [b, n.type + (n.subtype ? "/" + n.subtype : ""), lnk(n.path, name || n.title), d.length > 140 ? d.slice(0, 140) + " …" : d, n.id];
+    };
+    pane.append(tableOf(heads, notes.map(rowOf)));
     return pane;
   }
 
@@ -3316,7 +3394,7 @@ function mountWorkbench(root             , host       = {})      {
   }
 
   /* ---- shell ---- */
-  const views                                    = { dashboard: vDashboard, table: vTable, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, design: vDesign, internal: vInternal, function: vFunction, states: vStates, reqs: vReqs, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
+  const views                                    = { dashboard: vDashboard, table: vTable, pick: vPick, note: vNote, structure: vStructure, where: vWhere, trace: vTrace, design: vDesign, internal: vInternal, function: vFunction, states: vStates, reqs: vReqs, graph: vGraph, rels: vRels, review: vReview, guide: vGuide };
   function draw()       {
     const header = h("header", {}, h("b", {}, "MDSE Workbench"), ix ? h("span", { class: "pill" }, `${ix.notes.size} notes · ${ix.edges.length} links · built in ${ix.builtMs} ms`) : null,
       ix ? h("span", { class: "pill " + (ix.parser === "passed" ? "ok" : ix.parser === "failed" ? "bad" : "warn") }, ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked") : null,
@@ -3816,6 +3894,7 @@ function editView(c         )              {
 
 
 
+
                                                                                                                        
                      
                                
@@ -3823,6 +3902,8 @@ function editView(c         )              {
                                 
                                                                              
                                                                        
+                                                           
+                                                                                       
                                  
                                                               
                                                                                                            
@@ -3879,6 +3960,7 @@ function mountPanel(root             , host           , opt                     
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -3956,6 +4038,35 @@ function mountPanel(root             , host           , opt                     
     draw();
   }
 
+  /* D-0078: search a word or phrase in name or description, tick notes, place them on a canvas. */
+  function pickView()              {
+    const types = [...new Set([...ix .notes.values()].map((n) => n.type))].sort(), found = V.pickRows(ix , pickText, pickType), notes = found.notes;
+    const count = h("span", { class: "mut" }), boxes = new Map                          ();
+    const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
+    const place = h("button", { class: "sm pri", title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save canvas." }, "Place on canvas");
+    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas ([...pickSel], pickText, pickRel)); });
+    const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+      h("button", { class: "sm", onclick: () => tickAll(true) }, "Tick all listed"), h("button", { class: "sm", onclick: () => tickAll(false) }, "Untick listed"),
+      h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships"), count,
+      host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."));
+    if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); bar.append(b); }
+    upd();
+    const list = h("div", {}, ...notes.map((n) => {
+      const b = h("input", { type: "checkbox", "aria-label": "Tick " + n.title, checked: pickSel.has(n.path), onchange: (e       ) => { if ((e.target                    ).checked) pickSel.add(n.path); else pickSel.delete(n.path); upd(); } })                    ;
+      boxes.set(n.path, b);
+      const d = String(n.meta.description ?? "");
+      return h("label", { style: "display:flex;gap:6px;align-items:flex-start;margin:3px 0" }, b, h("span", {}, h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); host.openNote(n.path); } }, String(n.meta.name ?? "") || n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id), d ? h("div", { class: "mut", style: "font-size:12px" }, d.length > 140 ? d.slice(0, 140) + " …" : d) : null));
+    }));
+    return h("div", {},
+      h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."),
+      h("div", { class: "chips", style: "display:flex;gap:6px;margin:6px 0" },
+        h("input", { type: "search", placeholder: "Word or phrase", value: pickText, "aria-label": "Search for notes to place on a canvas", style: "flex:1", onchange: (e       ) => { pickText = (e.target                    ).value; draw(); } }),
+        h("select", { "aria-label": "Type", onchange: (e       ) => { pickType = (e.target                     ).value; draw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: pickType === t }, t)))),
+      h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
+  }
+
   /* ---- canvas settings (compact) ---- */
   function canvasSettings()              {
     const prof = V.PROFILES.find((p) => p.name === V.LENS_PROFILE[lens]) , sp             = { ...V.defaultSpec(prof), ...spec };
@@ -4016,6 +4127,7 @@ function mountPanel(root             , host           , opt                     
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
+      else if (lens === "pick") body.append(pickView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
@@ -4033,7 +4145,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 </script>
 <script>

@@ -326,6 +326,19 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("""p => { const doc = JSON.parse(window.__files[p]); doc.nodes.push({ id: 'free1', type: 'text', x: 0, y: 1200, width: 200, height: 80, text: 'just a thought' }); doc.edges.push({ id: '77ee88ff99aa00bb', fromNode: doc.nodes[0].id, toNode: 'free1', fromSide: 'right', toSide: 'left', toEnd: 'arrow' }); window.__files[p] = JSON.stringify(doc); for (const f of window.__evs['vault:modify']) f({ path: p, extension: 'canvas' }); }""", PREVIEW)
             pg.wait_for_function("window.__notices.some((n) => /joins two notes/.test(n))")
             pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '77ee88ff99aa00bb')", arg=PREVIEW)
+
+            # pick notes by a word in the name or description, tick some, place them on a canvas (D-0078)
+            pg.click("button[role=tab]:text-is('Pick notes')")
+            pg.fill("input[aria-label='Search for notes to place on a canvas']", "o")
+            pg.keyboard.press("Tab")
+            pg.wait_for_selector("text=/\\d+ match/")
+            pg.click("button:has-text('Tick all listed')")
+            self.assertRegex(pg.inner_text("body"), r"[1-9]\d* ticked")
+            pg.click("button:has-text('Place on canvas')")
+            pg.wait_for_selector("text=/Canvas preview opened/")
+            picked = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
+            self.assertTrue(any(n["type"] == "file" and n["file"] == A for n in picked["nodes"]), "the ticked note is on the canvas")
+            self.assertTrue(all(n["type"] == "file" for n in picked["nodes"]) and len(picked["nodes"]) >= 2)
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):

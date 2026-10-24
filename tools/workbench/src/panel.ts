@@ -6,6 +6,7 @@ import type { Child } from "./ui.ts";
 import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
+import { MAX_PICK } from "./canvas.ts";
 import { editView, setEditRef, editRefresh, markEditStale, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
@@ -16,6 +17,8 @@ export interface PanelHost {
   openTable(lens: V.Lens): void;
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
+  /** Put the picked notes on a canvas preview (D-0078). */
+  openPickCanvas?(paths: string[], label: string, relations: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
   /** Review actions. Resolves to a message and a way back. */
   updateNote?(path: string, change: NoteChange): Promise<{ message: string; undo: () => Promise<string> }>;
@@ -72,6 +75,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -149,6 +153,35 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     draw();
   }
 
+  /* D-0078: search a word or phrase in name or description, tick notes, place them on a canvas. */
+  function pickView(): HTMLElement {
+    const types = [...new Set([...ix!.notes.values()].map((n) => n.type))].sort(), found = V.pickRows(ix!, pickText, pickType), notes = found.notes;
+    const count = h("span", { class: "mut" }), boxes = new Map<string, HTMLInputElement>();
+    const upd = (): void => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
+    const place = h("button", { class: "sm pri", title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save canvas." }, "Place on canvas");
+    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas!([...pickSel], pickText, pickRel)); });
+    const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
+      h("button", { class: "sm", onclick: () => tickAll(true) }, "Tick all listed"), h("button", { class: "sm", onclick: () => tickAll(false) }, "Untick listed"),
+      h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships"), count,
+      host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."));
+    if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); bar.append(b); }
+    upd();
+    const list = h("div", {}, ...notes.map((n) => {
+      const b = h("input", { type: "checkbox", "aria-label": "Tick " + n.title, checked: pickSel.has(n.path), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) pickSel.add(n.path); else pickSel.delete(n.path); upd(); } }) as HTMLInputElement;
+      boxes.set(n.path, b);
+      const d = String(n.meta.description ?? "");
+      return h("label", { style: "display:flex;gap:6px;align-items:flex-start;margin:3px 0" }, b, h("span", {}, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); host.openNote(n.path); } }, String(n.meta.name ?? "") || n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id), d ? h("div", { class: "mut", style: "font-size:12px" }, d.length > 140 ? d.slice(0, 140) + " …" : d) : null));
+    }));
+    return h("div", {},
+      h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."),
+      h("div", { class: "chips", style: "display:flex;gap:6px;margin:6px 0" },
+        h("input", { type: "search", placeholder: "Word or phrase", value: pickText, "aria-label": "Search for notes to place on a canvas", style: "flex:1", onchange: (e: Event) => { pickText = (e.target as HTMLInputElement).value; draw(); } }),
+        h("select", { "aria-label": "Type", onchange: (e: Event) => { pickType = (e.target as HTMLSelectElement).value; draw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: pickType === t }, t)))),
+      h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
+  }
+
   /* ---- canvas settings (compact) ---- */
   function canvasSettings(): HTMLElement {
     const prof = V.PROFILES.find((p) => p.name === V.LENS_PROFILE[lens])!, sp: V.ViewSpec = { ...V.defaultSpec(prof), ...spec };
@@ -209,6 +242,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
+      else if (lens === "pick") body.append(pickView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
