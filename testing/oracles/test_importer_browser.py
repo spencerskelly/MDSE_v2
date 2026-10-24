@@ -209,11 +209,11 @@ class BomUpdateBrowser(unittest.TestCase):
             note = pg.evaluate("window.__read('BOM/Parts/01141-002.md')")
             self.assertIn("importHash:", note); self.assertIn("importSource: bom1.tsv", note)
             # the same file again: nothing to change
-            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Tick what')")
+            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
             self.assertIn("0 change(s) proposed", pg.inner_text("#bomUpdOut"))
             # the changed file: a description and a quantity
             pg.set_input_files("#bomFile", str(v2)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom2.tsv')")
-            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Tick what')")
+            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
             out = pg.inner_text("#bomUpdOut")
             self.assertIn("Part description changed", out); self.assertIn("Assembly line changed", out)
             self.assertTrue(pg.is_disabled("#bomApply"), "nothing is ticked by default")
@@ -226,8 +226,41 @@ class BomUpdateBrowser(unittest.TestCase):
             names = pg.evaluate("(async () => { const r = await navigator.storage.getDirectory(); const d = await (await r.getDirectoryHandle('99_System')).getDirectoryHandle('11_Import'); const o = []; for await (const [n] of d.entries()) o.push(n); return o; })()")
             self.assertTrue(any(n.startswith("BOM Update ") for n in names), names)
             # what was not ticked is offered again
-            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Tick what')")
+            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
             out = pg.inner_text("#bomUpdOut"); self.assertIn("Assembly line changed", out); self.assertNotIn("Part description changed", out)
+            b.close()
+        self.assertEqual(errors, [])
+
+
+    def test_additions_arrive_ticked_and_changes_do_not(self):
+        """D-0057: a later BOM that adds a line is ticked for the user; a quantity change in the same file is not."""
+        errors = []
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            v1 = pathlib.Path(d) / "bom1.tsv"; v1.write_text(BOM_TSV)
+            extra = "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t5\t09999\t-0\t99\tNEW GROMMET\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t1\tea\t01141-002-N99\n"
+            v2 = pathlib.Path(d) / "bom2.tsv"; v2.write_text(BOM_TSV.replace("\t2\tea\t", "\t3\tea\t") + extra)
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e))); pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick"); pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.set_input_files("#bomFile", str(v1)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom1.tsv')")
+            pg.uncheck("#toolUpd"); pg.click("#genAdd"); pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Wrote')")
+            pg.set_input_files("#bomFile", str(v2)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom2.tsv')")
+            pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
+            self.assertIn("Additions are ticked", pg.inner_text("#bomUpdStatus"))
+            self.assertTrue(pg.is_checked("input.cat[data-cat=NEW_PART]"), "a new part is an addition")
+            self.assertTrue(pg.is_checked("input.cat[data-cat=LINE_ADDED]"), "a new line is an addition")
+            self.assertFalse(pg.is_checked("input.cat[data-cat=LINE_CHANGED]"), "a changed quantity is not")
+            self.assertFalse(pg.is_checked("input.it[data-cat=LINE_CHANGED]"))
+            self.assertFalse(pg.is_disabled("#bomApply")); self.assertIn("Apply 2 ticked", pg.inner_text("#bomApply"))
+            pg.click("#bomApply"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Applied')")
+            note = pg.evaluate("window.__read('BOM/Parts/01141-002.md')")
+            self.assertIn("09999", note, "the new line was written")
+            self.assertIn("[2]", note, "the quantity change was not ticked, so it is untouched")
             b.close()
         self.assertEqual(errors, [])
 

@@ -18,7 +18,8 @@ export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
 export const HOLD_TEXT: Record<HoldCode, string> = {
   CONFLICT: "SysML block not in the layout the importer writes: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
 };
-export interface UpdateItem { id: string; category: UpdateCategory; path: string; pn: string; summary: string; before: string; after: string; /** the SysML entry the item concerns, "" for a whole-note item */ key: string; /** BOM-033: the note's BOM-owned content was edited after the last import; applying this item replaces that edit */ edited: boolean }
+export type UpdateKind = "add" | "change" | "remove";
+export interface UpdateItem { id: string; /** D-0057: an addition puts data in the note that it lacks; a change replaces a value; a removal takes a line out. Additions are ticked by default in the page. */ kind: UpdateKind; category: UpdateCategory; path: string; pn: string; summary: string; before: string; after: string; /** the SysML entry the item concerns, "" for a whole-note item */ key: string; /** BOM-033: the note's BOM-owned content was edited after the last import; applying this item replaces that edit */ edited: boolean }
 export interface UpdateHold { code: HoldCode; path: string; pn: string; message: string }
 export interface UpdateScan {
   items: UpdateItem[]; holds: UpdateHold[]; unchanged: number; result: BomResult;
@@ -46,6 +47,9 @@ const importHashOf = (note: string): string | null => /^importHash: ([0-9a-f]{16
 const revOf = (p: Parts): string => ATTR(p.decl.filter((d) => d.key === "attr:revision").flatMap((d) => d.lines), "revision");
 const ownedOf = (p: Parts, owns: Set<BomArea>): Decl[] => p.decl.filter((d) => d.owned && owns.has(d.area as BomArea));
 const lineWord = (d: Decl): string => { const l = ATTR(d.lines, "line"); const m = /^ {8}(?:part \w+ : (\S+)|ref item \w+ : (\S+))/.exec(d.lines[0]!); return `${l ? "line " + l + " " : ""}${(m?.[1] ?? m?.[2] ?? "").replace(/^.*::[PD]_/, "")}`; };
+/** True when every manufacturer / part number pair of the vault note is still in the file, so applying only adds pairs (the numbering may shift). */
+const mfrPairs = (m: Array<[string, string]>): string[] => { const num = (k: string): string => k.replace(/^\D+/, ""), by = new Map<string, { m: string; p: string }>(); for (const [k, v] of m) { const e = by.get(num(k)) ?? by.set(num(k), { m: "", p: "" }).get(num(k))!; if (/^manufacturer/.test(k)) e.m = v; else e.p = v; } return [...by.values()].map((e) => `${e.m.toLowerCase()}\0${e.p.toLowerCase()}`); };
+const mfrAdds = (was: Array<[string, string]>, now: Array<[string, string]>): boolean => { const n = new Set(mfrPairs(now)); return mfrPairs(was).every((x) => n.has(x)); };
 const mfrText = (m: Array<[string, string]>): string => m.map(([k, v]) => `${k}: ${v}`).join("; ") || "(none)";
 
 /* ---- the scan ---- */
@@ -56,13 +60,13 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
   const vault = new Map<string, string>(o.existing?.files ?? []);
   const parsed = parseBom(grid), asParent = new Set(parsed.usages.map((u) => u.parent));
   const pnOf = (t: string): string => /^- BOM Part Number: (.+)$/m.exec(t)?.[1]?.trim() ?? "";
-  let n = 0, curEdited = false; const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = ""): void => { out.items.push({ id: `u${++n}`, category, path, pn, summary: curEdited ? `${summary} [edited since last import]` : summary, before, after, key, edited: curEdited }); };
+  let n = 0, curEdited = false; const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = "", kind: UpdateKind = "change"): void => { out.items.push({ id: `u${++n}`, kind, category, path, pn, summary: curEdited ? `${summary} [edited since last import]` : summary, before, after, key, edited: curEdited }); };
   for (const f of result.files) {
     if (!f.path.startsWith(dir + "/")) continue;
     curEdited = false;
     out.generated.set(f.path, f.content);
     const old = vault.get(f.path), pn = pnOf(f.content);
-    if (old === undefined) { add("NEW_PART", f.path, pn, `${pn}: new note`, "", f.content); continue; }
+    if (old === undefined) { add("NEW_PART", f.path, pn, `${pn}: new note`, "", f.content, "", "add"); continue; }
     out.current.set(f.path, old);
     const stamp = importHashOf(old);
     if (!stamp) { out.holds.push({ code: "NO_BASELINE", path: f.path, pn, message: `${pn}: the note has no import stamp, so the scan cannot tell a BOM change from an edit.` }); continue; }
@@ -75,8 +79,8 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     const so = sysmlOf(old), sn = sysmlOf(f.content), po = so ? splitSysml(so) : null, pnw = sn ? splitSysml(sn) : null;
     if (!po || !pnw) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the SysML block is not in the layout the importer writes, so it is not compared.` }); continue; }
     const yo = yamlOwned(old), yn = yamlOwned(f.content);
-    if (owns.has("facts") && yn.description && yn.description !== yo.description) add("DESCRIPTION", f.path, pn, `${pn}: description`, yo.description || "(none)", yn.description);
-    if (owns.has("facts") && yn.mfr.length && mfrText(yn.mfr) !== mfrText(yo.mfr)) add("MANUFACTURER", f.path, pn, `${pn}: manufacturer data`, mfrText(yo.mfr), mfrText(yn.mfr));
+    if (owns.has("facts") && yn.description && yn.description !== yo.description) add("DESCRIPTION", f.path, pn, `${pn}: description`, yo.description || "(none)", yn.description, "", yo.description ? "change" : "add");
+    if (owns.has("facts") && yn.mfr.length && mfrText(yn.mfr) !== mfrText(yo.mfr)) add("MANUFACTURER", f.path, pn, `${pn}: manufacturer data`, mfrText(yo.mfr), mfrText(yn.mfr), "", mfrAdds(yo.mfr, yn.mfr) ? "add" : "change");
     const ro = revOf(po), rn = revOf(pnw), isAssembly = asParent.has(pn);
     if (owns.has("facts") && rn !== ro && !(rn === "" && ro !== "")) {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
@@ -87,17 +91,17 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     const mo = new Map(ownedOf(po, owns).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw, owns).map((d) => [d.key, d]));
     for (const d of ownedOf(pnw, owns)) {
       const was = mo.get(d.key);
-      if (d.kind === "attr") { if (d.key === "attr:revision") continue; if (!was) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)} added`, "(none)", ATTR(d.lines, d.key.slice(5)), d.key); else if (bodyOf(was) !== bodyOf(d)) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)}`, ATTR(was.lines, d.key.slice(5)), ATTR(d.lines, d.key.slice(5)), d.key); continue; }
-      if (d.kind === "dep") { if (!was) add("SUPERSEDES", f.path, pn, `${pn}: replaces ${d.key.slice(4).replace(/^.*::P_/, "")}`, "", d.lines[0]!.trim(), d.key); continue; }
-      if (d.kind === "ref") { if (!was) add("DRAWING", f.path, pn, `${pn}: drawing ${lineWord(d)} added`, "", d.lines[0]!.trim(), d.key); continue; }
-      if (!was) { add("LINE_ADDED", f.path, pn, `${pn}: ${lineWord(d)} added`, "", d.lines.join("\n"), d.key); continue; }
+      if (d.kind === "attr") { if (d.key === "attr:revision") continue; if (!was) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)} added`, "(none)", ATTR(d.lines, d.key.slice(5)), d.key, "add"); else if (bodyOf(was) !== bodyOf(d)) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)}`, ATTR(was.lines, d.key.slice(5)), ATTR(d.lines, d.key.slice(5)), d.key); continue; }
+      if (d.kind === "dep") { if (!was) add("SUPERSEDES", f.path, pn, `${pn}: replaces ${d.key.slice(4).replace(/^.*::P_/, "")}`, "", d.lines[0]!.trim(), d.key, "add"); continue; }
+      if (d.kind === "ref") { if (!was) add("DRAWING", f.path, pn, `${pn}: drawing ${lineWord(d)} added`, "", d.lines[0]!.trim(), d.key, "add"); continue; }
+      if (!was) { add("LINE_ADDED", f.path, pn, `${pn}: ${lineWord(d)} added`, "", d.lines.join("\n"), d.key, "add"); continue; }
       if (bodyOf(was) !== bodyOf(d)) {
         const mult = (x: Decl): Array<[string, string]> => { const m = /^ {8}part \w+ : \S+ \[(\d+)\]/.exec(x.lines[0]!); return m ? [["quantity", m[1]!]] : []; }, a = new Map([...attrsOf(was), ...mult(was)]), b = [...attrsOf(d), ...mult(d)], diffs = [...new Set([...a.keys(), ...b.map(([k]) => k)])].filter((k) => (a.get(k) ?? "") !== (b.find(([x]) => x === k)?.[1] ?? "")).map((k) => `${k} ${JSON.stringify(a.get(k) ?? "")} → ${JSON.stringify(b.find(([x]) => x === k)?.[1] ?? "")}`);
         const typeChanged = /^ {8}part \w+ : (\S+)/.exec(was.lines[0]!)?.[1] !== /^ {8}part \w+ : (\S+)/.exec(d.lines[0]!)?.[1];
         add("LINE_CHANGED", f.path, pn, `${pn}: ${lineWord(d)}: ${[typeChanged ? "part changed" : "", ...diffs].filter(Boolean).join("; ") || "multiplicity"}`, was.lines.join("\n"), d.lines.join("\n"), d.key);
       }
     }
-    if (isAssembly) for (const d of ownedOf(po, owns)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key);
+    if (isAssembly) for (const d of ownedOf(po, owns)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key, "remove");
     if (!out.items.some((x) => x.path === f.path) && !out.holds.some((x) => x.path === f.path)) out.unchanged++;
   }
   return out;

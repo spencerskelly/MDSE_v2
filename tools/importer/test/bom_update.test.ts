@@ -105,3 +105,22 @@ test("a file that lists a part only as a child does not remove that part's lines
   assert.ok(!s.items.some((i) => i.category === "LINE_REMOVED"), "A-100 has no lines in this file, so none can be missing");
   assert.deepEqual(cats(s), ["NEW_PART"]);
 });
+
+test("every update item says whether it adds data, changes a value or removes a line (D-0057)", () => {
+  const v = vaultFrom(bom(V1));
+  const s = scan(v, [{ p: "A-100", line: "1", c: "B-200", q: "3" }, { p: "A-100", line: "3", c: "D-400", q: "5", u: "m" }, { p: "A-100", line: "4", c: "E-500" }]);
+  const kind = (c: string) => [...new Set(s.items.filter((i) => i.category === c).map((i) => i.kind))].join();
+  assert.equal(kind("NEW_PART"), "add"); assert.equal(kind("LINE_ADDED"), "add"); assert.equal(kind("LINE_CHANGED"), "change"); assert.equal(kind("LINE_REMOVED"), "remove");
+  const named = scan(v, V1.map((r) => (r.c === "B-200" ? { ...r, cname: "B RENAMED" } : r)));
+  assert.equal(named.items.find((i) => i.category === "DESCRIPTION")!.kind, "change", "a new name replaces an existing one");
+});
+
+test("a note with no description gets one as an addition, and a manufacturer set that only gains pairs is an addition (D-0057)", () => {
+  const v = vaultFrom(bom(V1)), bp = [...v.keys()].find((k) => k.endsWith("/B-200.md"))!;
+  const noDesc = new Map(v); noDesc.set(bp, v.get(bp)!.replace(/^description: .*\n/m, ""));
+  // removing the description changes the owned content, so the note is also marked edited; the item is still an addition
+  const s1 = scan(noDesc, V1); const d = s1.items.find((i) => i.category === "DESCRIPTION" && i.pn === "B-200")!; assert.equal(d.kind, "add"); assert.equal(d.edited, true);
+  const withMfr = new Map(v); withMfr.set(bp, v.get(bp)!.replace(/^(sourceRole: .*)$/m, "manufacturer1: ACME\nmfgPn1: ACM-1\n$1"));
+  const stamped = withMfr.get(bp)!.replace(/^importHash: .*$/m, `importHash: ${bomOwnedHash(withMfr.get(bp)!)}`); withMfr.set(bp, stamped);
+  assert.ok(!scan(withMfr, V1).items.some((i) => i.category === "MANUFACTURER" && i.kind === "add"), "the file offers no manufacturer pair the note lacks");
+});
