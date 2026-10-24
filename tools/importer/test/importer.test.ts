@@ -342,7 +342,7 @@ test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
   assert.match(text("Change A"), /^hasChild: \["\[\[[A-Z]+-\d{5}\|Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
   assert.doesNotMatch(text("Change A"), /^- Aggregation/m, "Source: EA does not repeat the YAML");
   const prov = res.ledger.filter((l) => l.diagnostic_code === "PROVISIONAL_LINK");
-  assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "deferred_review" && l.operator_action && l.source_guid), "unresolved connector is deferred with an auditable source GUID");
+  assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "deferred_review" && l.operator_action && l.ea_guid), "unresolved connector is deferred with an auditable source GUID");
 });
 
 test("flows: a succession inside a shared owner, otherwise a precedes link (IMP-116)", async () => {
