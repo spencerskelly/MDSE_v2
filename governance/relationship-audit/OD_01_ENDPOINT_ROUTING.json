@@ -255,7 +255,7 @@
       "syntax_or_record": "flagLink + deferred_review",
       "owner": "no owner inferred",
       "authority": "D-0073, IMP-116",
-      "maturity": "code-changed-pending-CI",
+      "maturity": "synthetic-tests-passed-release-rebuild",
       "validation": "Preserve EA GUID, source/target, trigger, guard, effect"
     },
     {
@@ -267,7 +267,7 @@
       "syntax_or_record": "flagLink + deferred_review",
       "owner": "no usage/owner semantics invented",
       "authority": "D-0073, IMP-116",
-      "maturity": "code-changed-pending-CI",
+      "maturity": "synthetic-tests-passed-release-rebuild",
       "validation": "Historical YAML precedes retained, no new writes"
     },
     {
@@ -291,8 +291,13 @@
       "syntax_or_record": "flagLink + deferred_review",
       "owner": "no native semantic assertion",
       "authority": "D-0010, D-0070, D-0073",
-      "maturity": "code-changed-pending-CI",
+      "maturity": "synthetic-tests-passed-release-rebuild",
       "validation": "Do not create tracesTo YAML or guessed dependency"
     }
-  ]
+  ],
+  "evidence": {
+    "run": "40134195187",
+    "url": "https://github.com/spencerskelly/MDSE_v2/actions/runs/40134195187",
+    "scope": "Tool release rebuild and functional synthetic tests; not full SysML semantic acceptance"
+  }
 }

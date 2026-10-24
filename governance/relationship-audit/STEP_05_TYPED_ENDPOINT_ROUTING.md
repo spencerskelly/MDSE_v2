@@ -1,6 +1,6 @@
 # Step 05 — endpoint-specific v2 relationship routing matrix
 
-> [!warning] This is a decision-support contract, not a replacement for the normative rules or closure of OD-01. `existing-approved` is an inherited mapping approval, not a claim of parser/cross-tool acceptance. `code-changed-pending-CI` must be updated when gates finish.
+> [!warning] This is a decision-support contract, not a replacement for the normative rules or closure of OD-01. `existing-approved` is an inherited mapping approval, not a claim of parser/cross-tool acceptance. `code-changed-pending-CI` was the initial source-commit snapshot; the linked release workflow subsequently passed. The machine-readable maturity status is now `synthetic-tests-passed-release-rebuild`.
 
 **Source:** D-0003, D-0010, D-0038, D-0039, D-0045, D-0069, D-0070, D-0073; current importer `tools/importer/src/run.ts`; Workbench `tools/workbench/src/edit.ts`. Real EA and BOM semantic acceptance remains separate.
 
@@ -43,6 +43,8 @@
 6. No native temporal relation from disjoint definitions without proof of a shared owner; preserve connector and PDATA trigger/guard/effect as review evidence.
 7. Workbench's old `trace` is legacy read-only in the editor. New unresolved relations use `flagLink`, not provisional `tracesTo` or generated `dependency // trace`.
 8. Legacy YAML fields and inverses remain readable pending OD-01, and are not silently deleted, migrated, mirrored or emitted as new native assertions.
+
+**Source release test evidence (2026-10-24):** [workflow run 40134195187](https://github.com/spencerskelly/MDSE_v2/actions/runs/40134195187) passed full tool build, importer, Workbench, Bootstrap tests and rebuilt release-artifact check. Native relationship acceptance is still limited to those synthetic tests; this is not individual OMG parser/real EA semantic acceptance.
 
 ## Remaining acceptance
 
