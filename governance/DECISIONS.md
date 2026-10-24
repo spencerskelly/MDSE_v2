@@ -863,3 +863,14 @@ Rules: ~IMP-116. Related: MOD-073, MOD-117, IMP-098, IMP-115. OD-01 remains open
 4. **Not covered.** About 150 "new revision" items are in the same scan; at least three of them (`06905`, `08459`, `08459-52`) differ only by a leading dash (`-F01` against `F01`). What the dash means is not known to me, so revisions are still compared as written. The "Manufacturer data changed" group mixes additions and changes under one title; only the Tick by type boxes tell them apart. Whether the 249 manufacturer items are correct is not checked.
 
 Rules: BOM-043 (Active).
+
+## D-0075 — The category table has a second tier of abbreviations that only places parts the first tier did not
+
+2026-10-24 · Spencer · Accepted (owner, chat: "let's make improvements to the toolset"; the words were proposed from the Uncategorized descriptions of the reviewed import). Extends D-0072.
+
+1. **Second tier.** Seven rules are added after the 15 of D-0072: CAP RES UF (Electronic components), H07V (Wire), LFLEX (Cables and harnesses), LIST SPARES (Documents), RELIEF RING GUIDE RAIL (Enclosures and mechanical), J1772 (Connectors and terminals), CHARGE CONTROLLER SYSTEM GSE (Chargers and systems).
+2. **Order.** They sit last, so a part a first-tier word already places keeps its category. Measured on the 14,199 reviewed descriptions (not stored here): Uncategorized falls from 2,182 to 1,636, and no other category loses a part.
+3. **Not covered.** The reading of each word is a guess from the descriptions and has not been checked against the real parts by a person. QMM, DBU, HZ, VAC, KW and AC were not used (QMM and DBU are not understood; the others are ratings, not part kinds). A vault-owned rules file is still a later step.
+
+Rules: BOM-041 (Active).
+

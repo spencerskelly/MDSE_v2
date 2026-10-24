@@ -19,6 +19,14 @@ export const DEFAULT_CATEGORY_RULES: CategoryRule[] = [
   R("Chargers and systems", "EVSE GRID PROCORE ECU CHG SYS CHARGER STATION"),
   R("Kits", "KIT"),
   R("Assemblies (generic)", "ASSY ASM ASSEMBLY"),
+  // Second tier (D-0075): abbreviations and words seen in descriptions the first tier left Uncategorized. They come last, so they only place a part no first-tier word matched.
+  R("Electronic components", "CAP RES UF"),
+  R("Wire", "H07V"),
+  R("Cables and harnesses", "LFLEX"),
+  R("Documents", "LIST SPARES"),
+  R("Enclosures and mechanical", "RELIEF RING GUIDE RAIL"),
+  R("Connectors and terminals", "J1772"),
+  R("Chargers and systems", "CHARGE CONTROLLER SYSTEM GSE"),
 ];
 export const NO_CATEGORY = "Uncategorized";
 export type BomRole = "final" | "sub" | "part" | "unused";
