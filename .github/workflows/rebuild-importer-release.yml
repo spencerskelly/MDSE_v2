@@ -1,4 +1,4 @@
-# D-0073 release rebuild: validate typed temporal mapping, Workbench trace policy and regenerated importer.
+# D-0073 validated rebuild after registering FLOW_NO_COMMON_OWNER and preserving source GUID only in flag/ledger.
 name: Rebuild MDSE importer release
 on:
   push:
