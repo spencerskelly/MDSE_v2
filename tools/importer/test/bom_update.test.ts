@@ -124,3 +124,38 @@ test("a note with no description gets one as an addition, and a manufacturer set
   const stamped = withMfr.get(bp)!.replace(/^importHash: .*$/m, `importHash: ${bomOwnedHash(withMfr.get(bp)!)}`); withMfr.set(bp, stamped);
   assert.ok(!scan(withMfr, V1).items.some((i) => i.category === "MANUFACTURER" && i.kind === "add"), "the file offers no manufacturer pair the note lacks");
 });
+
+const earlierOf = (note: string): string[] => note.split("\n").filter((l) => /^- Revision /.test(l));
+const A1: R[] = [{ p: "A-100", pr: "-A01", line: "1", c: "B-200", q: "2" }, { p: "A-100", pr: "-A01", line: "2", c: "C-300" }];
+const A2: R[] = [{ p: "A-100", pr: "-A02", line: "1", c: "B-200", q: "3" }];
+
+test("C2: a file that lists an older revision of an assembly already in the vault offers its lines as one addition (D-0058)", () => {
+  const v = vaultFrom(bom(A2)), s = scan(v, [...A1, ...A2]);
+  assert.deepEqual(cats(s), ["EARLIER_REVISIONS", "NEW_PART"], "C-300 appears only in the older revision, so it also gets a note"); const it = s.items.find((i) => i.category === "EARLIER_REVISIONS")!; assert.equal(it.kind, "add"); assert.equal(it.edited, false);
+  assert.equal(it.after.split("\n").length, 2);
+  const r = applyBomUpdate(s, { approved: new Set([it.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }), path = it.path, note = r.writes.find((w) => w.path === path)!.content;
+  assert.equal(earlierOf(note).length, 2); assert.match(note, /Earlier revisions of this assembly/);
+  assert.equal(bomOwnedHash(note), bomOwnedHash(v.get(path)!), "the body is not part of the stamp, so the note is not marked edited");
+  const v2 = new Map(v); v2.set(path, note); assert.deepEqual(cats(scan(v2, [...A1, ...A2])), ["NEW_PART"], "a second scan offers no earlier-revision lines again");
+});
+
+test("C2: applying a new revision keeps the lines of the revision it replaces, and the file's own lines are not repeated (D-0058)", () => {
+  const v = vaultFrom(bom(A1.map((r) => ({ ...r, pr: "-A01" }))));
+  const s = scan(v, A2), rev = s.items.find((i) => i.category === "NEW_REVISION")!; assert.ok(rev);
+  const r = applyBomUpdate(s, { approved: new Set([rev.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }), note = r.writes.find((w) => w.path === rev.path)!.content;
+  const kept = earlierOf(note); assert.equal(kept.length, 2); assert.match(kept[0]!, /^- Revision "-A01", line 1: B-200 /); assert.match(kept[0]!, /replaced on 2026-11-01 by `bom2\.tsv`/); assert.match(kept[1]!, /line 2: C-300/);
+  assert.doesNotMatch(note.split("## SysML")[1]!, /C_300|partC300/, "the replaced line is no longer structure");
+  // the file lists both revisions: both items are approved, each line appears once
+  const both = scan(v, [...A1, ...A2]), all = new Set(both.items.map((i) => i.id)); assert.deepEqual(cats(both), ["EARLIER_REVISIONS", "NEW_REVISION"]);
+  const n2 = applyBomUpdate(both, { approved: all, sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === rev.path)!.content;
+  assert.equal(earlierOf(n2).length, 2);
+});
+
+test("C2: model-owned structure gets no earlier-revision items, and a note that already has the lines is unchanged (D-0058)", () => {
+  const v = vaultFrom(bom([...A1, ...A2])); assert.deepEqual(scan(v, [...A1, ...A2]).items, []);
+  const p = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!, bare = new Map(v);
+  bare.set(p, v.get(p)!.replace(/\n\*\*Earlier revisions of this assembly\*\*[\s\S]*?(?=\n## Source: EA)/, "\n"));
+  assert.equal(scan(bare, [...A1, ...A2]).items.filter((i) => i.category === "EARLIER_REVISIONS").length, 1, "a note without the block is offered it");
+  const owned = new Map(bare); owned.set(p, bare.get(p)!.replace(/^(importHash: .*)$/m, "$1\nbomOwns: [facts]"));
+  assert.equal(scan(owned, [...A1, ...A2]).items.filter((i) => i.category === "EARLIER_REVISIONS").length, 0);
+});

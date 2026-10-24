@@ -8,12 +8,12 @@ import type { BomOptions, BomResult, Grid } from "./bom.ts";
 import type { OutFile } from "./merge.ts";
 import { yamlScalar } from "./notes.ts";
 
-export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES";
+export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES" | "EARLIER_REVISIONS";
 export type HoldCode = "CONFLICT" | "NO_BASELINE" | "OLDER_IN_FILE" | "NOT_OWNED";
 export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
   NEW_PART: "New part (a note is created)", NEW_REVISION: "New revision of an assembly (becomes the active one)", DESCRIPTION: "Part description changed", MANUFACTURER: "Manufacturer data changed",
   PART_ATTRIBUTES: "Part source or drawing location changed", LINE_ADDED: "Assembly line added", LINE_REMOVED: "Assembly line no longer listed", LINE_CHANGED: "Assembly line changed (quantity, unit, revision, dates ...)",
-  DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one",
+  DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one", EARLIER_REVISIONS: "Lines of earlier assembly revisions added to the note body",
 };
 export const HOLD_TEXT: Record<HoldCode, string> = {
   CONFLICT: "SysML block not in the layout the importer writes: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
@@ -27,6 +27,8 @@ export interface UpdateScan {
   generated: Map<string, string>;
   /** Existing notes the scan compared: path -> text. */
   current: Map<string, string>;
+  /** NEW_REVISION: path -> the lines of the revision being replaced, as earlier-revision body lines (D-0058), so applying the new revision keeps them. */
+  replaced: Map<string, string[]>;
 }
 
 /* ---- reading the SysML declaration of a part note (members come from bom.ts; only the importer's own are compared or changed) ---- */
@@ -50,16 +52,43 @@ const lineWord = (d: Decl): string => { const l = ATTR(d.lines, "line"); const m
 /** True when every manufacturer / part number pair of the vault note is still in the file, so applying only adds pairs (the numbering may shift). */
 const mfrPairs = (m: Array<[string, string]>): string[] => { const num = (k: string): string => k.replace(/^\D+/, ""), by = new Map<string, { m: string; p: string }>(); for (const [k, v] of m) { const e = by.get(num(k)) ?? by.set(num(k), { m: "", p: "" }).get(num(k))!; if (/^manufacturer/.test(k)) e.m = v; else e.p = v; } return [...by.values()].map((e) => `${e.m.toLowerCase()}\0${e.p.toLowerCase()}`); };
 const mfrAdds = (was: Array<[string, string]>, now: Array<[string, string]>): boolean => { const n = new Set(mfrPairs(now)); return mfrPairs(was).every((x) => n.has(x)); };
+/* ---- earlier-revision lines in the note body (D-0056, D-0058) ---- */
+const EARLIER_HEAD = "**Earlier revisions of this assembly**";
+const EARLIER_INTRO = "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.";
+/** The bullet lines of the "Earlier revisions of this assembly" block of a note. */
+function earlierLines(note: string): string[] { const ls = note.replace(/\r\n?/g, "\n").split("\n"), at = ls.indexOf(EARLIER_HEAD); if (at < 0) return []; const out: string[] = []; for (let i = at + 1; i < ls.length; i++) { if (/^- Revision /.test(ls[i]!)) out.push(ls[i]!); else if (ls[i]!.trim() === "" || i === at + 2 || /^Lines the BOM gives/.test(ls[i]!)) continue; else break; } return out; }
+/** Revision, line and child identify a line; the row number and the wording after the child differ between files. */
+const earlierKey = (l: string): string => { const m = /^- Revision ("(?:[^"\\]|\\.)*"), line (.*?): (\S+)/.exec(l); return m ? `${m[1]}\0${m[2]}\0${m[3]!.replace(/[^A-Za-z0-9]/g, "_").toLowerCase()}` : l; };
+/** Puts lines into the block, which is created before the Source section when the note has none. */
+function addEarlierLines(note: string, lines: string[]): string {
+  if (!lines.length) return note;
+  const ls = note.split("\n"), at = ls.indexOf(EARLIER_HEAD);
+  if (at >= 0) { let last = at; for (let i = at + 1; i < ls.length; i++) { if (/^- Revision /.test(ls[i]!)) last = i; else if (ls[i]!.trim() === "" || /^Lines the BOM gives/.test(ls[i]!)) continue; else break; } ls.splice(last + 1, 0, ...lines); return ls.join("\n"); }
+  const block = `\n${EARLIER_HEAD}\n\n${EARLIER_INTRO}\n\n${lines.join("\n")}\n`;
+  const i = note.indexOf("\n\n\n\n## Source: EA"), j = i >= 0 ? i : note.indexOf("\n## Source: EA");
+  return j >= 0 ? note.slice(0, j) + "\n" + block + note.slice(j) : note + "\n" + block;
+}
+/** The lines of the revision a new one replaces, written as earlier-revision lines, so they stay in the note as data. */
+function replacedLines(po: Parts, owns: Set<BomArea>, rev: string, nameOfId: (id: string) => string): string[] {
+  return ownedOf(po, owns).filter((d) => d.kind === "usage" || d.kind === "ref").map((d) => {
+    const head = d.lines[0]!, ty = /^ {8}(?:part|ref item) \w+ : (\S+?)(?: \[\d+\])?(?: \{|;)/.exec(head)?.[1] ?? "", id = /^(OBJ_\d+|DOC_\d+)::/.exec(ty)?.[1] ?? "", a = new Map(attrsOf(d)), mult = /\[(\d+)\]/.exec(head)?.[1];
+    const child = (id && nameOfId(id.replace("_", "-"))) || ty.replace(/^.*::[PD]_/, "");
+    const q = a.get("quantity") ?? mult ?? (d.kind === "usage" ? "1" : ""), u = a.get("unit") ?? "";
+    return `- Revision ${JSON.stringify(rev)}, line ${a.get("line") || "?"}: ${child}${a.get("childRevision") ? " at revision " + JSON.stringify(a.get("childRevision")) : ""}${q ? ", quantity " + q + (u ? " " + u : "") : ""}${a.get("refDes") ? ", reference " + a.get("refDes") : ""}${a.get("effectiveFrom") ? ", from " + a.get("effectiveFrom") : ""}${a.get("effectiveTo") ? ", to " + a.get("effectiveTo") : ""}`;
+  });
+}
 const mfrText = (m: Array<[string, string]>): string => m.map(([k, v]) => `${k}: ${v}`).join("; ") || "(none)";
 
 /* ---- the scan ---- */
 export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
   const result = buildBom(grid, { ...o, update: true }), dir = o.dir ?? "BOM";
-  const out: UpdateScan = { items: [], holds: [], unchanged: 0, result, generated: new Map(), current: new Map() };
+  const out: UpdateScan = { items: [], holds: [], unchanged: 0, result, generated: new Map(), current: new Map(), replaced: new Map() };
   if (result.status !== "WRITE_READY") return out;
   const vault = new Map<string, string>(o.existing?.files ?? []);
   const parsed = parseBom(grid), asParent = new Set(parsed.usages.map((u) => u.parent));
   const pnOf = (t: string): string => /^- BOM Part Number: (.+)$/m.exec(t)?.[1]?.trim() ?? "";
+  let idPn: Map<string, string> | null = null;   // note id -> part number, read from the vault only when a revision is replaced
+  const nameOfId = (id: string): string => { if (!idPn) { idPn = new Map(); for (const [, t] of vault) { const i = /^id: (\S+)$/m.exec(t)?.[1]; if (i) idPn.set(i, pnOf(t)); } for (const f of result.files) { const i = /^id: (\S+)$/m.exec(f.content)?.[1]; if (i && !idPn.has(i)) idPn.set(i, pnOf(f.content)); } } return idPn.get(id) ?? ""; };
   let n = 0, curEdited = false; const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = "", kind: UpdateKind = "change"): void => { out.items.push({ id: `u${++n}`, kind, category, path, pn, summary: curEdited ? `${summary} [edited since last import]` : summary, before, after, key, edited: curEdited }); };
   for (const f of result.files) {
     if (!f.path.startsWith(dir + "/")) continue;
@@ -71,11 +100,19 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     const stamp = importHashOf(old);
     if (!stamp) { out.holds.push({ code: "NO_BASELINE", path: f.path, pn, message: `${pn}: the note has no import stamp, so the scan cannot tell a BOM change from an edit.` }); continue; }
     const owns = bomOwnsOf(old);
+    // D-0058: lines of earlier assembly revisions the file gives and the note lacks are offered as additions to the note body (not part of the hash, so a body edit is not an "edit")
+    const earlierItem = (): boolean => {
+      if (!owns.has("structure")) return false;
+      const have = new Set(earlierLines(old).map(earlierKey)), miss = earlierLines(f.content).filter((l) => !have.has(earlierKey(l)));
+      if (!miss.length) return false;
+      const revs = [...new Set(miss.map((l) => /^- Revision ("(?:[^"\\]|\\.)*")/.exec(l)?.[1] ?? ""))].join(", "), was = curEdited; curEdited = false;
+      add("EARLIER_REVISIONS", f.path, pn, `${pn}: ${miss.length} line(s) of earlier revision(s) ${revs} added to the note body`, "", miss.join("\n"), "", "add"); curEdited = was; return true;
+    };
     if (!owns.size) { out.holds.push({ code: "NOT_OWNED", path: f.path, pn, message: `${pn}: at the merge the model was given every area of this note (bomOwns is empty), so BOM changes are not applied.` }); continue; }
     // BOM-033: a hand edit to BOM-owned content no longer parks the note. The note is compared with the file as usual, so the file's value is offered
     // back (nothing is ticked by default) and every item carries the marker. The shortcut below is skipped for an edited note: an unchanged file still differs from the edit.
     curEdited = bomOwnedHash(old) !== stamp;
-    if (!curEdited && bomOwnedHash(f.content) === stamp) { out.unchanged++; continue; }
+    if (!curEdited && bomOwnedHash(f.content) === stamp) { if (!earlierItem()) out.unchanged++; continue; }
     const so = sysmlOf(old), sn = sysmlOf(f.content), po = so ? splitSysml(so) : null, pnw = sn ? splitSysml(sn) : null;
     if (!po || !pnw) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the SysML block is not in the layout the importer writes, so it is not compared.` }); continue; }
     const yo = yamlOwned(old), yn = yamlOwned(f.content);
@@ -86,6 +123,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
       const uo = ownedOf(po, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length;
       add("NEW_REVISION", f.path, pn, `${pn}: revision ${ro ? JSON.stringify(ro) : "(none)"} → ${JSON.stringify(rn)} (${uo} → ${un} lines)`, `revision ${ro || "(none)"}, ${uo} lines`, `revision ${rn}, ${un} lines`);
+      out.replaced.set(f.path, replacedLines(po, owns, ro, nameOfId)); earlierItem();
       continue;
     }
     const mo = new Map(ownedOf(po, owns).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw, owns).map((d) => [d.key, d]));
@@ -101,6 +139,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
         add("LINE_CHANGED", f.path, pn, `${pn}: ${lineWord(d)}: ${[typeChanged ? "part changed" : "", ...diffs].filter(Boolean).join("; ") || "multiplicity"}`, was.lines.join("\n"), d.lines.join("\n"), d.key);
       }
     }
+    earlierItem();
     if (isAssembly) for (const d of ownedOf(po, owns)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key, "remove");
     if (!out.items.some((x) => x.path === f.path) && !out.holds.some((x) => x.path === f.path)) out.unchanged++;
   }
@@ -181,6 +220,12 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
     renameClashes(decl);
     const sysml = [...(po.head), ...decl.flatMap((d) => d.lines), ...po.tail].join("\n") + "\n";
     note = MDSE.replaceSysmlBlock(note, sysml);
+    // D-0058: the lines of a replaced revision stay in the note as data, then the approved earlier-revision lines from the file; a line already in the block is not repeated
+    const haveE = new Set(earlierLines(note).map(earlierKey)), addE: string[] = [];
+    const takeE = (l: string): void => { const k = earlierKey(l); if (!haveE.has(k)) { haveE.add(k); addE.push(l); } };
+    if (cats.has("NEW_REVISION")) for (const l of scan.replaced.get(path) ?? []) takeE(`${l} (replaced on ${on} by \`${o.sourceName}\`)`);
+    for (const it of items) if (it.category === "EARLIER_REVISIONS") for (const l of it.after.split("\n")) takeE(l);
+    note = addEarlierLines(note, addE);
     const yo = yamlOwned(gen);
     if (cats.has("DESCRIPTION")) note = setYamlOwned(note, yo.description, null);
     if (cats.has("MANUFACTURER")) note = setYamlOwned(note, null, yo.mfr);

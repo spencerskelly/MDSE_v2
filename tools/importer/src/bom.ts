@@ -352,7 +352,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const n = earlierRows(pn).length, revs = [...new Set(earlierRows(pn).map((u) => u.parentRev))].map((r) => JSON.stringify(r)).join(", "), ex = existingBy.has(pn) && !o.update;
     if (!n) continue;
     if (!earlierKeep) findings.push({ level: "warn", code: "EARLIER_REV_DROPPED", message: `${pn}: ${n} line(s) of earlier revision(s) ${revs} were skipped, as chosen for this import.` });
-    else if (ex) findings.push({ level: "warn", code: "EARLIER_REV_NOT_ADDED", message: `${pn}: the file has ${n} line(s) of earlier revision(s) ${revs}, but the note is already in the vault and was left as it is (BOM-026), so they were not added. Nothing was dropped from the file; add them by hand or import into a vault that does not have the part yet.` });
+    else if (ex) findings.push({ level: "warn", code: "EARLIER_REV_NOT_ADDED", message: `${pn}: the file has ${n} line(s) of earlier revision(s) ${revs}, but the note is already in the vault and was left as it is (BOM-026), so they were not added. Nothing was dropped from the file: \"Update an existing vault from a BOM\" lists them as an addition to the note body.` });
     else findings.push({ level: "info", code: "EARLIER_REV_KEPT", message: `${pn}: ${n} line(s) of earlier revision(s) ${revs} are kept in the note under "Earlier revisions of this assembly" (D-0056).` });
   }
   let usageCount = 0, drawingCount = 0;

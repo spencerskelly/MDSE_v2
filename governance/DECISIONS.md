@@ -663,3 +663,14 @@ Rules: BOM-002 (retired), BOM-006 (rewritten), BOM-038, BOM-039 (new).
 4. **Not decided.** Whether a removal that the file clearly intends (a redline strikes the line out) should be ticked, and the per-type and per-item choice in D-0056 item 5.
 
 Rules: BOM-032 (changed).
+
+## D-0058 — Earlier-revision lines reach existing notes through the update scan
+
+2026-10-24 · Spencer · Accepted (owner, chat: "finish C2"). Extends D-0056 item 4 and BOM-038.
+
+1. **New category `EARLIER_REVISIONS`.** The update scan compares the "Earlier revisions of this assembly" block the file would produce with the block in the vault note. Lines the note lacks are one addition per note, ticked by default (D-0057). Lines match on revision, line and child; the row number and wording after the child do not count.
+2. **Replaced revision kept.** Applying `NEW_REVISION` writes the lines of the revision it replaces into the same block (as data, marked with the date and file), so they are not lost from the vault. A line already in the block is not repeated.
+3. **Ownership.** The block is body text outside the import hash, so editing it never marks a note as edited. A note whose structure area is model-owned (`bomOwns` without `structure`) gets no such items.
+4. **Unchanged.** Dropping earlier-revision lines remains an import-time choice (BOM-038). The EA tag, field and table drops stay as they are (owner, 2026-10-24).
+
+Rules: BOM-032, BOM-038 (changed).
