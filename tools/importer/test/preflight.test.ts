@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { usageIdent, IdentScope, identLosesName } from "../src/naming.ts";
-import { preflight, preflightCsv, flagShape } from "../src/preflight.ts";
+import { preflight, preflightCsv, flagShape, layoutOf } from "../src/preflight.ts";
 import { toolsetStatus, semverCmp } from "../src/vault_update.ts";
 
 test("IMP-124: a voltage keeps its sign and puts its V at the decimal point", () => {
@@ -77,4 +77,16 @@ test("IMP-126: the version check compares the vault's toolset with the one being
     const newer = await run(vault("0.9.0", "1.0.0", "newest", "a: 1\n")); assert.equal(newer.verdict, "VAULT_NEWER");
     const dev = await run(vault("0.9.0", "0.9.0", "built yesterday", "a: 1\n")); assert.equal(dev.rows.find((r) => r.name === "mdse-workbench")!.state, "differs");
   })();
+});
+
+test("MOD-174: the layout report counts model notes by folder depth and shows what each cap would move", () => {
+  const f = (path: string) => ({ path, content: "x" });
+  const l = layoutOf([f("Top.md"), f("A/One.md"), f("A/B/Two.md"), f("A/B/C/Three.md"), f("A/B/C/D/Four.md"), f("A/B/C/D/E/Five.md"), f("BOM/Parts/P-1.md"), f("99_System/x.md"), { path: "A/img.png", content: "", bytes: new Uint8Array(1) }]);
+  assert.equal(l.notes, 6, "BOM, 99_System and attachments are left out");
+  assert.deepEqual(l.byDepth, [0, 1, 2, 3, 4, 5].map((depth) => ({ depth, notes: 1 })));
+  assert.deepEqual(l.caps.find((c) => c.cap === 3), { cap: 3, moved: 2, folders: 4 }, "depth 4 and 5 notes move up to A/B/C; folders left: root-less A, A/B, A/B/C, and the top folder of Top.md");
+  assert.equal(l.longest.path, "A/B/C/D/E/Five.md"); assert.equal(l.over260, 0);
+  const long = layoutOf([f("A/".repeat(140) + "x.md")]); assert.equal(long.over260, 1); assert.equal(long.over400, 0);
+  const p = preflight({ files: [f("A/B/C/D/x.md")], ledger: [], status: "", elements: 0, errors: 0, problems: [], bomErrors: [], bomWarnings: 0, conflicts: 0, existingDiffers: 0, badPaths: [] });
+  assert.equal(p.layout.notes, 1);
 });

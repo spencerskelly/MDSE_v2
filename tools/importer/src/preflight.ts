@@ -26,8 +26,17 @@ export interface Fate {
   mayBeLost: { total: number; deferred: number; skippedByError: number };
   textOnly: number; excludedByPolicy: number;
 }
+/** Where the model notes would sit (MOD-174): how deep the folders go, what a depth cap would move, and how long the paths are. BOM notes are flat and left out. */
+export interface Layout {
+  notes: number;
+  byDepth: Array<{ depth: number; notes: number }>;
+  caps: Array<{ cap: number; moved: number; folders: number }>;
+  longest: { length: number; path: string };
+  over260: number; over400: number;
+}
 export interface Preflight {
   fate: Fate;
+  layout: Layout;
   verdict: "BLOCKED" | "REVIEW" | "FLAGS" | "CLEAN";
   reasons: string[];
   flagTotal: number;
@@ -42,6 +51,15 @@ export const NON_STANDARD = /^(SUBTYPE_DEFAULTED_|AUTHOR_FALLBACK|UNRESOLVED_|MU
 const FLAG = /^> \[!(flag\w+)\] (.*)$/gm;
 /** The same kind of flag with a different name in it is one group: names in backticks and numbers are blanked. */
 export const flagShape = (title: string): string => title.replace(/`[^`]*`/g, "`…`").replace(/^(Unresolved \S+ link) to .*$/, "$1").replace(/\d+/g, "#").trim();
+
+/** Paths are relative to the vault, so the real length is longer by the vault's own location. */
+export function layoutOf(files: OutFile[]): Layout {
+  const model = files.filter((f) => !f.bytes && /\.md$/i.test(f.path) && !/^(99_System|BOM)\//.test(f.path)), depthOf = (p: string): number => p.split("/").length - 1;
+  const hist = new Map<number, number>(); let longest = { length: 0, path: "" }, over260 = 0, over400 = 0;
+  for (const f of model) { const d = depthOf(f.path); hist.set(d, (hist.get(d) ?? 0) + 1); if (f.path.length > longest.length) longest = { length: f.path.length, path: f.path }; if (f.path.length > 260) over260++; if (f.path.length > 400) over400++; }
+  const caps = [2, 3, 4, 5, 6].map((cap) => ({ cap, moved: model.filter((f) => depthOf(f.path) > cap).length, folders: new Set(model.map((f) => f.path.split("/").slice(0, Math.min(cap, depthOf(f.path))).join("/"))).size }));
+  return { notes: model.length, byDepth: [...hist].map(([depth, notes]) => ({ depth, notes })).sort((a, b) => a.depth - b.depth), caps, longest, over260, over400 };
+}
 
 export function preflight(i: PreflightInput): Preflight {
   const rows: Preflight["rows"] = [], groups = new Map<string, FlagGroup>(), byType: Record<string, number> = {};
@@ -86,7 +104,7 @@ export function preflight(i: PreflightInput): Preflight {
   if (i.bomWarnings > 50) review.push(`${i.bomWarnings} BOM warnings; open the findings list before importing.`);
   reasons.push(...block, ...review);
   const verdict = block.length ? "BLOCKED" : review.length ? "REVIEW" : rows.length || deferredTotal ? "FLAGS" : "CLEAN";
-  return { fate, verdict, reasons, flagTotal: rows.length, byType, groups: [...groups.values()].sort((a, b) => b.count - a.count), deferred, rows };
+  return { fate, layout: layoutOf(i.files), verdict, reasons, flagTotal: rows.length, byType, groups: [...groups.values()].sort((a, b) => b.count - a.count), deferred, rows };
 }
 
 /** CSV of every flag the run would write, for review before the import. */
