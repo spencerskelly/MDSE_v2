@@ -116,7 +116,8 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
-import { toCanvas, pickCanvas, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { cdNotePath } from "../src/canvas_draw.ts";
+import { toCanvas, pickCanvas, cardName, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -153,7 +154,7 @@ test("canvas export: valid JSON Canvas, file cards for notes, text cards for mis
   const r = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Structure")!);
   const ids = new Set(r.doc.nodes.filter((n) => n.type !== "group").map((n) => n.id));
   assert.equal(ids.size, r.doc.nodes.length, "unique node ids");
-  assert.equal(r.doc.nodes.filter((n) => n.type === "file").length, 1);
+  assert.equal(r.doc.nodes.filter((n) => cdNotePath(n)).length, 1);
   assert.ok(r.doc.nodes.some((n) => n.type === "text" && /not in vault/.test(n.text!)));
   for (const e of r.doc.edges) { assert.ok(ids.has(e.fromNode) && ids.has(e.toNode)); assert.ok(e.fromNode !== e.toNode); }
   assert.ok(r.doc.nodes.every((n) => Number.isInteger(n.x) && Number.isInteger(n.y) && n.width > 0));
@@ -161,13 +162,13 @@ test("canvas export: valid JSON Canvas, file cards for notes, text cards for mis
   assert.equal(PREVIEW_DIR, "99_System/22_Views"); assert.equal(SAVED_DIR, "99_System/23_Saved_Views"); assert.equal(PREVIEW_PATH, "99_System/22_Views/Workbench Preview.canvas");
   JSON.parse(JSON.stringify(r.doc));
   const alloc = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Allocation")!);
-  assert.ok(alloc.unresolved === 51 && alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text").length <= 24, "unresolved cards are capped");
+  assert.ok(alloc.unresolved === 51 && alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text" && !cdNotePath(n)).length <= 24, "unresolved cards are capped");
 });
 
 test("canvas export on a full imported vault links notes both ways", () => {
   const r = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((x) => x.name === "Structure")!);
-  assert.ok(r.doc.nodes.filter((n) => n.type === "file").length >= 5 && r.doc.edges.length >= 5);
-  assert.ok(r.doc.nodes.filter((n) => n.type === "file").every((n) => ix.notes.has(n.file!)));
+  assert.ok(r.doc.nodes.filter((n) => cdNotePath(n)).length >= 5 && r.doc.edges.length >= 5);
+  assert.ok(r.doc.nodes.filter((n) => cdNotePath(n)).every((n) => ix.notes.has(cdNotePath(n)!)));
 });
 
 /* ---- view settings: filters, hops, relationship kinds, classifier grouping ---- */
@@ -216,7 +217,7 @@ test("canvas honours view settings: grouped card lists member links, file name d
   const boxes = grouped.doc.nodes.filter((n) => n.x === card.x);
   for (let i = 1; i < boxes.length; i++) { const a = boxes.slice().sort((p, q) => p.y - q.y); assert.ok(a[i]!.y >= a[i - 1]!.y + a[i - 1]!.height, "no overlap in a column"); }
   const hidden = toCanvas(w, start, P, { depth: 1, hideTypes: ["Requirement"] });
-  assert.equal(hidden.doc.nodes.filter((n) => n.type === "file").length, 2);
+  assert.equal(hidden.doc.nodes.filter((n) => cdNotePath(n)).length, 2);
   const lone2 = lone(), p2 = [...lone2.notes.keys()][0]!, A = V.PROFILES.find((p) => p.name === "Allocation")!;
   assert.equal(toCanvas(lone2, p2, A, { ghosts: false }).doc.nodes.length, 1);
 });
@@ -478,4 +479,17 @@ test("picked notes are grouped by type: one labelled box each, the cards inside 
   for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) { const a = groups[i]!, b = groups[j]!; assert.ok(a.y + a.height <= b.y || b.y + b.height <= a.y, "boxes do not overlap"); }
   for (const g of groups) assert.ok(cards.filter((c) => c.x >= g.x && c.x < g.x + g.width && c.y >= g.y && c.y < g.y + g.height).length >= 1);
   assert.equal(pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "", group: false }).doc.nodes.filter((n) => n.type === "group").length, 0, "grouping can be turned off");
+});
+
+test("a card is named by the name, else the description; the part number, else the id, is small beneath (D-0081)", () => {
+  assert.deepEqual(cardName({ title: "Cable assembly", id: "OBJ-1", meta: { partNumber: "09190-301" } }), { name: "Cable assembly", sub: "09190-301" });
+  assert.deepEqual(cardName({ title: "Cable assembly", id: "OBJ-1", meta: {} }), { name: "Cable assembly", sub: "OBJ-1" });
+  assert.deepEqual(cardName({ title: "09190-301", id: "OBJ-1", meta: { partNumber: "09190-301" } }), { name: "09190-301", sub: "", }, "no repeat of the name");
+  assert.deepEqual(cardName({ title: "A | B [x]", id: "", meta: {} }), { name: "A B x", sub: "" });
+  const c = pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "", group: false }).doc.nodes[0]!, n = ix.notes.get(cdNotePath(c)!)!;
+  assert.ok(c.type === "text" && c.text!.startsWith(`**[[${n.path.replace(/\.md$/, "")}|${cardName(n).name}]]**`), "the link text is the shown name, not the file name");
+  const bom = new Map(files); bom.set("BOM/Parts/Cables/Parts/buy/09190-301.md", "---\ntype: Object\nsubtype: part\nid: OBJ-95001\nuid: 20260101000000001skellyspencer\nstatus: Draft\npartNumber: 09190-301\ndescription: CABLE ASSY 3M\n---\n# 09190-301\n");
+  const w2 = buildIndex(bom, { classes, parserReport: bom.get("99_System/11_Import/Parser Check.md") });
+  const card = pickCanvas(w2, ["BOM/Parts/Cables/Parts/buy/09190-301.md"], { relations: false, label: "" }).doc.nodes.find((x) => x.type === "text" && !/Object \(/.test(x.label ?? "") && x.text)!;
+  assert.ok(/^\*\*\[\[BOM\/Parts\/Cables\/Parts\/buy\/09190-301\|CABLE ASSY 3M\]\]\*\*<br><small>09190-301<\/small>$/.test(card.text!), card.text);
 });

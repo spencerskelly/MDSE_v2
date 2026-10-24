@@ -30,14 +30,20 @@ const safe = (s: string): string => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace
 
 const hash = (s: string): string => { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(16).slice(0, 4); };
 
-/** The card for one note: a file card, or for a requirement a text card carrying its name, subtype and wording (IMP-097). Position is set by the caller. */
+/** What a card calls a note (D-0081): its name, else its description (the shown title), and under it, smaller, its part number, else its id. */
+export function cardName(n: { title: string; id: string; meta: Record<string, unknown> }): { name: string; sub: string } {
+  const name = n.title.replace(/[|\[\]\n]/g, " ").replace(/\s+/g, " ").trim(), pn = String(n.meta.partNumber ?? "").trim(), sub = pn || n.id || "";
+  return { name, sub: sub && sub !== name ? sub : "" };
+}
+/** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
-  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, color = TYPE_COLOR[n.type];
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, color = TYPE_COLOR[n.type], { name, sub } = cardName(n);
+  const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, small = sub ? `<br><small>${sub.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
   if (isRequirement(n)) {
     const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
-    return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `**[[${n.path.replace(/\.md$/i, "")}|${n.title.replace(/[|\]]/g, " ")}]]**${n.subtype ? ` · ${n.subtype}` : ""}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
+    return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `${link}${n.subtype ? ` · ${n.subtype}` : ""}${small}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
   }
-  return { ...base, type: "file", file: path, ...(color ? { color } : {}) };
+  return { ...base, type: "text", height: Math.max(H, 34 + Math.ceil(name.length / 24) * 26 + (sub ? 24 : 0)), text: `${link}${small}`, ...(color ? { color } : {}) };
 }
 const sideOf = (a: CanvasNode, b: CanvasNode): { fromSide: CanvasEdge["fromSide"]; toSide: CanvasEdge["toSide"] } =>
   b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };

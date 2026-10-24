@@ -928,3 +928,14 @@ Rules: WKB-030 (Active).
 4. **Not covered.** Other canvases (a view from a note) are laid out by distance from that note and are not boxed. No grouping by subtype, folder or specialization. Dragging a card out of its box does not change the note.
 
 Rules: WKB-029 (Active).
+
+## D-0081 — A canvas card is named by the name or description, with the part number or id small beneath
+
+2026-10-24 · Spencer · Accepted (owner, chat: "the elements [should] be named by the name or description field, in that priority order. the part numbers are not so useful for users (part number or ID in smaller font under the name, in that priority order)").
+
+1. **Card text.** Every note card on a canvas the Workbench writes shows the note's name, else its description (the shown title of WKB-028, cut at 90 characters), in bold, and under it in small type its `partNumber`, else its `id`. A line is left off when it would repeat the name. A requirement card keeps its subtype and wording (IMP-097) under the same two lines.
+2. **Text cards, not file cards.** To show a name that is not the file name, a note card is a text card whose first line is a link to the note (`**[[path|name]]**`). The link opens the note; the Workbench reads which note a card stands for from that link (as it already did for requirements), so a line drawn between two cards still becomes a relationship. A person can still add Obsidian file cards by hand; they are read as before.
+3. **Height.** A card grows to fit a long name; spacing between cards stays based on the standard card (D-0079).
+4. **Not covered.** I could not look at the canvas in Obsidian from here. The small type is written as `<small>` in the card text; whether Obsidian shows it smaller than the name in a canvas card is not verified. A file card showed a live preview of the note's text; a text card does not.
+
+Rules: WKB-031 (Active).

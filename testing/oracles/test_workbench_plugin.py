@@ -116,7 +116,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.click("button:has-text('Canvas in main window')")
             self.assertEqual([k for k in pg.evaluate("Object.keys(window.__files)")], [PREVIEW])
             doc = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
-            self.assertTrue(any(n["type"] == "file" and n["file"] == PCE_PATH for n in doc["nodes"]))
+            self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + PCE_PATH[:-3] + "|") for n in doc["nodes"]))
             self.assertTrue(all(w[0] == "main" for w in pg.evaluate("window.__opened")), "never opened in the sidebar")
 
             # save: pick a folder, never overwrite, remember the choice
@@ -289,7 +289,7 @@ class WorkbenchPlugin(unittest.TestCase):
                 """What Obsidian writes when the person drags a line between two cards (its own random id)."""
                 pg.evaluate("""([p, id, a, b]) => {
                     const doc = JSON.parse(window.__files[p]);
-                    const card = (path) => { let n = doc.nodes.find((x) => x.file === path); if (!n) { n = { id: 'c' + doc.nodes.length, type: 'file', x: 0, y: 800, width: 280, height: 90, file: path }; doc.nodes.push(n); } return n.id; };
+                    const card = (path) => { let n = doc.nodes.find((x) => x.file === path || (x.text || '').startsWith('**[[' + path.replace(/\\.md$/, '') + '|')); if (!n) { n = { id: 'c' + doc.nodes.length, type: 'file', x: 0, y: 800, width: 280, height: 90, file: path }; doc.nodes.push(n); } return n.id; };
                     doc.edges.push({ id, fromNode: card(a), toNode: card(b), fromSide: 'right', toSide: 'left', toEnd: 'arrow' });
                     window.__files[p] = JSON.stringify(doc);
                     for (const f of window.__evs['vault:modify']) f({ path: p, extension: 'canvas' });
@@ -337,9 +337,9 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.click("button:has-text('Place on canvas')")
             pg.wait_for_selector("text=/Canvas preview opened/")
             picked = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
-            self.assertTrue(any(n["type"] == "file" and n["file"] == A for n in picked["nodes"]), "the ticked note is on the canvas")
+            self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + A[:-3] + "|") for n in picked["nodes"]), "the ticked note is on the canvas")
             self.assertTrue(any(n["type"] == "group" and n.get("label") for n in picked["nodes"]), "boxed by type")
-            self.assertTrue(all(n["type"] == "file" for n in picked["nodes"] if n["type"] != "group") and len(picked["nodes"]) >= 3)
+            self.assertTrue(all(n["type"] == "text" for n in picked["nodes"] if n["type"] != "group") and len(picked["nodes"]) >= 3)
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
