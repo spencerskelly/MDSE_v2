@@ -409,3 +409,19 @@ ${members}
   assert.ok(cc.doc.edges.some(e => e.label === "refines"), "need refinement gets an explicit canvas kind");
   assert.ok(cc.doc.edges.some(e => e.label === "hasAction discoverModelElements"), "action usage is not a dependency");
 });
+
+test("a note is shown by name, else description, else heading, else file name, and the file name stays visible (MOD-171, D-0065)", () => {
+  const note = (name: string, body: string, props: string): string => `---\ntype: Object\nsubtype: part\nid: OBJ-9000${name.length}\nuid: 2026102410000000${name.length}x\nstatus: Draft\neaType: BOM\ntags: []\n${props}---\n${body}\n\n\n\n## Source: EA\n\n- x: y\n`;
+  const v = new Map<string, string>([
+    ["BOM/Parts/01141-002.md", note("a", "# 01141-002", 'partNumber: "01141-002"\ndescription: CABLE ASSY, 3 m\n')],
+    ["Model/OBJ-90001.md", note("b", "# Old heading", "name: Charge connector\naliases: [\"Plug\", \"CCS inlet\"]\n")],
+    ["Model/OBJ-90002.md", note("cc", "# Heading only", "")],
+    ["BOM/Parts/99999.md", note("ddd", "", 'description: ' + "x".repeat(120) + "\n")],
+  ]);
+  const w = buildIndex(v, { classes }), t = (p: string): string => w.notes.get(p)!.title;
+  assert.equal(t("BOM/Parts/01141-002.md"), "CABLE ASSY, 3 m"); assert.equal(t("Model/OBJ-90001.md"), "Charge connector"); assert.equal(t("Model/OBJ-90002.md"), "Heading only");
+  assert.equal(t("BOM/Parts/99999.md"), "x".repeat(89) + "…", "a long description is cut for display");
+  const rows = V.tableRows(w, { text: "01141-002" }); assert.equal(rows.length, 1); assert.equal(rows[0]!.file, "01141-002"); assert.equal(rows[0]!.title, "CABLE ASSY, 3 m");
+  assert.equal(V.tableRows(w, { text: "charge connector" }).length, 1, "found by name");
+  assert.deepEqual(w.notes.get("Model/OBJ-90001.md")!.links, [], "name and aliases are not read as links");
+});

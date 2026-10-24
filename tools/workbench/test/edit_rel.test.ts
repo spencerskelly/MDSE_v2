@@ -138,7 +138,7 @@ test("a BOM note's relationships are all read from SysML: usages, a drawing refe
   const r = buildBom(grid as any, { sourceName: "t", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes: classes as any, existing: null, pending: [] });
   const files = new Map(r.files.filter((f) => f.path.endsWith(".md") && f.path.startsWith("BOM/")).map((f) => [f.path, f.content] as [string, string]));
   const ix = buildIndex(files, { classes });
-  const top = [...ix.notes.values()].find((n) => n.title === "A-1")!;
+  const top = [...ix.notes.values()].find((n) => n.name === "A-1")!;
   assert.ok(!/^(hasPart|references):/m.test(files.get(top.path)!), "no relationship in YAML");
   const kinds = ix.edges.filter((e) => e.from === top.path).map((e) => e.kind).sort();
   assert.deepEqual(kinds, ["hasPart", "references"]);

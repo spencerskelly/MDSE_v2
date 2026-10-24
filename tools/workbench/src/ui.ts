@@ -190,11 +190,11 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       h("select", { "aria-label": "Group notes", title: "Group the list into folding sections", onchange: (e: Event) => { tableGroup = (e.target as HTMLSelectElement).value as typeof tableGroup; redraw(); } }, ...([["", "no grouping"], ["type", "group by type"], ["folder", "group by folder"]] as const).map(([v, l]) => h("option", { value: v, selected: v === tableGroup }, l))),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.flagged, onchange: (e: Event) => { tableF.flagged = (e.target as HTMLInputElement).checked; redraw(); } }), " flagged"),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.unresolved, onchange: (e: Event) => { tableF.unresolved = (e.target as HTMLInputElement).checked; redraw(); } }), " unresolved"),
-      h("button", { onclick: () => download("notes.csv", [["id", "type", "subtype", "title", "status", "folder", "flags", "path"].join(","), ...rows.map((r) => [r.id, r.type, r.subtype, r.title, r.status, r.folder, r.flags, r.path].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
+      h("button", { onclick: () => download("notes.csv", [["id", "file", "type", "subtype", "title", "status", "folder", "flags", "path"].join(","), ...rows.map((r) => [r.id, r.file, r.type, r.subtype, r.title, r.status, r.folder, r.flags, r.path].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
     const rows = V.tableRows(ix!, tableF), cap = rows.slice(0, 1000);
     pane.append(h("div", { class: "mut" }, `${rows.length} notes${rows.length > cap.length ? " (first 1,000 shown)" : ""}`));
-    const heads: Array<[string, string, boolean?]> = [["id", "ID"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]];
-    const toRow = (r: typeof cap[number]): Child[] => [r.id, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""];
+    const heads: Array<[string, string, boolean?]> = [["id", "ID"], ["file", "File"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]];
+    const toRow = (r: typeof cap[number]): Child[] => [r.id, r.file, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""];
     const sort = (k: string): void => { tableF.desc = tableF.sort === k ? !tableF.desc : false; tableF.sort = k; redraw(); };
     if (!tableGroup) pane.append(tableOf(heads, cap.map(toRow), sort));
     else {
@@ -216,7 +216,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   function vNote(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
     const n = note(sel)!, pane = h("div", { class: "pane" });
-    pane.append(h("h2", {}, n.title), h("div", { class: "row" }, h("span", { class: "pill" }, n.id), typeTag(n), h("span", { class: "pill" }, n.status || "no status"),
+    pane.append(h("h2", {}, n.title), h("div", { class: "row" }, h("span", { class: "pill" }, n.id), n.name !== n.title ? h("span", { class: "pill", title: "File name" }, n.name) : null, typeTag(n), h("span", { class: "pill" }, n.status || "no status"),
       n.block ? h("span", { class: "pill " + (ix!.parser === "passed" ? "ok" : ix!.parser === "failed" ? "bad" : "warn") }, ix!.parser === "passed" ? "SysML checked" : ix!.parser === "failed" ? "SysML check failed" : "SysML unchecked") : null,
       host.openNote ? h("button", { onclick: () => host.openNote!(n.path) }, "Open in editor") : null), secBar());
     if (n.flags.length) pane.append(section("flags", "Flags", n.flags.map((f) => h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail)), { count: n.flags.length }));

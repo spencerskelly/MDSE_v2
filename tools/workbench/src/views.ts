@@ -342,7 +342,7 @@ export function layoutRadial(g: GraphResult, ringGap = 150): Placed[] {
 
 /* ---- Tables, relationships, search, folders ----------------------------------------------------------------------- */
 export interface TableFilter { text?: string; type?: string; status?: string; flagged?: boolean; unresolved?: boolean; sort?: string; desc?: boolean }
-export interface TableRow { path: string; id: string; type: string; subtype: string; title: string; status: string; folder: string; flags: number; block: boolean; out: number; inn: number; dangling: number }
+export interface TableRow { path: string; file: string; id: string; type: string; subtype: string; title: string; status: string; folder: string; flags: number; block: boolean; out: number; inn: number; dangling: number }
 export function tableRows(ix: ModelIndex, f: TableFilter = {}): TableRow[] {
   const q = (f.text ?? "").toLowerCase();
   const rows: TableRow[] = [];
@@ -353,7 +353,7 @@ export function tableRows(ix: ModelIndex, f: TableFilter = {}): TableRow[] {
     const dangling = outgoing(ix, n.path).filter((e) => !e.to).length;
     if (f.unresolved && !dangling) continue;
     if (q && !`${n.id} ${n.title} ${n.name} ${n.def?.symbol ?? ""} ${n.type} ${n.subtype} ${n.folder}`.toLowerCase().includes(q)) continue;
-    rows.push({ path: n.path, id: n.id, type: n.type, subtype: n.subtype, title: n.title, status: n.status, folder: n.folder, flags: n.flags.length, block: !!n.block, out: outgoing(ix, n.path).length, inn: incoming(ix, n.path).length, dangling });
+    rows.push({ path: n.path, file: n.name, id: n.id, type: n.type, subtype: n.subtype, title: n.title, status: n.status, folder: n.folder, flags: n.flags.length, block: !!n.block, out: outgoing(ix, n.path).length, inn: incoming(ix, n.path).length, dangling });
   }
   const k = (f.sort ?? "id") as keyof TableRow;
   rows.sort((a, b) => { const x = a[k], y = b[k]; const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y)); return f.desc ? -c : c; });
@@ -530,7 +530,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const which = o.table ?? "relationships";
     if (which === "notes") {
       const rows = tableRows(ix, { ...(o.text ? { text: o.text } : {}), sort: "id" });
-      out.push({ id: "notes", title: "Notes", columns: [{ key: "id", label: "Id" }, { key: "title", label: "Title" }, { key: "type", label: "Type" }, { key: "status", label: "Status" }, { key: "folder", label: "Folder", wide: true }, { key: "flags", label: "Flags" }, { key: "dangling", label: "Unresolved", wide: true }], rows: rows.map((r) => ({ id: r.id, title: { text: r.title, path: r.path } as Cell, type: r.type + (r.subtype ? "/" + r.subtype : ""), status: r.status, folder: r.folder, flags: String(r.flags || ""), dangling: String(r.dangling || "") })), empty: "No notes match." });
+      out.push({ id: "notes", title: "Notes", columns: [{ key: "id", label: "Id" }, { key: "file", label: "File" }, { key: "title", label: "Title" }, { key: "type", label: "Type" }, { key: "status", label: "Status" }, { key: "folder", label: "Folder", wide: true }, { key: "flags", label: "Flags" }, { key: "dangling", label: "Unresolved", wide: true }], rows: rows.map((r) => ({ id: r.id, file: r.file, title: { text: r.title, path: r.path } as Cell, type: r.type + (r.subtype ? "/" + r.subtype : ""), status: r.status, folder: r.folder, flags: String(r.flags || ""), dangling: String(r.dangling || "") })), empty: "No notes match." });
     } else if (which === "usages") {
       const u = n?.def?.usages ?? [];
       out.push({ id: "usages", title: n ? `Usages in ${n.title}` : "Usages", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "mult", label: "Multiplicity" }], rows: u.map((x) => ({ kind: (x.dir ? x.dir + " " : "") + x.kind, name: x.name, type: x.type ? ({ text: ix.bySymbol.get(x.type) ? nm(ix, ix.bySymbol.get(x.type)!, x.type) : x.type + " (not in vault)", path: ix.bySymbol.get(x.type) ?? null } as Cell) : { text: "untyped", cls: "gap" } as Cell, mult: x.mult ?? "" })), empty: n ? "No usages." : "Select a note." });

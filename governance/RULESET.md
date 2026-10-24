@@ -513,6 +513,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **WKB-025** · Active · P3 · live — The Workbench reads both the native and the old forms of derivation and refinement, and the Edit lens and draw-to-relate write the native forms. Derivation has no editable properties because its two ends are the whole relationship. (D-0045)
 - **WKB-026** · Active · P1 · live — A merge keeps the surviving note's plain (non-link) properties, such as the BOM `description`, `manufacturerN`, `mfgPnN` and the import stamp; plain properties only the removed note has are carried over; the removed note's import stamp is never carried (D-0052)
 - **WKB-027** · Active · P1 · live — Merging an alias pair shows the seven areas with each note's member count and a selector per area (the surviving note, the removed note, or keep both), preselected to the recommendation: the BOM note for part facts and structure, the other note for the rest unless the BOM note already has members there; with no BOM note in the pair, keep both. The other note's members of an area it does not own go under `## Not carried over from <title>`, never dropped. Merge all uses the recommendations (D-0053)
+- **WKB-028** · Active · P1 · live — The Workbench shows a note by its `name`, else its `description` (cut at 90 characters), else its heading, else its file name (MOD-171). The note header and the Notes list show the file name beside it, and search finds a note by file name, id or shown name. `name` and `partNumber` are not read as links. (D-0065)
 
 ## AIP — AI processes
 

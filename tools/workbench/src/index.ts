@@ -25,7 +25,7 @@ export interface ModelIndex {
 
 export interface BuildOptions { classes?: Record<string, { prefix: string; subtype: string[] }>; parserReport?: string; yieldEvery?: number; yieldFn?: () => Promise<void> }
 
-const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "tags", "sourceRole", "primarySymbol", "aliases", "fixture"]);
+const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "tags", "sourceRole", "primarySymbol", "aliases", "fixture", "name", "partNumber"]);
 const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 export const baseName = (path: string): string => path.split("/").pop()!.replace(/\.md$/i, "");
 const SYSML_TO_KIND: Record<string, string> = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
@@ -41,7 +41,9 @@ function readNote(path: string, text: string, o: BuildOptions): Note | null {
   const flags: Flag[] = [];
   for (const f of zone.matchAll(FLAG)) flags.push({ type: f[1]!, title: f[2]!.trim(), detail: f[3]!.split("\n").map((l: string) => l.replace(/^>\s?/, "")).join("\n").trim() });
   const body = zone.replace(FLAG, "").replace(/^# .*\n?/m, "").trim();
-  const title = /^# (.+)$/m.exec(zone)?.[1]?.trim() ?? baseName(path);
+  // MOD-171 (D-0065): what a person sees is the name, else the description, else the heading, else the file name; the file name is shown beside it
+  const clip = (s: string): string => (s.length > 90 ? s.slice(0, 89) + "…" : s);
+  const title = (m.name ? clip(String(m.name).trim()) : "") || (m.description ? clip(String(m.description).trim()) : "") || /^# (.+)$/m.exec(zone)?.[1]?.trim() || baseName(path);
   const src = MDSE.extractSysml(text) as string | null;
   const srcText = n.text.slice((n.h2.find(([, h]: [number, string]) => h === "## Source: EA") ?? [n.text.length])[0]);
   const sourceLines = srcText.startsWith("## Source: EA") ? srcText.split("\n").slice(1).filter((l: string) => l.startsWith("- ")) : [];
