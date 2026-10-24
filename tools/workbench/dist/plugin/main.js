@@ -1400,7 +1400,7 @@ function edgeRefOfId(id        )                 {
   if (i < 0) return null;
   try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r            : null; } catch { return null; }
 }
-                                                                                                                                                             
+                                                                                                                                                                                       
                                                                                                                                                                                                                  
                                                                 
                                                                                                                                                
@@ -1429,25 +1429,44 @@ function noteCard(ix            , path        , key        )             {
 const sideOf = (a            , b            )                                                                     =>
   b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
 
-/** Notes the person picked from a search, as a canvas (D-0078): a grid of cards, the relationships between the picked notes drawn when asked.
- * At most MAX_PICK cards; `capped` says some were left off. */
+/** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
+ * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.
+ * Not grouped: one grid, at most 6 across. At most MAX_PICK cards; `capped` says some were left off. */
 const MAX_PICK = 200;
-function pickCanvas(ix            , paths          , opts                                       )               {
-  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK), cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length))));
-  const nodes               = [], at = new Map                    ();
-  let y = 0;
-  for (let i = 0; i < use.length; i += cols) {
-    const row = use.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
-    row.forEach((cn, j) => { cn.x = j * (W + GX); cn.y = y; nodes.push(cn); });
-    y += rowH + GY;
+const GROUP_PAD = 80, GROUP_COLS = 4;
+function pickCanvas(ix            , paths          , opts                                                        )               {
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK);
+  const nodes               = [], cards               = [], at = new Map                    ();
+  const grid = (list          , cols        , x0        , y0        , key        )         => {      // lays one grid of cards; returns the y below it
+    let y = y0;
+    for (let i = 0; i < list.length; i += cols) {
+      const row = list.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${key + i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
+      row.forEach((cn, j) => { cn.x = x0 + j * (W + GX); cn.y = y; cards.push(cn); });
+      y += rowH + GY;
+    }
+    return y - GY;
+  };
+  let groups = 0;
+  if (opts.group === false) grid(use, Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length)))), 0, 0, 0);
+  else {
+    const byType = new Map                  ();
+    for (const p of use) { const t = ix.notes.get(p) .type || "(no type)"; (byType.get(t) ?? byType.set(t, []).get(t) ).push(p); }
+    let y = 0, key = 0;
+    for (const [t, list] of [...byType].sort((a, b) => a[0].localeCompare(b[0]))) {
+      list.sort((a, b) => ix.notes.get(a) .subtype.localeCompare(ix.notes.get(b) .subtype) || ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
+      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), bottom = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
+      nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: cols * W + (cols - 1) * GX + 2 * GROUP_PAD, height: bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
+      y = bottom + GROUP_PAD + GY; key += list.length;
+    }
   }
+  nodes.push(...cards);          // groups first, so the cards are drawn over them
   const edges               = [];
   if (opts.relations) for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
     edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   }
-  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups: 0, hidden: 0 };
+  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
@@ -2999,7 +3018,7 @@ const TABS                                   = [
 function mountWorkbench(root             , host       = {})      {
   const style = h("style"); style.textContent = STYLE;
   let ix                    = null, sel = "", tab = "dashboard", sidebar                       = "folders", query = "";
-  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set        (); let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
+  let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        (); let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
   let tableGroup                         = "";
   const secs = new Map                 ();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis                     ).app !== "undefined" ? " obs" : "") });
@@ -3103,13 +3122,14 @@ function mountWorkbench(root             , host       = {})      {
     pane.append(h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search to see the rest)` : ""}`));
     const bar = h("div", { class: "row" },
       h("button", { onclick: () => tickAll(true) }, "Tick all listed"), h("button", { onclick: () => tickAll(false) }, "Untick listed"), h("button", { onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
-      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships between them"), count);
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships between them"),
+      h("label", { title: "One labelled box for each note type" }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e       ) => { pickGroup = (e.target                    ).checked; } }), " group by type"), count);
     if (host.makeCanvas) {
       const place = h("button", { title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Place on canvas");
       place.addEventListener("click", () => {
         if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
         place.setAttribute("disabled", ""); place.textContent = "Creating…";
-        const r = pickCanvas(ix , [...pickSel], { relations: pickRel, label: pickText });
+        const r = pickCanvas(ix , [...pickSel], { relations: pickRel, label: pickText, group: pickGroup });
         host.makeCanvas (r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw());
       });
       bar.append(place);
@@ -3898,7 +3918,7 @@ function editView(c         )              {
                                                                              
                                                                        
                                                            
-                                                                                       
+                                                                                                       
                                  
                                                               
                                                                                                            
@@ -3955,7 +3975,7 @@ function mountPanel(root             , host           , opt                     
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set        ();
+  let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -4040,11 +4060,12 @@ function mountPanel(root             , host           , opt                     
     const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
     const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     const place = h("button", { class: "sm pri", title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save canvas." }, "Place on canvas");
-    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas ([...pickSel], pickText, pickRel)); });
+    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas ([...pickSel], pickText, pickRel, pickGroup)); });
     const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
       h("button", { class: "sm", onclick: () => tickAll(true) }, "Tick all listed"), h("button", { class: "sm", onclick: () => tickAll(false) }, "Untick listed"),
       h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
-      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships"), count,
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships"),
+      h("label", { title: "Put the notes in one labelled box for each type, so a long list is easy to move around" }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e       ) => { pickGroup = (e.target                    ).checked; } }), " group by type"), count,
       host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."));
     if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); bar.append(b); }
     upd();
@@ -4158,7 +4179,7 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                                                         
                                                                             
                                                                           
-                                                                                          
+                                                                                                          
                                                                
                                                                        
                                                                                                                                                       
@@ -4291,7 +4312,7 @@ function hostFor(plugin     )      {
     openNote: (p        ) => plugin.app.workspace.openLinkText(p, "", false),
     openTable: (lens        ) => plugin.openTable(lens),
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
-    openPickCanvas: (paths          , label        , relations         ) => plugin.openPickCanvas(paths, label, relations),
+    openPickCanvas: (paths          , label        , relations         , group         ) => plugin.openPickCanvas(paths, label, relations, group),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path        , change     ) => plugin.updateNote(path, change),
@@ -4455,9 +4476,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
-  async openPickCanvas(paths          , label        , relations         )                  {
+  async openPickCanvas(paths          , label        , relations         , group         )                  {
     await this.ensureIndex();
-    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label }));
+    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /* ---- saving a preview ---- */

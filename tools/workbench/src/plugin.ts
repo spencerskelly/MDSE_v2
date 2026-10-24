@@ -14,7 +14,7 @@ declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string }) => any;
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
-  pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string }) => any;
+  pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
   cdEdgeIds: (doc: any) => Set<string>; cdDrawnLines: (doc: any, known: Set<string>) => Array<{ id: string; from: string | null; to: string | null }>;
@@ -147,7 +147,7 @@ function hostFor(plugin: any): any {
     openNote: (p: string) => plugin.app.workspace.openLinkText(p, "", false),
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
-    openPickCanvas: (paths: string[], label: string, relations: boolean) => plugin.openPickCanvas(paths, label, relations),
+    openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean) => plugin.openPickCanvas(paths, label, relations, group),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
@@ -311,9 +311,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
-  async openPickCanvas(paths: string[], label: string, relations: boolean): Promise<string> {
+  async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean): Promise<string> {
     await this.ensureIndex();
-    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label }));
+    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /* ---- saving a preview ---- */

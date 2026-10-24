@@ -338,7 +338,8 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=/Canvas preview opened/")
             picked = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertTrue(any(n["type"] == "file" and n["file"] == A for n in picked["nodes"]), "the ticked note is on the canvas")
-            self.assertTrue(all(n["type"] == "file" for n in picked["nodes"]) and len(picked["nodes"]) >= 2)
+            self.assertTrue(any(n["type"] == "group" and n.get("label") for n in picked["nodes"]), "boxed by type")
+            self.assertTrue(all(n["type"] == "file" for n in picked["nodes"] if n["type"] != "group") and len(picked["nodes"]) >= 3)
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):

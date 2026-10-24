@@ -13,7 +13,7 @@ export function edgeRefOfId(id: string): EdgeRef | null {
   if (i < 0) return null;
   try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r as EdgeRef : null; } catch { return null; }
 }
-export interface CanvasNode { id: string; type: "file" | "text"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string }
+export interface CanvasNode { id: string; type: "file" | "text" | "group"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string; label?: string }
 export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow"; label?: string; color?: string }
 export interface CanvasDoc { nodes: CanvasNode[]; edges: CanvasEdge[] }
 export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number }
@@ -42,25 +42,44 @@ function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
 const sideOf = (a: CanvasNode, b: CanvasNode): { fromSide: CanvasEdge["fromSide"]; toSide: CanvasEdge["toSide"] } =>
   b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
 
-/** Notes the person picked from a search, as a canvas (D-0078): a grid of cards, the relationships between the picked notes drawn when asked.
- * At most MAX_PICK cards; `capped` says some were left off. */
+/** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
+ * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.
+ * Not grouped: one grid, at most 6 across. At most MAX_PICK cards; `capped` says some were left off. */
 export const MAX_PICK = 200;
-export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: boolean; label: string }): CanvasResult {
-  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK), cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length))));
-  const nodes: CanvasNode[] = [], at = new Map<string, CanvasNode>();
-  let y = 0;
-  for (let i = 0; i < use.length; i += cols) {
-    const row = use.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
-    row.forEach((cn, j) => { cn.x = j * (W + GX); cn.y = y; nodes.push(cn); });
-    y += rowH + GY;
+const GROUP_PAD = 80, GROUP_COLS = 4;
+export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: boolean; label: string; group?: boolean }): CanvasResult {
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK);
+  const nodes: CanvasNode[] = [], cards: CanvasNode[] = [], at = new Map<string, CanvasNode>();
+  const grid = (list: string[], cols: number, x0: number, y0: number, key: number): number => {      // lays one grid of cards; returns the y below it
+    let y = y0;
+    for (let i = 0; i < list.length; i += cols) {
+      const row = list.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${key + i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
+      row.forEach((cn, j) => { cn.x = x0 + j * (W + GX); cn.y = y; cards.push(cn); });
+      y += rowH + GY;
+    }
+    return y - GY;
+  };
+  let groups = 0;
+  if (opts.group === false) grid(use, Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length)))), 0, 0, 0);
+  else {
+    const byType = new Map<string, string[]>();
+    for (const p of use) { const t = ix.notes.get(p)!.type || "(no type)"; (byType.get(t) ?? byType.set(t, []).get(t)!).push(p); }
+    let y = 0, key = 0;
+    for (const [t, list] of [...byType].sort((a, b) => a[0].localeCompare(b[0]))) {
+      list.sort((a, b) => ix.notes.get(a)!.subtype.localeCompare(ix.notes.get(b)!.subtype) || ix.notes.get(a)!.title.localeCompare(ix.notes.get(b)!.title) || a.localeCompare(b));
+      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), bottom = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
+      nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: cols * W + (cols - 1) * GX + 2 * GROUP_PAD, height: bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
+      y = bottom + GROUP_PAD + GY; key += list.length;
+    }
   }
+  nodes.push(...cards);          // groups first, so the cards are drawn over them
   const edges: CanvasEdge[] = [];
   if (opts.relations) for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
     edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
   }
-  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups: 0, hidden: 0 };
+  return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */

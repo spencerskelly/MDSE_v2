@@ -90,7 +90,7 @@ const TABS: Array<[string, string, boolean]> = [
 export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
-  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set<string>(); let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
+  let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>(); let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
   let tableGroup: "" | "type" | "folder" = "";
   const secs = new Map<string, boolean>();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
@@ -194,13 +194,14 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     pane.append(h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search to see the rest)` : ""}`));
     const bar = h("div", { class: "row" },
       h("button", { onclick: () => tickAll(true) }, "Tick all listed"), h("button", { onclick: () => tickAll(false) }, "Untick listed"), h("button", { onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
-      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships between them"), count);
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships between them"),
+      h("label", { title: "One labelled box for each note type" }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e: Event) => { pickGroup = (e.target as HTMLInputElement).checked; } }), " group by type"), count);
     if (host.makeCanvas) {
       const place = h("button", { title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save." }, "Place on canvas");
       place.addEventListener("click", () => {
         if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
         place.setAttribute("disabled", ""); place.textContent = "Creating…";
-        const r = pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText });
+        const r = pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText, group: pickGroup });
         host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
       });
       bar.append(place);

@@ -917,3 +917,14 @@ Rules: WKB-029 (Active).
 4. **Not covered.** A setting in the panel to change the multiple. Canvases already saved keep their old spacing.
 
 Rules: WKB-030 (Active).
+
+## D-0080 — Notes picked for a canvas are boxed by type
+
+2026-10-24 · Spencer · Accepted (owner, chat: "when notes are added to the canvas, can they be grouped according to their supertype? They show up in a giant line and it's difficult to navigate").
+
+1. **Reading of "supertype".** The note's `type` (Object, Requirement, Behavior …), of which `subtype` is the finer kind. The specialization hierarchy (a note that `specializes` another) was not used. If that is what was meant, say so.
+2. **Layout.** Canvas from Pick notes: one labelled group box per type, labelled `<type> (<count>)` and coloured like the type's cards. Boxes are in type order and stacked top to bottom, so the canvas grows down, not across. Inside a box the cards are a grid at most 4 across, in subtype then name order, spaced as in D-0079. At most 200 cards in all, as before.
+3. **Switch.** "group by type" is ticked by default; unticked gives the single grid of D-0078 (at most 6 across).
+4. **Not covered.** Other canvases (a view from a note) are laid out by distance from that note and are not boxed. No grouping by subtype, folder or specialization. Dragging a card out of its box does not change the note.
+
+Rules: WKB-029 (Active).

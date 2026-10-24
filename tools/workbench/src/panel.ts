@@ -18,7 +18,7 @@ export interface PanelHost {
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
-  openPickCanvas?(paths: string[], label: string, relations: boolean): Promise<string>;
+  openPickCanvas?(paths: string[], label: string, relations: boolean, group: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
   /** Review actions. Resolves to a message and a way back. */
   updateNote?(path: string, change: NoteChange): Promise<{ message: string; undo: () => Promise<string> }>;
@@ -75,7 +75,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let pickText = "", pickType = "", pickRel = true; const pickSel = new Set<string>();
+  let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -160,11 +160,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const upd = (): void => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
     const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     const place = h("button", { class: "sm pri", title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save canvas." }, "Place on canvas");
-    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas!([...pickSel], pickText, pickRel)); });
+    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas!([...pickSel], pickText, pickRel, pickGroup)); });
     const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
       h("button", { class: "sm", onclick: () => tickAll(true) }, "Tick all listed"), h("button", { class: "sm", onclick: () => tickAll(false) }, "Untick listed"),
       h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
-      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships"), count,
+      h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships"),
+      h("label", { title: "Put the notes in one labelled box for each type, so a long list is easy to move around" }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e: Event) => { pickGroup = (e.target as HTMLInputElement).checked; } }), " group by type"), count,
       host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."));
     if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); bar.append(b); }
     upd();

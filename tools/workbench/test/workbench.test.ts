@@ -151,7 +151,7 @@ test("structure shows typed parts whose definition is not in the vault", () => {
 test("canvas export: valid JSON Canvas, file cards for notes, text cards for missing ones, no dangling edge ids", () => {
   const ix = lone(), p = [...ix.notes.keys()][0]!;
   const r = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Structure")!);
-  const ids = new Set(r.doc.nodes.map((n) => n.id));
+  const ids = new Set(r.doc.nodes.filter((n) => n.type !== "group").map((n) => n.id));
   assert.equal(ids.size, r.doc.nodes.length, "unique node ids");
   assert.equal(r.doc.nodes.filter((n) => n.type === "file").length, 1);
   assert.ok(r.doc.nodes.some((n) => n.type === "text" && /not in vault/.test(n.text!)));
@@ -444,25 +444,38 @@ test("a search for a word or phrase lists the notes with it in the name or descr
   if (withDesc) { const w = String(withDesc.meta.description).toLowerCase().split(/\s+/).at(-1)!; assert.ok(V.pickRows(ix, w).notes.some((n) => n.path === withDesc.path), "found by its description"); }
   // canvas
   const picked = charger.notes.map((n) => n.path), r = pickCanvas(ix, picked, { relations: true, label: "charger" });
-  assert.equal(r.doc.nodes.length, picked.length); assert.equal(r.notes, picked.length); assert.equal(r.capped, false);
-  assert.ok(r.doc.nodes.every((n) => (n.type === "file" ? picked.includes(n.file!) : /\[\[/.test(n.text!))));
+  const cardsOf = (d: { nodes: Array<{ type: string }> }) => d.nodes.filter((n) => n.type !== "group");
+  assert.equal(cardsOf(r.doc).length, picked.length); assert.equal(r.notes, picked.length); assert.equal(r.capped, false);
+  assert.ok(r.doc.nodes.filter((n) => n.type !== "group").every((n) => (n.type === "file" ? picked.includes(n.file!) : /\[\[/.test(n.text!))));
   const ids = new Set(r.doc.nodes.map((n) => n.id)); assert.ok(r.doc.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)), "only lines between ticked notes");
   assert.equal(pickCanvas(ix, picked, { relations: false, label: "charger" }).doc.edges.length, 0);
   const all = pickCanvas(ix, [...ix.notes.keys()], { relations: true, label: "" });
   assert.ok(all.doc.edges.length > 0, "the model's relationships between ticked notes are drawn");
-  assert.equal(all.doc.nodes.length, Math.min(MAX_PICK, ix.notes.size)); assert.equal(all.capped, ix.notes.size > MAX_PICK);
+  assert.equal(all.doc.nodes.filter((n) => n.type !== "group").length, Math.min(MAX_PICK, ix.notes.size)); assert.equal(all.capped, ix.notes.size > MAX_PICK);
   assert.equal(pickCanvas(ix, ["nope.md"], { relations: true, label: "x" }).doc.nodes.length, 0, "a path not in the index is skipped");
-  const boxes = r.doc.nodes.map((n) => [n.x, n.y, n.x + n.width, n.y + n.height]); // no two cards overlap
+  const boxes = r.doc.nodes.filter((n) => n.type !== "group").map((n) => [n.x, n.y, n.x + n.width, n.y + n.height]); // no two cards overlap
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i]!, b = boxes[j]!; assert.ok(a[2]! <= b[0]! || b[2]! <= a[0]! || a[3]! <= b[1]! || b[3]! <= a[1]!, "cards do not overlap"); }
 });
 
 test("cards on every canvas are spaced three card widths across and three card heights down (D-0079)", () => {
   const near = (xs: number[]): number[] => [...new Set(xs)].sort((a, b) => a - b);
-  const c = pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "" }), cols = near(c.doc.nodes.map((n) => n.x));
+  const c = pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "", group: false }), cols = near(c.doc.nodes.map((n) => n.x));
   assert.ok(cols.length >= 2); for (let i = 1; i < cols.length; i++) assert.equal(cols[i]! - cols[i - 1]!, 4 * 280, "a gap of 3 widths between columns");
   const rows = near(c.doc.nodes.map((n) => n.y)); assert.ok(rows.length >= 1);
   for (let i = 1; i < rows.length; i++) { const above = c.doc.nodes.filter((n) => n.y === rows[i - 1]!), top = Math.max(...above.map((n) => n.height)); assert.equal(rows[i]! - rows[i - 1]! - top, 3 * 90, "a gap of 3 heights between rows"); }
   const t = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }), tc = near(t.doc.nodes.map((n) => n.x));
   for (let i = 1; i < tc.length; i++) assert.equal(tc[i]! - tc[i - 1]!, 4 * 280, "the layered canvas too");
   for (const col of tc) { const ys = t.doc.nodes.filter((n) => n.x === col).sort((a, b) => a.y - b.y); for (let i = 1; i < ys.length; i++) assert.ok(ys[i]!.y - ys[i - 1]!.y - ys[i - 1]!.height >= 3 * 90 - 1, "3 heights between stacked cards"); }
+});
+
+test("picked notes are grouped by type: one labelled box each, the cards inside it, nothing overlapping (D-0080)", () => {
+  const r = pickCanvas(ix, [...ix.notes.keys()], { relations: true, label: "" }), groups = r.doc.nodes.filter((n) => n.type === "group"), cards = r.doc.nodes.filter((n) => n.type !== "group");
+  const types = new Set([...ix.notes.values()].map((n) => n.type));
+  assert.equal(groups.length, types.size); assert.equal(r.groups, types.size); assert.equal(cards.length, ix.notes.size);
+  assert.deepEqual(groups.map((g) => g.label!.replace(/ \(\d+\)$/, "")), [...types].sort((a, b) => a.localeCompare(b)), "boxes in type order");
+  assert.ok(r.doc.nodes.slice(0, groups.length).every((n) => n.type === "group"), "boxes come first so cards are drawn over them");
+  for (const c of cards) { const owner = groups.filter((g) => c.x >= g.x && c.y >= g.y && c.x + c.width <= g.x + g.width && c.y + c.height <= g.y + g.height); assert.equal(owner.length, 1, "each card sits inside exactly one box"); const t = ix.notes.get(c.file ?? "")?.type; if (t) assert.ok(owner[0]!.label!.startsWith(t + " ("), "in the box for its own type"); }
+  for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) { const a = groups[i]!, b = groups[j]!; assert.ok(a.y + a.height <= b.y || b.y + b.height <= a.y, "boxes do not overlap"); }
+  for (const g of groups) assert.ok(cards.filter((c) => c.x >= g.x && c.x < g.x + g.width && c.y >= g.y && c.y < g.y + g.height).length >= 1);
+  assert.equal(pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "", group: false }).doc.nodes.filter((n) => n.type === "group").length, 0, "grouping can be turned off");
 });
