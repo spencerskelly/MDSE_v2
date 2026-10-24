@@ -232,6 +232,8 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
     note = addEarlierLines(note, addE);
     const yo = yamlOwned(gen);
     if (cats.has("PART_NUMBER")) { const line = /^partNumber: .+$/m.exec(gen)![0]; if (!/^partNumber:/m.test(note)) { const ls = note.split("\n"), close = ls.indexOf("---", 1); let at = ls.findIndex((l, i) => i < close && /^tags:/.test(l)); at = at < 0 ? close : at + 1; while (at < close && /^(name|aliases):/.test(ls[at]!)) at++; ls.splice(at, 0, line); note = ls.join("\n"); } }
+    // D-0068: a part number this one replaces is an alias; names already in the note's aliases stay
+    if (cats.has("SUPERSEDES")) { const ga = /^aliases: \[(.*)\]$/m.exec(gen); if (ga) { const parse = (t: string): string[] => [...t.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`) as string); const ls = note.split("\n"), close = ls.indexOf("---", 1), ai = ls.findIndex((l, i) => i < close && /^aliases:/.test(l)); const have = ai >= 0 ? parse(ls[ai]!) : [], all = [...have]; for (const a of parse(ga[1]!)) if (!all.includes(a)) all.push(a); const line = `aliases: [${all.map((a) => JSON.stringify(a)).join(", ")}]`; if (ai >= 0) ls[ai] = line; else { let at = ls.findIndex((l, i) => i < close && /^name:/.test(l)); if (at < 0) at = ls.findIndex((l, i) => i < close && /^tags:/.test(l)); ls.splice(at < 0 ? close : at + 1, 0, line); } note = ls.join("\n"); } }
     if (cats.has("DESCRIPTION")) note = setYamlOwned(note, yo.description, null);
     if (cats.has("MANUFACTURER")) note = setYamlOwned(note, null, yo.mfr);
     // the Source section is the importer's own: refresh it, keeping a line about a replaced revision

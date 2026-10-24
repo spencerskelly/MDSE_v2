@@ -778,3 +778,14 @@ Rules: −GOV-006, −GOV-018; ~DAT-002, ~GOV-017, ~DAT-001. No other rule chang
 4. **Not covered.** The source ledger's `target_file` for Package rows still shows the uncapped folder. The report's depth table counts a cut note at its package depth; element nesting beyond the package is not counted. Not checked against the real model: the cap was chosen without the preflight histogram.
 
 Rules: MOD-174 (Active).
+
+## D-0068 — Superseded part numbers are aliases
+
+2026-10-24 · Spencer · Accepted (owner, chat: "aliases will remain as a method of including alternate names for this note, it could also be used for superceded part numbers, allowing a historical number to be identified"). Confirms D-0065 and extends MOD-172.
+
+1. **Aliases.** When a BOM shows a part number replacing an earlier one (struck-through number in a redline), the new part's `aliases` lists the old number. The old number's own stub note stays, as before (BOM-023).
+2. **Update scan.** Approving a SUPERSEDES item also adds the old number to the note's `aliases`. Names already in `aliases` are kept; none are removed.
+3. **Confirmed unchanged.** BOM note file name is the part number; a model note's file name is its id; `name` comes from the model element name and a BOM note has none; the Workbench shows `name`, else `description`, else the file name (MOD-170, MOD-171, WKB-028).
+4. **Not covered.** Workbench canvases and the remaining views still need checking for the same fallback; search by alias is not checked. A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
+
+Rules: MOD-172 (Active).
