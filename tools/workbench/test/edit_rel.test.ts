@@ -89,6 +89,15 @@ test("a dependency changes kind and gains a description; the kind survives the b
   assert.deepEqual(ix2.notes.get(e.ref!.owner)!.warnings, []);
 });
 
+test("historical trace dependencies cannot be modified through Workbench, but remain removable (D-0073)", () => {
+  const legacy = ix0.edges.find((x) => x.ref?.kind === "member" && x.kind === "trace" && x.to);
+  if (!legacy) return;  // legacy fixtures without a trace are handled by scan/read behavior tests
+  const info = R.edRelInfo(ix0, legacy.ref!)!;
+  const update = R.planUpdateRelationship(ix0, base, legacy.ref!, { ...info.form, depKind: "trace" });
+  assert.ok(update.problems.some((x) => x.includes("historical")));
+  assert.deepEqual(R.planRemoveRelationship(ix0, base, legacy.ref!).problems, []);
+});
+
 test("retagging any dependency to an unresolved trace is refused (D-0073)", () => {
   const e = ix0.edges.find((x) => x.ref?.kind === "member" && x.kind === "refines" && x.to)!;
   const info = R.edRelInfo(ix0, e.ref!)!;
