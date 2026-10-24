@@ -85,7 +85,7 @@ Phase 1 delivers one vault (GOV-017).
 Apply to every import into an existing vault (EA re-import and BOM import). Rules in RULESET.md, section IMP, "Merge, rerun and conflicts", and section BOM.
 
 1. **Identity:** a note is matched by UID (EA) or PartNumber (BOM), never by path.
-2. **Revision:** a part definition lists the latest revision. Its body lists each assembly that uses an older revision, with that usage.
+2. **Revision:** a part definition lists the latest revision. Which revision of a child an assembly uses is on the assembly's own usage; the child note names no assembly (D-0063).
 3. **New element:** creates a new note.
 4. **Matching content:** no change.
 5. **Empty fields:** template fields are always present; a non-template field with no source data is not written.

@@ -344,10 +344,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.${HINT_UPDATE}` });
   }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
-  const olderUsers = new Map<string, string[]>(); let conflicts = 0;
+  let conflicts = 0;   // D-0063: a child note carries nothing about the assemblies above it; the pin is on the parent's usage and in its flagConflict callout
   for (const u of okUsage) {
     const l = latest.get(u.child); if (!l || bomIsDrawing(u)) continue;
-    if (l.rev !== u.childRev) { conflicts++; (olderUsers.get(u.child) ?? olderUsers.set(u.child, []).get(u.child)!).push(`- [[${info.get(u.parent)?.base ?? u.parent}]] line ${u.line || "?"} pins revision ${JSON.stringify(u.childRev)}; the latest is ${JSON.stringify(l.rev)}.`); }
+    if (l.rev !== u.childRev) conflicts++;
   }
   const replaces = new Map<string, Set<string>>();
   for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
@@ -403,7 +403,6 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     const extra: Array<[string, string]> = [];
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
-    const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,

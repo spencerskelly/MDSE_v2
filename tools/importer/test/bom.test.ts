@@ -54,7 +54,7 @@ test("pinned child revision that is not the child's latest: flagConflict on the 
   const r = buildBom(parseDelimited(flatText), baseOpts);
   const parent = byTitle(r.files, "04270-001").content, child = byTitle(r.files, "04766").content;
   assert.match(parent, /\[!flagConflict\] Pins 04766 at an older revision/); assert.match(parent, /"-B99"/); assert.match(parent, /"-C99"/);
-  assert.match(child, /## Used at an older revision\n\n- \[\[04270-001\]\] line 1 pins revision "-B99"/);
+  assert.doesNotMatch(child, /older revision|04270-001/, "a child note names no assembly above it (D-0063)");
   assert.match(child, /attribute revision = "-C99";/);                                    // latest wins the properties (BOM-007)
   assert.equal(r.summary.conflicts, 1);
 });

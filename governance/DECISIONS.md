@@ -713,3 +713,14 @@ Rules: +GOV-019 +GOV-020 +GOV-021 +GOV-022 +GOV-023 +GOV-024.
 4. **Not built.** An import-time choice per type (earlier-revision lines and skipped rows keep/drop on the page; `earlierRevisions: "drop"` is still an option of the reader only), and per-item choices before an import writes. Asking again if needed.
 
 Rules: BOM-032 (changed).
+
+## D-0063 — Review of BOM-001, 003, 004, 005; no assembly data in a child note
+
+2026-10-24 · Spencer · Accepted (owner, chat review).
+
+1. **BOM-001 approved, reworded.** A child part note holds no data about the assemblies above it. All usage data is in the parent. The importer no longer writes "Used at an older revision" into a child; the pin stays on the parent's usage (`childRevision`) and in the parent's `flagConflict` callout. BOM-011 is retired and the definition (MDSE_DEFINITION.md, BOM import, revision) is changed to match. Notes already written with that section keep it until a person removes it; the update scan does not touch it.
+2. **BOM-003 approved.** Open point from the owner: an alternate was at one time recorded on its own line number (line 1xx beside line xx). The importer recognises an alternate only when its part number is blank and a manufacturer part number is given; a row with a part number is read as an ordinary line and would count its quantity. This is **not verified** against real data: no BOM with the pattern was available. Needs a sample file.
+3. **BOM-004 retired.** Order-independence is handled by defined rules and responses.
+4. **BOM-005 retired.** Variants will be modelled with SysML v2 syntax; the proposal files are not in this repository.
+
+Rules: BOM-001, BOM-003 (now Active); BOM-004, BOM-005, BOM-011 (retired).
