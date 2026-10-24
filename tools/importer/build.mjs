@@ -12,7 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const rd = (p) => fs.readFileSync(path.join(here, p), "utf8");
 const strip = (s) => s.replace(/\nif \(typeof module !== "undefined"\)[^\n]*\n?$/, "\n");   // CommonJS export lines have no place in a page
 // TypeScript modules -> one plain script: imports and `export` removed, types stripped (erasable syntax only).
-const TS_ORDER = ["sha256", "ea_source", "ea_mapping", "identity", "naming", "sysml", "notes", "csv", "merge", "translation", "vault_update", "bom", "bom_update", "run", "preflight"];
+const TS_ORDER = ["sha256", "ea_source", "ea_mapping", "identity", "naming", "sysml", "notes", "csv", "merge", "translation", "vault_update", "../../core/src/bom_own", "bom", "bom_update", "run", "preflight"];
 const bundleTs = () => TS_ORDER.map((n) => {
   const code = rd(`src/${n}.ts`).replace(/^import [^;]*;\s*$/gm, "").replace(/^export type \{[^}]*\}( from [^;]*)?;\s*$/gm, "").replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
   return `/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" });

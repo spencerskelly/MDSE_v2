@@ -238,6 +238,168 @@ const MDSE = (() => {
 
 const CLASSES = {"Actor":{"prefix":"ACT","subtype":[]},"Artifact":{"prefix":"ART","subtype":[]},"Behavior":{"prefix":"BEH","subtype":["function","activity","action","step"]},"Condition":{"prefix":"COND","subtype":["state","state machine","mode","design"]},"Diagram":{"prefix":"DIA","subtype":["custom","logical","use case","composite structure","statechart","activity","sequence","package"]},"Document":{"prefix":"DOC","subtype":[]},"Failure Mode":{"prefix":"FM","subtype":[]},"Functional Flow":{"prefix":"FFLOW","subtype":[]},"Info":{"prefix":"INFO","subtype":[]},"Issue":{"prefix":"ISS","subtype":["engineering issue","lifecycle risk"]},"Item Flow":{"prefix":"IFLOW","subtype":["information","energy","material"]},"Object":{"prefix":"OBJ","subtype":["electrical","circuit","mechanical","software","firmware","part","interface"]},"Plan":{"prefix":"PLAN","subtype":[]},"Procedure":{"prefix":"PROC","subtype":["test","assembly","configuration","commissioning","calibration","maintenance","repair","decommissioning"]},"Requirement":{"prefix":"REQ","subtype":["functional","design","standard","stakeholder","engineering"],"prefixBySubtype":{"standard":"STD","stakeholder":"STK"}},"Result":{"prefix":"RES","subtype":[]},"Setup":{"prefix":"SETUP","subtype":[]},"Use Case":{"prefix":"UC","subtype":["what","where","why","when","who"]},"Verification":{"prefix":"VER","subtype":["test","analysis","inspection","demonstration"]},"modelCheck":{"prefix":"MC","subtype":["StateNode","Change","Boundary","Decision","ActivityPartition","Trigger","Synchronization","Sequence","ActionPin","ProxyConnector","Event","ActivityParameter","Package","Review"]}};
 const WB = (() => {
+/* ../../importer/src/sha256.ts */
+/* Incremental SHA-256 for fingerprinting a QEAX without loading it (IMP-054). WebCrypto digests need the whole
+ * buffer, which a browser tab cannot hold for a 200 MB file, so this reads bounded slices. Tested against node:crypto. */
+
+const K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+class Sha256 {
+          h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+          buf = new Uint8Array(64);
+          fill = 0;
+          total = 0;
+          w = new Uint32Array(64);
+
+          block(b            , o        )       {
+    const w = this.w, h = this.h;
+    for (let i = 0; i < 16; i++) w[i] = ((b[o + 4 * i]  << 24) | (b[o + 4 * i + 1]  << 16) | (b[o + 4 * i + 2]  << 8) | b[o + 4 * i + 3] ) >>> 0;
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15] , c = w[i - 2] ;
+      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+      const s1 = ((c >>> 17) | (c << 15)) ^ ((c >>> 19) | (c << 13)) ^ (c >>> 10);
+      w[i] = (w[i - 16]  + s0 + w[i - 7]  + s1) >>> 0;
+    }
+    let a = h[0] , b1 = h[1] , c1 = h[2] , d = h[3] , e = h[4] , f = h[5] , g = h[6] , hh = h[7] ;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + K[i]  + w[i] ) >>> 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b1) ^ (a & c1) ^ (b1 & c1);
+      const t2 = (S0 + maj) >>> 0;
+      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c1; c1 = b1; b1 = a; a = (t1 + t2) >>> 0;
+    }
+    h[0] = (h[0]  + a) >>> 0; h[1] = (h[1]  + b1) >>> 0; h[2] = (h[2]  + c1) >>> 0; h[3] = (h[3]  + d) >>> 0;
+    h[4] = (h[4]  + e) >>> 0; h[5] = (h[5]  + f) >>> 0; h[6] = (h[6]  + g) >>> 0; h[7] = (h[7]  + hh) >>> 0;
+  }
+
+  update(data            )       {
+    this.total += data.length;
+    let i = 0;
+    if (this.fill) {
+      while (i < data.length && this.fill < 64) this.buf[this.fill++] = data[i++] ;
+      if (this.fill === 64) { this.block(this.buf, 0); this.fill = 0; }
+    }
+    for (; i + 64 <= data.length; i += 64) this.block(data, i);
+    while (i < data.length) this.buf[this.fill++] = data[i++] ;
+    return this;
+  }
+
+  hex()         {
+    const bits = this.total * 8, pad = new Uint8Array(((this.fill < 56 ? 56 : 120) - this.fill) + 8);
+    pad[0] = 0x80;
+    const hi = Math.floor(bits / 2 ** 32), lo = bits >>> 0, n = pad.length;
+    pad[n - 8] = hi >>> 24; pad[n - 7] = (hi >>> 16) & 255; pad[n - 6] = (hi >>> 8) & 255; pad[n - 5] = hi & 255;
+    pad[n - 4] = lo >>> 24; pad[n - 3] = (lo >>> 16) & 255; pad[n - 2] = (lo >>> 8) & 255; pad[n - 1] = lo & 255;
+    const keep = this.total;
+    this.update(pad);
+    this.total = keep;
+    return [...this.h].map((x) => x.toString(16).padStart(8, "0")).join("");
+  }
+}
+
+                                                                                                         
+
+/** SHA-256 of a file read in bounded slices. */
+async function fileSha256(file          , chunk = 4 * 1024 * 1024)                  {
+  const s = new Sha256();
+  for (let at = 0; at < file.size; at += chunk) s.update(new Uint8Array(await file.slice(at, Math.min(at + chunk, file.size)).arrayBuffer()));
+  return s.hex();
+}
+
+function sha256Text(text        )         {
+  return new Sha256().update(new TextEncoder().encode(text)).hex();
+}
+
+/* ../../core/src/bom_own.ts */
+/* Who owns what inside a part note that came from a BOM (D-0052, D-0053). Shared by the importer (update scan) and the Workbench (merge),
+ * because both must read the same boundary: the BOM's members and properties on one side, the model's on the other.
+ * Areas: `facts` and `structure` are what a BOM can own; the other five are the model's. A merge picks an owner per area; the
+ * choice is written on the note as `bomOwns` so that a later BOM update touches only the areas the BOM still owns. */
+
+                                                                                                                  
+                                     
+const BOM_AREAS                                                                   = [
+  { id: "facts", label: "Part facts", hint: "Description, manufacturer data, part number, revision, source, drawing location", bom: true },
+  { id: "structure", label: "Structure", hint: "Assembly lines (part usages), drawing references, replaced part numbers", bom: true },
+  { id: "properties", label: "Properties", hint: "Other attributes, constants, documentation", bom: false },
+  { id: "interfaces", label: "Interfaces and connections", hint: "Ports, connect, bind, interfaces, flows, allocations", bom: false },
+  { id: "behavior", label: "Behavior", hint: "States, actions, transitions, successions, use cases", bom: false },
+  { id: "requirements", label: "Requirements", hint: "Satisfy, verify, requirement and constraint usages, derivation, refinement", bom: false },
+  { id: "relationships", label: "Other relationships", hint: "Dependencies, specializations", bom: false },
+];
+
+/** The area of one SysML member, from its first line and its full text. Used by the merge to choose an owner per area. */
+function bomAreaOfMember(head        , text         = head)         {
+  const raw = head.trim(), tag = /^#(\w+)\s+/.exec(raw)?.[1], h = raw.replace(/^#\w+\s+/, "");
+  if (/^attribute\s+(partNumber|revision|source|drawingLocation)\b/.test(h)) return "facts";
+  if (tag === "derivation" || tag === "refinement") return "requirements";
+  if (/^dependency\b/.test(h)) return /\/\/\s*supersedes\s*$/m.test(text.split("\n")[0] ) ? "structure" : "relationships";
+  if (/^(?:ref\s+)?(?:part|item)\b/.test(h)) return "structure";
+  if (/^(?:(?:in|out|inout|conjugated|ref)\s+)*(?:port|connect|bind|binding|interface|flow|message|connection|allocate|allocation)\b/.test(h)) return "interfaces";
+  if (/^(?:state|exhibit|perform|action|transition|accept|send|assign|if|while|loop|fork|join|merge|decide|first|then|succession|entry|do|exit|use\s+case|include|calc|analysis|actor)\b/.test(h)) return "behavior";
+  if (/^(?:satisfy|verify|requirement|constraint|assert|assume|require|subject|objective|concern|stakeholder|frame)\b/.test(h)) return "requirements";
+  if (/^(?:specializes|subsets|redefines)\b/.test(h)) return "relationships";
+  return "properties";
+}
+
+/* ---- members of a BOM part note ---- */
+                                                                                                                                                                                    
+                                                                               
+const OWNED_ATTRS = new Set(["partNumber", "revision", "source", "drawingLocation"]);
+function bomAttrOf(lines          , k        )         { const m = new RegExp(`attribute ${k} = (?:"((?:[^"\\\\]|\\\\.)*)"|([^;]+));`).exec(lines.join("\n")); return m ? (m[1] ?? m[2] ?? "").trim() : ""; }
+/** Splits the SysML of a part note into the lines around the part definition's members and the members themselves; null when the members are not in a layout this can read. */
+function bomSplitSysml(sysml        )                    {
+  const lines = sysml.replace(/\n+$/, "").split("\n"), open = lines.findIndex((l) => /^ {4}part def \w+(?: :> [^{]+?)? \{$/.test(l));
+  if (open < 0) return { head: lines, members: [], tail: [] };
+  let close = -1; for (let i = lines.length - 1; i > open; i--) if (lines[i] === "    }") { close = i; break; }
+  if (close < 0) return null;
+  const members                = [], body = lines.slice(open + 1, close), seen = new Map                (); let other = 0;
+  for (let i = 0; i < body.length; i++) {
+    const first = body[i] ; if (first.trim() === "") continue;
+    if (!/^ {8}\S/.test(first)) return null;
+    const blk = [first]; let depth = (first.match(/\{/g) ?? []).length - (first.match(/\}/g) ?? []).length;
+    if (/\/\*(?!.*\*\/)/.test(first)) return null;
+    while (depth > 0) { if (++i >= body.length) return null; const l = body[i] ; blk.push(l); depth += (l.match(/\{/g) ?? []).length - (l.match(/\}/g) ?? []).length; }
+    if (depth < 0) return null;
+    let key        , kind                     , owned = false;
+    const am = /^ {8}attribute (\w+) /.exec(first), um = /^ {8}part (\w+) : (\S+)/.exec(first), rm = /^ {8}ref item (\w+) : (\S+);/.exec(first), dm = /^ {8}dependency from (\S+) to (\S+);(.*)$/.exec(first);
+    if (am && OWNED_ATTRS.has(am[1] )) { kind = "attr"; key = "attr:" + am[1]; owned = true; }
+    else if (um && /attribute childRevision = /.test(blk.join("\n"))) { kind = "usage"; const line = bomAttrOf(blk, "line"); key = line ? "usage:" + line : "usage:~" + um[2]; owned = true; }
+    else if (rm && /::D_/.test(rm[2] )) { kind = "ref"; key = "ref:" + rm[2]; owned = true; }
+    else if (dm && /\/\/ supersedes\s*$/.test(dm[3] )) { kind = "dep"; key = "dep:" + dm[2]; owned = true; }
+    else { kind = "other"; key = "other:" + other++; }
+    if (owned) { const n = seen.get(key) ?? 0; seen.set(key, n + 1); if (n) key += "#" + n; }
+    members.push({ key, kind, owned, area: bomAreaOfMember(first.trim(), blk.join("\n")), lines: blk });
+  }
+  return { head: lines.slice(0, open + 1), members, tail: lines.slice(close) };
+}
+const bomFence = (noteText        )         => { const sec = noteText.replace(/\r\n?/g, "\n").split(/^## SysML v2\s*$/m)[1] ?? ""; return /```[^\n]*\n([\s\S]*?)\n```/.exec(sec)?.[1] ?? ""; };
+
+/** The areas of this note that a BOM update may change: `bomOwns: [facts, structure]` in the frontmatter; no property means both. */
+function bomOwnsOf(noteText        )               {
+  const fm = /^---\n([\s\S]*?)\n---\n/.exec(noteText.replace(/\r\n?/g, "\n"))?.[1] ?? "", m = /^bomOwns:\s*\[(.*)\]\s*$/m.exec(fm);
+  if (!m) return new Set         (["facts", "structure"]);
+  const out = new Set         (); for (const x of m[1] .split(",").map((y) => y.trim().replace(/^["']|["']$/g, ""))) if (x === "facts" || x === "structure") out.add(x);
+  return out;
+}
+/** BOM-031: the part of a note that a BOM update owns and may compare: of the areas in `bomOwns`, the `description`, `manufacturerN` and `mfgPnN` properties (facts) and the importer's own SysML members
+ *  (all of a Document note's block). Prose, callouts, `status`, `tags`, specializations and every member the model added are not in it. 16 hex digits of the SHA-256. A later scan recomputes this
+ *  from the note in the vault, merged or not. */
+function bomOwnedHash(noteText        )         {
+  const text = noteText.replace(/\r\n?/g, "\n"), fm = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "", owns = bomOwnsOf(text);
+  const yaml = owns.has("facts") ? fm.split("\n").filter((l) => /^(description|manufacturer\d+|mfgPn\d+):/.test(l)) : [];
+  const fence = bomFence(text).trim(), parts = fence ? bomSplitSysml(fence) : null;
+  const owned = !parts ? (owns.size ? fence : "") : parts.members.length === 0 && parts.head.length === fence.split("\n").length ? (owns.size ? fence : "") : parts.members.filter((m) => m.owned && owns.has(m.area           )).map((m) => m.lines.join("\n")).join("\n");
+  return sha256Text(`${yaml.join("\n")}\n--\n${owned}`).slice(0, 16);
+}
+
 /* sysml_lang.ts */
 /* Recognizes the SysML v2 textual notation by the language catalog (governance/language/catalog.json): which construct a
  * statement is, from its leading keywords. Not a parser: it classifies a statement head so nothing valid is reported as
@@ -2176,6 +2338,8 @@ function edSpecOfMember(ix            , ownerPath        , head        )        
 
 
 
+
+
 const mgBad = (problem        )           => ({ summary: "", writes: [], problems: [problem] });
 const MG_CORE = new Set(["type", "subtype", "id", "uid", "status", "eaType", "tags", "sourceRole", "primarySymbol"]);
 const MG_GENERIC = new Set(["", "part"]);
@@ -2353,10 +2517,53 @@ function mgSuggest(ix            )                 {
   return out.sort((x, y) => Number(y.confident) - Number(x.confident) || x.pn.localeCompare(y.pn));
 }
 
+/* ---- who owns which area (D-0053) ---------------------------------------------------------------------------------- */
+                                                
+                                        
+                                                                                                                                       
+const MG_FACT_KEY = /^(description|manufacturer\d+|mfgPn\d+)$/;
+const mgIsBomNote = (n        )          => n.fm.some((f) => f.key === "importHash") || !!n.src?.some((l) => /^- BOM Part Number:/.test(l));
+                                                                          
+/** The members of the one definition in a block, each with its area. null when the block has no single definition this can read. */
+function mgMembers(block               )                 {
+  if (block === null) return [];
+  const S = scanSysml(block); if (S.defs.length !== 1) return null;
+  const d = S.defs[0] , at = edFindDef(block, d.keyword, d.name); if (!at?.open) return [];
+  return edMembers(block, at.term + 1, at.close).map((m) => { const text = block.slice(m.start, m.end); return { start: m.start, end: m.end, text, area: bomAreaOfMember(m.head + (m.tag ? " // " + m.tag : ""), text) }; });
+}
+/** The block without the given members (each whole line removed). */
+function mgDrop(block        , drop         )         {
+  let out = block;
+  for (const m of [...drop].sort((a, b) => b.start - a.start)) {
+    const ls = out.lastIndexOf("\n", m.start - 1) + 1, le = out.indexOf("\n", m.end);
+    if (out.slice(ls, m.start).trim() === "" && le >= 0 && out.slice(m.end, le).trim() === "") out = out.slice(0, ls) + out.slice(le + 1); else out = out.slice(0, m.start) + out.slice(m.end);
+  }
+  return out;
+}
+/** The recommended owner of every area for two notes. When exactly one is a BOM note it recommends the BOM note for part facts and structure, and the other note for the rest unless the BOM note already has members there. */
+function mgRecommend(S        , A        , sm         , am         )           {
+  const out = {}            , sb = mgIsBomNote(S), ab = mgIsBomNote(A), bom                                 = sb && !ab ? "survivor" : ab && !sb ? "absorbed" : null;
+  for (const a of BOM_AREAS) {
+    if (!bom) { out[a.id] = "both"; continue; }
+    const model = bom === "survivor" ? "absorbed" : "survivor", bomHas = (bom === "survivor" ? sm : am).some((m) => m.area === a.id) || (a.id === "facts" && (bom === "survivor" ? S : A).fm.some((f) => MG_FACT_KEY.test(f.key)));
+    out[a.id] = a.bom ? bom : bomHas ? "both" : model;
+  }
+  return out;
+}
+/** The table the merge dialog shows for one alias pair: per area, how many members each note has and the recommended owner. */
+function mgOwnerRows(files                     , absorbedPath        , survivorPath        )                       {
+  const S = mgRead(files.get(survivorPath) ?? ""), A = mgRead(files.get(absorbedPath) ?? "");
+  if (!S || !A) return "Both notes need readable frontmatter.";
+  const sm = mgMembers(S.block), am = mgMembers(A.block);
+  if (sm === null || am === null) return "Notes with more than one definition are not merged yet.";
+  const rec = mgRecommend(S, A, sm, am), yamlN = (n        )         => n.fm.filter((f) => MG_FACT_KEY.test(f.key)).length;
+  return BOM_AREAS.map((a) => ({ id: a.id, label: a.label, hint: a.hint, bom: a.bom, survivor: sm.filter((m) => m.area === a.id).length + (a.id === "facts" ? yamlN(S) : 0), absorbed: am.filter((m) => m.area === a.id).length + (a.id === "facts" ? yamlN(A) : 0), recommended: rec[a.id] }));
+}
+
 /* ---- merging two blocks ------------------------------------------------------------------------------------------ */
 const mgNorm = (s        )         => s.replace(/\s+/g, " ").trim();
                                                                                                  
-function mgMergeBlocks(sBlock        , aBlock        )                   {
+function mgMergeBlocks(sBlock        , aBlock        , addSpecializations = true)                   {
   const S = scanSysml(sBlock), A = scanSysml(aBlock);
   if (S.defs.length !== 1 || A.defs.length !== 1) return "Notes with more than one definition are not merged yet.";
   if (S.warnings.length || A.warnings.length) return "A SysML block has statements the scanner does not read; fix it first.";
@@ -2383,7 +2590,7 @@ function mgMergeBlocks(sBlock        , aBlock        )                   {
     if (next === null) return `Could not find "${sd.keyword} ${sd.name}" in the surviving block.`;
     block = next; carried++;
   }
-  for (const sym of ad.specializes) {
+  for (const sym of addSpecializations ? ad.specializes : []) {
     const t = rename.get(sym) ?? sym;
     if (t === sd.symbol || sd.specializes.includes(t) || specialized.includes(t)) continue;
     const at = edFindDef(block, sd.keyword, sd.name);
@@ -2399,7 +2606,8 @@ function mgMergeBlocks(sBlock        , aBlock        )                   {
 
 /* ---- merging frontmatter ------------------------------------------------------------------------------------------ */
 const mgLinks = (lines          )           => [...lines.join("\n").matchAll(/\[\[([^\]|#\n]+)/g)].map((m) => m[1] .trim());
-function mgMergeFrontmatter(s        , a        , names                     , survName        , notes          , symbol        )           {
+                                                                                            
+function mgMergeFrontmatter(s        , a        , names                     , survName        , notes          , symbol        , ctx             = { facts: "both", dropped: { survivor: [], absorbed: [] } })           {
   const out           = [];
   const rel = (f        ) => f.filter((x) => !MG_CORE.has(x.key) && x.key !== "aliasOf");
   const merged = new Map                  ();
@@ -2429,14 +2637,16 @@ function mgMergeFrontmatter(s        , a        , names                     , su
       if (f.key === "tags" && lacksSymbol && symbol) out.push("sourceRole: authoritative-model", `primarySymbol: ${symbol}`);          // an older BOM note had none
       continue;
     }
+    if (MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed") { ctx.dropped.survivor.push(...f.lines); continue; }     // part facts are owned by the other note
     if (!f.lines.some((x) => x.includes("[["))) { out.push(...f.lines); done.add(f.key); continue; }   // WKB-026: a plain property of the surviving note (BOM description, manufacturers, import stamp) is kept as it is
     const l = merged.get(f.key);
     if (l && l.length) out.push(`${f.key}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
     done.add(f.key);
   }
   for (const f of a.fm) {   // plain properties only the removed note has are carried over; the import stamp never is, it describes the survivor's own content
-    if (done.has(f.key) || MG_CORE.has(f.key) || f.key === "aliasOf" || /^import(Source|edOn|Hash)$/.test(f.key) || f.lines.some((x) => x.includes("[["))) continue;
-    if (s.fm.some((x) => x.key === f.key)) continue;
+    if (done.has(f.key) || MG_CORE.has(f.key) || f.key === "aliasOf" || f.key === "bomOwns" || (/^import(Source|edOn|Hash)$/.test(f.key) && s.fm.some((x) => x.key === "importHash")) || f.lines.some((x) => x.includes("[["))) continue;
+    if (MG_FACT_KEY.test(f.key) && ctx.facts === "survivor") { ctx.dropped.absorbed.push(...f.lines); continue; }
+    if (s.fm.some((x) => x.key === f.key) && !(MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed")) continue;
     out.push(...f.lines); done.add(f.key); notes.push(`property ${f.key} carried over`);
   }
   for (const [k, l] of merged) if (!done.has(k) && l.length) out.push(`${k}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
@@ -2446,7 +2656,7 @@ function mgMergeFrontmatter(s        , a        , names                     , su
 /* ---- the merge ------------------------------------------------------------------------------------------------------- */
                                                                                                                  
 /** Merges every absorbed note into its survivor (the end of its alias chain) and rewrites the links and symbols that named it. */
-function planNoteMerge(ix            , files                     , pairs              )              {
+function planNoteMerge(ix            , files                     , pairs              , chosen                        )              {
   const fail = (p        )              => ({ ...mgBad(p), merged: 0, carried: 0, notCarried: 0, rewritten: 0 });
   const list = pairs ?? mgAliasPairs(ix);
   if (!list.length) return fail("There are no aliases to merge.");
@@ -2478,13 +2688,20 @@ function planNoteMerge(ix            , files                     , pairs        
       if (!S || !A) return fail(`"${an.title}" or "${sn.title}" does not have readable frontmatter.`);
       if (S.meta.type !== A.meta.type) return fail(`"${an.title}" and "${sn.title}" are different classes.`);
       let block = S.block, extra = "";
+      const sm0 = mgMembers(S.block), am0 = mgMembers(A.block);
+      if (sm0 === null || am0 === null) return fail(`${an.title} into ${sn.title}: Notes with more than one definition are not merged yet.`);
+      const owners = chosen?.get(a) ?? mgRecommend(S, A, sm0, am0), own = (m       )          => owners[m.area];
+      const sDrop = sm0.filter((m) => own(m) === "absorbed"), aDrop = am0.filter((m) => own(m) === "survivor"), sGone = sDrop.map((m) => m.text), aGone = aDrop.map((m) => m.text);
+      const dropped = { survivor: []            , absorbed: []             };
       if (A.block !== null) {
         if (S.block === null) return fail(`"${sn.title}" has no SysML block to merge "${an.title}" into. Keep "${an.title}" instead.`);
-        const r = mgMergeBlocks(S.block, A.block);
+        const r = mgMergeBlocks(mgDrop(S.block, sDrop), mgDrop(A.block, aDrop), owners.relationships !== "survivor");
         if (typeof r === "string") return fail(`${an.title} into ${sn.title}: ${r}`);
-        block = r.block; carried += r.carried; notCarried += r.notCarried.length;
+        block = r.block; carried += r.carried; notCarried += r.notCarried.length + sGone.length + aGone.length;
         if (r.notCarried.length) extra = `## Not carried over from ${an.title}\n\nThe surviving note already had these with a different value. Decide which to keep.\n\n\`\`\`sysml\n${r.notCarried.join("\n")}\n\`\`\``;
       }
+      const fmCtx             = { facts: owners.facts, dropped };
+      const own2 = (title        , owner        , sysml          , yaml          )         => `## Not carried over from ${title}\n\nThe owner of these areas was set to ${owner} at the merge. Move a member back by hand if it should stay.\n\n` + (sysml.length ? `\`\`\`sysml\n${sysml.join("\n")}\n\`\`\`` : "") + (sysml.length && yaml.length ? "\n\n" : "") + (yaml.length ? `\`\`\`yaml\n${yaml.join("\n")}\n\`\`\`` : "");
       const sz = mgZone(S.zone), az = mgZone(A.zone);
       const aTitle = mgTitle(az.main, an.title), sTitle = mgTitle(sz.main, sn.title), aBody = mgWithoutTitle(az.main);
       const zoneParts = [sz.main];
@@ -2494,12 +2711,21 @@ function planNoteMerge(ix            , files                     , pairs        
       const former = [...new Set([...sz.former, ...az.former, `- ${A.meta.id} (uid ${A.meta.uid})`])];
       if (aliases.length) zoneParts.push(`## Aliases\n\n${aliases.join("\n")}`);
       zoneParts.push(`## Former ids\n\n${former.join("\n")}`);
-      const fm = mgMergeFrontmatter(S, A, nameMap, sn.name, notes, block !== null ? scanSysml(block).defs[0]?.symbol ?? "" : "");
+      let fm = mgMergeFrontmatter(S, A, nameMap, sn.name, notes, block !== null ? scanSysml(block).defs[0]?.symbol ?? "" : "", fmCtx);
+      if (aGone.length || dropped.absorbed.length) zoneParts.push(own2(an.title, sn.title, aGone, dropped.absorbed));
+      if (sGone.length || dropped.survivor.length) zoneParts.push(own2(sn.title, an.title, sGone, dropped.survivor));
+      const bomIsS = mgIsBomNote(S), bomSide = bomIsS ? S : mgIsBomNote(A) ? A : null, bomText = bomIsS ? text : at;
+      const stampM = bomSide && /^importHash: ([0-9a-f]{16})$/m.exec(bomText), stampOk = !!stampM && bomOwnedHash(bomText) === stampM[1];
+      if (bomSide && fm.some((l) => l.startsWith("importHash:"))) {      // D-0053: which areas a later BOM update may still change
+        const side = bomIsS ? "survivor" : "absorbed", prev = bomOwnsOf(bomText), owns = (["facts", "structure"]         ).filter((id) => prev.has(id) && (owners[id] === side || owners[id] === "both"));
+        fm = fm.filter((l) => !/^bomOwns:/.test(l)); if (owns.length < 2) fm.push(`bomOwns: [${owns.join(", ")}]`);
+      }
       const srcLines = S.src || A.src ? [...new Set([...(S.src ?? []), ...(A.src ?? [])])] : null;
       let out = `---\n${fm.join("\n")}\n---\n${zoneParts.filter(Boolean).join("\n\n")}`;
       if (srcLines) out += `\n\n\n\n${MDSE.SOURCE_HEADING}\n\n${srcLines.join("\n")}\n`;
       if (block !== null) out += (srcLines ? "\n" : "\n\n\n\n") + MDSE.renderSysmlSection(block);
       else out += "\n";
+      if (stampOk && /^importHash: /m.test(out)) out = out.replace(/^importHash: .*$/m, `importHash: ${bomOwnedHash(out)}`);     // the merge itself is not an edit: the stamp now describes the merged content
       text = S.crlf ? out.replace(/\n/g, "\r\n") : out;
     }
     work.set(s, text);
@@ -2576,6 +2802,7 @@ const ED_HELP                         = {
   alias: { title: "Alias (same part)", what: "Marks one note as the same part as another. Nothing is merged yet: the alias is a line in the note's header that you can review and clear.", options: ["Written as `aliasOf` on the note that will go away.", "Merge turns every alias into one note per part."] },
   mergeKeep: { title: "Which note stays", what: "The note that stays keeps its file name, id, uid and SysML package. The other note's content is folded into it and its file is removed.", options: ["Usually the BOM note, because its file name is the part number.", "Links and references to the removed note are rewritten to the one that stays; its old name is kept as an alias.", "The removed note's id and uid are listed under Former ids."] },
   mergeAll: { title: "Merge", what: "Combines each aliased pair into one note: header fields, text, Source lines and SysML members. Anything both notes say differently is kept apart under a heading for you to decide, never overwritten.", options: ["You see the changed files before anything is written.", "Undo brings the removed notes back."] },
+  owners: { title: "Who owns what", what: "Each area has one owner. The owner's members are kept; the other note's go under \"Not carried over\" in the merged note, not lost.", options: ["Part facts and Structure are the two a BOM can own; they are recommended for the BOM note.", "The rest is recommended for the EA note.", "A later BOM update changes only what the BOM note still owns (`bomOwns`)."] },
   suggest: { title: "Find matches", what: "Looks for EA notes that are the same part as a BOM part. Confident matches are the EA part number (PN) equal to the BOM number, or the number inside the EA name, with one candidate only.", options: ["PN: the EA part number line equals the BOM number.", "Name has number: the BOM number appears in the EA title.", "Close name: similar words only; never selected for you."] },
   doc: { title: "Description", what: "Free text that explains why this relationship exists. Written as a doc comment inside it.", options: ["Plain words; no limit."], note: "Documentation" },
   custom: { title: "Other attribute", what: "A name and a value you define that the list does not offer, written as an attribute inside the relationship.", options: ["Name: letters, digits, underscore.", "Value: a number or text. Anything else is stored as a comment."], note: "Attribute usage" },
@@ -3124,7 +3351,7 @@ function mountWorkbench(root             , host       = {})      {
 const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
-const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, planNoteMerge };
+const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgOwnerRows, planNoteMerge };
 
                     
                                
@@ -3388,13 +3615,30 @@ function editView(c         )              {
       if (!pairs.length) { aliasBox.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet. Mark a note as the same part as another, or find matches below.")); return; }
       aliasBox.append(h("table", { class: "rl" }, h("tbody", {}, ...pairs.slice(0, 200).map((p) => h("tr", {}, h("td", {}, h("a", { href: "#", class: "lnk", onclick: (e       ) => { e.preventDefault(); c.open(p.absorbed); } }, title(p.absorbed)), " → ",
         p.survivor ? h("a", { href: "#", class: "lnk", onclick: (e       ) => { e.preventDefault(); c.open(p.survivor ); } }, title(p.survivor)) : h("span", { class: "mut" }, p.target + " (not in vault)")),
-        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p])) }, "Merge"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
+        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => openOwners(p) }, "Merge…"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
       if (pairs.length > 200) aliasBox.append(h("div", { class: "mut", style: "font-size:12px" }, `… and ${pairs.length - 200} more (Merge all covers them).`));
-      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length})`), helpBtn("mergeAll")));
+      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length}), recommended owners`), helpBtn("mergeAll")));
+    };
+    /* who owns which area (D-0053): one row per area, the recommended owner preselected */
+    const ownersBox = h("div", {});
+    const openOwners = (p              )       => {
+      ownersBox.replaceChildren(); showPlan(null);
+      if (!p.survivor) return;
+      const rows = MG.mgOwnerRows(host.files(), p.absorbed, p.survivor);
+      if (typeof rows === "string") { showPlan({ summary: "", writes: [], problems: [rows] }); return; }
+      const sT = title(p.survivor), aT = title(p.absorbed), chosen                             = Object.fromEntries(rows.map((r) => [r.id, r.recommended]));
+      ownersBox.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Who owns what: ${aT} into ${sT}`), helpBtn("owners")),
+        h("div", { class: "mut", style: "font-size:12px" }, "Pick the note whose members and properties each area keeps. The other note's go under “Not carried over”, not lost. A later BOM update changes only the areas the BOM note still owns."),
+        h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => {
+          const sel = h("select", { "aria-label": `Owner of ${r.label}`, onchange: (e       ) => { chosen[r.id] = (e.target                     ).value              ; showPlan(null); } },
+            ...opts([["both", "Keep both" + (r.recommended === "both" ? " (recommended)" : "")], ["survivor", sT + (r.recommended === "survivor" ? " (recommended)" : "")], ["absorbed", aT + (r.recommended === "absorbed" ? " (recommended)" : "")]], r.recommended));
+          return h("tr", {}, h("td", {}, h("b", {}, r.label), r.bom ? h("span", { class: "tag k", style: "margin-left:6px" }, "BOM") : null, h("div", { class: "mut", style: "font-size:12px" }, r.hint)), h("td", { class: "mut", style: "white-space:nowrap" }, `${sT}: ${r.survivor} · ${aT}: ${r.absorbed}`), h("td", {}, sel));
+        }))),
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p], new Map([[p.absorbed, chosen               ]]))) }, "Preview merge"), h("button", { class: "sm", onclick: () => { ownersBox.replaceChildren(); showPlan(null); } }, "Cancel")));
     };
     listRefresh = ()       => { if (SAVED.mode === "merge") drawAliases(); };
     drawAliases();
-    v.append(aliasBox);
+    v.append(aliasBox, ownersBox);
     /* mark the open note */
     if (from && from.type === "Object") {
       let other              = null;

@@ -144,7 +144,7 @@ test("many aliases at once: every pair is checked, and one bad pair names itself
 
 /* ---- BOM update after the merge (D-0052): the importer changes only its own members and properties ---- */
 import { scanBomUpdate, applyBomUpdate } from "../../importer/src/bom_update.ts";
-import { bomOwnedHash } from "../../importer/src/bom.ts";
+import { bomOwnedHash } from "../../core/src/bom_own.ts";
 const bomOpts = (files: Map<string, string>, extra: object = {}) => ({ sourceName: "bom2.tsv", fingerprint: "b".repeat(64), runDate: "2026-11-01T09:00:00", authorCode: "skellyspencer", classes, existing: { hasVault: true, files }, pending: [] as Array<[string, string]>, ...extra });
 const gridV2 = (ctrlName: string, fanQty: string, ctrlRev = "-0"): string =>
   [HEAD, row("ASM-100", 1, "SYN-CTRL-1", ctrlName, "1").replace(/\t-0\t99\t/, `\t${ctrlRev}\t99\t`), row("ASM-100", 2, "FAN-77", "FAN 40MM", fanQty)].join("\n");
@@ -190,4 +190,71 @@ test("a person's change to a member the BOM owns is a conflict; a change to one 
   const model = new Map(f2); model.set(PART, m.replace("port spare : OBJ_00010::CANInterface;", "port spare : OBJ_00010::CANInterface; // checked by me"));
   const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(model));
   assert.deepEqual(s.holds, []); assert.ok(s.items.some((i) => i.category === "DESCRIPTION"));
+});
+
+/* ---- choosing the owner of each area at the merge (D-0053) ---- */
+const withDup = new Map(f1); withDup.set(CTRL, f1.get(CTRL)!.replace("        port can :", "        part dup : OBJ_00003::GenericModule;\n        port can :"));
+const ixDup = buildIndex(withDup, { classes });
+const rowsDup = M.mgOwnerRows(withDup, CTRL, PART) as M.MgAreaRow[];
+const recommended = (): M.MgOwners => Object.fromEntries(rowsDup.map((r) => [r.id, r.recommended])) as M.MgOwners;
+const mergeWith = (over: Partial<M.MgOwners>): string => {
+  const p = M.planNoteMerge(ixDup, withDup, undefined, new Map([[CTRL, { ...recommended(), ...over }]]));
+  assert.deepEqual(p.problems, []); return p.writes.find((w) => w.path === PART)!.after;
+};
+const dupLine = /^ {8}part dup : OBJ_00003::GenericModule;$/m;
+const inBlock = (n: string): string => MDSE.extractSysml(n) as string;
+
+test("the owner table has seven areas and recommends the BOM note for part facts and structure, the EA note for the rest", () => {
+  assert.deepEqual(rowsDup.map((r) => r.id), ["facts", "structure", "properties", "interfaces", "behavior", "requirements", "relationships"]);
+  const by = Object.fromEntries(rowsDup.map((r) => [r.id, r])) as Record<string, M.MgAreaRow>;
+  assert.equal(by.facts!.recommended, "survivor"); assert.equal(by.structure!.recommended, "survivor");
+  for (const id of ["interfaces", "behavior", "requirements", "relationships"]) assert.equal(by[id]!.recommended, "absorbed", id);
+  assert.ok(by.interfaces!.absorbed >= 5 && by.interfaces!.survivor === 0); assert.equal(by.structure!.absorbed, 1);
+});
+
+test("with the recommended owners the EA note's own structure stays out of the BOM note and nothing is lost", () => {
+  const n = mergeWith({});
+  assert.doesNotMatch(inBlock(n), dupLine);
+  assert.match(n, /## Not carried over from Controller \(owned by|## Not carried over from Controller\n/);
+  assert.match(n, /part dup : OBJ_00003::GenericModule;/, "it is kept in the note's text");
+  assert.doesNotMatch(n, /^bomOwns:/m, "the BOM still owns facts and structure, which is the default");
+  assert.equal(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1]);
+});
+
+test("giving structure to the EA note keeps its usages, records that the BOM no longer owns structure, and a BOM update then leaves structure alone", () => {
+  const n = mergeWith({ structure: "absorbed" });
+  assert.match(inBlock(n), dupLine); assert.match(n, /^bomOwns: \[facts\]$/m);
+  assert.equal(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1]);
+  const files = new Map(f1); files.set(PART, n); files.delete(CTRL);
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(files));
+  assert.deepEqual(s.holds, []);
+  assert.deepEqual(s.items.filter((i) => i.pn === "SYN-CTRL-1").map((i) => i.category).sort(), ["DESCRIPTION", "NEW_REVISION"]);
+  const r = applyBomUpdate(s, { approved: new Set(s.items.filter((i) => i.pn === "SYN-CTRL-1").map((i) => i.id)), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" });
+  const u = r.writes.find((w) => w.path === PART)!.content;
+  assert.match(inBlock(u), dupLine); assert.match(u, /^bomOwns: \[facts\]$/m); assert.match(u, /attribute revision = "-199";/);
+  assert.equal(bomOwnedHash(u), /^importHash: (\w+)$/m.exec(u)![1]);
+});
+
+test("giving part facts to the EA note drops the BOM description from the note and a BOM update then ignores facts", () => {
+  const n = mergeWith({ facts: "absorbed" });
+  assert.doesNotMatch(n.split("\n---\n")[0]!, /^description: /m, "not in the properties"); assert.match(n, /^bomOwns: \[structure\]$/m); assert.match(n, /description: CHARGE CONTROLLER BOARD/, "kept in the note's text");
+  assert.doesNotMatch(inBlock(n), /attribute partNumber/);
+  const files = new Map(f1); files.set(PART, n); files.delete(CTRL);
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(files));
+  assert.deepEqual(s.holds, []); assert.deepEqual(s.items.filter((i) => i.pn === "SYN-CTRL-1"), []);
+});
+
+test("when the model owns every BOM area the update scan lists the note and changes nothing", () => {
+  const n = mergeWith({ facts: "absorbed", structure: "absorbed" });
+  assert.match(n, /^bomOwns: \[\]$/m);
+  const files = new Map(f1); files.set(PART, n); files.delete(CTRL);
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(files));
+  assert.deepEqual(s.holds.map((h) => h.code), ["NOT_OWNED"]); assert.deepEqual(s.items.filter((i) => i.pn === "SYN-CTRL-1"), []);
+});
+
+test("a note edited before the merge is not made clean by it", () => {
+  const edited = new Map(withDup); edited.set(PART, withDup.get(PART)!.replace('attribute source = "buy";', 'attribute source = "make";'));
+  const p = M.planNoteMerge(buildIndex(edited, { classes }), edited, undefined, new Map([[CTRL, recommended()]]));
+  const n = p.writes.find((w) => w.path === PART)!.after;
+  assert.notEqual(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1], "the change is still a conflict for the next BOM update");
 });

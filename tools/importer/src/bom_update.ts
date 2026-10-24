@@ -1,20 +1,22 @@
 /* BOM update scan and apply (D-0051). A later BOM import is read against the vault, the differences are listed by category, and only what the owner approves is written.
  * The scan never writes. A note is only proposed for change when it still matches its import stamp (BOM-031); a note a person changed, or one with no stamp, is reported and left alone. */
 import MDSE from "../../core/src/mdse_core.js";
-import { buildBom, bomOwnedHash, bomRevCompare, parseBom, bomSplitSysml, bomAttrOf } from "./bom.ts";
+import { buildBom, bomRevCompare, parseBom } from "./bom.ts";
+import { bomOwnedHash, bomSplitSysml, bomAttrOf, bomOwnsOf } from "../../core/src/bom_own.ts";
+import type { BomArea } from "../../core/src/bom_own.ts";
 import type { BomOptions, BomResult, Grid } from "./bom.ts";
 import type { OutFile } from "./merge.ts";
 import { yamlScalar } from "./notes.ts";
 
 export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES";
-export type HoldCode = "CONFLICT" | "NO_BASELINE" | "OLDER_IN_FILE";
+export type HoldCode = "CONFLICT" | "NO_BASELINE" | "OLDER_IN_FILE" | "NOT_OWNED";
 export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
   NEW_PART: "New part (a note is created)", NEW_REVISION: "New revision of an assembly (becomes the active one)", DESCRIPTION: "Part description changed", MANUFACTURER: "Manufacturer data changed",
   PART_ATTRIBUTES: "Part source or drawing location changed", LINE_ADDED: "Assembly line added", LINE_REMOVED: "Assembly line no longer listed", LINE_CHANGED: "Assembly line changed (quantity, unit, revision, dates ...)",
   DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one",
 };
 export const HOLD_TEXT: Record<HoldCode, string> = {
-  CONFLICT: "Edited since the last import: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone",
+  CONFLICT: "Edited since the last import: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
 };
 export interface UpdateItem { id: string; category: UpdateCategory; path: string; pn: string; summary: string; before: string; after: string; /** the SysML entry the item concerns, "" for a whole-note item */ key: string }
 export interface UpdateHold { code: HoldCode; path: string; pn: string; message: string }
@@ -42,7 +44,7 @@ function yamlOwned(note: string): { description: string; mfr: Array<[string, str
 }
 const importHashOf = (note: string): string | null => /^importHash: ([0-9a-f]{16})$/m.exec(note)?.[1] ?? null;
 const revOf = (p: Parts): string => ATTR(p.decl.filter((d) => d.key === "attr:revision").flatMap((d) => d.lines), "revision");
-const ownedOf = (p: Parts): Decl[] => p.decl.filter((d) => d.owned);
+const ownedOf = (p: Parts, owns: Set<BomArea>): Decl[] => p.decl.filter((d) => d.owned && owns.has(d.area as BomArea));
 const lineWord = (d: Decl): string => { const l = ATTR(d.lines, "line"); const m = /^ {8}(?:part \w+ : (\S+)|ref item \w+ : (\S+))/.exec(d.lines[0]!); return `${l ? "line " + l + " " : ""}${(m?.[1] ?? m?.[2] ?? "").replace(/^.*::[PD]_/, "")}`; };
 const mfrText = (m: Array<[string, string]>): string => m.map(([k, v]) => `${k}: ${v}`).join("; ") || "(none)";
 
@@ -63,22 +65,24 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     out.current.set(f.path, old);
     const stamp = importHashOf(old);
     if (!stamp) { out.holds.push({ code: "NO_BASELINE", path: f.path, pn, message: `${pn}: the note has no import stamp, so the scan cannot tell a BOM change from an edit.` }); continue; }
+    const owns = bomOwnsOf(old);
+    if (!owns.size) { out.holds.push({ code: "NOT_OWNED", path: f.path, pn, message: `${pn}: at the merge the model was given every area of this note (bomOwns is empty), so BOM changes are not applied.` }); continue; }
     if (bomOwnedHash(old) !== stamp) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the description, manufacturer data or SysML was changed in the vault after the last import (stamp ${stamp}).` }); continue; }
     if (bomOwnedHash(f.content) === stamp) { out.unchanged++; continue; }
     const so = sysmlOf(old), sn = sysmlOf(f.content), po = so ? splitSysml(so) : null, pnw = sn ? splitSysml(sn) : null;
     if (!po || !pnw) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the SysML block is not in the layout the importer writes, so it is not compared.` }); continue; }
     const yo = yamlOwned(old), yn = yamlOwned(f.content);
-    if (yn.description && yn.description !== yo.description) add("DESCRIPTION", f.path, pn, `${pn}: description`, yo.description || "(none)", yn.description);
-    if (yn.mfr.length && mfrText(yn.mfr) !== mfrText(yo.mfr)) add("MANUFACTURER", f.path, pn, `${pn}: manufacturer data`, mfrText(yo.mfr), mfrText(yn.mfr));
+    if (owns.has("facts") && yn.description && yn.description !== yo.description) add("DESCRIPTION", f.path, pn, `${pn}: description`, yo.description || "(none)", yn.description);
+    if (owns.has("facts") && yn.mfr.length && mfrText(yn.mfr) !== mfrText(yo.mfr)) add("MANUFACTURER", f.path, pn, `${pn}: manufacturer data`, mfrText(yo.mfr), mfrText(yn.mfr));
     const ro = revOf(po), rn = revOf(pnw), isAssembly = asParent.has(pn);
-    if (rn !== ro && !(rn === "" && ro !== "")) {
+    if (owns.has("facts") && rn !== ro && !(rn === "" && ro !== "")) {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
-      const uo = ownedOf(po).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw).filter((d) => d.kind === "usage" || d.kind === "ref").length;
+      const uo = ownedOf(po, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length;
       add("NEW_REVISION", f.path, pn, `${pn}: revision ${ro ? JSON.stringify(ro) : "(none)"} → ${JSON.stringify(rn)} (${uo} → ${un} lines)`, `revision ${ro || "(none)"}, ${uo} lines`, `revision ${rn}, ${un} lines`);
       continue;
     }
-    const mo = new Map(ownedOf(po).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw).map((d) => [d.key, d]));
-    for (const d of ownedOf(pnw)) {
+    const mo = new Map(ownedOf(po, owns).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw, owns).map((d) => [d.key, d]));
+    for (const d of ownedOf(pnw, owns)) {
       const was = mo.get(d.key);
       if (d.kind === "attr") { if (d.key === "attr:revision") continue; if (!was) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)} added`, "(none)", ATTR(d.lines, d.key.slice(5)), d.key); else if (bodyOf(was) !== bodyOf(d)) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${d.key.slice(5)}`, ATTR(was.lines, d.key.slice(5)), ATTR(d.lines, d.key.slice(5)), d.key); continue; }
       if (d.kind === "dep") { if (!was) add("SUPERSEDES", f.path, pn, `${pn}: replaces ${d.key.slice(4).replace(/^.*::P_/, "")}`, "", d.lines[0]!.trim(), d.key); continue; }
@@ -90,7 +94,7 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
         add("LINE_CHANGED", f.path, pn, `${pn}: ${lineWord(d)}: ${[typeChanged ? "part changed" : "", ...diffs].filter(Boolean).join("; ") || "multiplicity"}`, was.lines.join("\n"), d.lines.join("\n"), d.key);
       }
     }
-    if (isAssembly) for (const d of ownedOf(po)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key);
+    if (isAssembly) for (const d of ownedOf(po, owns)) if (!mn.has(d.key) && (d.kind === "usage" || d.kind === "ref")) add(d.kind === "ref" ? "DRAWING" : "LINE_REMOVED", f.path, pn, `${pn}: ${lineWord(d)} no longer listed`, d.lines.join("\n"), "", d.key);
     if (!out.items.some((x) => x.path === f.path) && !out.holds.some((x) => x.path === f.path)) out.unchanged++;
   }
   return out;
@@ -144,17 +148,17 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
   for (const [path, items] of byPath) {
     const gen = scan.generated.get(path)!;
     if (items.some((i) => i.category === "NEW_PART")) { writes.push({ path, content: gen }); continue; }
-    const old = scan.current.get(path)!, cats = new Set(items.map((i) => i.category)), po = splitSysml(sysmlOf(old)!)!, pnw = splitSysml(sysmlOf(gen)!)!;
+    const old = scan.current.get(path)!, owns = bomOwnsOf(old), cats = new Set(items.map((i) => i.category)), po = splitSysml(sysmlOf(old)!)!, pnw = splitSysml(sysmlOf(gen)!)!;
     let note = old, decl: Decl[];
     if (cats.has("NEW_REVISION")) {   // the importer's members are replaced as a set, at the place of the first one; the model's members stay where they are
-      const fresh = ownedOf(pnw).map((d) => ({ ...d, lines: [...d.lines] })), firstOwned = po.decl.findIndex((d) => d.owned); decl = [];
-      po.decl.forEach((d, i) => { if (i === firstOwned || (firstOwned < 0 && i === 0)) decl.push(...fresh); if (!d.owned) decl.push({ ...d, lines: [...d.lines] }); });
+      const fresh = ownedOf(pnw, owns).map((d) => ({ ...d, lines: [...d.lines] })), firstOwned = po.decl.findIndex((d) => d.owned && owns.has(d.area as BomArea)); decl = [];
+      po.decl.forEach((d, i) => { if (i === firstOwned || (firstOwned < 0 && i === 0)) decl.push(...fresh); if (!(d.owned && owns.has(d.area as BomArea))) decl.push({ ...d, lines: [...d.lines] }); });
       if (!decl.length || po.decl.length === 0) decl.push(...fresh);
     }
     else {
       decl = po.decl.map((d) => ({ ...d, lines: [...d.lines] }));
-      const newKeys = ownedOf(pnw).map((d) => d.key), keyed = new Map(items.filter((i) => i.key).map((i) => [i.key, i]));
-      for (const d of ownedOf(pnw)) {
+      const newKeys = ownedOf(pnw, owns).map((d) => d.key), keyed = new Map(items.filter((i) => i.key).map((i) => [i.key, i]));
+      for (const d of ownedOf(pnw, owns)) {
         const it = keyed.get(d.key); if (!it || it.category === "LINE_REMOVED") continue;
         const at = decl.findIndex((x) => x.key === d.key);
         if (at >= 0) {   // changed in place: the new text, under the name the note already uses
@@ -165,7 +169,7 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
           decl.splice(before + 1, 0, { ...d, lines: [...d.lines] });
         }
       }
-      for (const it of items) if (it.key && (it.category === "LINE_REMOVED" || (it.category === "DRAWING" && !ownedOf(pnw).some((x) => x.key === it.key)))) decl = decl.filter((x) => x.key !== it.key);
+      for (const it of items) if (it.key && (it.category === "LINE_REMOVED" || (it.category === "DRAWING" && !ownedOf(pnw, owns).some((x) => x.key === it.key)))) decl = decl.filter((x) => x.key !== it.key);
     }
     renameClashes(decl);
     const sysml = [...(po.head), ...decl.flatMap((d) => d.lines), ...po.tail].join("\n") + "\n";

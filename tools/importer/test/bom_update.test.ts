@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import MDSE from "../../core/src/mdse_core.js";
-import { buildBom, parseDelimited, bomOwnedHash } from "../src/bom.ts";
+import { buildBom, parseDelimited } from "../src/bom.ts";
+import { bomOwnedHash } from "../../core/src/bom_own.ts";
 import { scanBomUpdate, applyBomUpdate, closeApproval } from "../src/bom_update.ts";
 import { ROOT } from "./harness.ts";
 

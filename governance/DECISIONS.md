@@ -589,3 +589,18 @@ Rules: BOM-032, BOM-033, BOM-034 (new). BOM-029 (newest first, first wins) appli
 
 Rules: BOM-031 (changed), BOM-035, WKB-026 (new).
 
+
+## D-0053 — Merge: the owner of each area is chosen at the merge, and recorded for later BOM updates
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0052). Closes OD-14.
+
+1. **The owner's rule.** The BOM owns structure; the model owns how a part connects to other notes, its behavior and its requirements. At a merge that is the recommendation, and the owner can change it per area.
+2. **Seven areas.** Part facts; Structure; Properties; Interfaces and connections; Behavior; Requirements; Other relationships. Part facts and Structure are the two a BOM can own. Each member of the SysML block belongs to one area by its keyword (`port`, `connect`, `bind`, `allocate` are interfaces; `state`, `action`, `transition` are behavior; `satisfy`, `verify`, `requirement`, `constraint`, `#derivation`, `#refinement` are requirements; `part` and `ref item` and `// supersedes` are structure; other dependencies and specializations are other relationships; the rest are properties). (BOM-035, changed)
+3. **The chooser.** Choosing Merge on an alias pair shows the seven areas with the number of members each note has, and a selector per area: the surviving note, the removed note, or keep both. The recommendation is preselected: the BOM note for the two BOM areas, the EA note for the other five unless the BOM note already has members there (then keep both). With no BOM note in the pair, every area is "keep both", as before. "Merge all" uses the recommendations without asking. (WKB-027)
+4. **What a choice does.** The owner's members and properties are kept. The other note's members of that area are not dropped: they are listed under `## Not carried over from <title>` in the merged note, as SysML text (and the properties as yaml), with the name of the owner. The EA note's own part usages therefore stay out of a BOM-owned structure and can be moved back by hand. Specializations of the removed note are added unless Other relationships is given to the surviving note.
+5. **Recorded on the note.** If the BOM no longer owns Part facts or Structure, the merged note carries `bomOwns: [facts]`, `[structure]` or `[]`. No property means both. A BOM update compares and changes only the areas listed: with `[]` the note is listed as "the model owns every area" and left alone. (BOM-036)
+6. **The stamp.** The merge recomputes `importHash` for what the BOM still owns, but only if the stamp matched before the merge; a note edited before the merge stays a conflict.
+7. **Closes OD-14.** The composition question is answered by the owner's choice per merge; the default is that the BOM note owns structure.
+
+Rules: BOM-035 (changed), BOM-036, WKB-027 (new).
+

@@ -13,7 +13,6 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 | OD-05 | P1 | Repo | License for a public repository. Without one, the code is "all rights reserved" and others may not reuse it. Options: proprietary notice, MIT, Apache-2.0, or make the repo private. |
 | OD-06 | P1 | Repo | Repository visibility: public requires synthetic-only content (DAT-002). Private removes that constraint for fixtures but not for real data, which never goes in any repo. |
 | OD-08 | P1 | Model | `local-model.yaml` was not carried. Confirm Local Model is V1-only and replaced by SysML usages, then retire the MOD Local Model rules. |
-| OD-14 | P1 | Model | When an EA part and its BOM part are merged and both describe the same assembly's parts, the note holds two compositions (the EA part usages and the BOM lines). Decide which one is authoritative for what: for example BOM lines for the physical product structure and EA usages for the logical structure, or one replacing the other at merge. The importer updates only the BOM lines (D-0052) and never touches the EA usages. |
 
 ### OD-01 proposed split of relationships.yaml
 
@@ -99,3 +98,4 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 - OPEN-V2-Q2 (ADR-V2-06): D-0003
 - DEC-1: Moot: the old documents are archived and RULESET.md carries the owner merge rules (D-0001)
 - DEC-4: D-0001 (the definition is governance/MDSE_DEFINITION.md)
+- OD-14: D-0053: the owner of each area is chosen at the merge; the BOM owns structure by default.

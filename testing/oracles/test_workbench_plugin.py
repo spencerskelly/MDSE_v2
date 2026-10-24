@@ -420,6 +420,13 @@ class WorkbenchPlugin(unittest.TestCase):
             # the pair is listed; merging shows what is removed, then writes it
             pg.wait_for_selector("table.rl tr:has-text('Charger'):has-text('CHG-1') button:has-text('Merge')")
             pg.click("table.rl tr:has-text('Charger') button:has-text('Merge')")
+            # the owner table: seven areas, the BOM note recommended for part facts and structure, the EA note for the rest
+            pg.wait_for_selector("text=Who owns what")
+            self.assertEqual(pg.locator("select[aria-label^='Owner of']").count(), 7)
+            self.assertEqual(pg.locator("select[aria-label='Owner of Part facts']").input_value(), "survivor")
+            self.assertEqual(pg.locator("select[aria-label='Owner of Structure']").input_value(), "survivor")
+            self.assertEqual(pg.locator("select[aria-label='Owner of Interfaces and connections']").input_value(), "absorbed")
+            pg.click("button:has-text('Preview merge')")
             pg.wait_for_selector(".callout:has-text('removed after merging')")
             pg.click("button:has-text('Apply')")
             pg.wait_for_function("() => !('10_Model/Charger.md' in window.__notes)")

@@ -273,13 +273,30 @@ export function editView(c: EditCtx): HTMLElement {
       if (!pairs.length) { aliasBox.append(h("div", { class: "empty", style: "padding:6px 0" }, "None yet. Mark a note as the same part as another, or find matches below.")); return; }
       aliasBox.append(h("table", { class: "rl" }, h("tbody", {}, ...pairs.slice(0, 200).map((p) => h("tr", {}, h("td", {}, h("a", { href: "#", class: "lnk", onclick: (e: Event) => { e.preventDefault(); c.open(p.absorbed); } }, title(p.absorbed)), " → ",
         p.survivor ? h("a", { href: "#", class: "lnk", onclick: (e: Event) => { e.preventDefault(); c.open(p.survivor!); } }, title(p.survivor)) : h("span", { class: "mut" }, p.target + " (not in vault)")),
-        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p])) }, "Merge"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
+        h("td", { style: "white-space:nowrap" }, h("button", { class: "sm", disabled: p.survivor ? undefined : true, onclick: () => openOwners(p) }, "Merge…"), " ", h("button", { class: "sm", onclick: () => showPlan(MG.planAliasClear(ix, host.files(), p.absorbed)) }, "Clear")))))));
       if (pairs.length > 200) aliasBox.append(h("div", { class: "mut", style: "font-size:12px" }, `… and ${pairs.length - 200} more (Merge all covers them).`));
-      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length})`), helpBtn("mergeAll")));
+      aliasBox.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files())) }, `Merge all (${pairs.length}), recommended owners`), helpBtn("mergeAll")));
+    };
+    /* who owns which area (D-0053): one row per area, the recommended owner preselected */
+    const ownersBox = h("div", {});
+    const openOwners = (p: MG.AliasPair): void => {
+      ownersBox.replaceChildren(); showPlan(null);
+      if (!p.survivor) return;
+      const rows = MG.mgOwnerRows(host.files(), p.absorbed, p.survivor);
+      if (typeof rows === "string") { showPlan({ summary: "", writes: [], problems: [rows] }); return; }
+      const sT = title(p.survivor), aT = title(p.absorbed), chosen: Record<string, MG.MgOwner> = Object.fromEntries(rows.map((r) => [r.id, r.recommended]));
+      ownersBox.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Who owns what: ${aT} into ${sT}`), helpBtn("owners")),
+        h("div", { class: "mut", style: "font-size:12px" }, "Pick the note whose members and properties each area keeps. The other note's go under “Not carried over”, not lost. A later BOM update changes only the areas the BOM note still owns."),
+        h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => {
+          const sel = h("select", { "aria-label": `Owner of ${r.label}`, onchange: (e: Event) => { chosen[r.id] = (e.target as HTMLSelectElement).value as MG.MgOwner; showPlan(null); } },
+            ...opts([["both", "Keep both" + (r.recommended === "both" ? " (recommended)" : "")], ["survivor", sT + (r.recommended === "survivor" ? " (recommended)" : "")], ["absorbed", aT + (r.recommended === "absorbed" ? " (recommended)" : "")]], r.recommended));
+          return h("tr", {}, h("td", {}, h("b", {}, r.label), r.bom ? h("span", { class: "tag k", style: "margin-left:6px" }, "BOM") : null, h("div", { class: "mut", style: "font-size:12px" }, r.hint)), h("td", { class: "mut", style: "white-space:nowrap" }, `${sT}: ${r.survivor} · ${aT}: ${r.absorbed}`), h("td", {}, sel));
+        }))),
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(MG.planNoteMerge(ix, host.files(), [p], new Map([[p.absorbed, chosen as MG.MgOwners]]))) }, "Preview merge"), h("button", { class: "sm", onclick: () => { ownersBox.replaceChildren(); showPlan(null); } }, "Cancel")));
     };
     listRefresh = (): void => { if (SAVED.mode === "merge") drawAliases(); };
     drawAliases();
-    v.append(aliasBox);
+    v.append(aliasBox, ownersBox);
     /* mark the open note */
     if (from && from.type === "Object") {
       let other: Note | null = null;
