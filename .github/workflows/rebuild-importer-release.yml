@@ -1,4 +1,4 @@
-# D-0073 validated rebuild after registering FLOW_NO_COMMON_OWNER and preserving source GUID only in flag/ledger.
+# D-0073 final guarded rebuild: legacy trace read-only, verified FLOW_NO_COMMON_OWNER diagnostics.
 name: Rebuild MDSE importer release
 on:
   push:
