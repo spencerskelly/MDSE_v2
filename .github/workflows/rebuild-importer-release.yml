@@ -1,4 +1,4 @@
-# D-0073 final guarded rebuild: legacy trace read-only, verified FLOW_NO_COMMON_OWNER diagnostics.
+# D-0073 acceptance rebuild: reconciled historical trace no-op fixture with read-only semantics.
 name: Rebuild MDSE importer release
 on:
   push:
