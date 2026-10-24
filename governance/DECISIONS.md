@@ -702,3 +702,14 @@ Rules: BOM-032 (changed).
 The MDSE toolset is developed as an engineering model of itself rather than as a collection of notes. The six principles govern all current and future tool definitions: model before documentation; one semantic authority per reusable definition; only native SysML v2 relationships for SysML semantics; justified rather than artificial traceability; independent model/implementation/verification maturity; and MDSE's own model as a first-class user-validation case. A record may be Draft while the governing principles are Active. These principles add no new SysML relationship type and do not waive existing independent parser or acceptance gates.
 
 Rules: +GOV-019 +GOV-020 +GOV-021 +GOV-022 +GOV-023 +GOV-024.
+
+## D-0062 — Update scan page: tick by type
+
+2026-10-24 · Spencer · Accepted (owner, chat: option "Per type, update scan only"). Settles D-0056 item 5 for the update scan; import-time and per-item choices before the first import are not built.
+
+1. **Type boxes.** Above the categories the page shows Additions, Changes and Removals with their counts. A box ticks or unticks every item of that type, including items past the 200 shown. Additions start ticked, the others not (D-0057), unless the person's last choice says otherwise.
+2. **Remembered.** The last choice of type boxes is kept in the browser (a convenience; the page works without it).
+3. **Unchanged.** Category and per-item ticks still work and can override a type box; applying still needs the button and the confirmation (BOM-032).
+4. **Not built.** An import-time choice per type (earlier-revision lines and skipped rows keep/drop on the page; `earlierRevisions: "drop"` is still an option of the reader only), and per-item choices before an import writes. Asking again if needed.
+
+Rules: BOM-032 (changed).

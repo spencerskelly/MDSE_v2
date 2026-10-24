@@ -503,12 +503,14 @@ $("updApply").addEventListener("click", async () => {
 /* ---- Update an existing vault from a BOM (D-0051) ------------------------------------------------------------------------ */
 let bomScanned = null;
 const CAP = 200;
-function bomSelCount() { return document.querySelectorAll("#bomUpdOut input.it:checked").length + [...document.querySelectorAll("#bomUpdOut input.cat")].reduce((a, c) => a + (c.dataset.hidden ? (c.checked ? +c.dataset.hidden : 0) : 0), 0); }
+function bomSelCount() { return bomApprovedIds().size; }
 function bomSyncButtons() { const n = bomSelCount(); $("bomApply").disabled = !n; $("bomApply").textContent = n ? `Apply ${n} ticked change${n === 1 ? "" : "s"}` : "Apply ticked changes"; }
 function bomApprovedIds() {
   const ids = new Set(); if (!bomScanned) return ids;
   for (const c of document.querySelectorAll("#bomUpdOut input.cat")) if (c.checked) for (const it of bomScanned.items) if (it.category === c.dataset.cat) ids.add(it.id);
   for (const c of document.querySelectorAll("#bomUpdOut input.it")) if (c.checked) ids.add(c.dataset.id);
+  const kinds = new Set([...document.querySelectorAll("#bomUpdOut input.kind:checked")].map((c) => c.dataset.kind));   // items past the cap have no box of their own: their kind decides
+  for (const id of bomScanned.hiddenIds) if (kinds.has(bomScanned.items.find((x) => x.id === id).kind)) ids.add(id);
   return ids;
 }
 $("bomScan").addEventListener("click", async () => {
@@ -517,24 +519,33 @@ $("bomScan").addEventListener("click", async () => {
     const fp = await fileSha256(bom.file), runDate = localIso();
     const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [] });
     if (sc.result.status !== "WRITE_READY") { $("bomUpdStatus").innerHTML = `<span class=bad>${esc(sc.result.problems.join(" ") || "The BOM cannot be read.")}</span>`; return; }
-    bomScanned = sc; sc.runDate = runDate;
+    bomScanned = sc; sc.runDate = runDate; sc.hiddenIds = [];
+    const KIND_TEXT = { add: "Additions", change: "Changes", remove: "Removals" }, kindN = { add: 0, change: 0, remove: 0 }; for (const it of sc.items) kindN[it.kind]++;
+    let kindOn; try { kindOn = new Set(JSON.parse(localStorage.getItem("mdse.updKinds") || '["add"]')); } catch { kindOn = new Set(["add"]); }
     const byCat = new Map(); for (const it of sc.items) (byCat.get(it.category) ?? byCat.set(it.category, []).get(it.category)).push(it);
     let html = `<p>${sc.items.length} change(s) proposed · ${sc.unchanged} note(s) already match · ${sc.holds.length} left alone</p>`;
     if (!sc.items.length) html += `<p class=ok>Nothing to change in the notes this file covers.</p>`;
+    else html += `<p class="kinds">Tick by type: ${Object.keys(KIND_TEXT).map((k) => `<label><input type="checkbox" class="kind" data-kind="${k}"${kindOn.has(k) ? " checked" : ""}> ${KIND_TEXT[k]} (${kindN[k]})</label>`).join(" &nbsp; ")}</p>`;
     for (const cat of Object.keys(UPDATE_CATEGORY_TEXT)) {
-      const list = byCat.get(cat); if (!list) continue; const shown = list.slice(0, CAP), allAdd = list.every((it) => it.kind === "add");   // D-0057: additions are ticked by default; changes and removals are not
-      html += `<details${list.length <= 12 ? " open" : ""}><summary><label><input type="checkbox" class="cat" data-cat="${cat}" data-hidden="${Math.max(0, list.length - CAP)}"${allAdd ? " checked" : ""}> <b>${esc(UPDATE_CATEGORY_TEXT[cat])}</b></label> · ${list.length}</summary>` +
-        `<table><tr><th></th><th>Note</th><th>Change</th></tr>` + shown.map((it) => `<tr><td><input type="checkbox" class="it" data-id="${it.id}" data-cat="${cat}"${it.kind === "add" ? " checked" : ""}${allAdd ? " disabled" : ""}></td><td><code>${esc(it.path.split("/").pop().replace(/\.md$/i, ""))}</code></td><td>${esc(it.summary.replace(it.pn + ": ", ""))}</td></tr>`).join("") + `</table>` +
+      const list = byCat.get(cat); if (!list) continue; const shown = list.slice(0, CAP), allAdd = list.every((it) => it.kind === "add"), sameKind = list.every((it) => it.kind === list[0].kind); for (const it of list.slice(CAP)) sc.hiddenIds.push(it.id);   // D-0057: additions are ticked by default; changes and removals are not
+      html += `<details${list.length <= 12 ? " open" : ""}><summary><label><input type="checkbox" class="cat" data-cat="${cat}" data-hidden="${Math.max(0, list.length - CAP)}" data-same="${sameKind ? list[0].kind : ""}"${allAdd && kindOn.has("add") ? " checked" : ""}> <b>${esc(UPDATE_CATEGORY_TEXT[cat])}</b></label> · ${list.length}</summary>` +
+        `<table><tr><th></th><th>Note</th><th>Change</th></tr>` + shown.map((it) => `<tr><td><input type="checkbox" class="it" data-id="${it.id}" data-cat="${cat}" data-kind="${it.kind}"${kindOn.has(it.kind) ? " checked" : ""}${allAdd && kindOn.has("add") ? " disabled" : ""}></td><td><code>${esc(it.path.split("/").pop().replace(/\.md$/i, ""))}</code></td><td>${esc(it.summary.replace(it.pn + ": ", ""))}</td></tr>`).join("") + `</table>` +
         (list.length > CAP ? `<p class=mut>Showing the first ${CAP} of ${list.length}. Ticking the category applies all ${list.length}.</p>` : "") + `</details>`;
     }
     const byHold = new Map(); for (const h of sc.holds) (byHold.get(h.code) ?? byHold.set(h.code, []).get(h.code)).push(h);
     for (const [code, list] of byHold) html += `<details><summary><b>${esc(HOLD_TEXT[code])}</b> · ${list.length}</summary><ul>${list.slice(0, 40).map((h) => `<li>${esc(h.message)}</li>`).join("")}</ul>${list.length > 40 ? `<p class=mut>${list.length - 40} more not shown.</p>` : ""}</details>`;
-    $("bomUpdOut").innerHTML = html; $("bomUpdStatus").innerHTML = "Additions are ticked. Tick changes and removals to apply them too. Nothing has been written."; bomSyncButtons();
+    $("bomUpdOut").innerHTML = html; $("bomUpdStatus").innerHTML = "Additions are ticked. Tick changes and removals by type above, by category or one by one to apply them too. Nothing has been written."; bomSyncButtons();
     log(`bom update scan ${bom.file.name}: ${sc.items.length} changes, ${sc.holds.length} held, ${sc.unchanged} unchanged`);
   } catch (e) { reportFailure(e, "scan BOM changes"); }
 });
 $("bomUpdOut").addEventListener("change", (ev) => {
-  const t = ev.target; if (t.classList.contains("cat")) for (const c of document.querySelectorAll(`#bomUpdOut input.it[data-cat="${t.dataset.cat}"]`)) { c.checked = t.checked; c.disabled = t.checked; }
+  const t = ev.target;
+  if (t.classList.contains("kind")) {   // a type box ticks every item of that type; a category made only of that type follows
+    for (const c of document.querySelectorAll(`#bomUpdOut input.cat[data-same="${t.dataset.kind}"]`)) c.checked = t.checked;
+    for (const c of document.querySelectorAll(`#bomUpdOut input.it[data-kind="${t.dataset.kind}"]`)) { c.checked = t.checked; const cat = document.querySelector(`#bomUpdOut input.cat[data-cat="${c.dataset.cat}"]`); c.disabled = !!(cat && cat.checked); }
+    try { localStorage.setItem("mdse.updKinds", JSON.stringify([...document.querySelectorAll("#bomUpdOut input.kind:checked")].map((k) => k.dataset.kind))); } catch { /* the choice is a convenience only */ }
+  }
+  if (t.classList.contains("cat")) for (const c of document.querySelectorAll(`#bomUpdOut input.it[data-cat="${t.dataset.cat}"]`)) { c.checked = t.checked; c.disabled = t.checked; }
   bomSyncButtons();
 });
 $("bomApply").addEventListener("click", async () => {
