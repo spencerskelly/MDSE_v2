@@ -455,3 +455,14 @@ test("a search for a word or phrase lists the notes with it in the name or descr
   const boxes = r.doc.nodes.map((n) => [n.x, n.y, n.x + n.width, n.y + n.height]); // no two cards overlap
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i]!, b = boxes[j]!; assert.ok(a[2]! <= b[0]! || b[2]! <= a[0]! || a[3]! <= b[1]! || b[3]! <= a[1]!, "cards do not overlap"); }
 });
+
+test("cards on every canvas are spaced three card widths across and three card heights down (D-0079)", () => {
+  const near = (xs: number[]): number[] => [...new Set(xs)].sort((a, b) => a - b);
+  const c = pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "" }), cols = near(c.doc.nodes.map((n) => n.x));
+  assert.ok(cols.length >= 2); for (let i = 1; i < cols.length; i++) assert.equal(cols[i]! - cols[i - 1]!, 4 * 280, "a gap of 3 widths between columns");
+  const rows = near(c.doc.nodes.map((n) => n.y)); assert.ok(rows.length >= 1);
+  for (let i = 1; i < rows.length; i++) { const above = c.doc.nodes.filter((n) => n.y === rows[i - 1]!), top = Math.max(...above.map((n) => n.height)); assert.equal(rows[i]! - rows[i - 1]! - top, 3 * 90, "a gap of 3 heights between rows"); }
+  const t = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }), tc = near(t.doc.nodes.map((n) => n.x));
+  for (let i = 1; i < tc.length; i++) assert.equal(tc[i]! - tc[i - 1]!, 4 * 280, "the layered canvas too");
+  for (const col of tc) { const ys = t.doc.nodes.filter((n) => n.x === col).sort((a, b) => a.y - b.y); for (let i = 1; i < ys.length; i++) assert.ok(ys[i]!.y - ys[i - 1]!.y - ys[i - 1]!.height >= 3 * 90 - 1, "3 heights between stacked cards"); }
+});

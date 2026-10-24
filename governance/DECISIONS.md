@@ -906,3 +906,14 @@ Rules: IMP-130 (Active).
 4. **Not covered.** No fuzzy matching or ranking by closeness. No "also add the neighbours of the ticked notes". The scratch canvas holds one view at a time, so a second Place on canvas replaces the first until it is saved.
 
 Rules: WKB-029 (Active).
+
+## D-0079 — Cards on a canvas are spaced three card sizes apart
+
+2026-10-24 · Spencer · Accepted (owner, chat: "spacing between elements should default to triple the width or height of the notes on the canvas").
+
+1. **Spacing.** On every canvas the Workbench writes (a view from a note, and a canvas from Pick notes), the space between neighbouring cards is three card widths across and three card heights down. A card is 280 by 90; the gaps are 840 across and 270 down. Before this the gaps were 120 and 40.
+2. **Taller cards.** A requirement or group card is taller than 90. The gap stays 270 below it; it is based on the standard card, not on that card, so the spacing is the same everywhere.
+3. **Default.** It is a default, kept as one constant (`SPACING` in `canvas.ts`). There is no setting for it yet; a canvas the person rearranges keeps their layout.
+4. **Not covered.** A setting in the panel to change the multiple. Canvases already saved keep their old spacing.
+
+Rules: WKB-030 (Active).

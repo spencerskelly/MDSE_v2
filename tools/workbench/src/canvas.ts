@@ -23,7 +23,9 @@ export const PREVIEW_DIR = "99_System/22_Views";
 export const PREVIEW_PATH = `${PREVIEW_DIR}/Workbench Preview.canvas`;
 /** Saved views: where Save canvas offers to put a canvas first (the person can pick any folder). Committed like any other file. */
 export const SAVED_DIR = "99_System/23_Saved_Views";
-const W = 280, H = 90, GX = 120, GY = 40, MAX_UNRESOLVED = 24;
+/** Card size and the space between cards: three times the card width across and three times the card height down (D-0079). */
+export const SPACING = 3;
+const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, MAX_UNRESOLVED = 24;
 const safe = (s: string): string => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 
 const hash = (s: string): string => { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(16).slice(0, 4); };
