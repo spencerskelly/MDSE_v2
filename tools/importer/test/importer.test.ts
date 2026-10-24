@@ -333,14 +333,16 @@ test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
   const res = await run();
   const text = (name: string) => named(res, name).content;
   assert.match(text("Loose Cable"), /^affects: \["\[\[[A-Z]+-\d{5}\|Provide Charge Power\]\]", "\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m, "an Issue affects what it is linked to");
-  assert.match(text("Change A"), /^tracesTo: \["\[\[[A-Z]+-\d{5}\|Loose Cable\]\]"\]$/m, "Change and Issue: provisional");
+  assert.doesNotMatch(text("Change A"), /^tracesTo:/m, "an unresolved connector never becomes a provisional YAML link (D-0010)");
+  assert.match(text("Change A"), /\[!flagLink\][^\n]*|\[!flagLink\]/m, "unresolved MDSE-note connector produces a flagLink in its owning note");
+  assert.match(text("Change A"), /PROVISIONAL_LINK/, "the review reason is preserved on the note");
   assert.match(text("Pick Supplier"), /^dependsOn: \["\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m);
   assert.match(text("Wiring Diagram"), /^describes: \["\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m, "an Image artifact describes the element");
   assert.match(text("Design remark"), /^describes: .*\[\[[A-Z]+-\d{5}\|Charger\]\]/m, "an Info note describes the element");
   assert.match(text("Change A"), /^hasChild: \["\[\[[A-Z]+-\d{5}\|Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
   assert.doesNotMatch(text("Change A"), /^- Aggregation/m, "Source: EA does not repeat the YAML");
   const prov = res.ledger.filter((l) => l.diagnostic_code === "PROVISIONAL_LINK");
-  assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "native" && l.operator_action));
+  assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "deferred_review" && l.operator_action && l.source_guid), "unresolved connector is deferred with an auditable source GUID");
 });
 
 test("flows: a succession inside a shared owner, otherwise a precedes link (IMP-116)", async () => {

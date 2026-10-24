@@ -484,15 +484,19 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
     const kw = (d?: Draft): string => d?.keyword ?? "";
     const srcLine = (verb: string, other: Draft): string => `- ${verb} ${lk(other)}`;
-    // IMP-115 (REG-291; Test_Vault_ element policy): an end that is an MDSE note (Issue, Change, Info, Artifact, Decision...) has no SysML form, so the link is YAML.
-    // Info, Artifact and Document notes describe the element; Dependency/Usage is dependsOn; anything else is the provisional tracesTo (a Review finding, W-288).
+    // IMP-115, D-0070: approved descriptive MDSE-note relationships use YAML, but an ambiguous one is flagLink evidence.
+    // D-0010 retired provisional tracesTo: never emit that YAML field, never mark an unresolved connector native.
     const noteLink = (): boolean => {
       if (!src || !dst || src === dst || (src.keyword && dst.keyword)) return false;
       const issue = [src, dst].find((d) => !d.keyword && d.o.type === "Issue"), other = issue === src ? dst : src;
-      const field = !src.keyword && DESCRIBER.has(src.type) ? "describes" : !dst.keyword && DESCRIBER.has(dst.type) ? "describes" : issue && other.o.type !== "Issue" && other.o.type !== "Change" ? "affects" : key === "Dependency" || key === "Usage" ? "dependsOn" : "tracesTo";
+      const field = !src.keyword && DESCRIBER.has(src.type) ? "describes" : !dst.keyword && DESCRIBER.has(dst.type) ? "describes" : issue && other.o.type !== "Issue" && other.o.type !== "Change" ? "affects" : key === "Dependency" || key === "Usage" ? "dependsOn" : "";
+      if (!field) {
+        defer("PROVISIONAL_LINK", "Review this MDSE-note connector and select a justified native or MDSE-only relationship; do not write tracesTo");
+        return true;
+      }
       const from = field === "describes" ? (!src.keyword && DESCRIBER.has(src.type) ? src : dst) : field === "affects" ? issue! : src, to = from === src ? dst : src;
       from.links.push([field, to]);                                  // the YAML says it; Source: EA does not repeat it (IMP-096)
-      set(r, "native", `MdseLink:${field}`, field === "tracesTo" ? "PROVISIONAL_LINK" : "", field === "tracesTo" ? "Replace tracesTo with a stronger relationship" : ""); r.target_stable_id = from.id; r.target_file = from.path;
+      set(r, "native", `MdseLink:${field}`); r.target_stable_id = from.id; r.target_file = from.path;
       return true;
     };
     if (key === "Generalization") {

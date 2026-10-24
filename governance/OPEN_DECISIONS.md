@@ -45,6 +45,8 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 | supersedes | YAML | MDSE-only |
 | conflictsWith | YAML | MDSE-only |
 
+**D-0070 cross-reference (2026-10-24):** New provisional `tracesTo` writes are prohibited; unresolved MDSE-note connectors now require `flagLink` plus the source ledger. Historical `tracesTo` records remain review evidence. OD-01 still controls field-by-field classification and removal of the legacy schema entry; the contradiction between D-0010 and D-0045 clause 4 is resolved for new writes without editing either historical decision.
+
 ## Carried conflicts between sources
 
 | ID | Tool | Conflict | Sources | Proposed resolution | Blocks |

@@ -1,6 +1,7 @@
 # UNDER REVISION (D-0003): fields SysML v2 can define move to the ## SysML v2 block and leave this file.
 # D-0069: this is a LEGACY FIELD INVENTORY, not authority for SysML v2 endpoints or persisted SysML inverse YAML.
 # Only fields explicitly classified MDSE-only by a later OD-01 disposition may govern current YAML links.
+# D-0070: tracesTo/tracesFrom is a historical read-only entry; new unresolved connectors produce flagLink and deferred_review, not a YAML link.
 # Proposed split: governance/OPEN_DECISIONS.md, OD-01. Until OD-01 is decided, do not build on the SysML-defined fields here.
 schemaVersion: '1.36'
 date: '2026-10-05'
