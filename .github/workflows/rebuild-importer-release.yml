@@ -1,4 +1,4 @@
-# Rebuild requested after governance D-0069 and concurrent importer D-0068; source/artifact sync is CI-gated.
+# D-0070 release rebuild: compile importer from corrected flagLink/PROVISIONAL_LINK source and run unit tests.
 name: Rebuild MDSE importer release
 on:
   push:
