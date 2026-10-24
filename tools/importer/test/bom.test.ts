@@ -328,3 +328,35 @@ test("a part number already in the vault raises no NAME_CONFLICT in an import, b
   assert.deepEqual(buildBom(nameGrid(rows), nameOpts(vault)).findings.filter((x) => x.code === "NAME_CONFLICT"), []);
   assert.equal(buildBom(nameGrid(rows), nameOpts(vault, true)).findings.filter((x) => x.code === "NAME_CONFLICT").length, 1);
 });
+
+/* ---- BOM-038: lines of an assembly at an older revision are kept, never dropped without a decision ---- */
+const earlyRow = (p: string, pr: string, l: string, c: string, q = "1"): string => [p, pr.slice(0, 2), pr.slice(2), "ASSY " + p, "buy", "X", l, c, "-A", "99", "PART " + c, "buy", "X", "", "", "", "2/Jan/19", "", q, "ea", p + pr].join("\t");
+const earlyRows = [earlyRow("A-1", "-A01", "1", "B-2"), earlyRow("A-1", "-A01", "2", "C-3", "4"), earlyRow("A-1", "-A01", "3", "D-4"), earlyRow("A-1", "-A02", "1", "B-2", "5"), earlyRow("A-1", "-A02", "2", "E-5")];
+const earlyOpts = (extra: object = {}) => ({ sourceName: "e.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes, existing: null, pending: [] as Array<[string, string]>, ...extra });
+
+test("lines of an assembly at an older revision are kept in the note body, not in the SysML structure (BOM-038)", () => {
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts());
+  const note = r.files.find((f) => /\/A-1\.md$/.test(f.path))!.content;
+  assert.match(note, /^\*\*Earlier revisions of this assembly\*\*$/m);
+  assert.match(note, /^- Revision "-A01", line 2: C-3 \(PART C-3\) at revision "-A99", quantity 4 ea, from 2019-01-02 \(row 3\)$/m);
+  assert.equal((note.match(/^- Revision "-A01", line /gm) ?? []).length, 3);
+  assert.equal((note.match(/attribute line = /g) ?? []).length, 2, "the SysML block holds only the latest revision's lines");
+  assert.equal(MDSE.validate(note, classes).length, 0);
+  const f = r.findings.find((x) => x.code === "EARLIER_REV_KEPT")!; assert.equal(f.level, "info"); assert.match(f.message, /^A-1: 3 line\(s\) of earlier revision\(s\) "-A01" are kept/);
+  assert.equal(r.findings.some((x) => /DROPPED|NOT_ADDED/.test(x.code)), false);
+  const vault = new Map(r.files.map((x) => [x.path, x.content] as [string, string]));
+  assert.equal(buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts({ existing: { hasVault: true, files: vault } })).files.filter((x) => x.path.startsWith("BOM/")).length, 0, "a repeat import changes nothing");
+});
+
+test("dropping earlier-revision lines is a choice, and it is counted (BOM-038)", () => {
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts({ earlierRevisions: "drop" }));
+  assert.doesNotMatch(r.files.find((f) => /\/A-1\.md$/.test(f.path))!.content, /Earlier revisions of this assembly\*\*/);
+  const f = r.findings.find((x) => x.code === "EARLIER_REV_DROPPED")!; assert.equal(f.level, "warn"); assert.match(f.message, /^A-1: 3 line\(s\) of earlier revision\(s\) "-A01" were skipped, as chosen/);
+});
+
+test("an assembly already in the vault gets a warning that its earlier-revision lines were not added, never silence (BOM-038, BOM-026)", () => {
+  const first = buildBom(parseDelimited([FLAT_HEAD, earlyRows[3]!, earlyRows[4]!].join("\n")), earlyOpts());
+  const vault = new Map(first.files.map((x) => [x.path, x.content] as [string, string]));
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts({ existing: { hasVault: true, files: vault } }));
+  const f = r.findings.find((x) => x.code === "EARLIER_REV_NOT_ADDED")!; assert.equal(f.level, "warn"); assert.match(f.message, /A-1: the file has 3 line\(s\)/);
+});

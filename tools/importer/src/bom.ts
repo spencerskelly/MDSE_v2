@@ -198,6 +198,8 @@ export interface BomOptions {
   dir?: string;
   /** Update scan (D-0051): every part is generated again, including those already in the vault, keeping their id, uid and path. The caller compares and decides what to write. */
   update?: boolean;
+  /** D-0056: what to do with the lines a file gives for an assembly at a revision older than its latest. "keep" (the default) writes them into the note body; "drop" skips them and says how many. */
+  earlierRevisions?: "keep" | "drop";
 }
 export interface BomResult {
   status: "WRITE_READY" | "FAILED"; files: OutFile[]; findings: Finding[]; problems: string[];
@@ -282,12 +284,13 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (!o.update && existingBy.has(s.pn)) continue;
     findings.push({ level: "warn", code: "NAME_CONFLICT", message: `${s.pn} revision ${JSON.stringify(s.rev)} is named ${JSON.stringify(s.first)}${s.firstRow ? ` (row ${s.firstRow})` : ""} and also ${[...s.others].map(([n, c]) => `${JSON.stringify(n)} (${c} more row${c === 1 ? "" : "s"})`).join(", ")} as a ${s.side}; the first name was used. Review which is right.` });
   }
+  const earlierOf = new Map<string, Usage[]>();   // D-0056 (BOM-038): lines of an assembly at a revision older than its latest
   // usages that can be written: parent and child both determined, no duplicate (parent, line)
   const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), existingUsages = new Map<string, Usage[]>(), otherRev = new Set<string>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
   for (const u of parsed.usages) {
     if (undetermined.has(u.parent) || (undetermined.has(u.child) && !bomIsDrawing(u))) continue;
     const lp = latest.get(u.parent)!;
-    if (lp.rev !== u.parentRev) continue;
+    if (lp.rev !== u.parentRev) { (earlierOf.get(u.parent) ?? earlierOf.set(u.parent, []).get(u.parent)!).push(u); continue; }   // D-0056: kept in the note body, never dropped without a decision
     const k = u.parent + "\0" + u.line;
     const exP = existingBy.get(u.parent);
     if (exP && !o.update) {   // BOM-026: an assembly already in the vault is not re-read line by line; only its lines are kept to say where this file disagrees
@@ -341,6 +344,17 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   const replaces = new Map<string, Set<string>>();
   for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
+  // D-0056 (BOM-038): the lines of earlier revisions are data and are kept by default. Dropping them is a choice made at import and is counted.
+  const earlierKeep = (o.earlierRevisions ?? "keep") === "keep";
+  const earlierRows = (pn: string): Usage[] => { const seen = new Set<string>(), out: Usage[] = []; for (const u of (earlierOf.get(pn) ?? []).slice().sort((a, b) => bomRevCompare(b.parentRev, a.parentRev) || lineKey(a) - lineKey(b) || a.row - b.row)) { const k = [u.parentRev, u.line, u.child, u.childRev, u.amount, u.unit, u.refDes, u.from, u.to].join("\0"); if (!seen.has(k)) { seen.add(k); out.push(u); } } return out; };
+  const earlierText = (pn: string): string[] => earlierRows(pn).map((u) => `- Revision ${JSON.stringify(u.parentRev)}, line ${u.line || "?"}: ${u.child}${u.childName ? " (" + u.childName + ")" : ""}${u.childRev ? " at revision " + JSON.stringify(u.childRev) : ""}${u.amount ? ", quantity " + u.amount + (u.unit ? " " + u.unit : "") : ""}${u.refDes ? ", reference " + u.refDes : ""}${u.from ? ", from " + u.from : ""}${u.to ? ", to " + u.to : ""} (row ${u.row})`);
+  for (const pn of [...earlierOf.keys()].sort()) {
+    const n = earlierRows(pn).length, revs = [...new Set(earlierRows(pn).map((u) => u.parentRev))].map((r) => JSON.stringify(r)).join(", "), ex = existingBy.has(pn) && !o.update;
+    if (!n) continue;
+    if (!earlierKeep) findings.push({ level: "warn", code: "EARLIER_REV_DROPPED", message: `${pn}: ${n} line(s) of earlier revision(s) ${revs} were skipped, as chosen for this import.` });
+    else if (ex) findings.push({ level: "warn", code: "EARLIER_REV_NOT_ADDED", message: `${pn}: the file has ${n} line(s) of earlier revision(s) ${revs}, but the note is already in the vault and was left as it is (BOM-026), so they were not added. Nothing was dropped from the file; add them by hand or import into a vault that does not have the part yet.` });
+    else findings.push({ level: "info", code: "EARLIER_REV_KEPT", message: `${pn}: ${n} line(s) of earlier revision(s) ${revs} are kept in the note under "Earlier revisions of this assembly" (D-0056).` });
+  }
   let usageCount = 0, drawingCount = 0;
   for (const pn of [...partPns, ...newDrawings.filter((x) => !partPns.includes(x))]) {
     const inf = info.get(pn)!; if (!inf.fresh) continue;
@@ -381,6 +395,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const extra: Array<[string, string]> = [];
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
+    if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
       relFields: [], extraFields: extra, bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,

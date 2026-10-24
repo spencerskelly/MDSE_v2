@@ -631,3 +631,24 @@ Rules: BOM-031, BOM-033 (changed).
 5. **Not decided.** Whether the warning should offer a choice of name, and whether parent-side and child-side names should ever be compared. Both would need real BOM files to judge; none was used here.
 
 Rules: BOM-037 (new).
+
+## D-0056 — Data is added by default; a drop is decided at import, never silent
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0055)
+
+Owner: "We are collecting data from multiple sources, we should not be dropping data unless decided during import. When importing new data or merging existing notes, the default should be to add data to the vault. Having the option to change the outcome for types of information and info on certain items will be important." The owner also asked for rules to be retired or rewritten as needed.
+
+1. **Principle.** Data is added by default. An outcome that leaves data out or replaces it is a choice made at import, for a type of information or for a single item, and the importer counts every such choice. Where the importer leaves data out without a choice, it says so by name.
+2. **Done in this decision.** The lines a file gives for an assembly at a revision older than its latest are kept in the part note body, not dropped (BOM-038). A `drop` option exists in the importer code and counts what it skips; it has no control in the page yet.
+3. **Rules changed.** BOM-002 is retired: it said competing BOMs block interpretation, which D-0047 had already replaced. BOM-006 is rewritten, because "superseded revisions are not imported" dropped data. BOM-038 and BOM-039 are new.
+4. **Still dropping or leaving out data, found by reading the importer** (not yet changed, each to be made a visible default-add or a choice):
+   - A part number already in the vault is left as it is (BOM-026): new lines, other revisions' lines and manufacturer data in a later file are only listed as findings, not added.
+   - The update scan ticks nothing by default (BOM-032); the principle asks for additions to be offered ticked and changes unticked.
+   - Rows skipped as `ROW_NO_CHILD`, `ROW_NO_PARENT` and `ALT_NO_PRIMARY` keep only their row number in the finding; the row's content is not kept.
+   - A redline row struck out with no replacement (`LINE_REMOVED`) is reported but its content is not kept.
+   - Manufacturer data comes from the first line that uses a part; other lines' manufacturers and alternates are not read (to be confirmed with a probe).
+   - Lifecycle states are ignored by decision (BOM-021, D-0047); that is a decided drop and stays unless the owner changes it.
+   - The `drop` option for earlier-revision lines, and the choice per type and per item generally, have no control in the page.
+5. **Not decided.** The shape of the per-type and per-item choice in the page (a list of information types, each with add or leave out, and a per-item override in the scan).
+
+Rules: BOM-002 (retired), BOM-006 (rewritten), BOM-038, BOM-039 (new).
