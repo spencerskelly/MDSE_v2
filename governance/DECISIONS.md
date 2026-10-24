@@ -748,6 +748,6 @@ Rules: BOM-003 (changed); BOM-013 (retired, D-0063).
 4. **Folders.** The model's deep folder tree is reduced to a depth cap, with the full package path kept in the note (MOD-174, Proposed). The cap value is decided after the preflight histogram.
 5. **Rules.** MOD-170 to MOD-174 added; MOD-036, MOD-031, MOD-107, IMP-015 rewritten; MOD-100 and MOD-109 retired. Unreviewed MOD-037 and MOD-040 (body `## Aliases` block) and MOD-108 (EA Alias) are to be aligned when the EA translator is changed.
 6. **Not decided.** Whether the SysML `partNumber` attribute is dropped later (D-0003 says nothing is stored twice); the cap value.
-7. **Build order.** Property dictionary and contract test, BOM importer (`partNumber`), preflight depth report, Workbench display, EA translator.
+7. **Build order.** Property dictionary and contract test (done: `schemas/properties.json`, `contract.test.ts`), BOM importer `partNumber` (done, with an update-scan addition for older notes), preflight depth report, Workbench display, EA translator.
 
 Rules: MOD-170 to MOD-174 (new); MOD-036, MOD-031, MOD-107, IMP-015 (changed); MOD-100, MOD-109 (retired).

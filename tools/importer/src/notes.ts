@@ -15,6 +15,8 @@ export interface NoteModel {
   /** MDSE-only relationship fields, written after tags (MOD-028). Values are note file names. */
   relFields: Array<[string, string[]]>;
   bodyText: string;
+  /** D-0065: current name, other names and part number, written after tags in this order. */
+  name?: string; aliases?: string[]; partNumber?: string;
   /** One-line description, written as a YAML property (BOM part name). */
   description?: string;
   /** Further YAML properties written after the description, in order (BOM: manufacturer1, mfgPn1, manufacturer2 ...). */
@@ -45,6 +47,9 @@ export function renderNote(n: NoteModel): string {
     `type: ${yamlScalar(n.type)}`, `subtype:${n.subtype ? " " + yamlScalar(n.subtype) : ""}`, `id: ${n.id}`, `uid: ${n.uid}`, `status: Draft`,
     `eaType: ${yamlScalar(n.eaType)}`, `tags: []`,
   ];
+  if (n.name) fm.push(`name: ${yamlScalar(n.name)}`);
+  if (n.aliases?.length) fm.push(`aliases: [${n.aliases.map((a) => JSON.stringify(a)).join(", ")}]`);
+  if (n.partNumber) fm.push(`partNumber: ${JSON.stringify(n.partNumber)}`);
   if (n.description) fm.push(`description: ${yamlScalar(n.description)}`);
   for (const [k, v] of n.extraFields ?? []) fm.push(`${k}: ${yamlScalar(v)}`);
   if (n.sourceRole) fm.push(`sourceRole: ${n.sourceRole}`);

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "1.0",
+  "date": "2026-10-24",
+  "decision": "D-0065",
+  "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool.",
+  "order": [
+    "type",
+    "subtype",
+    "id",
+    "uid",
+    "status",
+    "eaType",
+    "tags",
+    "name",
+    "aliases",
+    "partNumber",
+    "description"
+  ],
+  "properties": [
+    {
+      "name": "type",
+      "owner": "ea+bom+person",
+      "appliesTo": "every note",
+      "meaning": "Class of the note (element-types.yaml).",
+      "source": "Class table"
+    },
+    {
+      "name": "subtype",
+      "owner": "ea+bom+person",
+      "appliesTo": "every note",
+      "meaning": "Approved classification within the class.",
+      "source": "Class table"
+    },
+    {
+      "name": "id",
+      "owner": "tool",
+      "appliesTo": "every note",
+      "meaning": "PREFIX-NNNNN, never reused (MOD-020).",
+      "source": "Allocated by the importer or the template"
+    },
+    {
+      "name": "uid",
+      "owner": "tool",
+      "appliesTo": "every note",
+      "meaning": "Permanent identity: creation time plus author code (MOD-019).",
+      "source": "Allocated by the importer or the template"
+    },
+    {
+      "name": "status",
+      "owner": "person",
+      "appliesTo": "every note",
+      "meaning": "Draft, Active, Retired.",
+      "source": "Template"
+    },
+    {
+      "name": "eaType",
+      "owner": "ea",
+      "appliesTo": "translated notes",
+      "meaning": "EA stereotype or object type, temporary (MOD-035).",
+      "source": "EA t_object"
+    },
+    {
+      "name": "tags",
+      "owner": "person",
+      "appliesTo": "every note",
+      "meaning": "Obsidian tags.",
+      "source": "Person"
+    },
+    {
+      "name": "name",
+      "owner": "ea",
+      "appliesTo": "notes with a model name",
+      "meaning": "Current name of the note (MOD-171).",
+      "source": "EA element Name"
+    },
+    {
+      "name": "aliases",
+      "owner": "ea",
+      "appliesTo": "notes with other names",
+      "meaning": "Other names: former names, EA Alias, abbreviations (MOD-172).",
+      "source": "EA Alias, earlier names, person"
+    },
+    {
+      "name": "partNumber",
+      "owner": "bom",
+      "appliesTo": "notes with a part number",
+      "meaning": "Part number as exported, a string; the file name is this value made safe (MOD-170, MOD-173).",
+      "source": "BOM Part Number column"
+    },
+    {
+      "name": "description",
+      "owner": "bom",
+      "appliesTo": "BOM part notes",
+      "meaning": "The BOM name or description of the part (BOM-016).",
+      "source": "BOM name column"
+    },
+    {
+      "name": "sourceRole",
+      "owner": "tool",
+      "appliesTo": "BOM part notes",
+      "meaning": "authoritative-model.",
+      "source": "Importer"
+    },
+    {
+      "name": "primarySymbol",
+      "owner": "tool",
+      "appliesTo": "notes with a SysML block",
+      "meaning": "Qualified SysML name of the note's main element.",
+      "source": "Importer"
+    },
+    {
+      "name": "importSource",
+      "owner": "tool",
+      "appliesTo": "BOM part notes",
+      "meaning": "File the BOM-owned content last came from (BOM-031).",
+      "source": "Importer"
+    },
+    {
+      "name": "importedOn",
+      "owner": "tool",
+      "appliesTo": "BOM part notes",
+      "meaning": "Date of the last BOM import or update.",
+      "source": "Importer"
+    },
+    {
+      "name": "importHash",
+      "owner": "tool",
+      "appliesTo": "BOM part notes",
+      "meaning": "Hash of the BOM-owned content (D-0050).",
+      "source": "Importer"
+    },
+    {
+      "name": "bomOwns",
+      "owner": "person",
+      "appliesTo": "merged BOM part notes",
+      "meaning": "Areas the BOM still owns after a merge (BOM-036).",
+      "source": "Workbench merge"
+    },
+    {
+      "name": "abstract",
+      "owner": "person",
+      "appliesTo": "definitions",
+      "meaning": "Abstract definition flag, written only when true.",
+      "source": "Person"
+    },
+    {
+      "name": "aliasOf",
+      "owner": "person",
+      "appliesTo": "notes waiting to merge",
+      "meaning": "Same part as another note, awaiting a merge (MOD-167).",
+      "source": "Workbench"
+    },
+    {
+      "name": "manufacturer<N>",
+      "pattern": "^manufacturer\\d+$",
+      "owner": "bom",
+      "appliesTo": "BOM part notes",
+      "meaning": "Manufacturer of the Nth source of the part (BOM-028).",
+      "source": "BOM manufacturer column"
+    },
+    {
+      "name": "mfgPn<N>",
+      "pattern": "^mfgPn\\d+$",
+      "owner": "bom",
+      "appliesTo": "BOM part notes",
+      "meaning": "Manufacturer part number of the Nth source (BOM-028).",
+      "source": "BOM manufacturer part number column"
+    }
+  ]
+}

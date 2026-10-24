@@ -169,3 +169,13 @@ test("apply keeps Source lines the importer does not write, and refreshes the on
   for (const k of ["EA GUID: {ABC-123}", "Hand note: keep me", "Free text paragraph in Source."]) assert.ok(out.includes(k), k);
   assert.match(out, /BOM source: bom2\.tsv/); assert.equal((out.match(/- BOM Part Number:/g) ?? []).length, 1, "the importer's own lines are replaced, not repeated");
 });
+
+test("a note written before the partNumber property is offered it as an addition and the stamp is unaffected (D-0065)", () => {
+  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/B-200.md"))!, note = v.get(path)!;
+  assert.match(note, /^partNumber: "B-200"$/m);
+  const old = new Map(v); old.set(path, note.replace(/^partNumber: .*\n/m, ""));
+  const s = scan(old, V1); assert.deepEqual(cats(s), ["PART_NUMBER"]); const it = s.items[0]!; assert.equal(it.kind, "add"); assert.equal(it.edited, false);
+  const out = applyBomUpdate(s, { approved: new Set([it.id]), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }).writes.find((w) => w.path === path)!.content;
+  assert.match(out, /^tags: \[\]\npartNumber: "B-200"\n/m); assert.equal(bomOwnedHash(out), bomOwnedHash(note));
+  const again = new Map(old); again.set(path, out); assert.deepEqual(scan(again, V1).items, []);
+});
