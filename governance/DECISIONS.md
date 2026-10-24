@@ -694,3 +694,11 @@ Rules: BOM-040 (new), BOM-027 (changed).
 3. **Audit result, not changed.** Part and parent **lifecycle states** are read but written nowhere (BOM-021, D-0047), so a change in them is neither listed nor kept. Every other column tested (names, source, SSC, reference designator, notes, from, to, amount, unit, line, revision pin, manufacturer, alternates) produces an update item. Owner decision 2026-10-24 ("state can be dropped"): lifecycle states stay dropped; BOM-021 stands.
 
 Rules: BOM-032 (changed).
+
+## D-0061 — MDSE engineering model discipline
+
+2026-10-24 · Spencer · Accepted (owner confirmation in MDSE_v2_live definition review)
+
+The MDSE toolset is developed as an engineering model of itself rather than as a collection of notes. The six principles govern all current and future tool definitions: model before documentation; one semantic authority per reusable definition; only native SysML v2 relationships for SysML semantics; justified rather than artificial traceability; independent model/implementation/verification maturity; and MDSE's own model as a first-class user-validation case. A record may be Draft while the governing principles are Active. These principles add no new SysML relationship type and do not waive existing independent parser or acceptance gates.
+
+Rules: +GOV-019 +GOV-020 +GOV-021 +GOV-022 +GOV-023 +GOV-024.

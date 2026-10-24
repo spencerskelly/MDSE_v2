@@ -53,6 +53,15 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **GOV-017** · Active · Standing — One vault in phase 1. No cross-vault links. Final vault holds engineering notes plus a few definitions and diagrams. Methodology and translation material stays out of it. Test_Vault_ is a workspace, not the built vault. (REG-049, W-01) *Note: Owner: one vault in Phase 1; a later phase will likely add cross-vault.*
 - **GOV-018** · Active · Standing — Final folder structure follows the EA package structure. 99_System is kept and edited topic by topic. Legacy empty model folders were removed. (REG-050, W-04)
 
+### Model-definition discipline
+
+- **GOV-019** · Active · Standing · live — Model first; documentation second. Model notes contain authoritative SysML v2 definitions and supporting engineering information. A note count is not a modeling completion criterion. (D-0061)
+- **GOV-020** · Active · Standing · live — One semantic authority exists for each definition. Reusable definitions may have multiple typed usages; usages never create duplicate definitions. (D-0061)
+- **GOV-021** · Active · Standing · live — Model semantic relationships only with applicable native SysML v2 constructs. MDSE-only evidence and unresolved semantics remain separately flagged; never invent a relationship type for visualization convenience. (D-0061)
+- **GOV-022** · Active · Standing · live — Create trace relationships only where engineering meaning justifies them. A missing or disputed relation must be reported rather than added solely to increase coverage. (D-0061)
+- **GOV-023** · Active · Standing · live — Report model definition maturity separately from implementation and verification maturity. Defining a function does not prove implementation; implementation and CI success do not prove behavioral verification. (D-0061)
+- **GOV-024** · Active · Standing · live — Use the MDSE engineering definition as a representative model for testing MDSE itself. Workbench inspection and editing must follow the same model authority and validation rules as end-user models; unsupported capabilities remain explicit gaps. (D-0061)
+
 ## DAT — Data and security
 
 ### Data handling
