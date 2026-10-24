@@ -737,3 +737,17 @@ Rules: BOM-001, BOM-003 (now Active); BOM-004, BOM-005, BOM-011, BOM-013 (retire
 4. **Existing vaults.** A note written earlier with such a row as a usage gets a "line no longer listed" item from the update scan (unticked, D-0057).
 
 Rules: BOM-003 (changed); BOM-013 (retired, D-0063).
+
+## D-0065 — File names, `name`, `aliases` and `partNumber`
+
+2026-10-24 · Spencer · Accepted (owner, chat: `aliases` "as normally defined", `partNumber` kept, "Name is perfect"); folder depth Proposed. Reverses the V1 rule that ids never appear in file names.
+
+1. **File name is the citation key.** A note is named by its `partNumber` when it has one, otherwise by its `id` (MOD-170). Reason: a BOM-first and an EA-first import write the same file, and manufacturing and requirement documents already cite these keys.
+2. **`name`** is the current name; **`aliases`** keeps its normal meaning, other names only; **`partNumber`** is the query property for part numbers (MOD-171 to MOD-173). Tools show name, then description, then file name.
+3. **BOM data is not renamed.** The BOM name column stays the `description` property (BOM-016); a BOM-only part has no `name` until a model element matches it.
+4. **Folders.** The model's deep folder tree is reduced to a depth cap, with the full package path kept in the note (MOD-174, Proposed). The cap value is decided after the preflight histogram.
+5. **Rules.** MOD-170 to MOD-174 added; MOD-036, MOD-031, MOD-107, IMP-015 rewritten; MOD-100 and MOD-109 retired. Unreviewed MOD-037 and MOD-040 (body `## Aliases` block) and MOD-108 (EA Alias) are to be aligned when the EA translator is changed.
+6. **Not decided.** Whether the SysML `partNumber` attribute is dropped later (D-0003 says nothing is stored twice); the cap value.
+7. **Build order.** Property dictionary and contract test, BOM importer (`partNumber`), preflight depth report, Workbench display, EA translator.
+
+Rules: MOD-170 to MOD-174 (new); MOD-036, MOD-031, MOD-107, IMP-015 (changed); MOD-100, MOD-109 (retired).
