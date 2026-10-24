@@ -751,3 +751,19 @@ Rules: BOM-003 (changed); BOM-013 (retired, D-0063).
 7. **Build order.** Property dictionary and contract test (done: `schemas/properties.json`, `contract.test.ts`), BOM importer `partNumber` (done, with an update-scan addition for older notes), Workbench display (done, WKB-028), preflight depth report (done, in the page's check step), EA translator.
 
 Rules: MOD-170 to MOD-174, WKB-028 (new); MOD-036, MOD-031, MOD-107, IMP-015 (changed); MOD-100, MOD-109 (retired).
+
+## D-0066 — Step 03 reconcile obsolete Active governance statements
+
+2026-10-24 · Spencer (Step 03 model-reconciliation instruction) · Accepted, limited to prior approved authority and removal of obsolete clauses
+
+This reconciles five older source rules against D-0001 (MDSE_v2 tool authority), D-0003 (native SysML authority), D-0005 (direct main policy), D-0061 (self-model engineering discipline), current MDSE_v2_live scope, and the completed Step 02 independent SysML parsing baseline. It is a governance-document correction, **not** a new requirement approval, parser certification, or a decision on the proposed folder depth (MOD-174).
+
+1. **Retire GOV-006.** The original Active wording authorized direct pushes to `Test_Vault_`; that repo is now historical. D-0005 explicitly continued the valid portion as GOV-001. The remaining single-topic review advice is historical process guidance, not a separate binding engineering requirement. Original REG-033/W-07 text is retained verbatim in the retired register and at the pinned live source reference.
+2. **Retire GOV-018.** Its EA-package-folder mandate and historical empty-folder cleanup do not define the current SysML-v2 engineering vault. The managed `99_System` support requirement is carried by the clarified GOV-017. The exact model folder depth stays Proposed under MOD-174, not silently approved. The original REG-050/W-04 text remains in the retired register and pinned live reference.
+3. **Rewrite DAT-002, preserving the security constraint.** Public source and the public MDSE self-model may exist, but protected customer/product source data and private real imported models may not. Replace the trailing claim that `Test_Vault_` is tooling authority with the already-accepted GOV-005/`MDSE_v2` boundary. The original REG-053/V2-25 wording is preserved in the historical live reference and in this decision's cited source snapshot.
+4. **Clarify GOV-017.** Retain phase-one single-vault scope and deferral of cross-vault relationships; remove Test_Vault_ workspace status as a present-tense operating instruction. Preserve `99_System` managed support without turning the self-model into governance/tool-source authority.
+5. **Clarify DAT-001.** Extend its public-repository restriction explicitly to current public repositories. Limit claims of independent parsing to syntax and reference-resolution acceptance, not complete engineering semantic or verification acceptance.
+
+Historical authoritative source for all five preceding Active wordings: [RULESET.md at bcdb25a11efa](https://github.com/spencerskelly/MDSE_v2/blob/bcdb25a11efa3ea14ba343949b01f797553c044d/governance/RULESET.md). Live `70_Rule_References` and `71_Rule_Analysis` retain separate pinned snapshots. Existing `REQ-31011`, `REQ-31012`, `REQ-31028`, `REQ-31029`, `REQ-31030` and `REQ-31036` remain historical Draft candidates with no new positive verification targets; no SysML semantic relationships are manufactured. Historical original status does not indicate current binding authority.
+
+Rules: −GOV-006, −GOV-018; ~DAT-002, ~GOV-017, ~DAT-001. No other rule changes are made. MOD-075/MOD-076 and other stale active V1 relationship wording remain separate scoped review items, not silently modified by this governance-only reconciliation.

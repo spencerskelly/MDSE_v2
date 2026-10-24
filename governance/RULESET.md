@@ -36,7 +36,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **GOV-003** · Active · Standing — A rule with status Unreviewed is visible but not binding. No build work may depend on an Unreviewed rule until the owner sets it to Active. (D-0008)
 - **GOV-004** · Active · Standing — Rules live in `governance/RULESET.md` only. Decisions that create, change or retire a rule are recorded in `governance/DECISIONS.md` and name the rule they change. (D-0006)
 - **GOV-005** · Active · Standing — MDSE_v2 is the single home for MDSE rules, schemas and tools. Test_Vault_ and MDSE_Workbench are read-only archives; nothing in them overrides this repository. (D-0001)
-- **GOV-006** · Active · Standing — Claude may push directly to main on Test_Vault_. Topics are decided one at a time. (REG-033, W-07) *Note: In MDSE_v2 this continues as GOV-001 (D-0005).*
+
 - **GOV-007** · Active · Standing — AI_INSTRUCTIONS.md is the one set of AI instructions. AGENTS.md at the root is a pointer to it. (REG-034, W-23) *Note: In MDSE_v2 the file is governance/ai/AI_INSTRUCTIONS.md; AGENTS.md and CLAUDE.md point to it.*
 - **GOV-008** · Active · Standing — One clean Translator Definition file states what the stage 1 translator must do and is updated whenever a change is made. The import reads the .qeax directly; CSV files only defined the rules. (REG-035, W-246,W-247) *Note: In MDSE_v2 the Translator Definition is tools/importer/SPEC.md.*
 - **GOV-009** · Active · Standing — Obsidian-native-first: prefer representations native to core Obsidian, then conventional Markdown/YAML, and use custom syntax only when needed. (REG-036, W-306) *Note: Owner archived the Local Model block-ID clause; the native-first principle is kept. Confirm.*
@@ -50,8 +50,8 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 
 ### Scope and authority
 
-- **GOV-017** · Active · Standing — One vault in phase 1. No cross-vault links. Final vault holds engineering notes plus a few definitions and diagrams. Methodology and translation material stays out of it. Test_Vault_ is a workspace, not the built vault. (REG-049, W-01) *Note: Owner: one vault in Phase 1; a later phase will likely add cross-vault.*
-- **GOV-018** · Active · Standing — Final folder structure follows the EA package structure. 99_System is kept and edited topic by topic. Legacy empty model folders were removed. (REG-050, W-04)
+- **GOV-017** · Active · Standing · live — Phase 1 models one vault at a time; cross-vault relationships remain deferred. An engineering vault holds engineering notes and managed `99_System` support, not the MDSE tool source or normative governance. `MDSE_v2_live` is the active MDSE self-model and integration vault; `Test_Vault_` is historical. (REG-049, W-01; D-0001, D-0061, D-0066)
+
 
 ### Model-definition discipline
 
@@ -66,8 +66,8 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 
 ### Data handling
 
-- **DAT-001** · Active · Standing — Safety: QEAX, BOM originals, private ledgers, EA identifiers and generated real model content stay out of public Test_Vault_. Never claim native certification from source normalization or parser-only syntax acceptance. (REG-052, V2-11 (Baseline 10)) *Note: Applies to MDSE_v2, which is public.*
-- **DAT-002** · Active · Standing — Public repos hold synthetic content only. No real product names, BOMs, drawings, customers, revision histories or source exports. Real models are imported only in a private/local environment. A scan is a backstop, not a guarantee. Test_Vault_ stays the method and tool authority. (REG-053, V2-25 (Functional Parity)) *Note: Owner removed the v2_test repo reference.*
+- **DAT-001** · Active · Standing · live — Keep real QEAX/BOM source files, private ledgers, protected EA identifiers, and imported private engineering content out of public repositories, including `MDSE_v2` and `MDSE_v2_live`. Source normalization and independent SysML parser acceptance do not certify real-data equivalence, intended model semantics, or execution of verification cases. (REG-052, V2-11; D-0001, D-0066)
+- **DAT-002** · Active · Standing · live — Public MDSE repositories may contain the MDSE toolset self-model, source code, documentation and synthetic fixtures, but not confidential real product/customer models, BOMs, drawings, revision histories or source exports. Import private real engineering data only in a private/local environment. Publication scans are backstops, not guarantees. The tool/governance authority is `MDSE_v2` (GOV-005), not `Test_Vault_`. (REG-053, V2-25; D-0001, D-0066)
 
 ## MOD — Model contract (shared by every tool)
 
@@ -539,6 +539,9 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **TST-009** · Unreviewed · P1 — Before handoff: YAML parses, `id` and `uid` are unique, links resolve, inverses are synchronized, Functions have performers where applicable, and requirement basis, satisfaction, and verification gaps are visible. (REG-261, R-11.1 (1.23 §14)) *Note: approved. Note: 1.23 §14 cites `Translator Definition.md` §10, which is not in the repo (see section 14).*
 
 ## Retired rules
+
+- **GOV-006** — Claude may push directly to main on Test_Vault_. Topics are decided one at a time. (REG-033, W-07) *Note: In MDSE_v2 this continues as GOV-001 (D-0005).* *Retired: D-0066 (2026-10-24); the obsolete Test_Vault_ direct-push authority is superseded by GOV-001 and GOV-005 (D-0001, D-0005).*
+- **GOV-018** — Final folder structure follows the EA package structure. 99_System is kept and edited topic by topic. Legacy empty model folders were removed. (REG-050, W-04) *Retired: D-0066 (2026-10-24); EA package layout is not current placement authority; managed 99_System support remains under GOV-017. Folder depth remains Proposed under MOD-174.*
 
 Kept for traceability. Not binding. Each line gives the register row, the origin and why it was retired.
 
