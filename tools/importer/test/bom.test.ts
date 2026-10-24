@@ -190,6 +190,7 @@ test("redline xlsx: unstruck text is current, struck text is the previous value;
   assert.equal(p.layout, "redline"); assert.equal(p.usages.length, 2);
   assert.equal(p.usages[0]!.child, "6100148"); assert.equal(p.usages[0]!.prevChild, "06991"); assert.equal(p.usages[0]!.alternates.length, 1);
   assert.ok(p.findings.some((f) => f.code === "LINE_REMOVED" && f.message.includes("07777")));
+  const sk = p.skipped.find((s) => s.code === "LINE_REMOVED")!; assert.ok(sk, "the struck-out line is kept as a skipped row (D-0059)"); assert.match(sk.cells, /struck: 07777/); assert.match(sk.cells, /GONE/);
   const r = buildBom(g, baseOpts), top = byTitle(r.files, "5913538").content;
   assert.match(top, /: OBJ_\d{5}::P_6100148 \{\n\s+attribute line = 8;\n\s+attribute childRevision = "A02";\n\s+attribute quantity = 4\.318;\n\s+attribute unit = "m";/);
   assert.match(top, /\[2\]/); assert.match(top, /was 06991 before this release/);
@@ -373,4 +374,14 @@ test("manufacturer data from every line that uses a part is added, first line fi
   const got = note.split("\n").filter((l) => /^(manufacturer|mfgPn)\d+:/.test(l));
   assert.deepEqual(got, ["manufacturer1: ACME", "mfgPn1: ACM-1", "manufacturer2: ALPHA", "mfgPn2: ALP-1", "manufacturer3: BETA", "mfgPn3: BET-9", "manufacturer4: GAMMA", "mfgPn4: GAM-7"]);
   assert.equal(MDSE.validate(note, classes).length, 0);
+});
+
+test("rows that are skipped keep their content in the findings note, not capped at 40 (D-0059)", () => {
+  const rows = Array.from({ length: 50 }, (_, i) => `\tA\t01\tORPHAN-NAME-${i}\tbuy\tP\t1\tP-${i}\tA\t01\tPART ${i}\tbuy\tP\t\t\t\t\t\t2\tea\tx`);
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, ...rows].join("\n")), baseOpts);
+  const note = r.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content;
+  assert.match(note, /## Skipped rows/); assert.equal((note.match(/\| ROW_NO_PARENT \| [^|\n]*Parent Part Name: ORPHAN-NAME-\d+/g) ?? []).length, 50, "every skipped row is listed with its content");
+  assert.match(note, /Child Part Number: P-49/);
+  const clean = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS].join("\n")), baseOpts);
+  assert.doesNotMatch(clean.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content, /Skipped rows/);
 });

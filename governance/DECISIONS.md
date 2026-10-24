@@ -674,3 +674,13 @@ Rules: BOM-032 (changed).
 4. **Unchanged.** Dropping earlier-revision lines remains an import-time choice (BOM-038). The EA tag, field and table drops stay as they are (owner, 2026-10-24).
 
 Rules: BOM-032, BOM-038 (changed).
+
+## D-0059 — Skipped BOM rows keep their content
+
+2026-10-24 · Spencer · Accepted (owner, chat: "1", the first still-dropping case of D-0056 item 4). Applies D-0056.
+
+1. **Kept, not counted.** Each row the BOM reader skips (`ROW_NO_PARENT`, `ROW_NO_CHILD`, `ROW_NO_LEVEL`, `ALT_NO_PRIMARY`, and a redline line removed with no replacement, `LINE_REMOVED`) is written with its cell text to a `Skipped rows` table in the BOM findings note, uncapped. A struck-out value is shown as struck. The findings table above it keeps its 40-row cap per code (BOM-027).
+2. **Where.** The findings note under `99_System/11_Import`, not a part note, because a skipped row has no part to belong to. It is a report; a person can move the content into a note.
+3. **Not covered.** END_MARKER rows (no data). Whether a skipped row should be offered back later by the update scan is not decided. Remaining D-0056 item 4 case: BOM-026 additions to parts already in the vault.
+
+Rules: BOM-040 (new), BOM-027 (changed).

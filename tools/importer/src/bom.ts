@@ -48,7 +48,9 @@ export interface Usage {
   amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
 }
 export interface ParentObs { pn: string; rev: string; name: string; source: string; state: string; drawingLocation: string }
-export interface Parsed { layout: "flat" | "redline"; usages: Usage[]; parents: ParentObs[]; findings: Finding[] }
+/** D-0059: a row the reader could not turn into a line is kept as its cell text (never just a count), so its content stays available to the person. */
+export interface SkippedRow { row: number; code: string; cells: string }
+export interface Parsed { layout: "flat" | "redline"; usages: Usage[]; parents: ParentObs[]; findings: Finding[]; skipped: SkippedRow[] }
 
 function bomColMap(header: Array<Cell | null | undefined>): Map<string, number> {
   const m = new Map<string, number>(); header.forEach((c, i) => { const k = bomNorm(bomTxt(c)); if (k && !m.has(k)) m.set(k, i); }); return m;
@@ -87,7 +89,9 @@ const bomGet = (row: Array<Cell | null | undefined>, m: Map<string, number>, ...
 
 export function parseBom(grid: Grid): Parsed {
   const d = detectLayout(grid), findings: Finding[] = [];
-  if (!d.layout) return { layout: "flat", usages: [], parents: [], findings: [{ level: "error", code: "BOM_LAYOUT", message: "No header row found. A flat BOM needs Parent Part Number and Child Part Number columns; a redline needs Number, CL1, CL2 and level columns 0..7 or Structure." }] };
+  if (!d.layout) return { layout: "flat", usages: [], parents: [], skipped: [], findings: [{ level: "error", code: "BOM_LAYOUT", message: "No header row found. A flat BOM needs Parent Part Number and Child Part Number columns; a redline needs Number, CL1, CL2 and level columns 0..7 or Structure." }] };
+  const skipped: SkippedRow[] = [], hdr = grid[d.headerRow] ?? [];
+  const skip = (r: number, code: string): void => { const row = grid[r] ?? [], cells: string[] = []; row.forEach((c, i) => { const x = bomCurPrev(c); if (!x.cur && !x.prev) return; cells.push(`${bomTxt(hdr[i]) || "column " + (i + 1)}: ${x.cur}${x.prev ? (x.cur ? ` (was ${x.prev})` : `(struck: ${x.prev})`) : ""}`); }); skipped.push({ row: r + 1, code, cells: cells.join("; ") }); };
   if (d.missing.length) findings.push({ level: "error", code: "BOM_COLUMNS", message: `Missing column(s): ${d.missing.join(", ")}.` });
   const m = bomColMap(grid[d.headerRow]!), usages: Usage[] = [], parents: ParentObs[] = [];
   const blank = (u: Partial<Usage>): Usage => ({ parent: "", parentRev: "", line: "", child: "", childRev: "", childName: "", childSource: "", childState: "", amount: "", unit: "", refDes: "", from: "", to: "", ssc: "", notes: "", row: 0, alternates: [], ownSrc: null, drawingLocation: "", prevChild: "", ...u });
@@ -99,16 +103,16 @@ export function parseBom(grid: Grid): Parsed {
       const parent = bomGet(row, m, "parentpartnumber"), child = bomGet(row, m, "childpartnumber"), mfr = bomGet(row, m, "manufacturer", "childmanufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber", "childmanufacturerpartnumber");
       if (!child) {   // BOM-003 / BOM-013: blank PN + manufacturer part number = alternate of the line above
         if (mpn && last && last.parent === parent && last.parentRev === bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2")) { last.alternates.push({ mfr, mpn }); continue; }
-        findings.push({ level: "warn", code: mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD", message: `Row ${r + 1}: no child part number${mpn ? " and no unambiguous primary line above; review only" : ""}.` }); continue;
+        findings.push({ level: "warn", code: mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD", message: `Row ${r + 1}: no child part number${mpn ? " and no unambiguous primary line above; review only" : ""}.` }); skip(r, mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD"); continue;
       }
       const u = blank({ parent, parentRev: bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2"), line: bomGet(row, m, "linenumber"), child, childRev: bomGet(row, m, "childcl1") + bomGet(row, m, "childcl2"), childName: bomGet(row, m, "childname"),
         childSource: bomGet(row, m, "childsource"), childState: bomGet(row, m, "childstate"), amount: bomGet(row, m, "amount", "quantity"), unit: bomGet(row, m, "unit"), refDes: bomGet(row, m, "referencedesignator"), from: bomGet(row, m, "from"), to: bomGet(row, m, "to"),
         ssc: bomGet(row, m, "ssc"), notes: bomGet(row, m, "cildnotes", "childnotes"), row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null });
-      if (!parent) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: no parent part number; skipped.` }); continue; }
+      if (!parent) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: no parent part number; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
       parents.push({ pn: parent, rev: u.parentRev, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
       usages.push(u); last = u;
     }
-    return { layout: "flat", usages, parents, findings };
+    return { layout: "flat", usages, parents, findings, skipped };
   }
   // redline: the parent of a row is the nearest row above it one level up (the 0..7 columns match Structure)
   const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]), lvl = bomLevelSource(grid, d.headerRow, m);
@@ -119,16 +123,16 @@ export function parseBom(grid: Grid): Parsed {
     if (level < 0 && lvl.col >= 0) { const s = bomTxt(row[lvl.col]); if (/^\d+$/.test(s)) level = +s; }
     const num = bomCurPrev(row[m.get(bomNumKey(m)) ?? -1]), mfr = bomGet(row, m, "manufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber", "manufacturerpartnubmer");
     if (!num.cur && !num.prev) {   // blank number: an alternate source of the line above (BOM-013)
-      if ((mfr || mpn) && last) last.alternates.push({ mfr, mpn }); else findings.push({ level: "warn", code: "ALT_NO_PRIMARY", message: `Row ${r + 1}: blank part number and nothing above it to attach to; review only.` }); continue;
+      if ((mfr || mpn) && last) last.alternates.push({ mfr, mpn }); else findings.push({ level: "warn", code: "ALT_NO_PRIMARY", message: `Row ${r + 1}: blank part number and nothing above it to attach to; review only.` }); skip(r, "ALT_NO_PRIMARY"); continue;
     }
-    if (level < 0) { findings.push({ level: "warn", code: "ROW_NO_LEVEL", message: `Row ${r + 1}: no level; skipped.` }); continue; }
-    if (!num.cur) { findings.push({ level: "info", code: "LINE_REMOVED", message: `Row ${r + 1}: part number ${num.prev} is struck out with no replacement; the line is removed in this release and was not imported.` }); stack[level] = undefined; continue; }
+    if (level < 0) { findings.push({ level: "warn", code: "ROW_NO_LEVEL", message: `Row ${r + 1}: no level; skipped.` }); skip(r, "ROW_NO_LEVEL"); continue; }
+    if (!num.cur) { findings.push({ level: "info", code: "LINE_REMOVED", message: `Row ${r + 1}: part number ${num.prev} is struck out with no replacement; the line is removed in this release and was not imported.` }); skip(r, "LINE_REMOVED"); stack[level] = undefined; continue; }
     const name = bomCurPrev(row[m.get("name") ?? -1]).cur, cl1 = bomCurPrev(row[m.get("cl1") ?? -1]).cur, cl2 = bomCurPrev(row[m.get("cl2") ?? -1]).cur, rev = cl1 + cl2;
     stack.length = level + 1; stack[level] = { pn: num.cur, rev };
     const dl = bomGet(row, m, "drawinglocation");
     if (level === 0) { parents.push({ pn: num.cur, rev, name, source: "", state: "", drawingLocation: dl }); last = null; continue; }
     const p = stack[level - 1];
-    if (!p) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: level ${level} with no row above at level ${level - 1}; skipped.` }); continue; }
+    if (!p) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: level ${level} with no row above at level ${level - 1}; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
     const unitCol = m.get("unitofmeasure") ?? m.get("uom") ?? m.get("unit"), qtyCol = m.get("quantity") ?? m.get("amount") ?? (m.has("unitofmeasure") || m.has("uom") ? m.get("unit") : undefined);   // the DVS 400 sheet calls the quantity "Unit" and the unit "Unit Of Measure"
     const q = bomCurPrev(row[qtyCol ?? -1]), un = bomCurPrev(row[unitCol ?? -1]);
     const u = blank({ parent: p.pn, parentRev: p.rev, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
@@ -138,10 +142,13 @@ export function parseBom(grid: Grid): Parsed {
   }
   // keep a parent observation only for part numbers that really have lines below them
   const hasKids = new Set(usages.map((u) => u.parent + "\0" + u.parentRev));
-  return { layout: "redline", usages, parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings };
+  return { layout: "redline", usages, parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings, skipped };
 }
 
 // ---- resolve and render ---------------------------------------------------------------------------------------------------
+/** D-0059: every row the reader skipped, with its content, not capped (the table above lists at most 40 findings per code). */
+const skippedSection = (s: SkippedRow[]): string => s.length ? `\n## Skipped rows\n\nThese rows were not turned into lines. Their content is kept here (D-0059), so nothing in the file is lost.\n\n| Row | Code | Content |\n|---|---|---|\n${s.map((x) => `| ${x.row} | ${x.code} | ${x.cells.replace(/\|/g, "\\|") || "(blank)"} |`).join("\n")}\n` : "";
+
 /** Appended to the findings that say an earlier BOM's note was left as it is: the way to change it is the update scan, not another import. */
 const HINT_UPDATE = ` To bring this file's changes in, use "Update an existing vault from a BOM" (D-0051).`;
 const BOM_DISCRETE = new Set(["", "ea", "each", "piece", "pieces", "pc", "pcs"]);
@@ -423,7 +430,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const shown = new Map<string, number>(), total = new Map<string, number>(); for (const f of sorted) total.set(f.code, (total.get(f.code) ?? 0) + 1);
   const grouped: Finding[] = [];
   for (const f of sorted) { const n = (shown.get(f.code) ?? 0) + 1; shown.set(f.code, n); if (n <= 40) grouped.push(f); else if (n === 41) grouped.push({ level: f.level, code: f.code, message: `… and ${total.get(f.code)! - 40} more with this code (not listed; the count is in the summary).` }); }
-  files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${grouped.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n` });
+  files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${grouped.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n${skippedSection(parsed.skipped)}` });
   const freshParts = newParts.length;
   return { status: "WRITE_READY", files, findings: sorted, problems,
     summary: { layout: parsed.layout, rows: parsed.usages.length, parts: freshParts, usages: usageCount, drawings: drawingCount, alternates, skippedParts: undetermined.size, existing: existingN, conflicts, eaMatched, bomOnly: eaMatched ? partPns.length - eaMatched : 0 } };
