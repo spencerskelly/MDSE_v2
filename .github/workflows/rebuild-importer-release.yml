@@ -1,4 +1,4 @@
-# D-0070 release rebuild: compile importer from corrected flagLink/PROVISIONAL_LINK source and run unit tests.
+# D-0073 release rebuild: validate typed temporal mapping, Workbench trace policy and regenerated importer.
 name: Rebuild MDSE importer release
 on:
   push:
