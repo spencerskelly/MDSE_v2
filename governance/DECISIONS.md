@@ -817,3 +817,15 @@ Rules: ~MOD-075, ~MOD-076. OD-01 remains open. (D-0003, D-0010, D-0061)
 5. **Tests and acceptance boundary.** Importer synthetic tests must distinguish an approved descriptive YAML relation from an unresolved connector; check that no `tracesTo` is emitted, that its connector is a persistent `flagLink` and `deferred_review` record, and that existing accepted note links remain. This does not approve arbitrary Issue/Change endpoint relationships, execute verification cases or modify the 583 native SysML model definitions in `MDSE_v2_live`.
 
 Rules: ~IMP-115, ~MOD-028. MOD-073 remains Active, REG-024 remains Retired. D-0045 is superseded only for its provisional `tracesTo` exception. OD-01 remains open.
+
+## D-0071 — The importer page re-reads the vault and refuses to replace a different note
+
+2026-10-24 · Spencer · Accepted (owner, chat: the folder was left on its first selection and the page still believed there was no vault). Fixes the cause of the duplicate ids found in the first real BOM import.
+
+1. **Cause.** The page decided "vault or no vault" once, when the folder was picked. A folder that was empty then stayed "no vault" after the first write, so later runs built a new vault: ids restarted at 1, base files and `vault_uid` were rewritten, and notes for parts already present were replaced. In the first real import this gave 381 ids shared by 1,075 notes and 705 unresolved child references.
+2. **Re-read.** The page reads the folder again before each check, import, update scan and update preview, and after each write (IMP-130).
+3. **Refuse.** A write is refused as a whole when a note would replace a different note on the same path or reuse an id held by another note. Nothing is written in that case.
+4. **Not covered.** The vault already imported is not repaired by this; it needs a clean re-import. A vault-wide duplicate-id check in the Workbench review queue is still to be done. Merging "Add to existing vault" and the BOM update scan into one flow is still a proposal.
+
+Rules: IMP-130 (Active).
+

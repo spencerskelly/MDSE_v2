@@ -221,6 +221,26 @@ async function walkDir(dir, prefix, out) {
 }
 const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDirectoryHandle(name) : dir.getFileHandle(name)); return true; } catch (_) { return false; } };
 let vaultFiles = null, vaultExists = false;
+/* D-0071: the folder is read again from disk before every run, so a vault the importer wrote earlier is seen as a vault, and a change made outside the page is seen too. */
+async function rescanVault() {
+  if (!vaultHandle) return;
+  allPaths.clear(); const files = []; await walkDir(vaultHandle, "", files);
+  vaultFiles = files; vaultIndex = null; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
+  $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
+}
+/* Refuses a write that would replace a note with a different one (another uid) or reuse an id that another note holds. */
+function writeClashes(files) {
+  const byPath = new Map(), byId = new Map();
+  for (const [p, t] of vaultFiles || []) { byPath.set(p, t); const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) byId.set(id, p); }
+  const out = [];
+  for (const f of files) {
+    if (f.bytes || !/\.md$/i.test(f.path) || /^99_System\//.test(f.path)) continue;
+    const id = /^id: (\S+)$/m.exec(f.content)?.[1], uid = /^uid: (\S+)$/m.exec(f.content)?.[1], old = byPath.get(f.path);
+    if (old !== undefined) { const ouid = /^uid: (\S+)$/m.exec(old)?.[1]; if (ouid && uid && ouid !== uid) { out.push(`${f.path}: a different note (uid ${ouid}) is already here`); continue; } }
+    if (id && byId.has(id) && byId.get(id) !== f.path) out.push(`${f.path}: id ${id} already belongs to ${byId.get(id)}`);
+  }
+  return out;
+}
 function refreshButtons() {
   const ready = !!person && (!!source || !!bom);
   $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
@@ -231,8 +251,7 @@ $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-    allPaths.clear(); const files = []; await walkDir(vaultHandle, "", files);
-    vaultFiles = files; vaultExists = (await has(vaultHandle, ".vault.yaml")) || (await has(vaultHandle, ".obsidian", "dir"));
+    await rescanVault(); const files = vaultFiles;
     if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The whole vault will be written into it.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
     await showToolset();
@@ -378,7 +397,7 @@ $("genNew").addEventListener("click", async () => {
 /* ---- Check before import: every flag the run would write, with nothing written ------------------------------------------- */
 $("genCheck").addEventListener("click", async () => {
   try {
-    progStart(STAGES);
+    progStart(STAGES); await rescanVault();
     const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
     const sum = r.res ? r.res.summary : null, b = r.bomRes;
     const pf = preflight({ files: r.files, ledger: r.res ? r.res.ledger : [], status: r.res ? r.res.status : "", elements: sum ? sum.elements : 0, errors: sum ? sum.errors : 0,
@@ -451,7 +470,7 @@ async function writeFile(root, path, text) {   // text is a string or a Uint8Arr
 }
 $("genAdd").addEventListener("click", async () => {
   try {
-    progStart(STAGES);
+    progStart(STAGES); await rescanVault();
     const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
     if (vaultExists) {
       if ($("toolUpd").checked) {
@@ -466,10 +485,12 @@ $("genAdd").addEventListener("click", async () => {
     if (!r.files.length) { progDone("Nothing to change"); $("genStatus").innerHTML = '<span class=ok>Nothing to change.</span>'; return; }
     const bad = badPaths(r.files);
     if (bad.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written by the browser; nothing was written.</span><pre>${esc(bad.slice(0, 25).join("\n"))}${bad.length > 25 ? "\n… and " + (bad.length - 25) + " more" : ""}</pre>`; return; }
+    const clash = writeClashes(r.files);
+    if (clash.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${clash.length} note(s) would replace or duplicate a different note in this folder; nothing was written.</span><pre>${esc(clash.slice(0, 25).join("\n"))}${clash.length > 25 ? "\n… and " + (clash.length - 25) + " more" : ""}</pre>`; return; }
     if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
     let n = 0;
     for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); noteWritten(f); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
-    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`);
+    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`); await rescanVault();
   } catch (e) { reportFailure(e, "write to folder"); }
 });
 
@@ -479,6 +500,7 @@ async function readVaultFile(path) {
   try { let dir = vaultHandle; const parts = path.split("/"); for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p); return await (await (await dir.getFileHandle(parts.at(-1))).getFile()).text(); } catch (_) { return null; }
 }
 $("updPreview").addEventListener("click", async () => {
+  await rescanVault();
   try {
     pendingUpdate = null; $("updApply").disabled = true; $("updStatus").textContent = "Comparing…"; $("updOut").innerHTML = "";
     const res = await planVaultUpdate({ base: BASEVAULT, read: readVaultFile, runDate: localIso() });
@@ -516,7 +538,7 @@ function bomApprovedIds() {
 }
 $("bomScan").addEventListener("click", async () => {
   try {
-    $("bomApply").disabled = true; bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").textContent = "Scanning the BOM against the vault. A large file takes a minute or two…"; await tick();
+    $("bomApply").disabled = true; bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").textContent = "Scanning the BOM against the vault. A large file takes a minute or two…"; await tick(); await rescanVault();
     const fp = await fileSha256(bom.file), runDate = localIso();
     const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [] });
     if (sc.result.status !== "WRITE_READY") { $("bomUpdStatus").innerHTML = `<span class=bad>${esc(sc.result.problems.join(" ") || "The BOM cannot be read.")}</span>`; return; }

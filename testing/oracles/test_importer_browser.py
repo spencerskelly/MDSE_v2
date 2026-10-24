@@ -232,6 +232,37 @@ class BomUpdateBrowser(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+    def test_second_bom_into_a_folder_the_page_filled_sees_a_vault_and_never_replaces_notes(self):
+        # D-0069: the folder was empty when picked; after the first write it is a vault, and the second run must read it
+        errors = []
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            v1 = pathlib.Path(d) / "bom1.tsv"; v1.write_text(BOM_TSV)
+            v2 = pathlib.Path(d) / "bom2.tsv"; v2.write_text(BOM_TSV.replace("\t2\tea\t", "\t3\tea\t"))
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e))); pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED.replace("await put('.vault.yaml'", "if (false) await put('.vault.yaml'").replace("await put('.obsidian/app.json'", "if (false) await put('.obsidian/app.json'").replace("await put('.obsidian/community-plugins.json'", "if (false) await put('.obsidian/community-plugins.json'").replace("await put('99_System/05_Templates", "if (false) await put('99_System/05_Templates").replace("await put('README.md'", "if (false) await put('README.md'").replace("await put('10_Model/Charger.md'", "if (false) await put('10_Model/Charger.md'"))
+            pg.click("#pick"); pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('no vault yet')")
+            pg.set_input_files("#bomFile", str(v1)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom1.tsv')")
+            pg.click("#genAdd"); pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Wrote')")
+            first = pg.evaluate("window.__read('BOM/Parts/01141-002.md')"); vy = pg.evaluate("window.__read('.vault.yaml')")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")   # the page reads the folder again after writing
+            # the same folder, no new pick: a second BOM
+            pg.set_input_files("#bomFile", str(v2)); pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom2.tsv')")
+            pg.click("#genAdd"); pg.wait_for_function("/Wrote|Nothing to change|nothing written/.test(document.getElementById('genStatus').textContent)")
+            self.assertEqual(pg.evaluate("window.__read('BOM/Parts/01141-002.md')"), first, "an existing part is not replaced")
+            self.assertEqual(pg.evaluate("window.__read('.vault.yaml')"), vy, "the vault identity is not rewritten")
+            self.assertFalse(pg.is_disabled("#bomScan"), "the update scan is available")
+            # a write that would put a different note on an existing path, or reuse an id, is refused
+            clash = pg.evaluate("""() => { const t = (id, uid) => `---\nid: ${id}\nuid: ${uid}\n---\n`; const old = vaultFiles.find(([p]) => p === 'BOM/Parts/01141-002.md')[1]; const id = /^id: (\\S+)$/m.exec(old)[1]; const uid = /^uid: (\\S+)$/m.exec(old)[1];
+              return [writeClashes([{ path: 'BOM/Parts/01141-002.md', content: t(id, uid) }]), writeClashes([{ path: 'BOM/Parts/01141-002.md', content: t(id, 'other') }]), writeClashes([{ path: 'BOM/Parts/ZZ.md', content: t(id, 'u2') }])]; }""")
+            self.assertEqual(clash[0], []); self.assertIn("different note", clash[1][0]); self.assertIn("already belongs", clash[2][0])
+            b.close()
+        self.assertEqual(errors, [])
+
     def test_additions_arrive_ticked_and_changes_do_not(self):
         """D-0057: a later BOM that adds a line is ticked for the user; a quantity change in the same file is not."""
         errors = []
