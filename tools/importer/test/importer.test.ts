@@ -18,6 +18,9 @@ const qeax = join(dir, "syn.qeax");
 buildSyntheticQeax(qeax);
 const run = async (over = {}): Promise<ImportResult> => { const r = sqliteReader(qeax); try { return await runImport(r, defaultOptions(over)); } finally { r.close(); } };
 const notes = (res: ImportResult) => res.files.filter((f) => f.path.endsWith(".md") && !f.path.startsWith("99_System/") && f.path !== "README.md");
+/** D-0068: a translated note's file is its id, so tests find a note by its `name` property. */
+const nameOf = (c: string): string => { const m = /^name: (.*)$/m.exec(c.split("\n---")[0] ?? ""); if (!m) return ""; const v = m[1]!.trim(); return v.startsWith('"') ? (JSON.parse(v) as string) : v; };
+const named = (res: ImportResult, name: string, nth = 0): ImportResult["files"][number] => { const hits = res.files.filter((f) => !f.bytes && f.path.endsWith(".md") && !f.path.startsWith("99_System/") && nameOf(f.content) === name).sort((a, b) => (/^uid: (.*)$/m.exec(a.content)![1]! < /^uid: (.*)$/m.exec(b.content)![1]! ? -1 : 1)); assert.ok(hits[nth], "no note named " + name); return hits[nth]!; };
 const asVault = (res: ImportResult) => ({ hasVault: true, files: new Map(res.files.filter((f) => !f.bytes).map((f) => [f.path, f.content])), allPaths: new Set(res.files.map((f) => f.path)) });
 
 test("sha256 matches node:crypto", () => {
@@ -95,7 +98,7 @@ test("identical re-import changes nothing", async () => {
 test("re-import is additive: engineer edits survive, a differing source value becomes a flagConflict", async () => {
   const first = await run();
   const files = new Map(first.files.map((f) => [f.path, f.content]));
-  const target = [...files.keys()].find((p) => p.endsWith("Charger.md"))!;
+  const target = named(first, "Charger").path;
   let t = files.get(target)!;
   t = t.replace("status: Draft", "status: Approved").replace("\n\n\n\n## Source: EA", "\n\nEngineer wrote this.\n\n\n\n## Source: EA").replace(/^subtype: .*$/m, "subtype: software");
   files.set(target, t);
@@ -127,7 +130,7 @@ test("every diagnostic code the importer writes is documented", async () => {
 
 test("part usage wins over aggregation: one usage, aggregation is alias_merged", async () => {
   const res = await run();
-  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## SysML v2")[1]!;
+  const charger = named(res, "Charger").content.split("## SysML v2")[1]!;
   assert.equal((charger.match(/part controller\b/g) ?? []).length, 1);
   assert.equal((charger.match(/part modules\b/g) ?? []).length, 1);
   assert.ok(!/part powerModule\b/.test(charger), "aggregation must not add a second usage when the EA Part already exists");
@@ -137,22 +140,22 @@ test("part usage wins over aggregation: one usage, aggregation is alias_merged",
 
 test("flows: flow items carry direction and type; missing direction is reported", async () => {
   const res = await run();
-  const port = res.files.find((f) => f.path.endsWith("Charge Port Interface.md"))!.content;
+  const port = named(res, "Charge Port Interface").content;
   assert.match(port, /in item currentCmd : IFLOW_\d{5}::ChargeCurrentCommand;/);
   assert.match(port, /out item statusOut : IFLOW_\d{5}::ChargerStatus;/);
   assert.match(port, /inout item untypedFlow;/);
   assert.ok(!/noDirection/.test(port.split("## SysML v2")[1]!));
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "DIRECTION_EVIDENCE_MISSING"));
-  const fn = res.files.find((f) => f.path.endsWith("Provide Charge Power.md"))!.content;
+  const fn = named(res, "Provide Charge Power").content;
   assert.match(fn, /succession first measure if guardMeasurementReady\w* then adjust;/);
   assert.match(fn, /constraint guardMeasurementReady\w* \{ doc \/\* measurement ready \* \/ and stable \*\/ \}/, "guard wording is a doc, `*\/` escaped");
-  const st = res.files.find((f) => f.path.endsWith("Charging.md"))!.content;
+  const st = named(res, "Charging").content;
   assert.match(st, /transition first idle accept triggerStartButtonPressed if guardSupplyVoltageOk do effectCloseContactor then running;/);
   assert.match(st, /item triggerStartButtonPressed \{ doc \/\* Start button pressed \*\/ \}/);
   assert.doesNotMatch(st.split("## SysML v2")[0]!, /Transition idle|guard\/trigger/, "no EA-style guard line outside the SysML block (IMP-098)");
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "FLOW_ENDPOINT_NOT_USAGE"));
   assert.ok(!res.ledger.some((l) => l.diagnostic_code === "PORT_CONNECTION_NEEDS_COMMON_OWNER"), "ports on different parts are connected through the owning assembly");
-  assert.match(res.files.find((f) => f.path === "02 Product/Charger.md")!.content, /connect controller\.ctrlOut to modules\.pmPort;/);
+  assert.match(named(res, "Charger").content, /connect controller\.ctrlOut to modules\.pmPort;/);
   assert.match(fn, /fork split;/); assert.match(fn, /succession first adjust then split;/); assert.match(fn, /succession first split then branchOne;/);
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "FORK_JOIN_AMBIGUOUS"));
   assert.ok(res.ledger.some((l) => l.diagnostic_code === "TRIGGER_RECORDED_ON_OWNER"));
@@ -184,7 +187,7 @@ test("attachments: Artifact note, file written once, never overwritten", async (
   const res = await run();
   const bin = res.files.find((f) => f.path === "Attachments/wiring.png")!;
   assert.ok(bin && bin.bytes && bin.bytes.length === 12 && bin.bytes[0] === 0x89);
-  const note = res.files.find((f) => f.path.endsWith("Wiring Picture.md"))!.content;
+  const note = named(res, "Wiring Picture").content;
   assert.match(note, /!\[\[Attachments\/wiring\.png\]\]/); assert.match(note, /^type: Artifact$/m);
   assert.ok(res.ledger.some((l) => l.evidence.includes("ATTACHMENT_BYTES_NOT_FOUND")), "the Datasheet has no content");
   const again = await run({ existing: asVault(res) });
@@ -193,7 +196,7 @@ test("attachments: Artifact note, file written once, never overwritten", async (
 
 test("extend becomes an optional use case; dependency kinds stay distinct", async () => {
   const res = await run();
-  const body = (name: string) => res.files.find((f) => f.path.endsWith(name))!.content.split("## SysML v2")[1]!;
+  const body = (name: string) => named(res, name.replace(/\.md$/, "")).content.split("## SysML v2")[1]!;
   assert.match(body("Charge a Vehicle.md"), /use case \w+ : UC_\d{5}::Authenticate\[0\.\.1\];/);
   assert.match(body("Charge a Vehicle.md"), /include use case authenticate : UC_\d{5}::Authenticate;/);
   const std = body("UL 2594 5.1 Enclosure.md");
@@ -204,7 +207,7 @@ test("extend becomes an optional use case; dependency kinds stay distinct", asyn
 
 test("EA tags follow ea-tag-dispositions.json: placeholders and dropped tags are left out, listed body tags kept, new tags reported", async () => {
   const res = await run();
-  const src = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## Source: EA")[1]!.split("## SysML v2")[0]!;
+  const src = named(res, "Charger").content.split("## Source: EA")[1]!.split("## SysML v2")[0]!;
   assert.doesNotMatch(src, /unassigned|<memo>|Responsible|Target-Trace/);
   assert.match(src, /^- Brand: Acme$/m);
   assert.match(src, /^- Zzz New Tag: kept until decided$/m);
@@ -223,7 +226,7 @@ test("no EA GUIDs in Source: EA except the note's own identity line (flag callou
 
 test("a usage with no name is its type and an index (IMP-110, IMP-127)", async () => {
   const res = await run();
-  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content.split("## SysML v2")[1]!;
+  const charger = named(res, "Charger").content.split("## SysML v2")[1]!;
   assert.match(charger, /part contactor1 : /, "the Charger has `contactors` (named) and one unnamed Contactor part");
   assert.ok(!/part part\d+/.test(charger.split("mystery")[0]!), "no generated name where the type could name it");
 });
@@ -239,7 +242,7 @@ test("Source: EA does not repeat what SysML or the YAML already say (IMP-096)", 
   const res = await run();
   const all = notes(res).filter((f) => !f.path.endsWith("Boundaries.md")).map((f) => (f.content.split("## Source: EA")[1] ?? "").split("## SysML v2")[0]!).join("\n");
   assert.doesNotMatch(all, /^- (Usage|Flow|Control node|Aggregation|Specializes|Satisfies|Verifies|Allocated to|Realises|Performs|Derived from|Dependency|Connection|Includes|Extended by|Link describes|EA type|EA stereotype|EA author|EA created|EA package)\b/m);
-  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
+  const charger = named(res, "Charger").content;
   assert.match(charger, /part modules\[3\]|part modules : [^;]*\[3\]/, "quantity is SysML multiplicity");
   assert.match(charger, /^eaType: /m, "EA type and stereotype are in the YAML");
 });
@@ -270,7 +273,7 @@ test("file names the browser would refuse never reach the writer: device names w
 });
 
 
-const blockOf = (res: ImportResult, name: string): string => { const f = res.files.find((x) => !x.bytes && x.path.endsWith(`/${name}.md`)); assert.ok(f, name); const t = f!.content; const i = t.lastIndexOf("```sysml"); return t.slice(i, t.indexOf("```", i + 8)); };
+const blockOf = (res: ImportResult, name: string): string => { const dup = /^(.*)~(\d+)$/.exec(name), f = dup ? named(res, dup[1]!, +dup[2]! - 1) : named(res, name); assert.ok(f, name); const t = f!.content; const i = t.lastIndexOf("```sysml"); return t.slice(i, t.indexOf("```", i + 8)); };
 
 test("parts and ports are typed from PDATA1, which holds a GUID (IMP-104, IMP-105)", async () => {
   const res = await run();
@@ -294,7 +297,7 @@ test("a Port under a Part is the block's own port: PDATA3, same name, or added (
   assert.match(ctl, /port spare : OBJ_\d+::CANInterface;/, "no match on the block: added to it");
   const ev = res.ledger.filter((l) => l.ea_type === "Port").map((l) => l.evidence).join("|");
   assert.match(ev, /merged into Controller\.ctrlIn by PDATA3/); assert.match(ev, /merged into Controller\.ctrlOut by SAME_NAME/); assert.match(ev, /Controller\.spare by ADDED/);
-  const note = res.files.find((x) => !x.bytes && x.path.endsWith("/Controller~2.md"))!.content;
+  const note = named(res, "Controller", 1).content;
   assert.match(note, /Port `spare` added from an assembly/);
 });
 
@@ -328,13 +331,13 @@ test("aggregation follows the kinds of its ends; every connector is its own usag
 
 test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
   const res = await run();
-  const text = (name: string) => res.files.find((x) => !x.bytes && x.path.endsWith(`/${name}.md`))!.content;
-  assert.match(text("Loose Cable"), /^affects: \["\[\[Provide Charge Power\]\]", "\[\[Charger\]\]"\]$/m, "an Issue affects what it is linked to");
-  assert.match(text("Change A"), /^tracesTo: \["\[\[Loose Cable\]\]"\]$/m, "Change and Issue: provisional");
-  assert.match(text("Pick Supplier"), /^dependsOn: \["\[\[Charger\]\]"\]$/m);
-  assert.match(text("Wiring Diagram"), /^describes: \["\[\[Charger\]\]"\]$/m, "an Image artifact describes the element");
-  assert.match(text("Design remark"), /^describes: .*\[\[Charger\]\]/m, "an Info note describes the element");
-  assert.match(text("Change A"), /^hasChild: \["\[\[Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
+  const text = (name: string) => named(res, name).content;
+  assert.match(text("Loose Cable"), /^affects: \["\[\[[A-Z]+-\d{5}\|Provide Charge Power\]\]", "\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m, "an Issue affects what it is linked to");
+  assert.match(text("Change A"), /^tracesTo: \["\[\[[A-Z]+-\d{5}\|Loose Cable\]\]"\]$/m, "Change and Issue: provisional");
+  assert.match(text("Pick Supplier"), /^dependsOn: \["\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m);
+  assert.match(text("Wiring Diagram"), /^describes: \["\[\[[A-Z]+-\d{5}\|Charger\]\]"\]$/m, "an Image artifact describes the element");
+  assert.match(text("Design remark"), /^describes: .*\[\[[A-Z]+-\d{5}\|Charger\]\]/m, "an Info note describes the element");
+  assert.match(text("Change A"), /^hasChild: \["\[\[[A-Z]+-\d{5}\|Change B\]\]"\]$/m, "Change hierarchy is an MDSE link");
   assert.doesNotMatch(text("Change A"), /^- Aggregation/m, "Source: EA does not repeat the YAML");
   const prov = res.ledger.filter((l) => l.diagnostic_code === "PROVISIONAL_LINK");
   assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "native" && l.operator_action));
@@ -343,9 +346,9 @@ test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
 test("flows: a succession inside a shared owner, otherwise a precedes link (IMP-116)", async () => {
   const res = await run();
   assert.match(blockOf(res, "Pipeline"), /succession first stageOne if guardWhenDone then stageTwo;/);
-  const a = res.files.find((x) => !x.bytes && x.path.endsWith("/Free A.md"))!.content;
-  assert.match(a, /^precedes: \["\[\[Free B\]\]"\]$/m);
-  assert.match(a, /^- Succession to \[\[Free B\]\] \(guard: go\)$/m, "the guard stays as a Source line");
+  const a = named(res, "Free A").content;
+  assert.match(a, /^precedes: \["\[\[[A-Z]+-\d{5}\|Free B\]\]"\]$/m);
+  assert.match(a, /^- Succession to \[\[[A-Z]+-\d{5}\|Free B\]\] \(guard: go\)$/m, "the guard stays as a Source line");
 });
 
 test("Realisation roles come from element types, not arrow direction (IMP-117); associations with use cases (IMP-118)", async () => {
@@ -353,12 +356,12 @@ test("Realisation roles come from element types, not arrow direction (IMP-117); 
   assert.match(blockOf(res, "Power Module"), /allocate REQ_\d+::ChargeCurrentAccuracy to OBJ_\d+::PowerModule;/, "requirement drawn as the source still allocates to the part");
   const uc = blockOf(res, "Charge a Vehicle");
   assert.equal((uc.match(/actor mechanic/g) ?? []).length, 1, "the same actor associated twice is one actor usage");
-  assert.match(res.files.find((x) => !x.bytes && x.path.endsWith("/Authenticate.md"))!.content, /^participants: \["\[\[Power Module\]\]"\]$/m, "a non-actor part takes part through the YAML link");
+  assert.match(named(res, "Authenticate").content, /^participants: \["\[\[[A-Z]+-\d{5}\|Power Module\]\]"\]$/m, "a non-actor part takes part through the YAML link");
 });
 
 test("what a Part says about its use goes on the assembly's note (IMP-119)", async () => {
   const res = await run();
-  const charger = res.files.find((f) => f.path === "02 Product/Charger.md")!.content;
+  const charger = named(res, "Charger").content;
   assert.match(charger, /^- On part controller: PN: SYN-CTRL-1; Piece Cost: 12\.5$/m);
   assert.doesNotMatch(charger, /Approved/, "a dropped tag stays dropped");
 });
@@ -404,4 +407,18 @@ test("MOD-174 / D-0067: a folder cap puts deeper notes in their ancestor and kee
   assert.ok(model(free).every((f) => !/^- Package: /m.test(f.content)), "with no cap nothing is cut, so no line is needed");
   assert.ok(new Set(model(capped).map((f) => f.path.toLowerCase())).size === model(capped).length, "paths stay unique");
   const dflt = await run(); assert.ok(model(dflt).every((f) => depth(f.path) <= 6), "the default cap is 6");
+});
+
+test("a translated note's file is its id; name, aliases and partNumber are properties (MOD-170 to MOD-173, D-0068)", async () => {
+  const res = await run();
+  for (const f of notes(res)) {
+    const m = MDSE.parse(f.content).meta;
+    if (!m.id || /(^|\/)(Unplaced Review Items|Boundaries)\.md$/.test(f.path)) continue;   // the two aggregate notes keep their titles for now (D-0068)
+    assert.equal(f.path.split("/").pop(), m.id + ".md", f.path);
+  }
+  const c = notes(res).find((f) => nameOf(f.content) === "Controller" && f.content.includes("CTRL"))!, m = MDSE.parse(c.content).meta;
+  assert.ok(c.content.includes('aliases: ["CTRL"]'), "the EA alias is an alias");
+  assert.equal(m.partNumber, "SYN-CTRL-1");
+  assert.ok(!/^- EA alias:/m.test(c.content) && !/^- Name:/m.test(c.content), "name and alias are not repeated in Source");
+  assert.match(c.content, /^# Controller$/m);
 });

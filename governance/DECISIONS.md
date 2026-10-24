@@ -787,9 +787,13 @@ Rules: MOD-174 (Active).
 2. **Update scan.** Approving a SUPERSEDES item also adds the old number to the note's `aliases`. Names already in `aliases` are kept; none are removed.
 3. **Confirmed unchanged.** BOM note file name is the part number; a model note's file name is its id; `name` comes from the model element name and a BOM note has none; the Workbench shows `name`, else `description`, else the file name (MOD-170, MOD-171, WKB-028).
 4. **Workbench (built).** Canvases and every view already take their text from the shown name (name, description, heading, file name). Search and the table filter now also match the file name, part number and aliases. New notes made in the Workbench are named by id, with the typed title stored as `name`.
-5. **Not covered.** A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
+5. **Not covered here.** A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
 
-Rules: MOD-172, WKB-010, WKB-028 (Active).
+6. **EA translator (built).** A translated note's file is its id. `name` is the exact EA name, `aliases` holds the EA alias when it differs from the name, `partNumber` comes from the EA tag `PN` or `Part Number`. `- Name:` and `- EA alias:` lines are no longer written; the PN tag line stays in Source for WKB-017. Links in Source lines and in properties are written `[[id|name]]`. The package rows of the source ledger now show the capped folder.
+7. **Model notes keep the id even with a part number.** MOD-170 and MOD-173 are narrowed: only BOM parts are named by part number, so a model note and a BOM part for one part do not clash; the merge in WKB-017 joins them.
+8. **Not covered.** Whether the tag is really called `PN` or `Part Number` in the real model (taken from WKB-017, not verified). The Boundaries and Unplaced Review Items notes are still named by title. A vault already imported keeps its old file names; re-import offers `name`/`aliases`/`partNumber` as changes, and that path was only exercised by the existing update tests. Rules MOD-037, MOD-040 and MOD-108 are reworded here but remain Unreviewed.
+
+Rules: MOD-037, MOD-040, MOD-108, MOD-170, MOD-173, IMP-015, WKB-010, WKB-028, MOD-172.
 
 ## D-0069 — Step 03: scope relationship endpoint and inverse rules to the SysML v2 authority boundary
 

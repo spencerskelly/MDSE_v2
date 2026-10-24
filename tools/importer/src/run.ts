@@ -165,7 +165,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   };
   const set = (r: LedgerRow, disposition: string, kind: string, diag = "", action = ""): void => { r.disposition = disposition; r.target_semantic_kind = kind; r.diagnostic_code = diag; r.operator_action = action; };
 
-  for (const p of g.packages.values()) { const r = row("t_package", p.id, p.guid, "Package", "", p.parentId, "folder_only"); set(r, "native", "Folder"); r.target_file = pkgPath(p.id).join("/"); }
+  for (const p of g.packages.values()) { const r = row("t_package", p.id, p.guid, "Package", "", p.parentId, "folder_only"); set(r, "native", "Folder"); r.target_file = ((c) => (c > 0 ? pkgPath(p.id).slice(0, c) : pkgPath(p.id)))(o.folderCap ?? 6).join("/"); }
 
   // ---- elements: family -> disposition --------------------------------------------------------------------------
   const drafts: Draft[] = [], byObj = new Map<number, Draft>();
@@ -232,11 +232,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     claimed.add(name.toLowerCase()); return name;
   };
   const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
-  for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(safeName(d.title));
+  for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(d.id);   // MOD-170 (D-0068): a model note's file is its id; the name is the `name` property
   const cap = o.folderCap ?? 6, atCap = (parts: string[]): string[] => (cap > 0 ? parts.slice(0, cap) : parts);
   const dirParts = (d: Draft): string[] => atCap(d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
   const dirOf = (d: Draft): string => dirParts(d).join("/");
   const ownDirOf = (d: Draft): string => [...dirParts(d), d.baseName].join("/");
+  const lkRaw = (d: Draft): string => `${d.baseName}|${d.title.replace(/[|\[\]#^\n]/g, " ").replace(/\s+/g, " ").trim()}`;
+  const lk = (d: Draft): string => `[[${lkRaw(d)}]]`;   // a link in a Source line shows the name (D-0068); links in properties stay `[[file]]`
   for (const d of drafts) {
     if (d.existingPath) { d.path = d.existingPath; continue; }
     const dir = dirOf(d);
@@ -304,7 +306,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         flagLink(block, `Port \`${name}\` added from an assembly`, [`The EA Port \`${eaName || "(unnamed)"}\` sits on a Part of this block and no port on the block matches it (no PDATA3 target, no unique same name). It is written on the block as its own port. Review it.`]);
       }
     }
-    if (typePort) { if (!ref.typeDraft) { ref.typeDraft = typePort; ref.typedBy = typePort.title; } else if (ref.typeDraft !== typePort) block.sourceLines.push(`- Port ${ref.name} is also typed [[${typePort.baseName}]] on a Part`); }
+    if (typePort) { if (!ref.typeDraft) { ref.typeDraft = typePort; ref.typedBy = typePort.title; } else if (ref.typeDraft !== typePort) block.sourceLines.push(`- Port ${ref.name} is also typed ${lk(typePort)} on a Part`); }
     if (!ref.mult) { const m = parseMultiplicity(e.multiplicity); if (m.text) ref.mult = m.text; }
     usageByObj.set(e.id, { owner: block, ref }); carrierOf.set(e.id, carrier.id);
     set(u.row, "native", "PortUsage", added ? "PORT_ADDED_TO_BLOCK" : "MERGED_INTO_BLOCK_PORT", added ? "Review: port added to the block from an assembly" : "");
@@ -342,7 +344,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       else if (kind === "ActionUsage" && !want) { /* a plain step in an activity has no type; that is not a gap */ }
       else if (kind === "PortUsage" && !want) { diag = "UNRESOLVED_PORT_TYPE"; }
       else if (kind === "PortUsage" && target) {                                          // W-127: a Port typed by something that is not a port definition (a connector, a signal)
-        diag = `UNRESOLVED_PORT_TYPE:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; owner.sourceLines.push(`- Port ${e.name || e.alias || e.id} is typed by [[${target.baseName}]]`);
+        diag = `UNRESOLVED_PORT_TYPE:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; owner.sourceLines.push(`- Port ${e.name || e.alias || e.id} is typed by ${lk(target)}`);
       }
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
@@ -455,8 +457,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const eName = (id: number): string => g.objectsById.get(id)?.name ?? `object ${id}`;
       const host = src ?? usageByObj.get(c.sourceId)?.owner ?? dst ?? usageByObj.get(c.destId)?.owner;
       if (host) {
-        const to = dst ? `[[${dst.baseName}]]` : eName(c.destId);
-        const from = host === src ? "" : ` from ${src ? `[[${src.baseName}]]` : eName(c.sourceId)}`;
+        const to = dst ? lk(dst) : eName(c.destId);
+        const from = host === src ? "" : ` from ${src ? lk(src) : eName(c.sourceId)}`;
         host.sourceLines.push(`- Connector ${key}${from} to ${to} (unresolved: ${code})`);
         flagLink(host, `Unresolved ${key} link${from} to ${dst ? dst.title : eName(c.destId)}`, [`No native relationship was written (${code}). See the ledger row for EA connector ${c.guid}.`]);
       } else hostlessLinks.push({ c, code, family: key, row: r });
@@ -470,7 +472,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (c.type === "NoteLink") {
         const info = src?.type === "Info" ? src : dst?.type === "Info" ? dst : null, other = info === src ? dst : src;
         if (info && other) {
-          info.describes.push(other.baseName); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
+          info.describes.push(lkRaw(other)); set(r, "native", "MdseLink:describes"); r.target_stable_id = info.id; r.target_file = info.path;
           return;
         }
         set(r, "evidence_only", "", "NOTELINK_ENDPOINT_NOT_INFO_NOTE"); return;
@@ -481,7 +483,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (en.disposition === "conditional_review") { defer(en.required_evidence[0] ?? "CONDITIONAL_REVIEW", "No approved rule for this family; decide it and add the rule"); return; }
     if (!o.emitNative) { defer("NATIVE_EMISSION_DISABLED"); return; }
     const kw = (d?: Draft): string => d?.keyword ?? "";
-    const srcLine = (verb: string, other: Draft): string => `- ${verb} [[${other.baseName}]]`;
+    const srcLine = (verb: string, other: Draft): string => `- ${verb} ${lk(other)}`;
     // IMP-115 (REG-291; Test_Vault_ element policy): an end that is an MDSE note (Issue, Change, Info, Artifact, Decision...) has no SysML form, so the link is YAML.
     // Info, Artifact and Document notes describe the element; Dependency/Usage is dependsOn; anything else is the provisional tracesTo (a Review finding, W-288).
     const noteLink = (): boolean => {
@@ -626,7 +628,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const dA = byObj.get(c.sourceId), dB = byObj.get(c.destId);
       if (dA && dB && dA !== dB) {
         const extra = [trig && `trigger: ${trig}`, grd && `guard: ${grd}`, eff && `effect: ${eff}`].filter(Boolean).join("; ");
-        dA.links.push(["precedes", dB]); if (extra) dA.sourceLines.push(`- ${key === "ControlFlow" ? "Succession" : "Transition"} to [[${dB.baseName}]] (${extra})`);
+        dA.links.push(["precedes", dB]); if (extra) dA.sourceLines.push(`- ${key === "ControlFlow" ? "Succession" : "Transition"} to ${lk(dB)} (${extra})`);
         set(r, "native", "MdseLink:precedes"); r.target_stable_id = dA.id; r.target_file = dA.path; return;
       }
       defer("FLOW_ENDPOINT_NOT_USAGE"); return;
@@ -684,7 +686,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const outFiles: OutFile[] = [];
   const relFieldsOf = (d: Draft): Array<[string, string[]]> => {
     const f = new Map<string, string[]>(); if (d.describes.length) f.set("describes", [...d.describes]);
-    for (const [k, t] of d.links) { const l = f.get(k) ?? []; if (!l.includes(t.baseName)) l.push(t.baseName); f.set(k, l); }
+    for (const [k, t] of d.links) { const l = f.get(k) ?? []; if (!l.includes(lkRaw(t))) l.push(lkRaw(t)); f.set(k, l); }
     return [...f].map(([k, v]) => [k, [...new Set(v)]] as [string, string[]]);
   };
   let blocks = 0, flagCount = holdingFlags;
@@ -693,12 +695,13 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   let attachRows = 0;
   for (const d of drafts) guard("render", "t_object", d.o, () => {
     const e = d.o, src = [`- EA GUID: ${e.guid}`];
-    if (safeName(e.name) !== e.name.trim()) src.push(`- Name: ${e.name}`);
-    if (e.alias) src.push(`- EA alias: ${e.alias}`);
+    // D-0068: the exact EA name is the `name` property and the EA alias is in `aliases`, so neither is repeated here (IMP-096)
+    let partNumber = "";
     const isReq = d.keyword === "requirement def";
     let reqText = isReq ? e.note.trim() : "";
     for (const [k, v] of g.tags.get(e.id) ?? []) {
       if (isPlaceholder(v)) continue;
+      if (!partNumber && /^(PN|Part ?Number)$/i.test(k.trim())) partNumber = v.trim();   // MOD-173: the EA part number tag (tag names as in WKB-017; not checked against a real model)
       if (isReq && /^(SysML1\.\d::)?text$/i.test(k.trim())) { if (!reqText.includes(v.trim())) reqText = [reqText, v.trim()].filter(Boolean).join("\n\n"); continue; }     // requirement wording lives in `doc` (IMP-097)
       const disp = tagDisp.get(k);
       if (disp === undefined) { unlistedTags.set(k, (unlistedTags.get(k) ?? 0) + 1); }          // new to the list: kept in the body until someone decides (W-33)
@@ -728,7 +731,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       ...(reqText ? { doc: reqText } : {}), members: [...d.members, ...(d.verifies.length ? [`objective { ${d.verifies.map((v) => `verify ${v};`).join(" ")} }`] : [])] }) : null;
     if (sysml) blocks++;
     flagCount += d.flags.length;
-    const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, relFields: relFieldsOf(d),
+    const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, ...(e.name.trim() || e.alias.trim() ? { name: d.title } : {}), ...(e.alias.trim() && e.name.trim() && e.alias.trim() !== e.name.trim() ? { aliases: [e.alias.trim()] } : {}), ...(partNumber ? { partNumber } : {}), relFields: relFieldsOf(d),
       bodyText: [isReq ? "" : e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
     const r = objRow.get(e.id)!;
