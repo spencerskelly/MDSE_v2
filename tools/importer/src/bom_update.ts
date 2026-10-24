@@ -1,5 +1,5 @@
 /* BOM update scan and apply (D-0051). A later BOM import is read against the vault, the differences are listed by category, and only what the owner approves is written.
- * The scan never writes. A note is only proposed for change when it still matches its import stamp (BOM-031); a note a person changed, or one with no stamp, is reported and left alone. */
+ * The scan never writes. A note that no longer matches its import stamp (BOM-031) was edited by a person: it is still compared, and its items are marked as edits (D-0054). A note with no stamp is reported and left alone. */
 import MDSE from "../../core/src/mdse_core.js";
 import { buildBom, bomRevCompare, parseBom } from "./bom.ts";
 import { bomOwnedHash, bomSplitSysml, bomAttrOf, bomOwnsOf } from "../../core/src/bom_own.ts";
