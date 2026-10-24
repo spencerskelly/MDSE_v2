@@ -541,7 +541,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 ## Retired rules
 
 - **GOV-006** — Claude may push directly to main on Test_Vault_. Topics are decided one at a time. (REG-033, W-07) *Note: In MDSE_v2 this continues as GOV-001 (D-0005).* *Retired: D-0066 (2026-10-24); the obsolete Test_Vault_ direct-push authority is superseded by GOV-001 and GOV-005 (D-0001, D-0005).*
-- **GOV-018** — Final folder structure follows the EA package structure. 99_System is kept and edited topic by topic. Legacy empty model folders were removed. (REG-050, W-04) *Retired: D-0066 (2026-10-24); EA package layout is not current placement authority; managed 99_System support remains under GOV-017. Folder depth remains Proposed under MOD-174.*
+- **GOV-018** — Final folder structure follows the EA package structure. 99_System is kept and edited topic by topic. Legacy empty model folders were removed. (REG-050, W-04) *Retired: D-0066 (2026-10-24); EA package layout is not current placement authority; managed 99_System support remains under GOV-017. At the D-0066 reconciliation, folder depth was still Proposed; D-0067 subsequently made MOD-174 Active with a cap of 6.*
 
 Kept for traceability. Not binding. Each line gives the register row, the origin and why it was retired.
 
