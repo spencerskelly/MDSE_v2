@@ -21,11 +21,6 @@ export function edIdent(raw: string, fallback = "Unnamed"): string {
   return ED_KEYWORDS.has(s) ? s + "_" : s;
 }
 export const edUsageIdent = (raw: string, fallback = "item"): string => { const s = edIdent(raw, fallback); const l = s[0]!.toLowerCase() + s.slice(1); return ED_KEYWORDS.has(l) ? l + "_" : l; };
-export function edFileName(raw: string): string {
-  const s = raw.replace(/\r?\n/g, " ").replace(/\//g, "-").replace(/:/g, " -").replace(/[?*]/g, "").replace(/"/g, "''").replace(/[<>|\\]/g, "-").replace(/\[/g, "(").replace(/\]/g, ")").replace(/#/g, "no.").replace(/\^/g, "")
-    .replace(/\s+/g, " ").trim().replace(/[. ]+$/, "");
-  return s.length > 150 ? s.slice(0, 150).trim() : s;
-}
 /** `author: <code>` from .vault.yaml; "" when not set yet. */
 export function edAuthor(vaultYaml: string): string { const a = /^author:\s*(\S+)/m.exec(vaultYaml)?.[1] ?? ""; return a === "UNINITIALIZED" || a.length !== 13 ? "" : a; }
 /** yyyyMMddHHmmssSSS in LOCAL time (MOD-004) plus the 13-character author code; a repeat moves forward one millisecond. */
@@ -66,6 +61,7 @@ export function edElementKinds(classes: EdClasses): Array<{ type: string; subtyp
   return Object.keys(classes).filter((t) => t !== "modelCheck").sort().map((type) => ({ type, subtypes: classes[type]!.subtype, keyword: edKeyword(type, classes[type]!.subtype[0] ?? "") }));
 }
 
+const yamlName = (t: string): string => (/^[A-Za-z0-9][A-Za-z0-9 ._()\/-]*$/.test(t) && !/^(true|false|null|yes|no|on|off)$/i.test(t) && !/^[\d.]+$/.test(t) ? t : JSON.stringify(t));
 export interface AddElement { type: string; subtype: string; title: string; folder: string; /** requirement wording or a short description */ text?: string; author: string; now?: Date }
 export function planAddElement(ix: ModelIndex, classes: EdClasses, o: AddElement): EditPlan {
   const cls = classes[o.type];
@@ -74,17 +70,14 @@ export function planAddElement(ix: ModelIndex, classes: EdClasses, o: AddElement
   const title = o.title.replace(/\s+/g, " ").trim();
   if (!title) return bad("A name is required.");
   if (!o.author) return bad("No author code yet: set `author:` in .vault.yaml (the importer fills it on its first run).");
-  const base = edFileName(title);
-  if (!base) return bad("The name has no usable characters.");
   const folder = o.folder.replace(/^\/+|\/+$/g, "");
-  const taken = new Set([...ix.notes.keys()].map((p) => p.toLowerCase())), names = new Set([...ix.notes.values()].map((n) => n.name.toLowerCase()));
-  let name = base, n = 1;
-  while (names.has(name.toLowerCase()) || taken.has(((folder ? folder + "/" : "") + name + ".md").toLowerCase())) { n++; name = `${base}~${n}`; }
-  const path = (folder ? folder + "/" : "") + name + ".md";
   const prefix = cls.prefixBySubtype?.[o.subtype] ?? cls.prefix, id = edNextId(ix, prefix);
+  // MOD-170 (D-0068): the file is named by the id; the typed title is the note's `name`
+  const path = (folder ? folder + "/" : "") + id + ".md";
+  if ([...ix.notes.keys()].some((k) => k.toLowerCase() === path.toLowerCase())) return bad(`${path} already exists.`);
   const uid = edUid(o.author, o.now ?? new Date(), new Set([...ix.notes.values()].map((x) => x.uid)));
   const kw = edKeyword(o.type, o.subtype), pkg = id.replace(/-/g, "_"), ident = edIdent(title, "Unnamed"), text = (o.text ?? "").replace(/\r\n/g, "\n").trim();
-  const fm = [`type: ${o.type}`, `subtype:${o.subtype ? " " + o.subtype : ""}`, `id: ${id}`, `uid: ${uid}`, "status: Draft", "tags: []"];
+  const fm = [`type: ${o.type}`, `subtype:${o.subtype ? " " + o.subtype : ""}`, `id: ${id}`, `uid: ${uid}`, "status: Draft", "tags: []", `name: ${yamlName(title)}`];
   if (kw) fm.push("sourceRole: authoritative-model", `primarySymbol: ${pkg}::${ident}`);
   let out = `---\n${fm.join("\n")}\n---\n# ${title}\n`;
   if (text && !(kw === "requirement def")) out += `\n${text}\n`;                                          // a requirement's wording lives in its doc (IMP-097)

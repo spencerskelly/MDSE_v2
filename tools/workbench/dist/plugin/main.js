@@ -1182,7 +1182,7 @@ function tableRows(ix            , f              = {})             {
     if (f.flagged && !n.flags.length) continue;
     const dangling = outgoing(ix, n.path).filter((e) => !e.to).length;
     if (f.unresolved && !dangling) continue;
-    if (q && !`${n.id} ${n.title} ${n.name} ${n.def?.symbol ?? ""} ${n.type} ${n.subtype} ${n.folder}`.toLowerCase().includes(q)) continue;
+    if (q && !`${n.id} ${n.title} ${n.name} ${n.meta.aliases ?? ""} ${n.meta.partNumber ?? ""} ${n.def?.symbol ?? ""} ${n.type} ${n.subtype} ${n.folder}`.toLowerCase().includes(q)) continue;
     rows.push({ path: n.path, file: n.name, id: n.id, type: n.type, subtype: n.subtype, title: n.title, status: n.status, folder: n.folder, flags: n.flags.length, block: !!n.block, out: outgoing(ix, n.path).length, inn: incoming(ix, n.path).length, dangling });
   }
   const k = (f.sort ?? "id")                  ;
@@ -1253,8 +1253,9 @@ function search(ix            , q        , limit = 50)         {
   const s = q.trim().toLowerCase(); if (!s) return [];
   const hits                        = [];
   for (const n of ix.notes.values()) {
-    const id = n.id.toLowerCase(), t = n.title.toLowerCase();
-    const score = id === s ? 0 : id.startsWith(s) ? 1 : t === s ? 2 : t.startsWith(s) ? 3 : t.includes(s) ? 4 : (n.def?.symbol ?? "").toLowerCase().includes(s) ? 5 : n.body.toLowerCase().includes(s) ? 6 : -1;
+    const id = n.id.toLowerCase(), t = n.title.toLowerCase(), fn = n.name.toLowerCase(), al = String(n.meta.aliases ?? "").toLowerCase(), pn = String(n.meta.partNumber ?? "").toLowerCase();
+    // WKB-028 (D-0068): the file name, the part number and any alias find the note as well as the id and the shown name
+    const score = id === s || fn === s || pn === s ? 0 : id.startsWith(s) || fn.startsWith(s) ? 1 : t === s ? 2 : t.startsWith(s) ? 3 : t.includes(s) ? 4 : al.includes(s) || fn.includes(s) ? 4 : (n.def?.symbol ?? "").toLowerCase().includes(s) ? 5 : n.body.toLowerCase().includes(s) ? 6 : -1;
     if (score >= 0) hits.push([score, n]);
   }
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);
@@ -1486,11 +1487,6 @@ function edIdent(raw        , fallback = "Unnamed")         {
   return ED_KEYWORDS.has(s) ? s + "_" : s;
 }
 const edUsageIdent = (raw        , fallback = "item")         => { const s = edIdent(raw, fallback); const l = s[0] .toLowerCase() + s.slice(1); return ED_KEYWORDS.has(l) ? l + "_" : l; };
-function edFileName(raw        )         {
-  const s = raw.replace(/\r?\n/g, " ").replace(/\//g, "-").replace(/:/g, " -").replace(/[?*]/g, "").replace(/"/g, "''").replace(/[<>|\\]/g, "-").replace(/\[/g, "(").replace(/\]/g, ")").replace(/#/g, "no.").replace(/\^/g, "")
-    .replace(/\s+/g, " ").trim().replace(/[. ]+$/, "");
-  return s.length > 150 ? s.slice(0, 150).trim() : s;
-}
 /** `author: <code>` from .vault.yaml; "" when not set yet. */
 function edAuthor(vaultYaml        )         { const a = /^author:\s*(\S+)/m.exec(vaultYaml)?.[1] ?? ""; return a === "UNINITIALIZED" || a.length !== 13 ? "" : a; }
 /** yyyyMMddHHmmssSSS in LOCAL time (MOD-004) plus the 13-character author code; a repeat moves forward one millisecond. */
@@ -1531,6 +1527,7 @@ function edElementKinds(classes           )                                     
   return Object.keys(classes).filter((t) => t !== "modelCheck").sort().map((type) => ({ type, subtypes: classes[type] .subtype, keyword: edKeyword(type, classes[type] .subtype[0] ?? "") }));
 }
 
+const yamlName = (t        )         => (/^[A-Za-z0-9][A-Za-z0-9 ._()\/-]*$/.test(t) && !/^(true|false|null|yes|no|on|off)$/i.test(t) && !/^[\d.]+$/.test(t) ? t : JSON.stringify(t));
                                                                                                                                                                                   
 function planAddElement(ix            , classes           , o            )           {
   const cls = classes[o.type];
@@ -1539,17 +1536,14 @@ function planAddElement(ix            , classes           , o            )      
   const title = o.title.replace(/\s+/g, " ").trim();
   if (!title) return bad("A name is required.");
   if (!o.author) return bad("No author code yet: set `author:` in .vault.yaml (the importer fills it on its first run).");
-  const base = edFileName(title);
-  if (!base) return bad("The name has no usable characters.");
   const folder = o.folder.replace(/^\/+|\/+$/g, "");
-  const taken = new Set([...ix.notes.keys()].map((p) => p.toLowerCase())), names = new Set([...ix.notes.values()].map((n) => n.name.toLowerCase()));
-  let name = base, n = 1;
-  while (names.has(name.toLowerCase()) || taken.has(((folder ? folder + "/" : "") + name + ".md").toLowerCase())) { n++; name = `${base}~${n}`; }
-  const path = (folder ? folder + "/" : "") + name + ".md";
   const prefix = cls.prefixBySubtype?.[o.subtype] ?? cls.prefix, id = edNextId(ix, prefix);
+  // MOD-170 (D-0068): the file is named by the id; the typed title is the note's `name`
+  const path = (folder ? folder + "/" : "") + id + ".md";
+  if ([...ix.notes.keys()].some((k) => k.toLowerCase() === path.toLowerCase())) return bad(`${path} already exists.`);
   const uid = edUid(o.author, o.now ?? new Date(), new Set([...ix.notes.values()].map((x) => x.uid)));
   const kw = edKeyword(o.type, o.subtype), pkg = id.replace(/-/g, "_"), ident = edIdent(title, "Unnamed"), text = (o.text ?? "").replace(/\r\n/g, "\n").trim();
-  const fm = [`type: ${o.type}`, `subtype:${o.subtype ? " " + o.subtype : ""}`, `id: ${id}`, `uid: ${uid}`, "status: Draft", "tags: []"];
+  const fm = [`type: ${o.type}`, `subtype:${o.subtype ? " " + o.subtype : ""}`, `id: ${id}`, `uid: ${uid}`, "status: Draft", "tags: []", `name: ${yamlName(title)}`];
   if (kw) fm.push("sourceRole: authoritative-model", `primarySymbol: ${pkg}::${ident}`);
   let out = `---\n${fm.join("\n")}\n---\n# ${title}\n`;
   if (text && !(kw === "requirement def")) out += `\n${text}\n`;                                          // a requirement's wording lives in its doc (IMP-097)
@@ -2990,7 +2984,7 @@ function mountWorkbench(root             , host       = {})      {
   const countNotes = (t            )         => t.children.reduce((a, c) => a + (c.kind === "folder" ? countNotes(c) : 1), 0);
   function drawSidebar()              {
     const box = h("aside");
-    const q = h("input", { type: "search", placeholder: "Search id, title, symbol, text", value: query, "aria-label": "Search", oninput: (e       ) => { query = (e.target                    ).value; sidebar = query ? "search" : "folders"; const pos = (e.target                    ).selectionStart; draw(); const el = wrap.querySelector("aside input")                    ; el.focus(); el.setSelectionRange(pos, pos); } });
+    const q = h("input", { type: "search", placeholder: "Search file name, name, alias, id, symbol, text", value: query, "aria-label": "Search", oninput: (e       ) => { query = (e.target                    ).value; sidebar = query ? "search" : "folders"; const pos = (e.target                    ).selectionStart; draw(); const el = wrap.querySelector("aside input")                    ; el.focus(); el.setSelectionRange(pos, pos); } });
     box.append(q);
     if (!ix) { box.append(h("div", { class: "mut" }, loading || "No vault loaded.")); return box; }
     if (sidebar === "search") {
@@ -3350,7 +3344,7 @@ function mountWorkbench(root             , host       = {})      {
 
 
 
-const ED = { edIdent, edUsageIdent, edFileName, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
+const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
 const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgOwnerRows, planNoteMerge };

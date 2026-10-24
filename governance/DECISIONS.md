@@ -786,6 +786,7 @@ Rules: MOD-174 (Active).
 1. **Aliases.** When a BOM shows a part number replacing an earlier one (struck-through number in a redline), the new part's `aliases` lists the old number. The old number's own stub note stays, as before (BOM-023).
 2. **Update scan.** Approving a SUPERSEDES item also adds the old number to the note's `aliases`. Names already in `aliases` are kept; none are removed.
 3. **Confirmed unchanged.** BOM note file name is the part number; a model note's file name is its id; `name` comes from the model element name and a BOM note has none; the Workbench shows `name`, else `description`, else the file name (MOD-170, MOD-171, WKB-028).
-4. **Not covered.** Workbench canvases and the remaining views still need checking for the same fallback; search by alias is not checked. A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
+4. **Workbench (built).** Canvases and every view already take their text from the shown name (name, description, heading, file name). Search and the table filter now also match the file name, part number and aliases. New notes made in the Workbench are named by id, with the typed title stored as `name`.
+5. **Not covered.** A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
 
-Rules: MOD-172 (Active).
+Rules: MOD-172, WKB-010, WKB-028 (Active).

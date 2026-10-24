@@ -19,10 +19,10 @@ test("a new element gets id, uid, status and a SysML block, and passes the forma
   assert.equal(plan.writes.length, 1);
   const w = plan.writes[0]!;
   assert.equal(w.before, null);
-  assert.match(w.path, /^01 New\/Stop at 80 % \* charge\.md$|^01 New\/Stop at 80 %/);
+  assert.match(w.path, /^01 New\/REQ-\d{5}\.md$/, "the file is named by the id (MOD-170)");
   const f2 = apply(base, plan), ix2 = build(f2), n = ix2.notes.get(w.path)!;
   assert.ok(n, "indexed");
-  assert.match(n.id, /^REQ-\d{5}$/);
+  assert.match(n.id, /^REQ-\d{5}$/); assert.equal(n.meta.name, "Stop at 80 % */ charge"); assert.equal(n.title, "Stop at 80 % */ charge");
   assert.match(n.uid, /^20261020094201005skellyspencer$/);
   assert.equal(n.status, "Draft");
   assert.deepEqual(n.issues, [], "format check");

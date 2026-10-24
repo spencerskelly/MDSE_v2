@@ -352,7 +352,7 @@ export function tableRows(ix: ModelIndex, f: TableFilter = {}): TableRow[] {
     if (f.flagged && !n.flags.length) continue;
     const dangling = outgoing(ix, n.path).filter((e) => !e.to).length;
     if (f.unresolved && !dangling) continue;
-    if (q && !`${n.id} ${n.title} ${n.name} ${n.def?.symbol ?? ""} ${n.type} ${n.subtype} ${n.folder}`.toLowerCase().includes(q)) continue;
+    if (q && !`${n.id} ${n.title} ${n.name} ${n.meta.aliases ?? ""} ${n.meta.partNumber ?? ""} ${n.def?.symbol ?? ""} ${n.type} ${n.subtype} ${n.folder}`.toLowerCase().includes(q)) continue;
     rows.push({ path: n.path, file: n.name, id: n.id, type: n.type, subtype: n.subtype, title: n.title, status: n.status, folder: n.folder, flags: n.flags.length, block: !!n.block, out: outgoing(ix, n.path).length, inn: incoming(ix, n.path).length, dangling });
   }
   const k = (f.sort ?? "id") as keyof TableRow;
@@ -423,8 +423,9 @@ export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
   const s = q.trim().toLowerCase(); if (!s) return [];
   const hits: Array<[number, Note]> = [];
   for (const n of ix.notes.values()) {
-    const id = n.id.toLowerCase(), t = n.title.toLowerCase();
-    const score = id === s ? 0 : id.startsWith(s) ? 1 : t === s ? 2 : t.startsWith(s) ? 3 : t.includes(s) ? 4 : (n.def?.symbol ?? "").toLowerCase().includes(s) ? 5 : n.body.toLowerCase().includes(s) ? 6 : -1;
+    const id = n.id.toLowerCase(), t = n.title.toLowerCase(), fn = n.name.toLowerCase(), al = String(n.meta.aliases ?? "").toLowerCase(), pn = String(n.meta.partNumber ?? "").toLowerCase();
+    // WKB-028 (D-0068): the file name, the part number and any alias find the note as well as the id and the shown name
+    const score = id === s || fn === s || pn === s ? 0 : id.startsWith(s) || fn.startsWith(s) ? 1 : t === s ? 2 : t.startsWith(s) ? 3 : t.includes(s) ? 4 : al.includes(s) || fn.includes(s) ? 4 : (n.def?.symbol ?? "").toLowerCase().includes(s) ? 5 : n.body.toLowerCase().includes(s) ? 6 : -1;
     if (score >= 0) hits.push([score, n]);
   }
   return hits.sort((a, b) => a[0] - b[0] || a[1].title.localeCompare(b[1].title)).slice(0, limit).map((h) => h[1]);

@@ -424,4 +424,8 @@ test("a note is shown by name, else description, else heading, else file name, a
   const rows = V.tableRows(w, { text: "01141-002" }); assert.equal(rows.length, 1); assert.equal(rows[0]!.file, "01141-002"); assert.equal(rows[0]!.title, "CABLE ASSY, 3 m");
   assert.equal(V.tableRows(w, { text: "charge connector" }).length, 1, "found by name");
   assert.deepEqual(w.notes.get("Model/OBJ-90001.md")!.links, [], "name and aliases are not read as links");
+  assert.equal(V.search(w, "ccs inlet")[0]!.path, "Model/OBJ-90001.md", "search finds a note by an alias (D-0068)");
+  assert.equal(V.search(w, "01141-002")[0]!.path, "BOM/Parts/01141-002.md", "search finds a note by part number and file name");
+  assert.equal(V.search(w, "OBJ-90002")[0]!.path, "Model/OBJ-90002.md", "search finds a note by file name");
+  assert.equal(V.tableRows(w, { text: "plug" }).length, 1, "the table filter reads aliases");
 });

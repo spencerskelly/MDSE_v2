@@ -118,7 +118,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const countNotes = (t: V.TreeNode): number => t.children.reduce((a, c) => a + (c.kind === "folder" ? countNotes(c) : 1), 0);
   function drawSidebar(): HTMLElement {
     const box = h("aside");
-    const q = h("input", { type: "search", placeholder: "Search id, title, symbol, text", value: query, "aria-label": "Search", oninput: (e: Event) => { query = (e.target as HTMLInputElement).value; sidebar = query ? "search" : "folders"; const pos = (e.target as HTMLInputElement).selectionStart; draw(); const el = wrap.querySelector("aside input") as HTMLInputElement; el.focus(); el.setSelectionRange(pos, pos); } });
+    const q = h("input", { type: "search", placeholder: "Search file name, name, alias, id, symbol, text", value: query, "aria-label": "Search", oninput: (e: Event) => { query = (e.target as HTMLInputElement).value; sidebar = query ? "search" : "folders"; const pos = (e.target as HTMLInputElement).selectionStart; draw(); const el = wrap.querySelector("aside input") as HTMLInputElement; el.focus(); el.setSelectionRange(pos, pos); } });
     box.append(q);
     if (!ix) { box.append(h("div", { class: "mut" }, loading || "No vault loaded.")); return box; }
     if (sidebar === "search") {
