@@ -790,3 +790,14 @@ Rules: MOD-174 (Active).
 5. **Not covered.** A note imported before this decision gets the alias only when a SUPERSEDES item is approved again; that case and the update path are not covered by an end-to-end test (no redline fixture in the update tests).
 
 Rules: MOD-172, WKB-010, WKB-028 (Active).
+
+## D-0069 — Step 03: scope relationship endpoint and inverse rules to the SysML v2 authority boundary
+
+2026-10-24 · Spencer (continuation of the Step 03 governance-reconciliation instruction) · Accepted — clarification of already approved D-0003/D-0061; OD-01 classification remains open
+
+1. **MOD-075 rewritten.** Its 2026-10-22 Active source wording made every relationship endpoint subject to the V1 `relationships.yaml` catalog. That cannot govern SysML v2 definitions, typings, owned usages or connections. Native SysML semantics and the accepted parser/model validation govern their endpoints. Only explicitly approved MDSE-only YAML relationship kinds may use YAML from/to restrictions. The existing `relationships.yaml` inventory contains V1 entries and remains under revision until OD-01 is decided. No individual legacy field is accepted merely because it appears in the file.
+2. **MOD-076 rewritten.** SysML v2 relationships cannot have a second forward/inverse record in YAML; Workbench must derive reverse navigation from native model text/index projections. For non-SysML MDSE-only relationships, historical forward/source authority and optional derived inverse maintenance remain applicable **only after that relationship has been classified in OD-01**. No broad prohibition or approval of MDSE-only inverse storage is inferred. The old Nodian attribution is historical and not a current separate writer.
+3. **History preserved.** The original MOD-075 (REG-021/W-272) and MOD-076 (REG-022/W-275) wordings are retained in `MDSE_v2_live/70_Rule_References` at the pinned `bcdb25a11efa` ruleset snapshot; analyses, Draft `REQ-31102`–`REQ-31104`, and `VER-31053`/`VER-31054` keep their identifiers and original clauses as history, not new authoritative requirements.
+4. **Limits.** No new native SysML relationship form is introduced. `governance/schemas/relationships.yaml` is not pruned in this decision: OD-01 still requires a field-by-field owner disposition and importer/Workbench compatibility checks. `IMP-115` provisional `tracesTo` versus D-0010 `flagLink`, and MOD-028 relationship-field ordering versus D-0003, require follow-up. Do not silently rewrite these mappings under this decision. No engineering verification case is executed.
+
+Rules: ~MOD-075, ~MOD-076. OD-01 remains open. (D-0003, D-0010, D-0061)

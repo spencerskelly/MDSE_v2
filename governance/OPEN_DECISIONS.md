@@ -6,7 +6,7 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 
 | ID | Phase | Area | Decision needed |
 |---|---|---|---|
-| OD-01 | P1 | Model | Classify every field in `governance/schemas/relationships.yaml` as SysML-defined (moves to SysML v2 text, removed from YAML) or MDSE-only (stays in YAML). Proposed split below. Blocks the note writer (M2/M3). |
+| OD-01 | P1 | Model | D-0069 clarifies that the existing schema is a legacy inventory and native SysML endpoint/inverse authority is never sourced from it. **Still classify every field** in `governance/schemas/relationships.yaml` as SysML-defined (moves to SysML v2 text, removed from YAML) or MDSE-only (stays in YAML). Proposed split below. Blocks the note writer (M2/M3). |
 | OD-02 | P1 | Rovo | With relationships only in SysML text (D-0003), Rovo cannot answer "what satisfies REQ-x" from YAML. Choose: generate a read-only, Rovo-indexable relationship index per release (recommended), or accept that Rovo reads SysML text. Related: ADR-V2-06 Q6 (does Rovo index Markdown on SharePoint at all). |
 | OD-03 | P1 | Model | Stable identity tokens for usages inside SysML text (ADR-V2-06 Q1). Needs a pinned-parser test of SysML short names before adoption. |
 | OD-04 | P1 | Importer | Import State (W-371) rejects a second import into a vault; add-onto import (ADR-V2-07, Phase 2) needs a defined Import State for add-onto runs. Blocks Phase 2. |
