@@ -185,6 +185,7 @@ export function planUpdateRelationship(ix: ModelIndex, files: Map<string, string
   const info = edRelInfo(ix, ref);
   if (!info) return relBad("That relationship is no longer in the note. Refresh and try again.");
   if (info.why) return relBad(info.why);
+  if (form.depKind === "trace" && info.form.depKind !== "trace") return relBad("Cannot retag a relationship as an unresolved trace; use flagLink review evidence (D-0073).");
   const owner = info.owner, rel = info.rel;
   if (!rel) return relBad("This kind of relationship is not edited here.");
   const target = ix.notes.get(form.target);

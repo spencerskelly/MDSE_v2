@@ -135,7 +135,7 @@ export function edWithBlock(note: Note, text: string, fn: (block: string) => str
 
 /* ---- relationships ---------------------------------------------------------------------------------------- */
 export interface EdRel {
-  id: string; label: string; help: string;
+  id: string; label: string; help: string; legacyReadOnly?: boolean;
   from: (n: Note) => boolean; to: (n: Note, from: Note) => boolean;
   /** which extra inputs the form shows */
   inputs: Array<"usageKind" | "name" | "mult" | "dir" | "guard">;
@@ -160,7 +160,7 @@ export const ED_RELS: EdRel[] = [
     from: (n) => kw(n) === "requirement def", to: (n, f) => kw(n) === "requirement def" && n.path !== f.path, inputs: [] },
   { id: "refines", label: "refines", help: "`#refinement dependency from <this> to <target>;`: this adds precision to the target.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
-  { id: "trace", label: "traces to", help: "`dependency … // trace`: related, relationship not chosen yet.",
+  { id: "trace", label: "legacy trace (read-only)", help: "Historical explicit trace dependency only. An unresolved new link is a flagLink, not a provisional dependency (D-0073).", legacyReadOnly: true,
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
   { id: "dependsOn", label: "depends on", help: "`dependency … // dependsOn`.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
@@ -171,7 +171,7 @@ export const ED_RELS: EdRel[] = [
   { id: "extend", label: "is extended by use case", help: "Writes an optional use case `[0..1]` typed by the extension into this (base) use case.",
     from: (n) => kw(n) === "use case def", to: (n, f) => kw(n) === "use case def" && n.path !== f.path, inputs: ["name"] },
 ];
-export const edRelsFor = (from: Note): EdRel[] => ED_RELS.filter((r) => r.from(from));
+export const edRelsFor = (from: Note): EdRel[] => ED_RELS.filter((r) => !r.legacyReadOnly && r.from(from));
 export const edTargets = (ix: ModelIndex, rel: EdRel, from: Note): Note[] => [...ix.notes.values()].filter((n) => n.path !== from.path && rel.to(n, from));
 /** Usage kinds a target allows for the `owns` relationship. */
 export const edUsageKinds = (target: Note): string[] => USAGE_FOR_TARGET[kw(target)] ?? [];
@@ -180,6 +180,7 @@ export interface AddRelationship { rel: string; from: string; to: string; name?:
 export function planAddRelationship(ix: ModelIndex, files: Map<string, string>, o: AddRelationship): EditPlan {
   const rel = ED_RELS.find((r) => r.id === o.rel), from = ix.notes.get(o.from), to = ix.notes.get(o.to);
   if (!rel) return bad(`Unknown relationship "${o.rel}".`);
+  if (rel.legacyReadOnly) return bad("This is a historical trace relationship. New unresolved links must be recorded as flagLink review evidence (D-0073).");
   if (!from || !to) return bad("Both notes must be in the vault.");
   if (!rel.from(from)) return bad(`A ${from.type}${from.subtype ? "/" + from.subtype : ""} (${kw(from) || "no SysML block"}) cannot be the source of "${rel.label}".`);
   if (!rel.to(to, from)) return bad(`"${to.title}" is not an eligible target of "${rel.label}" from "${from.title}".`);

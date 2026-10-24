@@ -345,12 +345,16 @@ test("an end that is an MDSE note becomes a YAML link (IMP-115)", async () => {
   assert.ok(prov.length >= 1 && prov.every((l) => l.disposition === "deferred_review" && l.operator_action && l.ea_guid), "unresolved connector is deferred with an auditable source GUID");
 });
 
-test("flows: a succession inside a shared owner, otherwise a precedes link (IMP-116)", async () => {
+test("flows: native shared-owner succession; cross-owner flow is preserved as flagLink evidence (D-0073)", async () => {
   const res = await run();
   assert.match(blockOf(res, "Pipeline"), /succession first stageOne if guardWhenDone then stageTwo;/);
   const a = named(res, "Free A").content;
-  assert.match(a, /^precedes: \["\[\[[A-Z]+-\d{5}\|Free B\]\]"\]$/m);
-  assert.match(a, /^- Succession to \[\[[A-Z]+-\d{5}\|Free B\]\] \(guard: go\)$/m, "the guard stays as a Source line");
+  assert.doesNotMatch(a, /^precedes:/m, "no v1 YAML temporal duplicate");
+  assert.match(a, /\[!flagLink\]/, "cross-owner flow flagged for review");
+  assert.match(a, /FLOW_NO_COMMON_OWNER/, "review reason survives in note");
+  assert.match(a, /ControlFlow evidence to \[\[[A-Z]+-\d{5}\|Free B\]\] \(guard: go\); EA connector/, "guard and source connector preserved");
+  const pending = res.ledger.filter((l) => l.source_table === "t_connector" && l.diagnostic_code === "FLOW_NO_COMMON_OWNER");
+  assert.ok(pending.length >= 1 && pending.every((l) => l.disposition === "deferred_review" && l.ea_guid), "no invented native disposition");
 });
 
 test("Realisation roles come from element types, not arrow direction (IMP-117); associations with use cases (IMP-118)", async () => {

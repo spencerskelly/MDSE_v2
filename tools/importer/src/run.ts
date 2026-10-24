@@ -628,12 +628,19 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         addStmt(a.owner, `${word} first ${a.ref.name}${parts.length ? " " + parts.join(" ") : ""} then ${b.ref.name};`);
         done(a.owner, key === "ControlFlow" ? "SuccessionUsage" : "TransitionUsage"); return;
       }
-      // IMP-116 (V1 W-174/175): a flow between two notes that do not share an owning definition is the `precedes` link; guard, trigger and effect stay as a line on the step before.
+      // D-0073: do not turn cross-owner temporal semantics into a YAML "precedes" assertion.
+      // Preserve the EA connector and every explicit trigger/guard/effect when no native owner is established.
       const dA = byObj.get(c.sourceId), dB = byObj.get(c.destId);
+      const extra = [trig && `trigger: ${trig}`, grd && `guard: ${grd}`, eff && `effect: ${eff}`].filter(Boolean).join("; ");
       if (dA && dB && dA !== dB) {
-        const extra = [trig && `trigger: ${trig}`, grd && `guard: ${grd}`, eff && `effect: ${eff}`].filter(Boolean).join("; ");
-        dA.links.push(["precedes", dB]); if (extra) dA.sourceLines.push(`- ${key === "ControlFlow" ? "Succession" : "Transition"} to ${lk(dB)} (${extra})`);
-        set(r, "native", "MdseLink:precedes"); r.target_stable_id = dA.id; r.target_file = dA.path; return;
+        if (extra) dA.sourceLines.push(`- ${key} evidence to ${lk(dB)} (${extra}); EA connector ${c.guid}`);
+        defer("FLOW_NO_COMMON_OWNER", "Find a valid common SysML owner and compatible usages before writing succession or transition");
+        return;
+      }
+      // An unresolved usage endpoint still retains its source GUID and review flag.
+      if (extra) {
+        const host = dA ?? a?.owner ?? dB ?? b?.owner;
+        if (host) host.sourceLines.push(`- ${key} evidence (source: ${g.objectsById.get(c.sourceId)?.name ?? c.sourceId}; target: ${g.objectsById.get(c.destId)?.name ?? c.destId}; ${extra}); EA connector ${c.guid}`);
       }
       defer("FLOW_ENDPOINT_NOT_USAGE"); return;
     }

@@ -80,13 +80,19 @@ test("rename is refused for a clash or a name used elsewhere in the block; bad q
 
 test("a dependency changes kind and gains a description; the kind survives the body", () => {
   const e = ix0.edges.find((x) => x.ref?.kind === "member" && x.kind === "refines" && x.to) ?? ix0.edges.find((x) => x.ref?.kind === "member" && ["trace", "dependsOn", "derivedFrom"].includes(x.kind) && x.to)!;
-  const info = R.edRelInfo(ix0, e.ref!)!, kind = info.form.depKind === "trace" ? "refines" : "trace";
+  const info = R.edRelInfo(ix0, e.ref!)!, kind = info.form.depKind === "refines" ? "dependsOn" : "refines";
   const p = R.planUpdateRelationship(ix0, base, e.ref!, { ...info.form, depKind: kind, doc: "Because of the standard." });
   assert.deepEqual(p.problems, []);
   const ix2 = build(apply(base, p));
   assert.ok(ix2.edges.some((x) => x.from === e.from && x.to === e.to && x.kind === kind), "new kind");
   assert.ok(!ix2.edges.some((x) => x.from === e.from && x.to === e.to && x.kind === e.kind && x.ref?.key === e.ref!.key && e.kind !== kind), "old kind gone");
   assert.deepEqual(ix2.notes.get(e.ref!.owner)!.warnings, []);
+});
+
+test("retagging any dependency to an unresolved trace is refused (D-0073)", () => {
+  const e = ix0.edges.find((x) => x.ref?.kind === "member" && x.kind === "refines" && x.to)!;
+  const info = R.edRelInfo(ix0, e.ref!)!;
+  assert.ok(R.planUpdateRelationship(ix0, base, e.ref!, { ...info.form, depKind: "trace" }).problems.some((p) => p.includes("flagLink")));
 });
 
 test("a target can be changed to another eligible note; an ineligible one is refused", () => {

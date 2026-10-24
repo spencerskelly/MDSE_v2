@@ -52,7 +52,7 @@ const EDGE: Record<string, string[]> = { owns: ["hasPart", "hasPort", "hasAction
 
 test("every relationship kind writes valid SysML the index reads back as the same edge", () => {
   const ix = build(base), done: string[] = [];
-  for (const rel of E.ED_RELS) {
+  for (const rel of E.ED_RELS.filter((r) => !r.legacyReadOnly)) {
     const froms = [...ix.notes.values()].filter((n) => rel.from(n));
     let hit = false;
     for (const from of froms) {
@@ -69,7 +69,15 @@ test("every relationship kind writes valid SysML the index reads back as the sam
     }
     assert.ok(hit, `fixture offers an eligible pair for ${rel.id}`);
   }
-  assert.equal(done.length, E.ED_RELS.length);
+  assert.equal(done.length, E.ED_RELS.filter((r) => !r.legacyReadOnly).length);
+});
+
+test("unresolved provisional trace is not a new editable SysML relationship (D-0073)", () => {
+  const ix = build(base), notes = [...ix.notes.values()].filter((n) => !!n.def);
+  const from = notes[0]!, to = notes.find((n) => n.path !== from.path)!;
+  assert.ok(!E.edRelsFor(from).some((r) => r.id === "trace"), "not offered in add/draw picker");
+  const plan = E.planAddRelationship(ix, base, { rel: "trace", from: from.path, to: to.path });
+  assert.ok(plan.problems.some((p) => p.includes("flagLink")), "direct API call also rejected");
 });
 
 test("ineligible pairs and unknown relationships are refused", () => {

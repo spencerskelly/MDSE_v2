@@ -842,3 +842,13 @@ Rules: IMP-130 (Active).
 
 Rules: BOM-016, BOM-041, BOM-042 (Active).
 
+## D-0073 — Step 05: native ownership for behavioral sequencing and no provisional Workbench trace creation
+
+2026-10-24 · Spencer (continued approved v2 relationship mapping) · Accepted — implementation correction under D-0003, D-0010, D-0069, D-0070; outstanding endpoint roles remain under OD-01
+
+1. **IMP-116 native ownership.** For EA ControlFlow/StateFlow, a shared typed owning context permits the already-approved native `succession`/`transition` syntax with trigger, guard and effect. Without proven owner/compatible endpoints, a YAML `precedes` link would duplicate or invent SysML-native temporal meaning. Instead, the importer retains the original connector as `flagLink` and `deferred_review` (`FLOW_NO_COMMON_OWNER` when both definition notes exist, otherwise `FLOW_ENDPOINT_NOT_USAGE`), preserves the connector GUID and endpoints in its ledger/callout, and copies any trigger, guard and effect into Source: EA review evidence. This supersedes only the historical YAML fallback clause of IMP-116; do not delete old imported `precedes` values without an explicit migration review.
+2. **Workbench provisional trace choice.** The choice previously labeled `traces to` was described as a relationship with no selected meaning. That is exactly the case D-0010/D-0070 require to remain a `flagLink`; new model-editing operations must not manufacture a `dependency … // trace` for unknown semantics. Mark this choice historical/read-only for new add/draw/edit operations and prevent direct API bypass; preserve scanning, display and deletion of existing explicit or historical trace statements. This does not prohibit an independently justified, explicit SysML dependency with real semantics.
+3. **No wider OD-01 claim.** Existing native `dependsOn` modeled dependency, approved nonmodel `hasChild` and current use-case `participants` remain as inherited; those fields still require endpoint-specific classification, code tests and an owner decision where ambiguous. No arbitrary EA Association is converted to a port connector or native use-case subject. No Workbench simulation or full real QEAX round trip is claimed.
+4. **Tests.** Importer fixture asserts that the cross-owner flow leaves `flagLink`, no new `precedes` YAML, `deferred_review` with GUID, and guard evidence. Workbench tests refuse new provisional trace and refuse retagging another dependency as provisional, while preserving legacy scanned statements.
+
+Rules: ~IMP-116. Related: MOD-073, MOD-117, IMP-098, IMP-115. OD-01 remains open.
