@@ -56,9 +56,15 @@ This table replaces the ADR-V2-07 add-onto table; `tools/core` `mergeNote` still
 | **M4** | New-vault ZIP includes Base Vault, Bootstrap and Workbench builds | The extracted vault starts Bootstrap on first open |
 | **M5** | Reduced QEAX, then full QEAX, run privately | Phase 1 gate (ROADMAP.md) |
 
+## Unresolved MDSE-note connectors (D-0070)
+
+An EA connector involving an MDSE-only note is converted to a descriptive YAML relation only if a current explicit mapping supports that meaning (`describes`, `affects`, `dependsOn`, or a non-SysML `hasChild`). When the meaning remains ambiguous, the importer creates a `flagLink` callout on the owning note (or the Unplaced Review Items holder), a Source: EA review line and a `deferred_review` ledger row with `PROVISIONAL_LINK`. The record retains the EA connector GUID and endpoints. **No new `tracesTo` YAML field or invented native SysML relationship is written.**
+
+Pre-existing `tracesTo` YAML is historical data; it is not deleted or automatically migrated by this importer change. OD-01 remains open for the full legacy field inventory and round-trip behavior. Synthetic regression: `tools/importer/test/importer.test.ts` (IMP-115). The authoritative policy is `IMP-115` and `MOD-073` in `governance/RULESET.md`.
+
 ## Known gaps and open decisions
 
-- OD-01 (which relationships are SysML vs YAML) blocks M2's relationship output.
+- OD-01 remains open for classification and migration of all legacy YAML relationship fields. D-0069/D-0070 already prohibit YAML copies of native SysML semantics and provisional `tracesTo` on new imports; other field-by-field decisions still block complete M2 semantic acceptance.
 - OD-03 (usage identity inside SysML text) blocks stable re-import of usages.
 - OD-04 (Import State for add-onto runs) blocks Phase 2.
 - C-12 (path-length policy), C-13 (identity conflicts).
