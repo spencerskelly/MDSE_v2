@@ -684,3 +684,13 @@ Rules: BOM-032, BOM-038 (changed).
 3. **Not covered.** END_MARKER rows (no data). Whether a skipped row should be offered back later by the update scan is not decided. Remaining D-0056 item 4 case: BOM-026 additions to parts already in the vault.
 
 Rules: BOM-040 (new), BOM-027 (changed).
+
+## D-0060 — BOM update apply keeps Source lines it did not write
+
+2026-10-24 · Spencer · Accepted (owner, chat: "y", audit of BOM-026 data). Applies D-0056.
+
+1. **Found.** Applying any item to a note replaced the whole `Source: EA` section with the generated one, so a line from an EA merge or one a person added there was lost. A note's body above the section was already kept.
+2. **Rule.** Only the importer's own Source lines are refreshed (part number, name, BOM source, revision, source, revisions in the BOM, drawing location, alternates, previous part number, usage tags, replaced-revision lines). Any other line or paragraph in the section stays, after the importer's lines.
+3. **Audit result, not changed.** Part and parent **lifecycle states** are read but written nowhere (BOM-021, D-0047), so a change in them is neither listed nor kept. Every other column tested (names, source, SSC, reference designator, notes, from, to, amount, unit, line, revision pin, manufacturer, alternates) produces an update item. Whether the lifecycle state should be kept as data is open.
+
+Rules: BOM-032 (changed).

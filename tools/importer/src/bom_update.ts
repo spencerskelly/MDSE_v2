@@ -232,7 +232,10 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
     // the Source section is the importer's own: refresh it, keeping a line about a replaced revision
     const gs = sourceSection(gen), prev = cats.has("NEW_REVISION") ? `- Replaced revision ${JSON.stringify(ATTR(po.decl.filter((d) => d.key === "attr:revision").flatMap((d) => d.lines), "revision"))} on ${on} by \`${o.sourceName}\`` : "";
     const keep = sourceSection(old).split("\n").filter((l) => /^- Replaced revision /.test(l));
-    note = note.replace(/(\n## Source: EA\n)[\s\S]*?(?=\n## SysML v2)/, `$1\n${[gs, ...keep, prev].filter(Boolean).join("\n")}\n`);
+    // D-0060: a Source line the importer does not write (a line from an EA merge, a note a person added) stays; only the importer's own lines are refreshed
+    const mine = /^- (BOM Part Number:|Name:|BOM source:|Revision:|No BOM lists this part|Source:|Revisions in the BOM:|Drawing location:|Alternates for line |Line \S+: part number was |On part |Replaced revision )/;
+    const others = sourceSection(old).split("\n").filter((l) => !mine.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
+    note = note.replace(/(\n## Source: EA\n)[\s\S]*?(?=\n## SysML v2)/, `$1\n${[gs, ...keep, prev].filter(Boolean).join("\n")}${others ? "\n" + others : ""}\n`);
     // callouts the new BOM raises that the note does not have yet
     const have = new Set(callouts(note).map((c) => c.split("\n")[0]));
     for (const c of callouts(gen)) if (!have.has(c.split("\n")[0])) { const at = note.indexOf("\n\n\n\n## Source: EA"); note = at >= 0 ? note.slice(0, at) + "\n\n" + c + note.slice(at) : note + "\n\n" + c + "\n"; }

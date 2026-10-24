@@ -159,3 +159,13 @@ test("C2: model-owned structure gets no earlier-revision items, and a note that 
   const owned = new Map(bare); owned.set(p, bare.get(p)!.replace(/^(importHash: .*)$/m, "$1\nbomOwns: [facts]"));
   assert.equal(scan(owned, [...A1, ...A2]).items.filter((i) => i.category === "EARLIER_REVISIONS").length, 0);
 });
+
+test("apply keeps Source lines the importer does not write, and refreshes the ones it does (D-0060)", () => {
+  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!, note = v.get(path)!;
+  assert.match(note, /- Source: buy/);
+  const edited = new Map(v); edited.set(path, note.replace(/(\n- Source: buy)/, "$1\n- EA GUID: {ABC-123}\n- Hand note: keep me\n\nFree text paragraph in Source."));
+  const s = scan(edited, V1.map((r) => (r.line === "1" ? { ...r, q: "9" } : r)));
+  const r = applyBomUpdate(s, { approved: new Set(s.items.map((i) => i.id)), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" }), out = r.writes.find((w) => w.path === path)!.content;
+  for (const k of ["EA GUID: {ABC-123}", "Hand note: keep me", "Free text paragraph in Source."]) assert.ok(out.includes(k), k);
+  assert.match(out, /BOM source: bom2\.tsv/); assert.equal((out.match(/- BOM Part Number:/g) ?? []).length, 1, "the importer's own lines are replaced, not repeated");
+});
