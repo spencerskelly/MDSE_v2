@@ -80,7 +80,7 @@ export function preflight(i: PreflightInput): Preflight {
   if (i.badPaths.length) block.push(`${i.badPaths.length} file name(s) the browser or Windows would refuse, for example ${i.badPaths[0]}.`);
   if (i.errors) review.push(`${i.errors} EA row(s) raised an exception and would be skipped.`);
   if (i.conflicts) review.push(`${i.conflicts} note(s) were edited in the vault and in the source; the vault copy would stay and a conflict flag be written.`);
-  if (i.existingDiffers) review.push(`${i.existingDiffers} BOM part(s) already in the vault differ from this sheet; the vault copy would stay.`);
+  if (i.existingDiffers) review.push(`${i.existingDiffers} BOM part(s) already in the vault differ from this sheet; the vault copy would stay. To bring the sheet's changes in, use "Update an existing vault from a BOM".`);
   if (i.elements > 0 && deferredTotal / i.elements > 0.1) review.push(`${deferredTotal} of ${i.elements} EA elements (${Math.round((100 * deferredTotal) / i.elements)}%) would be deferred for review. That is more than 10%, which usually means the wrong export or an unexpected model shape.`);
   if (i.bomSkipped) review.push(`${i.bomSkipped} BOM part(s) or line(s) would be skipped (an undetermined revision, a repeated line or competing BOMs). The findings file lists them.`);
   if (i.bomWarnings > 50) review.push(`${i.bomWarnings} BOM warnings; open the findings list before importing.`);

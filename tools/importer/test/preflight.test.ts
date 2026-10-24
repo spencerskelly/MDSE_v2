@@ -59,7 +59,7 @@ test("IMP-125: errors, bad names and a heavy deferral change the verdict", () =>
   assert.equal(preflight({ ...base, status: "FAILED" }).verdict, "BLOCKED");
   assert.equal(preflight({ ...base, errors: 2 }).verdict, "REVIEW");
   assert.equal(preflight({ ...base, bomSkipped: 3 }).verdict, "REVIEW", "skipped BOM lines are a look-first, not a stop");
-  assert.equal(preflight({ ...base, existingDiffers: 1 }).verdict, "REVIEW");
+  assert.equal(preflight({ ...base, existingDiffers: 1 }).verdict, "REVIEW"); assert.ok(preflight({ ...base, existingDiffers: 1 }).reasons.some((l: string) => /Update an existing vault from a BOM/.test(l)));
   const heavy = preflight({ ...base, ledger: Array.from({ length: 20 }, () => ({ disposition: "deferred_review", diagnostic_code: "X", ea_type: "Part" })) });
   assert.equal(heavy.verdict, "REVIEW"); assert.match(heavy.reasons[0]!, /20 of 100/);
 });

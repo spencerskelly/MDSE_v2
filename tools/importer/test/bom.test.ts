@@ -245,7 +245,7 @@ test("a second BOM that disagrees with a part already in the vault says so and l
   const existing = { hasVault: true, files: new Map(first.files.filter((f) => f.path.endsWith(".md")).map((f) => [f.path, f.content] as [string, string])) };
   const second = buildBom(g("2.5"), { ...baseOpts, existing });
   const f = second.findings.find((x) => x.code === "EXISTING_DIFFERS");
-  assert.ok(f, "the disagreement is reported"); assert.match(f!.message, /100 is already in the vault/); assert.match(f!.message, /1\.5 m in the vault, .*2\.5 m here/);
+  assert.ok(f, "the disagreement is reported"); assert.match(f!.message, /100 is already in the vault/); assert.match(f!.message, /1\.5 m in the vault, .*2\.5 m here/); assert.match(f!.message, /use "Update an existing vault from a BOM"/, "the message names the way to change the note");
   assert.equal(second.files.filter((x) => x.path.startsWith("BOM/")).length, 0, "nothing is rewritten");
   const same = buildBom(g("1.5"), { ...baseOpts, existing });
   assert.equal(same.findings.some((x) => x.code === "EXISTING_DIFFERS"), false);
@@ -267,7 +267,7 @@ test("an assembly already in the vault is not re-read: no repeat flags, only a c
   assert.equal(again.files.filter((f) => f.path.startsWith("BOM/")).length, 0, "nothing new to write");
   assert.ok(!again.findings.some((f) => f.code === "DUP_LINE" || f.code === "QTY_ZERO"), "no per-line findings for notes already in the vault");
   const other = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS.map((r) => r.replace(/^01141-002\t-N\t99/, "01141-002\t-N\t98"))].join("\n")), { ...baseOpts, existing });
-  assert.ok(other.findings.some((f) => f.code === "EXISTING_OTHER_REV"));
+  assert.ok(other.findings.some((f) => f.code === "EXISTING_OTHER_REV" && /Update an existing vault from a BOM/.test(f.message)));
 });
 
 test("the findings note lists at most 40 rows per code and counts the rest (BOM-027)", () => {

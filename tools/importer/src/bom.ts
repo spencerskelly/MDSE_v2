@@ -142,6 +142,8 @@ export function parseBom(grid: Grid): Parsed {
 }
 
 // ---- resolve and render ---------------------------------------------------------------------------------------------------
+/** Appended to the findings that say an earlier BOM's note was left as it is: the way to change it is the update scan, not another import. */
+const HINT_UPDATE = ` To bring this file's changes in, use "Update an existing vault from a BOM" (D-0051).`;
 const BOM_DISCRETE = new Set(["", "ea", "each", "piece", "pieces", "pc", "pcs"]);
 const bomIsDrawing = (u: Usage): boolean => /^dwg\b/i.test(u.childName);
 const bomIsNum = (s: string): boolean => /^-?\d+(\.\d+)?$/.test(s);
@@ -329,7 +331,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const ex = existingBy.get(pn), kids = existingUsages.get(pn); if (o.update || !ex || !kids?.length) continue;
     const old = bomLinesOfNote(ex.text), diffs: string[] = [];
     for (const u of kids) { if (bomIsDrawing(u)) continue; const was = old.get(u.line); const now = bomUsageSig(u); if (was === undefined) diffs.push(`line ${u.line || "?"} (${u.child}) is new`); else if (was !== now) diffs.push(`line ${u.line} (${u.child}): ${was.replace("|", " pinned, qty ")} in the vault, ${now.replace("|", " pinned, qty ")} here`); }
-    if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.` });
+    if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.${HINT_UPDATE}` });
   }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
   const olderUsers = new Map<string, string[]>(); let conflicts = 0;
@@ -395,7 +397,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
-  if (otherRev.size && !o.update) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.` });
+  if (otherRev.size && !o.update) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.${HINT_UPDATE}` });
   if (existingN && !o.update) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });
   const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
   const order = { error: 0, warn: 1, info: 2 } as const;
