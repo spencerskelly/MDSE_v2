@@ -385,3 +385,14 @@ test("rows that are skipped keep their content in the findings note, not capped 
   const clean = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS].join("\n")), baseOpts);
   assert.doesNotMatch(clean.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content, /Skipped rows/);
 });
+
+test("a row on line 1xx beside line xx is an alternate of that line, not a usage (BOM-003, D-0064)", () => {
+  const row = (line: string, child: string, q: string, parent = "ASM-1") => `${parent}\tA\t01\tASM\tbuy\tP\t${line}\t${child}\tA\t01\tNAME ${child}\tbuy\tP\t\t\t\t\t\t${q}\tea\tx`;
+  const rows = [row("1", "P-1", "2"), row("2", "P-2", "1"), row("101", "P-1ALT", "2"), row("150", "P-150", "1"), row("1", "P-9", "1", "ASM-2"), row("101", "P-9ALT", "1", "ASM-2")];
+  const r = buildBom(parseDelimited([FLAT_HEAD, ...rows].join("\n")), baseOpts), asm = byTitle(r.files, "ASM-1").content;
+  assert.equal(r.findings.filter((f) => f.code === "ALT_BY_LINE").length, 2, "one finding per folded row");
+  assert.match(asm, /Alternates for line 1 \(P-1\): part P-1ALT.*quantity 2 ea, line 101, row 4/);
+  assert.doesNotMatch(asm, /P_1ALT|partP1ALT/, "the alternate is not a usage");
+  assert.match(asm, /P_150/, "line 150 has no line 50, so it stays a usage");
+  assert.equal(r.summary.alternates, 2); assert.ok(!r.files.some((f) => /P-1ALT/.test(f.path)), "no note is created for an alternate-only part");
+});

@@ -719,8 +719,21 @@ Rules: BOM-032 (changed).
 2026-10-24 · Spencer · Accepted (owner, chat review).
 
 1. **BOM-001 approved, reworded.** A child part note holds no data about the assemblies above it. All usage data is in the parent. The importer no longer writes "Used at an older revision" into a child; the pin stays on the parent's usage (`childRevision`) and in the parent's `flagConflict` callout. BOM-011 is retired and the definition (MDSE_DEFINITION.md, BOM import, revision) is changed to match. Notes already written with that section keep it until a person removes it; the update scan does not touch it.
-2. **BOM-003 approved.** Open point from the owner: an alternate was at one time recorded on its own line number (line 1xx beside line xx). The importer recognises an alternate only when its part number is blank and a manufacturer part number is given; a row with a part number is read as an ordinary line and would count its quantity. This is **not verified** against real data: no BOM with the pattern was available. Needs a sample file.
+2. **BOM-003 approved.** Open point from the owner: an alternate was at one time recorded on its own line number (line 1xx beside line xx). The importer recognises an alternate only when its part number is blank and a manufacturer part number is given; a row with a part number is read as an ordinary line and would count its quantity. This is **not verified** against real data: no BOM with the pattern was available. Needs a sample file. **Settled by D-0064.**
 3. **BOM-004 retired.** Order-independence is handled by defined rules and responses.
 4. **BOM-005 retired.** Variants will be modelled with SysML v2 syntax; the proposal files are not in this repository.
 
-Rules: BOM-001, BOM-003 (now Active); BOM-004, BOM-005, BOM-011 (retired).
+5. **BOM-013 retired** (owner, 2026-10-24): it repeated BOM-003.
+
+Rules: BOM-001, BOM-003 (now Active); BOM-004, BOM-005, BOM-011, BOM-013 (retired).
+
+## D-0064 — Alternates on line 1xx beside line xx
+
+2026-10-24 · Spencer · Accepted (owner, chat: "a common practice in our BOMs", option "Alternate of line xx"). Extends BOM-003; closes the open point in D-0063 item 2.
+
+1. **Rule.** A row on line 101 to 199 whose line (number minus 100) exists under the same parent and revision is an alternate of that line, whether or not it has a part number. It is not a usage, adds no quantity and has no note of its own. Lines 1xx with no line xx stay ordinary lines.
+2. **Kept.** The alternate is listed on the base line's `Alternates for line` entry in the Source section: part number, revision, name, manufacturer data, quantity and unit, its line and row.
+3. **Reported.** Each case raises an `ALT_BY_LINE` warning, because a BOM that numbers genuinely past 100 would be misread. The shape of the habit was not verified against a real BOM (none was available).
+4. **Existing vaults.** A note written earlier with such a row as a usage gets a "line no longer listed" item from the update scan (unticked, D-0057).
+
+Rules: BOM-003 (changed); BOM-013 (retired, D-0063).

@@ -43,9 +43,11 @@ function bomCurPrev(c: Cell | null | undefined): { cur: string; prev: string } {
 }
 
 export interface Src { mfr: string; mpn: string }
+/** An alternate that has its own part number and sits on line 1xx beside line xx (BOM-003). */
+export interface AltPart { pn: string; rev: string; name: string; line: string; amount: string; unit: string; mfr: string; mpn: string; row: number }
 export interface Usage {
   parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childState: string;
-  amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
+  amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; /** D-0064: rows numbered 100 above this line that carry a part number of their own: alternates, not usages */ altParts: AltPart[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
 }
 export interface ParentObs { pn: string; rev: string; name: string; source: string; state: string; drawingLocation: string }
 /** D-0059: a row the reader could not turn into a line is kept as its cell text (never just a count), so its content stays available to the person. */
@@ -87,6 +89,17 @@ export function detectLayout(grid: Grid): { layout: "flat" | "redline" | null; h
 
 const bomGet = (row: Array<Cell | null | undefined>, m: Map<string, number>, ...keys: string[]): string => { for (const k of keys) { const i = m.get(k); if (i !== undefined) { const v = bomTxt(row[i]); if (v) return v; } } return ""; };
 
+/** BOM-003 / D-0064: a row on line 1xx whose line xx exists under the same parent and revision is an alternate of line xx, not a usage: it adds no quantity and is listed under that line. Every case is reported for review. */
+function foldAltLines(usages: Usage[], findings: Finding[]): Usage[] {
+  const base = new Map<string, Usage>(); for (const u of usages) if (bomIsNum(u.line) && +u.line < 100) { const k = `${u.parent}\0${u.parentRev}\0${+u.line}`; if (!base.has(k)) base.set(k, u); }
+  return usages.filter((u) => {
+    if (!bomIsNum(u.line) || +u.line < 101 || +u.line > 199) return true;
+    const b = base.get(`${u.parent}\0${u.parentRev}\0${+u.line - 100}`); if (!b) return true;
+    b.altParts.push({ pn: u.child, rev: u.childRev, name: u.childName, line: u.line, amount: u.amount, unit: u.unit, mfr: u.ownSrc?.mfr ?? "", mpn: u.ownSrc?.mpn ?? "", row: u.row });
+    findings.push({ level: "warn", code: "ALT_BY_LINE", message: `Row ${u.row}: line ${u.line} (${u.child}) under ${u.parent} is read as an alternate of line ${b.line} (${b.child}) because the line numbers are 100 apart (BOM-003). It adds no quantity. Check that it is not a real line.` });
+    return false;
+  });
+}
 export function parseBom(grid: Grid): Parsed {
   const d = detectLayout(grid), findings: Finding[] = [];
   if (!d.layout) return { layout: "flat", usages: [], parents: [], skipped: [], findings: [{ level: "error", code: "BOM_LAYOUT", message: "No header row found. A flat BOM needs Parent Part Number and Child Part Number columns; a redline needs Number, CL1, CL2 and level columns 0..7 or Structure." }] };
@@ -94,7 +107,7 @@ export function parseBom(grid: Grid): Parsed {
   const skip = (r: number, code: string): void => { const row = grid[r] ?? [], cells: string[] = []; row.forEach((c, i) => { const x = bomCurPrev(c); if (!x.cur && !x.prev) return; cells.push(`${bomTxt(hdr[i]) || "column " + (i + 1)}: ${x.cur}${x.prev ? (x.cur ? ` (was ${x.prev})` : `(struck: ${x.prev})`) : ""}`); }); skipped.push({ row: r + 1, code, cells: cells.join("; ") }); };
   if (d.missing.length) findings.push({ level: "error", code: "BOM_COLUMNS", message: `Missing column(s): ${d.missing.join(", ")}.` });
   const m = bomColMap(grid[d.headerRow]!), usages: Usage[] = [], parents: ParentObs[] = [];
-  const blank = (u: Partial<Usage>): Usage => ({ parent: "", parentRev: "", line: "", child: "", childRev: "", childName: "", childSource: "", childState: "", amount: "", unit: "", refDes: "", from: "", to: "", ssc: "", notes: "", row: 0, alternates: [], ownSrc: null, drawingLocation: "", prevChild: "", ...u });
+  const blank = (u: Partial<Usage>): Usage => ({ parent: "", parentRev: "", line: "", child: "", childRev: "", childName: "", childSource: "", childState: "", amount: "", unit: "", refDes: "", from: "", to: "", ssc: "", notes: "", row: 0, alternates: [], altParts: [], ownSrc: null, drawingLocation: "", prevChild: "", ...u });
   if (d.layout === "flat") {
     let last: Usage | null = null;
     for (let r = d.headerRow + 1; r < grid.length; r++) {
@@ -112,7 +125,7 @@ export function parseBom(grid: Grid): Parsed {
       parents.push({ pn: parent, rev: u.parentRev, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
       usages.push(u); last = u;
     }
-    return { layout: "flat", usages, parents, findings, skipped };
+    return { layout: "flat", usages: foldAltLines(usages, findings), parents, findings, skipped };
   }
   // redline: the parent of a row is the nearest row above it one level up (the 0..7 columns match Structure)
   const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]), lvl = bomLevelSource(grid, d.headerRow, m);
@@ -142,7 +155,7 @@ export function parseBom(grid: Grid): Parsed {
   }
   // keep a parent observation only for part numbers that really have lines below them
   const hasKids = new Set(usages.map((u) => u.parent + "\0" + u.parentRev));
-  return { layout: "redline", usages, parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings, skipped };
+  return { layout: "redline", usages: foldAltLines(usages, findings), parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings, skipped };
 }
 
 // ---- resolve and render ---------------------------------------------------------------------------------------------------
@@ -307,7 +320,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
       continue;
     }
     if (u.line && seenLine.has(k)) { const first = firstOf.get(k)!; const diff = bomUsageDiff(first, u); if (diff) { (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff }); findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` }); } continue; }
-    seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length;
+    seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length + u.altParts.length;
     if (!u.line) findings.push({ level: "warn", code: "NO_LINE", message: `Row ${u.row}: no line number for ${u.child} under ${u.parent}; the usage cannot be identified by line (BOM-008).` });
   }
 
@@ -387,7 +400,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");
         const lc = latest.get(u.child);
         if (lc && lc.rev !== u.childRev) flags.push(flagCallout("flagConflict", `Pins ${u.child} at an older revision`, link, [`Line ${u.line || "?"} pins revision ${JSON.stringify(u.childRev)} of ${u.child}; its latest revision is ${JSON.stringify(lc.rev)}.`]));
-        if (u.alternates.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")).join("; ")}`);
+        if (u.alternates.length || u.altParts.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${[...u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")), ...u.altParts.map((a) => `part ${a.pn}${a.rev ? " revision " + JSON.stringify(a.rev) : ""}${a.name ? " (" + a.name + ")" : ""}${[a.mfr, a.mpn].some(Boolean) ? ", " + [a.mfr, a.mpn].filter(Boolean).join(" ") : ""}${a.amount ? ", quantity " + a.amount + (a.unit ? " " + a.unit : "") : ""}, line ${a.line}, row ${a.row}`)].join("; ")}`);
         if (u.prevChild) srcLines.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
       }
     }
