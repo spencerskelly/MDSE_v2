@@ -558,3 +558,18 @@ Rules: BOM-030 (new).
 
 Rules: BOM-031 (new).
 
+
+## D-0051 — BOM import: update scan with approval by category or by item
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0050)
+
+1. **What it does.** A later BOM file is read against the vault and the differences are listed without writing anything. The owner ticks a whole category or single items, and only those are written. It lives in the Importer, in a card of its own, next to the build step.
+2. **Categories.** New part; new revision of an assembly; part description; manufacturer data; part source or drawing location; assembly line added; assembly line no longer listed; assembly line changed; drawing reference added or removed; new part number replaces an old one. Nothing is ticked by default. (BOM-032)
+3. **Left alone, and listed.** A note whose owned content no longer matches its stamp (edited since the last import), a note with no stamp, and an assembly for which the file's latest revision is older than the vault's. These are never proposed. (BOM-033)
+4. **Scope of removals.** A line is "no longer listed" only for an assembly that the file has lines for, at the revision the vault holds. A file that names a part only as a child removes nothing. Applying a removal deletes the line from the note's SysML block; the report note records it. A new revision of an assembly is one item that replaces the whole block, and the note keeps a line naming the replaced revision. (BOM-034)
+5. **Apply.** An approved line that points at a new part brings that part's note with it. The stamp of a changed note is set to the hash of the merged content, so anything not ticked is offered again at the next scan. A report note `99_System/11_Import/BOM Update <date>` lists every applied change. There is no undo in the Importer; the report and the vault's own history (Obsidian Git) are the way back.
+6. **Checked on the real BOM set** (scratch): the flat export imported as 16,472 notes; scanning the same file again proposed 0 changes and left 0 notes alone (16,472 unchanged). The scan takes about the same time as the import (one to two minutes on this machine).
+7. **Not covered.** Values that differ within one file (the first-wins `flagValue` rule) are decided at import and not re-decided by the scan. Notes merged with an EA note are compared only on the BOM-owned content. Rename or move of a note is handled (the scan finds it by part number inside the note), but a note renamed to a different part number is a different part.
+
+Rules: BOM-032, BOM-033, BOM-034 (new). BOM-029 (newest first, first wins) applies to the first load; the scan is how later files are brought in.
+

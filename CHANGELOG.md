@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Importer: "Update an existing vault from a BOM". A later BOM file is scanned against the vault, changes are listed by category, and the owner ticks a category or single items; only those are written, with a report note. Edited and unstamped notes are left alone. BOM-032 to BOM-034, D-0051.
 - BOM import: every BOM note carries an import stamp (`importSource`, `importedOn`, `importHash`) so later update scans can tell a changed BOM from a hand edit without rewriting notes. BOM-031, D-0050.
 - BOM import: replaced part numbers that no BOM lists get a stub note, so `supersedes` always resolves; CI parser job now also accepts a generated BOM sample model (run 40040942222 passed). BOM-030, D-0049.
 - BOM import: all relationships are SysML text (no `hasPart`/`references` YAML; drawings as `ref item`; renumbered parts as `dependency … // supersedes`); manufacturer data as `manufacturer1`, `mfgPn1`, `manufacturer2`, … YAML; assemblies already in the vault are not re-read; findings note capped at 40 rows per code; import order written down. D-0048, BOM-025 to BOM-029.

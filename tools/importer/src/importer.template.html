@@ -77,6 +77,11 @@ ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
  <ol class="stages" id="pstages"></ol></div>
 <p id="genStatus" style="margin:10px 0 0"></p><div id="genOut"></div></section>
 
+<section class="card" id="cBomUpd" aria-labelledby="h-bu"><h2 id="h-bu">Update an existing vault from a BOM</h2>
+<p class="lead">For a later BOM export. Choose the BOM in step 2 and the vault folder in step 3 (read &amp; write), then scan. Nothing is written by the scan. You get the changes grouped by category and tick what to apply, a whole category or single items. Notes that were edited after the last import, and notes with no import stamp, are listed and left alone.</p>
+<div class="row"><button id="bomScan" class="alt" disabled>Scan for BOM changes</button><button id="bomApply" disabled>Apply ticked changes</button></div>
+<p id="bomUpdStatus" style="margin:8px 0 0"></p><div id="bomUpdOut"></div></section>
+
 <section class="card off" id="cTrust" aria-labelledby="h-trust"><h2 id="h-trust"><span class="badge">5</span>Open in Obsidian and trust the vault</h2>
 <div id="trustBody"><p class="lead">This unlocks after the vault is built.</p></div></section>
 
@@ -218,7 +223,7 @@ const has = async (dir, name, kind) => { try { await (kind === "dir" ? dir.getDi
 let vaultFiles = null, vaultExists = false;
 function refreshButtons() {
   const ready = !!person && (!!source || !!bom);
-  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; if (!vaultHandle) $("updApply").disabled = true;
+  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
   $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
   $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
 }
@@ -419,6 +424,13 @@ async function dirFor(root, parts) {
   for (const p of parts) { key += "/" + p; let h = cache.get(key); if (!h) { h = await dir.getDirectoryHandle(p, { create: true }); cache.set(key, h); } dir = h; }
   return dir;
 }
+/* What a later scan sees of the folder: keep the in-memory copy in step with what was written. */
+function noteWritten(f) {
+  allPaths.add(f.path); if (f.bytes || !/\.md$/i.test(f.path)) return;
+  if (!vaultFiles) vaultFiles = []; if (!vaultIndex || vaultIndex.src !== vaultFiles) vaultIndex = { src: vaultFiles, at: new Map(vaultFiles.map(([p], i) => [p, i])) };
+  const at = vaultIndex.at.get(f.path); if (at !== undefined) vaultFiles[at] = [f.path, f.content]; else { vaultIndex.at.set(f.path, vaultFiles.length); vaultFiles.push([f.path, f.content]); }
+}
+let vaultIndex = null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function writeFile(root, path, text) {   // text is a string or a Uint8Array
   const parts = path.split("/");
@@ -455,7 +467,7 @@ $("genAdd").addEventListener("click", async () => {
     if (bad.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written by the browser; nothing was written.</span><pre>${esc(bad.slice(0, 25).join("\n"))}${bad.length > 25 ? "\n… and " + (bad.length - 25) + " more" : ""}</pre>`; return; }
     if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
     let n = 0;
-    for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
+    for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); noteWritten(f); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
     progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`);
   } catch (e) { reportFailure(e, "write to folder"); }
 });
@@ -486,6 +498,55 @@ $("updApply").addEventListener("click", async () => {
     pendingUpdate = null; $("updApply").disabled = true;
     $("updStatus").innerHTML = `<span class=ok>Updated: wrote ${res.files.length} file(s). In Obsidian, run “MDSE Bootstrap: Check and repair this vault” (or reload the app) to pick up the new plugins.</span>`; log(`vault update applied: ${res.files.length} files`);
   } catch (e) { reportFailure(e, "apply vault update"); }
+});
+
+/* ---- Update an existing vault from a BOM (D-0051) ------------------------------------------------------------------------ */
+let bomScanned = null;
+const CAP = 200;
+function bomSelCount() { return document.querySelectorAll("#bomUpdOut input.it:checked").length + [...document.querySelectorAll("#bomUpdOut input.cat")].reduce((a, c) => a + (c.dataset.hidden ? (c.checked ? +c.dataset.hidden : 0) : 0), 0); }
+function bomSyncButtons() { const n = bomSelCount(); $("bomApply").disabled = !n; $("bomApply").textContent = n ? `Apply ${n} ticked change${n === 1 ? "" : "s"}` : "Apply ticked changes"; }
+function bomApprovedIds() {
+  const ids = new Set(); if (!bomScanned) return ids;
+  for (const c of document.querySelectorAll("#bomUpdOut input.cat")) if (c.checked) for (const it of bomScanned.items) if (it.category === c.dataset.cat) ids.add(it.id);
+  for (const c of document.querySelectorAll("#bomUpdOut input.it")) if (c.checked) ids.add(c.dataset.id);
+  return ids;
+}
+$("bomScan").addEventListener("click", async () => {
+  try {
+    $("bomApply").disabled = true; bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").textContent = "Scanning the BOM against the vault. A large file takes a minute or two…"; await tick();
+    const fp = await fileSha256(bom.file), runDate = localIso();
+    const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [] });
+    if (sc.result.status !== "WRITE_READY") { $("bomUpdStatus").innerHTML = `<span class=bad>${esc(sc.result.problems.join(" ") || "The BOM cannot be read.")}</span>`; return; }
+    bomScanned = sc; sc.runDate = runDate;
+    const byCat = new Map(); for (const it of sc.items) (byCat.get(it.category) ?? byCat.set(it.category, []).get(it.category)).push(it);
+    let html = `<p>${sc.items.length} change(s) proposed · ${sc.unchanged} note(s) already match · ${sc.holds.length} left alone</p>`;
+    if (!sc.items.length) html += `<p class=ok>Nothing to change in the notes this file covers.</p>`;
+    for (const cat of Object.keys(UPDATE_CATEGORY_TEXT)) {
+      const list = byCat.get(cat); if (!list) continue; const shown = list.slice(0, CAP);
+      html += `<details${list.length <= 12 ? " open" : ""}><summary><label><input type="checkbox" class="cat" data-cat="${cat}" data-hidden="${Math.max(0, list.length - CAP)}"> <b>${esc(UPDATE_CATEGORY_TEXT[cat])}</b></label> · ${list.length}</summary>` +
+        `<table><tr><th></th><th>Note</th><th>Change</th></tr>` + shown.map((it) => `<tr><td><input type="checkbox" class="it" data-id="${it.id}" data-cat="${cat}"></td><td><code>${esc(it.path.split("/").pop().replace(/\.md$/i, ""))}</code></td><td>${esc(it.summary.replace(it.pn + ": ", ""))}</td></tr>`).join("") + `</table>` +
+        (list.length > CAP ? `<p class=mut>Showing the first ${CAP} of ${list.length}. Ticking the category applies all ${list.length}.</p>` : "") + `</details>`;
+    }
+    const byHold = new Map(); for (const h of sc.holds) (byHold.get(h.code) ?? byHold.set(h.code, []).get(h.code)).push(h);
+    for (const [code, list] of byHold) html += `<details><summary><b>${esc(HOLD_TEXT[code])}</b> · ${list.length}</summary><ul>${list.slice(0, 40).map((h) => `<li>${esc(h.message)}</li>`).join("")}</ul>${list.length > 40 ? `<p class=mut>${list.length - 40} more not shown.</p>` : ""}</details>`;
+    $("bomUpdOut").innerHTML = html; $("bomUpdStatus").innerHTML = "Tick what to apply. Nothing has been written."; bomSyncButtons();
+    log(`bom update scan ${bom.file.name}: ${sc.items.length} changes, ${sc.holds.length} held, ${sc.unchanged} unchanged`);
+  } catch (e) { reportFailure(e, "scan BOM changes"); }
+});
+$("bomUpdOut").addEventListener("change", (ev) => {
+  const t = ev.target; if (t.classList.contains("cat")) for (const c of document.querySelectorAll(`#bomUpdOut input.it[data-cat="${t.dataset.cat}"]`)) { c.checked = t.checked; c.disabled = t.checked; }
+  bomSyncButtons();
+});
+$("bomApply").addEventListener("click", async () => {
+  if (!bomScanned) return;
+  try {
+    const approved = bomApprovedIds(), r = applyBomUpdate(bomScanned, { approved, sourceName: bom.file.name, runDate: bomScanned.runDate });
+    const bad = badPaths(r.writes); if (bad.length) { $("bomUpdStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written; nothing was written.</span>`; return; }
+    if (!confirm(`Apply ${r.applied.length} change(s)${r.alsoAdded.length ? ` (including ${r.alsoAdded.length} new part note(s) that an approved change refers to)` : ""}? ${r.writes.length} file(s) will be written into "${vaultHandle.name}" (${r.writes.length - 1} notes and a report). Nothing is deleted.`)) { $("bomUpdStatus").textContent = "Cancelled."; return; }
+    $("bomApply").disabled = true; let n = 0;
+    for (const f of r.writes) { await writeFile(vaultHandle, f.path, f.content); noteWritten(f); n++; if (n % 20 === 0) { $("bomUpdStatus").textContent = `Writing ${n} of ${r.writes.length}…`; await tick(); } }
+    bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").innerHTML = `<span class=ok>Applied ${r.applied.length} change(s) in ${n - 1} note(s). The report is in 99_System/11_Import. Scan again to see what is left.</span>`; log(`bom update applied: ${r.applied.length} changes, ${n} files`);
+  } catch (e) { reportFailure(e, "apply BOM changes"); }
 });
 refreshButtons();
 </script></body></html>

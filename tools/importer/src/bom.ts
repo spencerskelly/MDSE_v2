@@ -192,6 +192,8 @@ export interface BomOptions {
   /** EA note titles for the part-number join, from the EA run. Optional. */
   eaTitles?: string[];
   dir?: string;
+  /** Update scan (D-0051): every part is generated again, including those already in the vault, keeping their id, uid and path. The caller compares and decides what to write. */
+  update?: boolean;
 }
 export interface BomResult {
   status: "WRITE_READY" | "FAILED"; files: OutFile[]; findings: Finding[]; problems: string[];
@@ -264,10 +266,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   for (const pn of [...stubs.keys()].sort()) { allPns.add(pn); latest.set(pn, { rev: "", name: "", source: "", state: "", drawingLocation: "" }); }
   const drawingPns = new Set(parsed.usages.filter(bomIsDrawing).map((u) => u.child));
   // existing notes by part number
-  const existingBy = new Map<string, { id: string; base: string; text: string }>();
+  const existingBy = new Map<string, { id: string; base: string; text: string; path: string; uid: string }>();
   for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
     const m = /^- BOM Part Number: (.+)$/m.exec(t); if (!m) continue;
-    const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), text: t });
+    const id = /^id: (\S+)$/m.exec(t)?.[1]; if (id) existingBy.set(m[1]!.trim(), { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), text: t, path: p, uid: /^uid: (\S+)$/m.exec(t)?.[1] ?? "" });
   }
   // usages that can be written: parent and child both determined, no duplicate (parent, line)
   const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), existingUsages = new Map<string, Usage[]>(), otherRev = new Set<string>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
@@ -277,7 +279,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (lp.rev !== u.parentRev) continue;
     const k = u.parent + "\0" + u.line;
     const exP = existingBy.get(u.parent);
-    if (exP) {   // BOM-026: an assembly already in the vault is not re-read line by line; only its lines are kept to say where this file disagrees
+    if (exP && !o.update) {   // BOM-026: an assembly already in the vault is not re-read line by line; only its lines are kept to say where this file disagrees
       const vr = /attribute revision = (?:"([^"]*)"|([^;]+));/.exec(exP.text), vaultRev = vr ? (vr[1] ?? vr[2] ?? "").trim() : "";
       if (vaultRev !== lp.rev) { otherRev.add(u.parent); continue; }
       if (!bomIsDrawing(u) && !(u.line && seenLine.has(k))) { seenLine.add(k); (existingUsages.get(u.parent) ?? existingUsages.set(u.parent, []).get(u.parent)!).push(u); }
@@ -295,8 +297,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (id) highest.set(id[1]!, Math.max(highest.get(id[1]!) ?? 0, +id[2]!)); if (uid) taken.add(uid[1]!);
   }
   const partPns = [...latest.keys()].filter((pn) => !drawingPns.has(pn) || okUsage.some((u) => u.child === pn && !bomIsDrawing(u))).sort();
-  const newParts = partPns.filter((pn) => !existingBy.has(pn)), newDrawings = [...drawingPns].filter((pn) => !existingBy.has(pn) && latest.has(pn)).sort();
-  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...newDrawings.map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
+  const newParts = partPns.filter((pn) => !existingBy.has(pn)), newDrawings = [...drawingPns].filter((pn) => (o.update || !existingBy.has(pn)) && latest.has(pn)).sort();
+  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
   const ids = allocateIds(idReq, highest);
   const uids = allocateUids(idReq.map((r) => ({ key: r.key, created: "", guid: r.guid, author: "" })), { authorMap: {}, fallbackCode: o.authorCode, unmappedNames: [""] }, taken, bomStampOf(o.runDate));
   const names = new NameRegistry([...(o.existing?.allPaths ?? []), ...(o.existing?.files.keys() ?? []), ...o.pending.map(([p]) => p)]);
@@ -304,7 +306,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const info = new Map<string, { id: string; base: string; path: string; fresh: boolean }>();
   for (const pn of [...partPns, ...newDrawings.filter((x) => !partPns.includes(x))]) {
     const ex = existingBy.get(pn);
-    if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: "", fresh: false }); continue; }
+    if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: o.update ? ex.path : "", fresh: !!o.update }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
     const path = names.claim(key.startsWith("d:") ? `${dir}/Drawings` : `${dir}/Parts`, safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
@@ -315,7 +317,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const byParent = new Map<string, Usage[]>(); for (const u of okUsage) (byParent.get(u.parent) ?? byParent.set(u.parent, []).get(u.parent)!).push(u);
   // A part number that an earlier BOM already put in the vault is kept as it is; say so when this file does not agree with it (same part number and revision, different lines).
   for (const pn of partPns) {
-    const ex = existingBy.get(pn), kids = existingUsages.get(pn); if (!ex || !kids?.length) continue;
+    const ex = existingBy.get(pn), kids = existingUsages.get(pn); if (o.update || !ex || !kids?.length) continue;
     const old = bomLinesOfNote(ex.text), diffs: string[] = [];
     for (const u of kids) { if (bomIsDrawing(u)) continue; const was = old.get(u.line); const now = bomUsageSig(u); if (was === undefined) diffs.push(`line ${u.line || "?"} (${u.child}) is new`); else if (was !== now) diffs.push(`line ${u.line} (${u.child}): ${was.replace("|", " pinned, qty ")} in the vault, ${now.replace("|", " pinned, qty ")} here`); }
     if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.` });
@@ -369,7 +371,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const old = olderUsers.get(pn); if (old) body.push("## Used at an older revision", "", ...old);
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
-    files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
+    files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
       relFields: [], extraFields: extra, bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
       sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });
   }
@@ -384,8 +386,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
-  if (otherRev.size) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.` });
-  if (existingN) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });
+  if (otherRev.size && !o.update) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.` });
+  if (existingN && !o.update) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });
   const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
   const order = { error: 0, warn: 1, info: 2 } as const;
   const sorted = findings.slice().sort((a, b) => order[a.level] - order[b.level]);

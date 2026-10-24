@@ -30,7 +30,7 @@ Editing after import, review decisions, choosing which plugins exist (the base v
 | QEAX to notes (M2) | **Built on provisional rules (D-0016)**; synthetic data only | `tools/importer/test/importer.test.ts`: validates every note, ids/uids unique, re-import is a no-op, add-onto is additive |
 | SysML v2 writer (M3) | **Built, blocks not parser-checked** (parser gate runs in CI only; report says "NOT RUN") | same tests; assembled-reference check |
 | Vault update (no source) | Working | `tools/importer/test/vault_update.test.ts`, browser test `VaultUpdateBrowser`. Step 4 of the page |
-| BOM reader (`src/xlsx_reader.js`, `src/bom.ts`) | Built (D-0032), synthetic fixtures only | Flat and redline layouts, `.xlsx` / `.csv` / `.tsv`. No real BOM workbook has been run; the redline layout is inferred from a description. |
+| BOM reader (`src/xlsx_reader.js`, `src/bom.ts`) and update scan (`src/bom_update.ts`, D-0051) | Built (D-0032), run on the real BOM set in scratch | Flat and redline layouts, `.xlsx` / `.csv` / `.tsv`. No real BOM workbook has been run; the redline layout is inferred from a description. |
 | Run on real QEAX | **Never run** from this repository | — |
 
 ## Update an existing vault (no source needed)
