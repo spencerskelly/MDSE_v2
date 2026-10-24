@@ -767,3 +767,14 @@ This reconciles five older source rules against D-0001 (MDSE_v2 tool authority),
 Historical authoritative source for all five preceding Active wordings: [RULESET.md at bcdb25a11efa](https://github.com/spencerskelly/MDSE_v2/blob/bcdb25a11efa3ea14ba343949b01f797553c044d/governance/RULESET.md). Live `70_Rule_References` and `71_Rule_Analysis` retain separate pinned snapshots. Existing `REQ-31011`, `REQ-31012`, `REQ-31028`, `REQ-31029`, `REQ-31030` and `REQ-31036` remain historical Draft candidates with no new positive verification targets; no SysML semantic relationships are manufactured. Historical original status does not indicate current binding authority.
 
 Rules: −GOV-006, −GOV-018; ~DAT-002, ~GOV-017, ~DAT-001. No other rule changes are made. MOD-075/MOD-076 and other stale active V1 relationship wording remain separate scoped review items, not silently modified by this governance-only reconciliation.
+
+## D-0067 — Model folder depth cap of 6
+
+2026-10-24 · Spencer · Accepted (owner, chat: "Let's place the cap at 6 folders deep. After import, I might perform some manual changes"). Settles MOD-174 and the cap value left open in D-0065.
+
+1. **Cap.** The EA translator writes model notes at most 6 folders deep (`folderCap`, default 6, 0 = no cap). A deeper note sits in its ancestor folder at depth 6.
+2. **Nothing lost.** A note whose package path is cut gets a `- Package: A / B / C / …` line in `Source: EA`. An element with children keeps its own folder only while that stays within the cap; the parent link is in the SysML and links, not the folder.
+3. **Re-import.** A note already in the vault keeps its path (existing path wins), so manual moves after the import are kept.
+4. **Not covered.** The source ledger's `target_file` for Package rows still shows the uncapped folder. The report's depth table counts a cut note at its package depth; element nesting beyond the package is not counted. Not checked against the real model: the cap was chosen without the preflight histogram.
+
+Rules: MOD-174 (Active).

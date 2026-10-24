@@ -391,3 +391,17 @@ test("every deferred element and connector leaves a flag in a note (IMP-123, D-0
   const holding = res.files.find((f) => f.path.endsWith("Unplaced Review Items.md"));
   if (holding) assert.match(holding.content, /^subtype: Review$/m);
 });
+
+test("MOD-174 / D-0067: a folder cap puts deeper notes in their ancestor and keeps the package path in the note", async () => {
+  const depth = (p: string): number => p.split("/").length - 1, model = (r: ImportResult) => r.files.filter((f) => !f.bytes && f.path.endsWith(".md") && !f.path.startsWith("99_System/"));
+  const free = await run({ folderCap: 0 }), capped = await run({ folderCap: 1 });
+  const deepFree = model(free).filter((f) => depth(f.path) > 1);
+  assert.ok(deepFree.length > 0, "the fixture has notes deeper than one folder");
+  assert.ok(model(capped).every((f) => depth(f.path) <= 1), "no note is deeper than the cap");
+  assert.equal(model(capped).length, model(free).length, "no note is lost");
+  const moved = model(capped).filter((f) => /^- Package: .+ \/ .+$/m.test(f.content));
+  assert.ok(moved.length > 0, "a note whose package path is cut keeps the whole path");
+  assert.ok(model(free).every((f) => !/^- Package: /m.test(f.content)), "with no cap nothing is cut, so no line is needed");
+  assert.ok(new Set(model(capped).map((f) => f.path.toLowerCase())).size === model(capped).length, "paths stay unique");
+  const dflt = await run(); assert.ok(model(dflt).every((f) => depth(f.path) <= 6), "the default cap is 6");
+});

@@ -90,3 +90,9 @@ test("MOD-174: the layout report counts model notes by folder depth and shows wh
   const p = preflight({ files: [f("A/B/C/D/x.md")], ledger: [], status: "", elements: 0, errors: 0, problems: [], bomErrors: [], bomWarnings: 0, conflicts: 0, existingDiffers: 0, badPaths: [] });
   assert.equal(p.layout.notes, 1);
 });
+
+test("MOD-174: the layout report counts a cut note at its package depth, not its cut depth", () => {
+  const l = layoutOf([{ path: "A/B/C/Deep.md", content: "- Package: A / B / C / D / E / F / G" }, { path: "A/Top.md", content: "x" }]);
+  assert.deepEqual(l.byDepth, [{ depth: 1, notes: 1 }, { depth: 7, notes: 1 }]);
+  assert.equal(l.caps.find((c) => c.cap === 6)!.moved, 1);
+});

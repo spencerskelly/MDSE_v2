@@ -39,6 +39,8 @@ export interface ImportOptions {
   lineage: string;                                 // source lineage label, MOD-018 (EA8647)
   authors: AuthorOptions;
   omitRootPackages: string[];                      // package names that are not folders (MOD-096)
+  /** MOD-174 / D-0067: model folders go at most this deep (default 6; 0 = no cap). A deeper note sits in its ancestor at the cap and keeps its package path in a `Package:` line. */
+  folderCap?: number;
   /** The person running the import; a new vault also gets their note in 99_System/04_People (BOO-003). */
   person?: { name: string; timezone: string };
   vaultName: string;
@@ -231,13 +233,14 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   };
   const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
   for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(safeName(d.title));
-  const dirParts = (d: Draft): string[] => (d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
+  const cap = o.folderCap ?? 6, atCap = (parts: string[]): string[] => (cap > 0 ? parts.slice(0, cap) : parts);
+  const dirParts = (d: Draft): string[] => atCap(d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
   const dirOf = (d: Draft): string => dirParts(d).join("/");
   const ownDirOf = (d: Draft): string => [...dirParts(d), d.baseName].join("/");
   for (const d of drafts) {
     if (d.existingPath) { d.path = d.existingPath; continue; }
     const dir = dirOf(d);
-    d.path = d.children.length ? `${ownDirOf(d)}/${d.baseName}.md` : `${dir ? dir + "/" : ""}${d.baseName}.md`;
+    d.path = d.children.length && (cap <= 0 || dirParts(d).length < cap) ? `${ownDirOf(d)}/${d.baseName}.md` : `${dir ? dir + "/" : ""}${d.baseName}.md`;
   }
 
   track.stage = "usages";
@@ -703,6 +706,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
     }
     src.push(...d.sourceLines);
+    if (o.folderCap !== 0 && d.pkgPath.length > (o.folderCap ?? 6)) src.push(`- Package: ${d.pkgPath.join(" / ")}`);   // the folders stop at the cap (MOD-174); the whole path stays here
     let bodyExtra = "";
     if (d.entry.disposition === "attachment_link") {
       const docs = g.documents.get(e.guid) ?? [];

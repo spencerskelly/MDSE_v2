@@ -55,9 +55,11 @@ export const flagShape = (title: string): string => title.replace(/`[^`]*`/g, "`
 /** Paths are relative to the vault, so the real length is longer by the vault's own location. */
 export function layoutOf(files: OutFile[]): Layout {
   const model = files.filter((f) => !f.bytes && /\.md$/i.test(f.path) && !/^(99_System|BOM)\//.test(f.path)), depthOf = (p: string): number => p.split("/").length - 1;
+  // a note whose folders were cut at the cap says how deep its package really is (`- Package: A / B / C`), so the report shows the depth before the cap
+  const trueDepth = (f: OutFile): number => Math.max(depthOf(f.path), (/^- Package: (.+)$/m.exec(f.content)?.[1]?.split(" / ").length ?? 0));
   const hist = new Map<number, number>(); let longest = { length: 0, path: "" }, over260 = 0, over400 = 0;
-  for (const f of model) { const d = depthOf(f.path); hist.set(d, (hist.get(d) ?? 0) + 1); if (f.path.length > longest.length) longest = { length: f.path.length, path: f.path }; if (f.path.length > 260) over260++; if (f.path.length > 400) over400++; }
-  const caps = [2, 3, 4, 5, 6].map((cap) => ({ cap, moved: model.filter((f) => depthOf(f.path) > cap).length, folders: new Set(model.map((f) => f.path.split("/").slice(0, Math.min(cap, depthOf(f.path))).join("/"))).size }));
+  for (const f of model) { const d = trueDepth(f); hist.set(d, (hist.get(d) ?? 0) + 1); if (f.path.length > longest.length) longest = { length: f.path.length, path: f.path }; if (f.path.length > 260) over260++; if (f.path.length > 400) over400++; }
+  const caps = [2, 3, 4, 5, 6].map((cap) => ({ cap, moved: model.filter((f) => trueDepth(f) > cap).length, folders: new Set(model.map((f) => f.path.split("/").slice(0, Math.min(cap, depthOf(f.path))).join("/"))).size }));
   return { notes: model.length, byDepth: [...hist].map(([depth, notes]) => ({ depth, notes })).sort((a, b) => a.depth - b.depth), caps, longest, over260, over400 };
 }
 
