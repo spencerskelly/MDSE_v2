@@ -183,13 +183,15 @@ test("a changed BOM updates a merged part without touching what the model added 
   assert.deepEqual(scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(f3)).items.filter((i) => i.pn === "SYN-CTRL-1"), []);
 });
 
-test("a person's change to a member the BOM owns is a conflict; a change to one the model owns is not", () => {
+test("a person's change to a member the BOM owns marks the note's items as edited (D-0054); a change to one the model owns does not", () => {
   const edited = new Map(f2), m = f2.get(PART)!;
   edited.set(PART, m.replace('attribute source = "buy";', 'attribute source = "make";'));
-  assert.equal(scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(edited)).holds.map((h) => h.code).join(), "CONFLICT");
+  const se = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(edited));
+  assert.deepEqual(se.holds, []); assert.ok(se.items.length > 0 && se.items.filter((i) => i.path === PART).every((i) => i.edited), "every item for the edited note is marked");
+  assert.ok(se.items.some((i) => i.category === "PART_ATTRIBUTES" && i.edited && /source/.test(i.summary)), "the file's source value is offered back");
   const model = new Map(f2); model.set(PART, m.replace("port spare : OBJ_00010::CANInterface;", "port spare : OBJ_00010::CANInterface; // checked by me"));
   const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2")), bomOpts(model));
-  assert.deepEqual(s.holds, []); assert.ok(s.items.some((i) => i.category === "DESCRIPTION"));
+  assert.deepEqual(s.holds, []); assert.ok(s.items.some((i) => i.category === "DESCRIPTION")); assert.ok(s.items.every((i) => !i.edited));
 });
 
 /* ---- choosing the owner of each area at the merge (D-0053) ---- */

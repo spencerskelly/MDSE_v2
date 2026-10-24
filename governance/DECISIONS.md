@@ -604,3 +604,18 @@ Rules: BOM-031 (changed), BOM-035, WKB-026 (new).
 
 Rules: BOM-035 (changed), BOM-036, WKB-027 (new).
 
+
+## D-0054 — BOM updates: a hand edit marks the items instead of holding the note
+
+2026-10-23 · Spencer · Accepted (owner, chat, after D-0053). Changes D-0051 item on edited notes and D-0053 item 6.
+
+Reason (owner): people are not always right. A hand edit to BOM-owned content must not park the note, because a later BOM can be the correct value.
+
+1. **What changes.** A note whose BOM-owned content no longer matches its `importHash` is no longer held with `CONFLICT`. It is scanned like any other note, against its current content.
+2. **Marker.** Every item for such a note carries `edited: true` and the text `[edited since last import]` in its summary. Applying the item replaces the edit; for a new revision that is every BOM-owned member of the note. Nothing is ticked by default (BOM-032), so no edit is replaced without the owner's tick.
+3. **The file's value is offered back.** An edited note is compared even when the file is unchanged since the import, so the BOM value is offered in place of the edit on every scan until it is applied or the note is brought in line. This is deliberate and will repeat for edits the owner wants to keep.
+4. **Unchanged.** A note without a stamp (`NO_BASELINE`), an older revision in the file (`OLDER_IN_FILE`), `bomOwns: []` (`NOT_OWNED`) and a SysML block the importer cannot read (`CONFLICT`, now only for this case) are still left alone.
+5. **D-0053 item 6.** A merge still recomputes `importHash` only if the stamp matched before the merge. A note edited before the merge is therefore scanned and marked, not a conflict.
+6. **Not decided.** Whether an engineer can keep an edit without seeing it offered again (a re-stamp or an ownership change, the other options discussed) is left open.
+
+Rules: BOM-031, BOM-033 (changed).

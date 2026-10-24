@@ -70,13 +70,34 @@ test("a new revision replaces the assembly as one item; an older revision in the
   const back = scan(v2, V1); assert.ok(back.holds.some((h) => h.code === "OLDER_IN_FILE" && h.pn === "A-100")); assert.ok(!back.items.some((i) => i.pn === "A-100" && i.category === "NEW_REVISION"));
 });
 
-test("a note changed by hand, or without a stamp, is held back and never proposed", () => {
-  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!, bpath = [...v.keys()].find((k) => k.endsWith("/B-200.md"))!;
-  v.set(path, v.get(path)!.replace("attribute quantity", "attribute quantityX").replace(/quantity = 2;|\[2\]/, (m) => m));   // may not match; force a change below
-  v.set(path, v.get(path)!.replace(/^description: .*$/m, "description: MY OWN NAME"));
+test("a note without a stamp is held back and never proposed", () => {
+  const v = vaultFrom(bom(V1)), bpath = [...v.keys()].find((k) => k.endsWith("/B-200.md"))!;
   v.set(bpath, v.get(bpath)!.replace(/^importHash: .*\n/m, ""));
   const s = scan(v, [{ p: "A-100", line: "1", c: "B-200", q: "9" }, { p: "A-100", line: "2", c: "C-300" }, { p: "A-100", line: "3", c: "D-400", q: "5", u: "m" }]);
-  assert.deepEqual(s.holds.map((h) => h.code).sort(), ["CONFLICT", "NO_BASELINE"]); assert.ok(!s.items.some((i) => i.pn === "A-100" || i.pn === "B-200"));
+  assert.deepEqual(s.holds.map((h) => h.code), ["NO_BASELINE"]); assert.ok(!s.items.some((i) => i.pn === "B-200"));
+});
+
+test("a note edited by hand is still scanned: the file's value is offered back, marked as an edit, never ticked, and applying restamps it (BOM-033)", () => {
+  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!;
+  v.set(path, v.get(path)!.replace(/B_200 \[2\]/, "B_200 [9]").replace(/^description: .*$/m, "description: MY OWN NAME"));
+  assert.notEqual(bomOwnedHash(v.get(path)!), /^importHash: (\w+)$/m.exec(v.get(path)!)![1], "the edit is visible to the stamp");
+  const s = scan(v, V1);   // the file is unchanged since the import, but it no longer agrees with the note
+  assert.deepEqual(s.holds, []); assert.deepEqual(cats(s), ["DESCRIPTION", "LINE_CHANGED"]);
+  for (const i of s.items) { assert.equal(i.edited, true); assert.match(i.summary, /\[edited since last import\]$/); }
+  assert.ok(s.items.every((i) => i.before !== "" && i.pn === "A-100"), "the item shows what is in the vault now");
+  const r = applyBomUpdate(s, { approved: new Set(s.items.map((i) => i.id)), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" });
+  const note = r.writes.find((w) => w.path.endsWith("/A-100.md"))!.content;
+  assert.match(note, /B_200 \[2\]/); assert.match(note, /^description: ASSY A-100$/m); assert.equal(/^importHash: (\w+)$/m.exec(note)![1], bomOwnedHash(note)); assert.equal(MDSE.validate(note, classes).length, 0);
+  const v2 = new Map(v); for (const w of r.writes) v2.set(w.path, w.content); assert.deepEqual(scan(v2, V1).items, [], "nothing is left to offer");
+});
+
+test("an edited note still gets a newer file's other changes, and an unedited note's items carry no marker", () => {
+  const v = vaultFrom(bom(V1)), path = [...v.keys()].find((k) => k.endsWith("/A-100.md"))!;
+  v.set(path, v.get(path)!.replace(/B_200 \[2\]/, "B_200 [9]"));
+  const s = scan(v, [{ p: "A-100", line: "1", c: "B-200", q: "2" }, { p: "A-100", line: "2", c: "C-300" }, { p: "A-100", line: "3", c: "D-400", q: "6", u: "m" }, { p: "A-100", line: "4", c: "E-500" }]);
+  assert.ok(s.items.some((i) => i.category === "LINE_CHANGED" && /line 3/.test(i.summary) && i.edited), "the line the file changed is offered");
+  assert.ok(s.items.some((i) => i.category === "LINE_ADDED" && i.edited));
+  assert.ok(s.items.filter((i) => i.pn !== "A-100").every((i) => !i.edited && !/edited since/.test(i.summary)));
 });
 
 test("a file that lists a part only as a child does not remove that part's lines", () => {

@@ -16,9 +16,9 @@ export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
   DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one",
 };
 export const HOLD_TEXT: Record<HoldCode, string> = {
-  CONFLICT: "Edited since the last import: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
+  CONFLICT: "SysML block not in the layout the importer writes: left alone", NO_BASELINE: "No import stamp: left alone", OLDER_IN_FILE: "File has an older revision than the vault: left alone", NOT_OWNED: "The model owns every area of the note (set at merge): left alone",
 };
-export interface UpdateItem { id: string; category: UpdateCategory; path: string; pn: string; summary: string; before: string; after: string; /** the SysML entry the item concerns, "" for a whole-note item */ key: string }
+export interface UpdateItem { id: string; category: UpdateCategory; path: string; pn: string; summary: string; before: string; after: string; /** the SysML entry the item concerns, "" for a whole-note item */ key: string; /** BOM-033: the note's BOM-owned content was edited after the last import; applying this item replaces that edit */ edited: boolean }
 export interface UpdateHold { code: HoldCode; path: string; pn: string; message: string }
 export interface UpdateScan {
   items: UpdateItem[]; holds: UpdateHold[]; unchanged: number; result: BomResult;
@@ -56,9 +56,10 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
   const vault = new Map<string, string>(o.existing?.files ?? []);
   const parsed = parseBom(grid), asParent = new Set(parsed.usages.map((u) => u.parent));
   const pnOf = (t: string): string => /^- BOM Part Number: (.+)$/m.exec(t)?.[1]?.trim() ?? "";
-  let n = 0; const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = ""): void => { out.items.push({ id: `u${++n}`, category, path, pn, summary, before, after, key }); };
+  let n = 0, curEdited = false; const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = ""): void => { out.items.push({ id: `u${++n}`, category, path, pn, summary: curEdited ? `${summary} [edited since last import]` : summary, before, after, key, edited: curEdited }); };
   for (const f of result.files) {
     if (!f.path.startsWith(dir + "/")) continue;
+    curEdited = false;
     out.generated.set(f.path, f.content);
     const old = vault.get(f.path), pn = pnOf(f.content);
     if (old === undefined) { add("NEW_PART", f.path, pn, `${pn}: new note`, "", f.content); continue; }
@@ -67,8 +68,10 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
     if (!stamp) { out.holds.push({ code: "NO_BASELINE", path: f.path, pn, message: `${pn}: the note has no import stamp, so the scan cannot tell a BOM change from an edit.` }); continue; }
     const owns = bomOwnsOf(old);
     if (!owns.size) { out.holds.push({ code: "NOT_OWNED", path: f.path, pn, message: `${pn}: at the merge the model was given every area of this note (bomOwns is empty), so BOM changes are not applied.` }); continue; }
-    if (bomOwnedHash(old) !== stamp) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the description, manufacturer data or SysML was changed in the vault after the last import (stamp ${stamp}).` }); continue; }
-    if (bomOwnedHash(f.content) === stamp) { out.unchanged++; continue; }
+    // BOM-033: a hand edit to BOM-owned content no longer parks the note. The note is compared with the file as usual, so the file's value is offered
+    // back (nothing is ticked by default) and every item carries the marker. The shortcut below is skipped for an edited note: an unchanged file still differs from the edit.
+    curEdited = bomOwnedHash(old) !== stamp;
+    if (!curEdited && bomOwnedHash(f.content) === stamp) { out.unchanged++; continue; }
     const so = sysmlOf(old), sn = sysmlOf(f.content), po = so ? splitSysml(so) : null, pnw = sn ? splitSysml(sn) : null;
     if (!po || !pnw) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${pn}: the SysML block is not in the layout the importer writes, so it is not compared.` }); continue; }
     const yo = yamlOwned(old), yn = yamlOwned(f.content);
