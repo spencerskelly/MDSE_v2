@@ -633,14 +633,14 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const dA = byObj.get(c.sourceId), dB = byObj.get(c.destId);
       const extra = [trig && `trigger: ${trig}`, grd && `guard: ${grd}`, eff && `effect: ${eff}`].filter(Boolean).join("; ");
       if (dA && dB && dA !== dB) {
-        if (extra) dA.sourceLines.push(`- ${key} evidence to ${lk(dB)} (${extra}); EA connector ${c.guid}`);
+        if (extra) dA.sourceLines.push(`- ${key} evidence to ${lk(dB)} (${extra})`);
         defer("FLOW_NO_COMMON_OWNER", "Find a valid common SysML owner and compatible usages before writing succession or transition");
         return;
       }
       // An unresolved usage endpoint still retains its source GUID and review flag.
       if (extra) {
         const host = dA ?? a?.owner ?? dB ?? b?.owner;
-        if (host) host.sourceLines.push(`- ${key} evidence (source: ${g.objectsById.get(c.sourceId)?.name ?? c.sourceId}; target: ${g.objectsById.get(c.destId)?.name ?? c.destId}; ${extra}); EA connector ${c.guid}`);
+        if (host) host.sourceLines.push(`- ${key} evidence (source: ${g.objectsById.get(c.sourceId)?.name ?? c.sourceId}; target: ${g.objectsById.get(c.destId)?.name ?? c.destId}; ${extra})`);
       }
       defer("FLOW_ENDPOINT_NOT_USAGE"); return;
     }

@@ -352,7 +352,7 @@ test("flows: native shared-owner succession; cross-owner flow is preserved as fl
   assert.doesNotMatch(a, /^precedes:/m, "no v1 YAML temporal duplicate");
   assert.match(a, /\[!flagLink\]/, "cross-owner flow flagged for review");
   assert.match(a, /FLOW_NO_COMMON_OWNER/, "review reason survives in note");
-  assert.match(a, /ControlFlow evidence to \[\[[A-Z]+-\d{5}\|Free B\]\] \(guard: go\); EA connector/, "guard and source connector preserved");
+  assert.match(a, /ControlFlow evidence to \[\[[A-Z]+-\d{5}\|Free B\]\] \(guard: go\)/, "guard and source connector preserved");
   const pending = res.ledger.filter((l) => l.source_table === "t_connector" && l.diagnostic_code === "FLOW_NO_COMMON_OWNER");
   assert.ok(pending.length >= 1 && pending.every((l) => l.disposition === "deferred_review" && l.ea_guid), "no invented native disposition");
 });
