@@ -691,6 +691,6 @@ Rules: BOM-040 (new), BOM-027 (changed).
 
 1. **Found.** Applying any item to a note replaced the whole `Source: EA` section with the generated one, so a line from an EA merge or one a person added there was lost. A note's body above the section was already kept.
 2. **Rule.** Only the importer's own Source lines are refreshed (part number, name, BOM source, revision, source, revisions in the BOM, drawing location, alternates, previous part number, usage tags, replaced-revision lines). Any other line or paragraph in the section stays, after the importer's lines.
-3. **Audit result, not changed.** Part and parent **lifecycle states** are read but written nowhere (BOM-021, D-0047), so a change in them is neither listed nor kept. Every other column tested (names, source, SSC, reference designator, notes, from, to, amount, unit, line, revision pin, manufacturer, alternates) produces an update item. Whether the lifecycle state should be kept as data is open.
+3. **Audit result, not changed.** Part and parent **lifecycle states** are read but written nowhere (BOM-021, D-0047), so a change in them is neither listed nor kept. Every other column tested (names, source, SSC, reference designator, notes, from, to, amount, unit, line, revision pin, manufacturer, alternates) produces an update item. Owner decision 2026-10-24 ("state can be dropped"): lifecycle states stay dropped; BOM-021 stands.
 
 Rules: BOM-032 (changed).
