@@ -1,3 +1,4 @@
+# Rebuild requested after governance D-0069 and concurrent importer D-0068; source/artifact sync is CI-gated.
 name: Rebuild MDSE importer release
 on:
   push:
