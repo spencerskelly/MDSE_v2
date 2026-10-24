@@ -23,6 +23,12 @@ test("reading a member back and writing it again changes nothing, for everything
   for (const e of refEdges(ix0)) {
     const info = R.edRelInfo(ix0, e.ref!)!;
     if (info.why || !info.rel || !info.form.target) continue;
+    if (info.form.depKind === "trace") {
+      const p = R.planUpdateRelationship(ix0, base, e.ref!, info.form);
+      assert.ok(p.problems.some((problem) => problem.includes("historical")), "legacy trace is read-only (D-0073)");
+      assert.equal(p.writes.length, 0);
+      continue;
+    }
     const p = R.planUpdateRelationship(ix0, base, e.ref!, info.form);
     assert.deepEqual(p.problems, ["Nothing to change: the block already says this."].slice(0, p.problems.length) && p.problems, `${e.kind} ${e.ref!.key}`);
     assert.ok(p.writes.length === 0 && /Nothing to change/.test(p.problems[0] ?? ""), `${e.kind} ${e.ref!.key}: ${p.problems.join(";")}`);
