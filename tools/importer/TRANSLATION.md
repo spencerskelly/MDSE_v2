@@ -95,12 +95,12 @@ Every EA row ends in the Ledger with one disposition: `native`, `alias_merged`, 
 | `Dependency:trace` | conditional_native_candidate | `dependency from a to b; // trace`; YAML link when an end is a note | Both ends definitions. A note end becomes `describes` (Info, Artifact, Document) or the provisional `tracesTo`. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Association` | conditional_native_candidate | `actor` usage in the use case (Actor), `participants` YAML link on the use case (other part def), otherwise a review row | An association between a use case and a part is participation. Between anything else it is not evidence of a connection, so no ConnectionUsage is written. | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN`, `USAGE_WINS` |
 | `UseCase:extend` | conditional_native_candidate | Optional `use case x : Ext[0..1]` in the base use case | Source is the extending case, destination the base. Both use case defs. | `EXTEND_ENDPOINT_KIND` |
-| `ControlFlow` | conditional_native_candidate | `succession first a then b` in the owning definition; `precedes` YAML link between notes with no shared owner | Both ends action, fork or join usages (or definitions nested in the same owner) give a succession. Two notes that share no owner give a `precedes` link with the guard as a Source line. | `FLOW_ENDPOINT_NOT_USAGE` |
+| `ControlFlow` | conditional_native_candidate | `succession first a then b` inside a verified common owning definition; otherwise defer with flagLink | Action/fork/join usages in a common owner give native succession. Endpoints without a proven common owner become a deferred review with source GUID and guard evidence; no YAML precedes is written. | `FLOW_ENDPOINT_NOT_USAGE`, `FLOW_NO_COMMON_OWNER` |
 | `Dependency:deriveReqt` | conditional_native_candidate | `#derivation connection { end #original ::> b; end #derive ::> a; }` | Requirement to requirement only. | `DERIVE_ENDPOINT_KIND` |
 | `NoteLink` | reference_only | `describes` YAML link on the Info note | One end must be an Info note. | `NOTELINK_ENDPOINT_NOT_INFO_NOTE` |
 | `UseCase:include` | conditional_native_candidate | `include use case` in the including use case | Both ends use case defs. | `INCLUDE_ENDPOINT_KIND` |
 | `Sequence` | reference_only | Ledger row only | Reference only; diagrams are out of scope. | `REFERENCE_ONLY` |
-| `StateFlow` | conditional_native_candidate | `transition first a then b` in the owning state def; `precedes` YAML link between notes with no shared owner | Both ends state usages (or state definitions nested in the same owner) give a transition. Two notes that share no owner give a `precedes` link with trigger, guard and effect as a Source line. | `FLOW_ENDPOINT_NOT_USAGE` |
+| `StateFlow` | conditional_native_candidate | `transition first a then b` inside a verified state owner; otherwise defer with flagLink | State usages in a common owner give native transition. Endpoints without a proven common owner become a deferred review retaining source GUID, trigger, guard and effect; no YAML precedes is written. | `FLOW_ENDPOINT_NOT_USAGE` |
 | `Nesting` | conditional_native_candidate | Evidence only | Nesting is organizational. Ownership of usages comes from the parent id, not this connector. | `ORGANIZATIONAL_ONLY` |
 | `Usage` | conditional_native_candidate | `dependency from a to b; // uses` | Both ends definitions. Stronger evidence (allocate, satisfy) is not inferred. | `DEPENDENCY_ENDPOINT_KIND` |
 | `Dependency:verify` | conditional_native_candidate | `objective { verify }` in the verification def | One end a verification def, the other a requirement def. | `VERIFY_ENDPOINT_KIND` |
@@ -177,7 +177,7 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `USAGE_WINS` | An EA Part, nested element or actor already covers this connector; the connector is merged into that usage. | None. |
 | `OWNERSHIP_CYCLE` | Whole and part own each other through the aggregation and the usages already written. | Resolve the cycle in EA; the connector is left out of the model. |
 | `AGGREGATION_PART_IN_INTERFACE` | A part is the child of an interface. Approved as an exception, not as a mapping. | Inspect the EA source and decide the construct. |
-| `PROVISIONAL_LINK` | tracesTo is written because the connector fits no stronger relationship (W-288). | Replace tracesTo with the right relationship. |
+| `PROVISIONAL_LINK` | An unresolved MDSE-note connector is preserved as flagLink and a deferred ledger row (D-0070); no tracesTo YAML or native relation is written. | Review its EA endpoints and choose a justified native or MDSE-only relationship. |
 | `AGGREGATION_BOTH_ENDS_AGGREGATE` | Both ends are marked as the whole. | Fix the EA aggregation kind. |
 | `AGGREGATION_WHOLE_NOT_EVIDENCED` | Neither end is marked as the whole. | Fix the EA aggregation kind. |
 | `AGGREGATION_ENDPOINT_KIND` | Aggregation ends are not the same kind of definition (part/part, action/action, state/state, item/item, use case/use case, requirement/requirement, part/port). | Review the EA link. |
@@ -190,8 +190,9 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `ASSOCIATION_CONNECTIVITY_NOT_PROVEN` | An association is not evidence of a connection. | Model the connection as a Connector between ports if it is one. |
 | `PORT_CONNECTION_NEEDS_COMMON_OWNER` | Ports belong to different definitions and no assembly owns a part of each. | Add the assembly or make the connection by hand. |
 | `CONNECTOR_ENDPOINT_NOT_PORT` | Connector end is not a port usage. | Review the EA link. |
-| `FLOW_ENDPOINT_NOT_USAGE` | Flow end is not an action/state usage the importer wrote. | Control nodes and unwritten usages cannot be linked. |
-| `FLOW_DIFFERENT_OWNERS` | No longer written: flow ends in different owners now become a precedes link. | None. |
+| `FLOW_ENDPOINT_NOT_USAGE` | Flow end is not a compatible action/state usage written by the importer. | Review the EA source and establish a valid owner/typed usage; preserve evidence in flagLink. |
+| `FLOW_NO_COMMON_OWNER` | A ControlFlow or StateFlow has two note endpoints but no valid shared owning SysML context (D-0073). | Review ownership and valid action/state usages before modeling native succession/transition. |
+| `FLOW_DIFFERENT_OWNERS` | Retired diagnostic code: historical rows may use it; current cross-owner connector diagnostic is FLOW_NO_COMMON_OWNER. | Retain historical data and use the D-0073 review flow for new imports. |
 | `INCLUDE_ENDPOINT_KIND` | include needs two use case defs. | Review the EA link. |
 | `NATIVE_EMISSION_NOT_IMPLEMENTED` | Relationship family with no translation code. | Importer gap; see TRANSLATION.md. |
 | `EXCEPTION` | The importer threw while handling this row. See Error Log. | Fix the importer; the row was skipped, not lost. |

@@ -1601,7 +1601,7 @@ function edWithBlock(note      , text        , fn                               
 
 /* ---- relationships ---------------------------------------------------------------------------------------- */
                  
-                                          
+                                                                    
                                                                    
                                           
                                                                  
@@ -1626,7 +1626,7 @@ const ED_RELS          = [
     from: (n) => kw(n) === "requirement def", to: (n, f) => kw(n) === "requirement def" && n.path !== f.path, inputs: [] },
   { id: "refines", label: "refines", help: "`#refinement dependency from <this> to <target>;`: this adds precision to the target.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
-  { id: "trace", label: "traces to", help: "`dependency … // trace`: related, relationship not chosen yet.",
+  { id: "trace", label: "legacy trace (read-only)", help: "Historical explicit trace dependency only. An unresolved new link is a flagLink, not a provisional dependency (D-0073).", legacyReadOnly: true,
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
   { id: "dependsOn", label: "depends on", help: "`dependency … // dependsOn`.",
     from: anyDef, to: (n, f) => !!n.def && n.path !== f.path, inputs: [] },
@@ -1637,7 +1637,7 @@ const ED_RELS          = [
   { id: "extend", label: "is extended by use case", help: "Writes an optional use case `[0..1]` typed by the extension into this (base) use case.",
     from: (n) => kw(n) === "use case def", to: (n, f) => kw(n) === "use case def" && n.path !== f.path, inputs: ["name"] },
 ];
-const edRelsFor = (from      )          => ED_RELS.filter((r) => r.from(from));
+const edRelsFor = (from      )          => ED_RELS.filter((r) => !r.legacyReadOnly && r.from(from));
 const edTargets = (ix            , rel       , from      )         => [...ix.notes.values()].filter((n) => n.path !== from.path && rel.to(n, from));
 /** Usage kinds a target allows for the `owns` relationship. */
 const edUsageKinds = (target      )           => USAGE_FOR_TARGET[kw(target)] ?? [];
@@ -1646,6 +1646,7 @@ const edUsageKinds = (target      )           => USAGE_FOR_TARGET[kw(target)] ??
 function planAddRelationship(ix            , files                     , o                 )           {
   const rel = ED_RELS.find((r) => r.id === o.rel), from = ix.notes.get(o.from), to = ix.notes.get(o.to);
   if (!rel) return bad(`Unknown relationship "${o.rel}".`);
+  if (rel.legacyReadOnly) return bad("This is a historical trace relationship. New unresolved links must be recorded as flagLink review evidence (D-0073).");
   if (!from || !to) return bad("Both notes must be in the vault.");
   if (!rel.from(from)) return bad(`A ${from.type}${from.subtype ? "/" + from.subtype : ""} (${kw(from) || "no SysML block"}) cannot be the source of "${rel.label}".`);
   if (!rel.to(to, from)) return bad(`"${to.title}" is not an eligible target of "${rel.label}" from "${from.title}".`);
@@ -2012,6 +2013,7 @@ function planUpdateRelationship(ix            , files                     , ref 
   const info = edRelInfo(ix, ref);
   if (!info) return relBad("That relationship is no longer in the note. Refresh and try again.");
   if (info.why) return relBad(info.why);
+  if (form.depKind === "trace" && info.form.depKind !== "trace") return relBad("Cannot retag a relationship as an unresolved trace; use flagLink review evidence (D-0073).");
   const owner = info.owner, rel = info.rel;
   if (!rel) return relBad("This kind of relationship is not edited here.");
   const target = ix.notes.get(form.target);
