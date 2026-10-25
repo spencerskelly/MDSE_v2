@@ -380,6 +380,10 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
             pg.click("button:has-text('shown to canvas')")
             pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
+            # children go in a row below the parent (D-0090)
+            if pg.locator("button:has-text('children to canvas')").count():
+                pg.click("button:has-text('children to canvas')")
+                pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
             # a canvas of this view (D-0088): complete BOM and direct parts
             pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
             for label in ("Canvas: complete BOM", "Canvas: direct parts"):

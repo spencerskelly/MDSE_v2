@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -643,4 +643,34 @@ test("auto-layout puts a use case left of its requirement, tests and functions b
   const idem = autoLayout(r.doc, v); assert.equal(idem.moved, 0, "laying out a laid-out canvas moves nothing");
   const ca = r.doc.edges.find((e) => { const a = r.doc.nodes.find((n) => n.id === e.fromNode)!, b = r.doc.nodes.find((n) => n.id === e.toNode)!; return cdNotePath(a as never) === "Charger.md" && cdNotePath(b as never) === "Cable.md"; })!;
   assert.deepEqual([ca.fromSide, ca.toSide], ["bottom", "top"]);
+});
+
+test("direct parts show only direct parts in every Structure table, and children go on the canvas in one row below the parent (D-0090)", () => {
+  const f = (id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500001${id.replace(/\D/g, "").padStart(4, "0")}direct-kids\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
+  const v = buildIndex(new Map([
+    f("OBJ-00001", "Station", 'hasPart: ["[[Charger]]"]\n'), f("OBJ-00009", "Site", 'hasPart: ["[[Station]]"]\n'),
+    f("OBJ-00002", "Charger", 'hasPart: ["[[Cable]]", "[[Plug]]", "[[Board]]"]\n'), f("OBJ-00003", "Cable"), f("OBJ-00004", "Plug"),
+    f("OBJ-00005", "Board", 'hasPart: ["[[Chip]]"]\n'), f("OBJ-00006", "Chip", 'hasPart: ["[[Die]]"]\n'), f("OBJ-00007", "Die"),
+  ]), { classes });
+  const names = (t: V.TableData): string[] => t.rows.map((r) => String(typeof r.name === "object" ? (r.name as { path?: string }).path : r.part && typeof r.part === "object" ? (r.part as { path?: string }).path : r.assembly && typeof r.assembly === "object" ? (r.assembly as { path?: string }).path : "")).sort();
+  const dir = V.lensTables(v, "structure", "Charger.md", { tree: "direct" }), full = V.lensTables(v, "structure", "Charger.md", { tree: "full" });
+  assert.deepEqual(names(dir[0]!), ["Board.md", "Cable.md", "Charger.md", "Plug.md"], "the tree: the note and its direct parts");
+  assert.deepEqual(names(dir[1]!), ["Board.md", "Cable.md", "Plug.md"], "the parts list: direct parts, not their parts");
+  assert.deepEqual(names(dir[2]!), ["Station.md"], "where used: the assemblies it is directly in");
+  assert.ok(names(full[1]!).includes("Die.md") && names(full[2]!).includes("Site.md"), "the full tree still goes all the way");
+  // children in a row below the parent
+  const one = addToCanvas({ nodes: [], edges: [] }, v, null, ["Charger.md"]).doc, parent = one.nodes[0]!;
+  const r = addChildren(one, v, "Charger.md", ["Cable.md", "Plug.md", "Board.md"]);
+  const kids = r.doc.nodes.filter((n) => n.id !== parent.id);
+  assert.equal(r.added, 3); assert.deepEqual(r.doc.nodes[0], parent, "the parent has not moved");
+  assert.equal(new Set(kids.map((n) => n.y)).size, 1, "one row"); assert.ok(kids[0]!.y >= parent.y + parent.height + 90 * 3 - 1, "below the parent, a row apart");
+  const xs = kids.map((n) => n.x + n.width / 2).sort((a, b) => a - b); assert.equal((xs[0]! + xs[2]!) / 2, parent.x + parent.width / 2, "centred under the parent");
+  assert.equal(r.doc.edges.length, 3); assert.ok(r.doc.edges.every((e) => e.fromNode === parent.id && e.fromSide === "bottom" && e.toSide === "top"));
+  // a held slot is skipped along the same row; a card already there is not moved
+  const blocked = { nodes: [...one.nodes, { id: "memo", type: "text" as const, x: parent.x - 1120, y: parent.y + 360, width: 280, height: 90, text: "mine" }], edges: [] };
+  const r2 = addChildren(blocked, v, "Charger.md", ["Cable.md", "Plug.md", "Board.md"]);
+  const k2 = r2.doc.nodes.filter((n) => n.id !== parent.id && n.id !== "memo");
+  assert.equal(new Set(k2.map((n) => n.y)).size, 1); assert.ok(k2.every((n) => Math.abs(n.x - (parent.x - 1120)) >= 280), "nothing on the memo");
+  const again = addChildren(r.doc, v, "Charger.md", ["Cable.md", "Plug.md"]); assert.equal(again.added, 0); assert.equal(again.present, 2);
+  const cold = addChildren({ nodes: [], edges: [] }, v, "Charger.md", ["Cable.md"]); assert.equal(cold.doc.nodes.length, 2, "the parent is put on first");
 });

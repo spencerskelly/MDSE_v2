@@ -17,6 +17,7 @@ declare const WB: {
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   cardNotePath: (node: any) => string | null;
   structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
+  addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
@@ -156,6 +157,7 @@ function hostFor(plugin: any): any {
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
+    addChildren: (parent: string, paths: string[]) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
@@ -380,12 +382,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
-  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false): Promise<string> {
+  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false, rowUnder: string | null = null): Promise<string> {
     await this.ensureIndex();
+    const place = (doc: any) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
     if (target && target.path !== WB.PREVIEW_PATH) {                                // D-0089: the canvas that is open in the main window, whichever file it is
       let res: { added: number; present: number } | null = null;
-      await this.editTarget(target, (text) => { const r = WB.addToCanvas(parseDoc(text), this.ix, anchor, paths, { relations }); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
+      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
       const r = res as { added: number; present: number } | null;
       if (!r) return "Could not read that canvas.";
       this.app.workspace.revealLeaf(target.leaf);
@@ -393,12 +396,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
     if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
-      const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
+      const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
       return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
     }
     let res: { added: number; present: number } | null = null;
     await this.editPreview((text) => {
-      const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths, { relations }); res = r;
+      const r = place(JSON.parse(text)); res = r;
       if (!r.added) return null;
       for (const id of r.lineIds) this.preview!.edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
       return JSON.stringify(r.doc, null, 2);

@@ -25,6 +25,8 @@ export interface PanelHost {
   /** D-0088: a new canvas (replacing the preview) of a note and the notes a view shows. */
   /** D-0089: apply the layout rules to the canvas that is open in the main window. */
   autoLayout?(): Promise<string>;
+  /** D-0090: put notes on the open canvas as one row directly below a parent's card. */
+  addChildren?(parent: string, paths: string[]): Promise<string>;
   newCanvasFrom?(anchor: string, paths: string[]): Promise<string>;
   openPickCanvas?(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
@@ -128,7 +130,15 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p): p is string => !!p))].slice(0, MAX_PICK);
     if (!shown.length && lens !== "structure") return null;
     const root = sel && ix!.notes.has(sel) ? sel : "", anchor = root || shown[0]!;
-    const run = (b: HTMLElement, paths: string[]): void => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => host.addToCanvas!(anchor, paths)); };
+    const kidsOf = lens === "structure" && root ? [...new Set(ix!.edges.filter((e) => e.kind === "hasPart" && e.from === root && e.to && !e.reverse && e.to !== root && ix!.notes.has(e.to)).map((e) => e.to!))] : [];
+    /* D-0090: on Structure the root's direct parts go in one row below its card; anything else ticked is placed by the hierarchy rules */
+    const addSome = async (paths: string[]): Promise<string> => {
+      const row = host.addChildren ? paths.filter((p) => kidsOf.includes(p)) : [], rest = paths.filter((p) => !row.includes(p) && p !== root);
+      const m1 = row.length ? await host.addChildren!(root, row) : "";
+      const m2 = rest.length || !row.length ? await host.addToCanvas!(anchor, rest.length ? rest : paths) : "";
+      return [m1, m2].filter(Boolean).join(" ");
+    };
+    const run = (b: HTMLElement, paths: string[]): void => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => addSome(paths)); };
     const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
     some.addEventListener("click", () => run(some, [...rowTicks].filter((p) => ix!.notes.has(p))));
     const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
@@ -136,6 +146,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
     const mk = (label: string, title: string, go: () => Promise<string>): HTMLElement => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
     const fresh: HTMLElement[] = [];
+    if (kidsOf.length && host.addChildren) { const cb = h("button", { class: "sm pri", title: "Put every direct part of this assembly on the open canvas as one row below its card, joined bottom to top" }, `Add all ${kidsOf.length} children to canvas`); cb.addEventListener("click", () => busy(cb, "Adding…", () => host.addChildren!(root, kidsOf))); fresh.push(cb); }
     if (lens === "structure" && root && host.openStructureCanvas) fresh.push(
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "full")));

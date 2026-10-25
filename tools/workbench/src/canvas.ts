@@ -240,6 +240,48 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
   return { doc: out, added: fresh.length, present, lineIds };
 }
 
+/** Puts notes on a canvas as one row directly below a parent's card (D-0090), nearest the parent's centre first, each joined by a line from the bottom of the parent to its top. A card that is already on the canvas stays where it is and only gets its line. A slot that another card holds is skipped along the same row. The parent is added first when it is not there. */
+export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
+  let cur: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) }, extra = 0;
+  const find = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+  if (!ix.notes.has(parent)) return { doc: cur, added: 0, present: 0, lineIds: [] };
+  if (!find(cur, parent)) { const r = addToCanvas(cur, ix, null, [parent], { relations: false }); cur = r.doc; extra = r.added; }
+  const pc = find(cur, parent)!, kids = [...new Set(paths)].filter((p) => p !== parent && ix.notes.has(p)).sort((a, b) => ix.notes.get(a)!.title.localeCompare(ix.notes.get(b)!.title) || a.localeCompare(b));
+  const there = new Set(kids.filter((p) => find(cur, p))), fresh = kids.filter((p) => !there.has(p));
+  const taken = new Set(cur.nodes.map((n) => n.id)); let k = 0; const nid = (pre: string): string => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
+  const CX = W + GX, CY = H + GY, solids = cur.nodes.filter((n) => n.type !== "group");
+  const free = (x: number, y: number, w: number, h: number): boolean => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + w + 40 && y < n.y + n.height + 40 && n.y < y + h + 40);
+  const y0 = pc.y + pc.height + GY, n = fresh.length;
+  const cards = fresh.map((p) => noteCard(ix, p, nid("c")));
+  /* the wanted slots are centred under the parent; a held slot moves to the nearest free one on the same row, and the row is pushed down only when the row cannot hold them */
+  const cx0 = pc.x + pc.width / 2, slots: number[] = []; let y = y0;
+  for (let tries = 0; tries < 20; tries++, y += CY) {
+    slots.length = 0; const used = new Set<number>(), order = cards.map((_, i) => i);
+    const want = (i: number): number => cx0 + (i - (n - 1) / 2) * CX - cards[i]!.width / 2;
+    let ok = true;
+    for (const i of order) {
+      let best: number | null = null;
+      for (let d = 0; d <= 80 && best === null; d++) for (const sgn of d === 0 ? [0] : [1, -1]) { const x = Math.round(want(i) + sgn * d * CX); if (!used.has(x) && free(x, y, cards[i]!.width, cards[i]!.height)) { best = x; break; } }
+      if (best === null) { ok = false; break; }
+      used.add(best); slots[i] = best;
+    }
+    if (ok) break;
+  }
+  cards.forEach((c, i) => { c.x = slots[i]!; c.y = Math.round(y); cur.nodes.push(c); solids.push(c); });
+  const lineIds: string[] = [];
+  if (opts.relations !== false) {
+    const on = new Map(kids.map((p) => [p, find(cur, p)!] as const));
+    for (const e of ix.edges) {
+      if (e.kind !== "hasPart" || !e.to || e.reverse || e.from !== parent || !on.has(e.to)) continue;
+      const c = on.get(e.to)!, label = [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+      if (cur.edges.some((x) => x.fromNode === pc.id && x.toNode === c.id && (x.label ?? "") === label)) continue;
+      const id = nid("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
+      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label }); lineIds.push(id);
+    }
+  }
+  return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
+}
+
 /** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
 export function autoLayout(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; moved: number; kept: number } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };

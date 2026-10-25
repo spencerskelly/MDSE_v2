@@ -1044,3 +1044,14 @@ Rules: WKB-037 (Active).
 5. Not done: the added cards are not selected on the canvas; groups made by "Pick notes" are not resized by Auto-layout.
 
 Rules: WKB-038 (Active).
+
+## D-0090 — Direct parts means direct parts everywhere; children go in a row below the parent
+
+2026-10-25 · Spencer · Accepted (owner, chat: "direct children is still showing children of children. I need it to be direct children only. I'd like to be able to add some or all children to the canvas. when added, they should be placed in a row below the parent")
+
+1. Cause of the complaint: D-0085's Direct parts option limited only the Structure tree. The rolled-up parts list (all layers) and Where used (all layers upward) stayed full, and "Add all shown" took them to the canvas. With Direct parts only, the parts list is depth 1 and Where used lists direct assemblies only.
+2. "Add all N children to canvas" on Structure; "Add ticked" and "Add all shown" send the note's direct parts through the same row placement.
+3. Row placement (`addChildren`): below the parent by one row gap, centred under it, name order, spacing three card widths; skips slots other cards hold; never moves a card; lines bottom to top. This is for adding to a canvas that has the parent on it; nothing re-lays out (D-0089).
+4. Not changed: Full tree keeps every layer; other views keep D-0085 placement.
+
+Rules: WKB-039 (Active).
