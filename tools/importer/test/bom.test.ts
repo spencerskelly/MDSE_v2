@@ -54,10 +54,24 @@ test("flat BOM: one note per part number, parent-owned usages, pinned revision, 
 test("pinned child revision that is not the child's latest: flagConflict on the parent, older users listed on the child (BOM-011/012)", () => {
   const r = buildBom(parseDelimited(flatText), baseOpts);
   const parent = byTitle(r.files, "04270-001").content, child = byTitle(r.files, "04766").content;
-  assert.match(parent, /\[!flagConflict\] Pins 04766 at an older revision/); assert.match(parent, /"-B99"/); assert.match(parent, /"-C99"/);
+  assert.match(parent, /\[!flagConflict\] Current revision of 04766 not established/); assert.match(parent, /"-B99"/); assert.match(parent, /"-C99"/);
   assert.doesNotMatch(child, /older revision|04270-001/, "a child note names no assembly above it (D-0063)");
   assert.match(child, /attribute revision = "-C99";/);                                    // latest wins the properties (BOM-007)
   assert.equal(r.summary.conflicts, 1);
+});
+
+test("explicit BOM CURRENT designation selects authoritative revision and consolidates pinned usage", () => {
+  const withCurrent = flatText.replace("04766\t-C\t99\tASSY MICROCONTROLLER SMARTGUARD\tbuy\tPRODUCTIONPREPARATION", "04766\t-C\t99\tASSY MICROCONTROLLER SMARTGUARD\tbuy\tCURRENT");
+  const r = buildBom(parseDelimited(withCurrent), baseOpts);
+  const parent = byTitle(r.files, "04270-001").content;
+  assert.match(parent, /^noteReview: \["\[\[Old Revision Usage\]\]"\]$/m);
+  assert.match(parent, /\*\*Older revision usages\*\*/);
+  assert.doesNotMatch(parent, /\[!flagConflict\] Pins 04766/);
+  assert.equal(r.summary.conflicts, 0);
+  const index = r.files.find((f) => f.path === "99_System/11_Import/Old Revision Usage.md");
+  assert.ok(index);
+  assert.match(index.content, /\[\[04270-001\]\]/);
+  assert.match(index.content, /04766 pinned "-B99"/);
 });
 
 test("the latest revision is the highest by revision order, and the part is imported with the other revisions named (D-0047)", () => {
@@ -66,8 +80,8 @@ test("the latest revision is the highest by revision order, and the part is impo
   const t = byTitle(r.files, "05274").content;
   assert.match(t, /attribute revision = "A01";/);                                           // the placeholder -099 ranks below a real revision
   assert.match(t, /Revisions in the BOM: "-099", "A01"; the latest is "A01"/);
-  assert.match(byTitle(r.files, "01653").content, /Pins 05274 at an older revision/);       // the assembly that pins the placeholder says so
-  assert.ok(r.findings.some((f) => f.code === "REV_BY_ORDER" && f.message.startsWith("05274")));
+  assert.match(byTitle(r.files, "01653").content, /Current revision of 05274 not established/);       // the assembly that pins the placeholder says so
+  assert.ok(r.findings.some((f) => f.code === "REV_SELECTION" && f.message.startsWith("05274")));
   assert.equal(r.summary.skippedParts, 0);
   assert.deepEqual([["-099", "A01"], ["A01", "B02"], ["-V01", "-V02"], ["A02", "A10"], ["Z99", "A01"]].map(([a, b]) => bomRevCompare(a!, b!)), [-1, -1, -1, -1, -1]);
 });
