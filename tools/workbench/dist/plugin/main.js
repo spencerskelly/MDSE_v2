@@ -1433,7 +1433,20 @@ const PREVIEW_PATH = `${PREVIEW_DIR}/Workbench Preview.canvas`;
 const SAVED_DIR = "99_System/23_Saved_Views";
 /** Card size and the space between cards: three times the card width across and three times the card height down (D-0079). */
 const SPACING = 3;
-const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, MAX_UNRESOLVED = 24;
+/** D-0096: the gap, in card widths across and card heights down, between two cards whose notes are joined by a relationship (SPACING) and between two that are not (SPACING_UNRELATED). */
+const SPACING_UNRELATED = 1;
+const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, GXU = SPACING_UNRELATED * W, GYU = SPACING_UNRELATED * H, MAX_UNRESOLVED = 24;
+/** Every pair of notes joined by a resolved relationship, either way, as "a|b" and "b|a" (D-0096). */
+function cvRelatedSet(ix            )              {
+  const s = new Set        ();
+  for (const e of ix.edges) if (e.to && !e.reverse && e.from !== e.to) { s.add(`${e.from}|${e.to}`); s.add(`${e.to}|${e.from}`); }
+  return s;
+}
+/** True when card `c` placed at x, y is far enough from card `n`: at least the gap across or the gap down, which is the related gap when the two notes are related and the unrelated gap when not (D-0096). */
+const cvClear = (x        , y        , w        , h        , n                                                         , related         )          => {
+  const gx = related ? GX : GXU, gy = related ? GY : GYU;
+  return x + w + gx <= n.x || n.x + n.width + gx <= x || y + h + gy <= n.y || n.y + n.height + gy <= y;
+};
 const safe = (s        )         => s.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled";
 
 const hash = (s        )         => { let h = 5381; for (const c of s) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(16).slice(0, 4); };
@@ -1484,14 +1497,14 @@ function structureCanvas(ix            , root        , mode                   ) 
       depth.set(k.to, d + 1); (tree.get(p) ?? tree.set(p, []).get(p) ).push(k.to); queue.push(k.to);
     }
   }
-  const CX = W + GX, CY = H + GY, x = new Map                (); let slot = 0;
-  const lay = (p        )       => { const c = tree.get(p) ?? []; if (!c.length) { x.set(p, slot++ * CX); return; } c.forEach(lay); x.set(p, (x.get(c[0] )  + x.get(c[c.length - 1] ) ) / 2); };
+  const CX = W + GX, CXU = W + GXU, CY = H + GY, x = new Map                (), related = cvRelatedSet(ix); let cursor = 0, prevLeaf                = null;
+  const lay = (p        )       => { const c = tree.get(p) ?? []; if (!c.length) { if (prevLeaf !== null) cursor += related.has(`${prevLeaf}|${p}`) ? CX : CXU; x.set(p, cursor); prevLeaf = p; return; } c.forEach(lay); x.set(p, (x.get(c[0] )  + x.get(c[c.length - 1] ) ) / 2); };
   lay(root);
   const nodes               = [], at = new Map                    (); let n = 0;
   for (const [p, d] of depth) { const c = noteCard(ix, p, `n${n++}`); c.x = Math.round(x.get(p) ); c.y = d * CY; nodes.push(c); at.set(p, c); }
   const above = [...new Map(parentsOf.map((q) => [q.from, q])).values()].filter((q) => !at.has(q.from)).sort((a, b) => name(a.from).localeCompare(name(b.from)) || a.from.localeCompare(b.from));
-  const mid = at.get(root) .x, left = mid - ((above.length - 1) * CX) / 2;
-  above.forEach((q, i) => { const c = noteCard(ix, q.from, `n${n++}`); c.x = Math.round(left + i * CX); c.y = -CY; nodes.push(c); at.set(q.from, c); });
+  const mid = at.get(root) .x, left = mid - ((above.length - 1) * CXU) / 2;
+  above.forEach((q, i) => { const c = noteCard(ix, q.from, `n${n++}`); c.x = Math.round(left + i * CXU); c.y = -CY; nodes.push(c); at.set(q.from, c); });
   const edges               = [], aboveSet = new Set(above.map((q) => q.from));
   for (const [from, list] of kids) {
     const f = at.get(from); if (!f) continue;
@@ -1512,26 +1525,31 @@ const GROUP_PAD = 80, GROUP_COLS = 4;
 function pickCanvas(ix            , paths          , opts                                                        )               {
   const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK);
   const nodes               = [], cards               = [], at = new Map                    ();
-  const grid = (list          , cols        , x0        , y0        , key        )         => {      // lays one grid of cards; returns the y below it
-    let y = y0;
+  const related = cvRelatedSet(ix);
+  const grid = (list          , cols        , x0        , y0        , key        )                                    => {      // lays one grid of cards: related neighbours a related gap apart, others the unrelated gap (D-0096); returns the y below it and the right edge
+    let y = y0, right = x0, prev           = [], prevH = 0;
     for (let i = 0; i < list.length; i += cols) {
-      const row = list.slice(i, i + cols).map((p, j) => { const cn = noteCard(ix, p, `n${key + i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
-      row.forEach((cn, j) => { cn.x = x0 + j * (W + GX); cn.y = y; cards.push(cn); });
-      y += rowH + GY;
+      const names = list.slice(i, i + cols);
+      if (prev.length) y += prevH + (names.some((a) => prev.some((b) => related.has(`${a}|${b}`))) ? GY : GYU);
+      const row = names.map((p, j) => { const cn = noteCard(ix, p, `n${key + i + j}`); at.set(p, cn); return cn; }), rowH = Math.max(...row.map((c) => c.height));
+      let x = x0;
+      row.forEach((cn, j) => { if (j) x += W + (related.has(`${names[j - 1]}|${names[j]}`) ? GX : GXU); cn.x = x; cn.y = y; cards.push(cn); right = Math.max(right, x + W); });
+      prev = names; prevH = rowH;
     }
-    return y - GY;
+    return { bottom: y + prevH, right };
   };
   let groups = 0;
   if (opts.group === false) grid(use, Math.min(6, Math.max(1, Math.ceil(Math.sqrt(use.length)))), 0, 0, 0);
   else {
     const byType = new Map                  ();
     for (const p of use) { const t = ix.notes.get(p) .type || "(no type)"; (byType.get(t) ?? byType.set(t, []).get(t) ).push(p); }
-    let y = 0, key = 0;
+    let y = 0, key = 0, before           = [];
     for (const [t, list] of [...byType].sort((a, b) => a[0].localeCompare(b[0]))) {
       list.sort((a, b) => ix.notes.get(a) .subtype.localeCompare(ix.notes.get(b) .subtype) || ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
-      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), bottom = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
-      nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: cols * W + (cols - 1) * GX + 2 * GROUP_PAD, height: bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
-      y = bottom + GROUP_PAD + GY; key += list.length;
+      if (before.length) y += list.some((a) => before.some((b) => related.has(`${a}|${b}`))) ? GY : GYU;   // boxes of notes that are related sit a related gap apart
+      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
+      nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: g.right + GROUP_PAD, height: g.bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
+      y = g.bottom + GROUP_PAD; key += list.length; before = list;
     }
   }
   nodes.push(...cards);          // groups first, so the cards are drawn over them
@@ -1591,7 +1609,7 @@ function addToCanvas(doc           , ix            , anchor               , path
     if (!e.to || e.reverse || e.from === e.to || !(isFresh.has(e.from) || isFresh.has(e.to)) || !(isFresh.has(e.from) || onCanvas.has(e.from)) || !(isFresh.has(e.to) || onCanvas.has(e.to))) continue;
     (nb.get(e.from) ?? nb.set(e.from, new Set()).get(e.from) ).add(e.to); (nb.get(e.to) ?? nb.set(e.to, new Set()).get(e.to) ).add(e.from);
   }
-  const CX = W + GX, CY = H + GY, title = (p        )         => ix.notes.get(p) .title;
+  const CX = W + GX, CY = H + GY, FX = W + GXU, FY = H + GYU, title = (p        )         => ix.notes.get(p) .title, related = cvRelatedSet(ix);   // FX, FY: the step of the grid new cards go on, the unrelated gap apart (D-0096)
   const rel2 = new Map                           ();                                   // where `a` goes relative to `b`, from how they are joined
   const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
   for (const e of ix.edges) {
@@ -1605,27 +1623,31 @@ function addToCanvas(doc           , ix            , anchor               , path
     return ra !== undefined && rb !== undefined && ra !== rb ? (ra > rb ? "below" : "above") : "side";
   };
   const aboveCount = (p        )         => [...(nb.get(p) ?? [])].filter((q) => dirOf(p, q) === "below").length;   // how many notes must sit over this one
-  const tier = (sign        )                          => { const l                          = []; for (let dy = 1; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++) l.push([dx, sign * dy]); return l.sort((p, q) => Math.abs(p[1]) + 0.45 * Math.abs(p[0]) - Math.abs(q[1]) - 0.45 * Math.abs(q[0]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || p[0] - q[0]); };
+  const tier = (sign        )                          => { const l                          = []; for (let dy = 1; dy <= 24; dy++) for (let dx = -24; dx <= 24; dx++) l.push([dx, sign * dy]); return l.sort((p, q) => Math.abs(p[1]) + 0.45 * Math.abs(p[0]) - Math.abs(q[1]) - 0.45 * Math.abs(q[0]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || p[0] - q[0]); };
   const tiers = { below: tier(1), above: tier(-1) };
-  const free = (c            , x        , y        )          => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + c.width + 40 && y < n.y + n.height + 40 && n.y < y + c.height + 40);
-  const put = (p        , x        , y        )             => { const c = cardOf.get(p) ; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); out.nodes.push(c); at.set(p, c); return c; };
-  const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0 };
+  const pathOfId = new Map                       (solids.map((n) => [n.id, cardNotePath(n)]         ));
+  const free = (p        , c            , x        , y        )          => solids.every((n) => { const q = pathOfId.get(n.id); return cvClear(x, y, c.width, c.height, n, !!q && related.has(`${p}|${q}`)); });   // far enough from every card: a related gap from a note it relates to, the unrelated gap from any other
+  const put = (p        , x        , y        )             => { const c = cardOf.get(p) ; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); pathOfId.set(c.id, p); out.nodes.push(c); at.set(p, c); return c; };
+  const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GYU : 0 };
   const rings                                 = [];                                  // grid steps around a card, nearest first, right before left
-  for (let r = 1; r <= 30; r++) { const ring                          = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
+  for (let r = 1; r <= 40; r++) { const ring                          = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
   const placeNear = (p        , ref            , refPath        )       => {          // beside, under or over `refPath`'s card by how they are joined, and as close as it can be to every other placed note this one relates to
     const c = cardOf.get(p) , others = [...(nb.get(p) ?? [])].map((q) => [q, at.get(q)]         ).filter((o)                                     => !!o[1]), d = dirOf(p, refPath);
     if (others.length > 1) {
       let best                                                 = null;
-      for (const [, o] of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
-        const x = o.x + dx * CX, y = o.y + dy * CY; if (!free(c, x, y)) continue;
+      for (const [, o] of others) for (const ring of rings.slice(0, 5)) for (const [dx, dy] of ring) {
+        const x = o.x + dx * FX, y = o.y + dy * FY; if (!free(p, c, x, y)) continue;
         const score = others.reduce((sum, [q, n]) => { const w = dirOf(p, q), off = (w === "below" && y < n.y + n.height) || (w === "above" && y + c.height > n.y) ? 4 : 0; return sum + off + Math.abs(n.x - x) / CX + Math.abs(n.y - y) / CY; }, 0);
         if (!best || score < best.score - 1e-9) best = { x, y, score };
       }
       if (best) { put(p, best.x, best.y); return; }
     }
-    if (d !== "side") for (const [dx, dy] of tiers[d]) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
-    for (const ring of rings) for (const [dx, dy] of ring) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
-    put(p, ref.x + 31 * CX, ref.y);
+    if (d !== "side") for (const [dx, dy] of tiers[d]) {
+      if (Math.abs(dy) * FY < (d === "below" ? ref.height : c.height) + GY - 1e-6) continue;           // under or over means a whole related gap under or over, not beside and a little lower
+      if (free(p, c, ref.x + dx * FX, ref.y + dy * FY)) { put(p, ref.x + dx * FX, ref.y + dy * FY); return; }
+    }
+    for (const ring of rings) for (const [dx, dy] of ring) if (free(p, c, ref.x + dx * FX, ref.y + dy * FY)) { put(p, ref.x + dx * FX, ref.y + dy * FY); return; }
+    put(p, ref.x + 61 * FX, ref.y);
   };
   const spread = (queue          )       => {                                       // breadth first: each new note beside the one it relates to
     while (queue.length) {
@@ -1637,7 +1659,7 @@ function addToCanvas(doc           , ix            , anchor               , path
   around.sort((x, y) => (x === anchor ? -1 : 0) - (y === anchor ? -1 : 0));
   spread(around);
   let cursor = 0;                                                                   // free space below the existing cards for notes related to nothing placed
-  const seed = (p        )       => { const c = cardOf.get(p) ; for (;; cursor++) { const x = base.x + (cursor % 6) * CX, y = base.y + Math.floor(cursor / 6) * CY; if (free(c, x, y)) { put(p, x, y); cursor++; return; } } };
+  const seed = (p        )       => { const c = cardOf.get(p) ; for (;; cursor++) { const x = base.x + (cursor % 6) * FX, y = base.y + Math.floor(cursor / 6) * FY; if (free(p, c, x, y)) { put(p, x, y); cursor++; return; } } };
   const left = fresh.filter((p) => !at.has(p)).sort((x, y) => aboveCount(x) - aboveCount(y) || (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
   for (const p of left) { if (at.has(p)) continue; seed(p); spread([p]); }
   const lineIds           = [];
@@ -1659,25 +1681,25 @@ function addChildren(doc           , ix            , parent        , paths      
   const pc = find(cur, parent) , kids = [...new Set(paths)].filter((p) => p !== parent && ix.notes.has(p)).sort((a, b) => ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
   const there = new Set(kids.filter((p) => find(cur, p))), fresh = kids.filter((p) => !there.has(p));
   const taken = new Set(cur.nodes.map((n) => n.id)); let k = 0; const nid = (pre        )         => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
-  const CX = W + GX, CY = H + GY, solids = cur.nodes.filter((n) => n.type !== "group");
-  const free = (x        , y        , w        , h        )          => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + w + 40 && y < n.y + n.height + 40 && n.y < y + h + 40);
+  const CXU = W + GXU, CY = H + GY, solids = cur.nodes.filter((n) => n.type !== "group"), related = cvRelatedSet(ix), pathOfId = new Map(solids.map((n) => [n.id, cardNotePath(n)]         ));   // a row of parts is the unrelated gap apart (D-0096): parts of one assembly are not related to each other
+  const free = (p        , x        , y        , w        , h        )          => solids.every((n) => { const q = pathOfId.get(n.id); return cvClear(x, y, w, h, n, !!q && related.has(`${p}|${q}`)); });
   const y0 = pc.y + pc.height + GY, n = fresh.length;
   const cards = fresh.map((p) => noteCard(ix, p, nid("c")));
   /* the wanted slots are centred under the parent; a held slot moves to the nearest free one on the same row, and the row is pushed down only when the row cannot hold them */
   const cx0 = pc.x + pc.width / 2, slots           = []; let y = y0;
   for (let tries = 0; tries < 20; tries++, y += CY) {
     slots.length = 0; const used = new Set        (), order = cards.map((_, i) => i);
-    const want = (i        )         => cx0 + (i - (n - 1) / 2) * CX - cards[i] .width / 2;
+    const want = (i        )         => cx0 + (i - (n - 1) / 2) * CXU - cards[i] .width / 2;
     let ok = true;
     for (const i of order) {
       let best                = null;
-      for (let d = 0; d <= 80 && best === null; d++) for (const sgn of d === 0 ? [0] : [1, -1]) { const x = Math.round(want(i) + sgn * d * CX); if (!used.has(x) && free(x, y, cards[i] .width, cards[i] .height)) { best = x; break; } }
+      for (let d = 0; d <= 80 && best === null; d++) for (const sgn of d === 0 ? [0] : [1, -1]) { const x = Math.round(want(i) + sgn * d * CXU); if (!used.has(x) && free(fresh[i] , x, y, cards[i] .width, cards[i] .height)) { best = x; break; } }
       if (best === null) { ok = false; break; }
       used.add(best); slots[i] = best;
     }
     if (ok) break;
   }
-  cards.forEach((c, i) => { c.x = slots[i] ; c.y = Math.round(y); cur.nodes.push(c); solids.push(c); });
+  cards.forEach((c, i) => { c.x = slots[i] ; c.y = Math.round(y); cur.nodes.push(c); solids.push(c); pathOfId.set(c.id, fresh[i] ); });
   const lineIds           = [];
   if (opts.relations !== false) {
     const on = new Map(kids.map((p) => [p, find(cur, p) ]         ));
@@ -1848,7 +1870,7 @@ function autoLayout(doc           , ix            )                             
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const node = new Map                    ();
   for (const n of out.nodes) { if (n.type === "group") continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
-  const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX;
+  const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
   if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
   const title = (p        )         => ix.notes.get(p) .title, typeOf = (p        )         => ix.notes.get(p) .type;
   const TIER                                     = { "Use Case": 0, Requirement: 0, Behavior: 1, Verification: 1, Object: 2 };
@@ -1873,7 +1895,7 @@ function autoLayout(doc           , ix            )                             
   for (const members of comps) {
     const rows = new Map                  (); for (const p of members) (rows.get(row.get(p) ) ?? rows.set(row.get(p) , []).get(row.get(p) ) ).push(p);
     const keys = [...rows.keys()].sort((a, b) => a - b), px = new Map                ();
-    const sweep = (list          , want                     )       => { let prev = -Infinity; for (const p of list) { const x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + CX, want.get(p) ?? prev + CX); px.set(p, x); prev = x; } };
+    const sweep = (list          , want                     )       => { let prev = -Infinity, before = ""; for (const p of list) { const step = before && rset.has(`${before}|${p}`) ? CX : CU, x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + step, want.get(p) ?? prev + step); px.set(p, x); prev = x; before = p; } };   // neighbours in a row: a related gap if the notes are related, else the unrelated gap (D-0096)
     const bary = (p        , side                          )                     => { const xs = [...(side.get(p) ?? [])].filter((q) => px.has(q)).map((q) => px.get(q) ); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined; };
     for (const r of keys) {
       const list = rows.get(r) , want = new Map                ();
@@ -1893,10 +1915,10 @@ function autoLayout(doc           , ix            )                             
     const minX = Math.min(...members.map((p) => px.get(p) )), maxX = Math.max(...members.map((p) => px.get(p) ));
     let y = oy;
     for (const r of keys) { for (const p of rows.get(r) ) pos.set(p, { x: cursorX + px.get(p)  - minX, y }); y += Math.max(...rows.get(r) .map((p) => node.get(p) .height)) + GY; }
-    bottom = Math.max(bottom, y - GY); cursorX += maxX - minX + CX;
+    bottom = Math.max(bottom, y - GY); cursorX += maxX - minX + CU;
   }
   const alone = paths.filter((p) => !comp.has(p)).sort((a, b) => (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || typeOf(a).localeCompare(typeOf(b)) || title(a).localeCompare(title(b)) || a.localeCompare(b));
-  if (alone.length) { const y0 = comps.length ? bottom + GY : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CX, y: y0 + (i / 6) * (Math.max(...alone.map((q) => node.get(q) .height)) + GY) })); } }
+  if (alone.length) { const y0 = comps.length ? bottom + GYU : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CU, y: y0 + (i / 6) * (Math.max(...alone.map((q) => node.get(q) .height)) + GYU) })); } }
   let moved = 0;
   for (const [p, at] of pos) { const n = node.get(p) ; if (n.x !== Math.round(at.x) || n.y !== Math.round(at.y)) moved++; n.x = Math.round(at.x); n.y = Math.round(at.y); }
   const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
@@ -1930,7 +1952,7 @@ function toCanvas(ix            , start        , profile         , spec         
   for (const n of g.nodes) (cols.get(n.depth) ?? cols.set(n.depth, []).get(n.depth) ).push({ key: id.get(n.path) , path: n.path });
   const depthOf = new Map(g.nodes.map((n) => [n.path, n.depth]));
   for (const x of ghosts) (cols.get((depthOf.get(x.anchor) ?? 0) + 1) ?? cols.set((depthOf.get(x.anchor) ?? 0) + 1, []).get((depthOf.get(x.anchor) ?? 0) + 1) ).push({ key: x.key, text: x.text });
-  const nodes               = [], at = new Map                    ();
+  const nodes               = [], at = new Map                    (), related = cvRelatedSet(ix);
   const make = (it                                               )             => {
     const base = { id: it.key, x: 0, y: 0, width: W, height: H };
     const grp = it.path ? g.groups.get(it.path) : undefined;
@@ -1942,9 +1964,10 @@ function toCanvas(ix            , start        , profile         , spec         
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
   };
   for (const [d, list] of [...cols].sort((a, b) => a[0] - b[0])) {
-    const cards = list.map((it) => ({ it, cn: make(it) })), total = cards.reduce((s, c) => s + c.cn.height + GY, -GY);
+    const cards = list.map((it) => ({ it, cn: make(it) })), gapAfter = (i        )         => { const a = cards[i] .it.path, b = cards[i + 1]?.it.path; return a && b && related.has(`${a}|${b}`) ? GY : GYU; };   // cards one above the other: a related gap if the notes are related, else the unrelated gap (D-0096)
+    const total = cards.reduce((s, c, i) => s + c.cn.height + (i < cards.length - 1 ? gapAfter(i) : 0), 0);
     let y = -total / 2;
-    for (const { it, cn } of cards) { cn.x = d * (W + GX); cn.y = Math.round(y); y += cn.height + GY; nodes.push(cn); at.set(it.key, cn); }
+    cards.forEach(({ it, cn }, i) => { cn.x = d * (W + GX); cn.y = Math.round(y); y += cn.height + (i < cards.length - 1 ? gapAfter(i) : 0); nodes.push(cn); at.set(it.key, cn); });
   }
 
   const edges               = [];

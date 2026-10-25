@@ -458,15 +458,46 @@ test("a search for a word or phrase lists the notes with it in the name or descr
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i]!, b = boxes[j]!; assert.ok(a[2]! <= b[0]! || b[2]! <= a[0]! || a[3]! <= b[1]! || b[3]! <= a[1]!, "cards do not overlap"); }
 });
 
-test("cards on every canvas are spaced three card widths across and three card heights down (D-0079)", () => {
+test("spacing depends on the pair: cards of related notes are three card sizes apart, cards of unrelated notes one (D-0079, D-0096)", () => {
+  const rel = new Set<string>(); for (const e of ix.edges) if (e.to && !e.reverse && e.from !== e.to) { rel.add(`${e.from}|${e.to}`); rel.add(`${e.to}|${e.from}`); }
+  type Box = { x: number; y: number; width: number; height: number };
+  const clear = (a: Box, b: Box, related: boolean): boolean => { const gx = related ? 3 * 280 : 280, gy = related ? 3 * 90 : 90; return a.x + a.width + gx <= b.x || b.x + b.width + gx <= a.x || a.y + a.height + gy <= b.y || b.y + b.height + gy <= a.y; };
+  const check = (doc: { nodes: Array<Box & { type: string; text?: string; file?: string }> }, label: string): number => {
+    const cs = doc.nodes.filter((n) => n.type !== "group").map((n) => ({ n, p: cdNotePath(n as never) })).filter((c) => c.p); let related = 0;
+    for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) { const r = rel.has(`${cs[i]!.p}|${cs[j]!.p}`); if (r) related++; assert.ok(clear(cs[i]!.n, cs[j]!.n, r), `${label}: ${cs[i]!.p} and ${cs[j]!.p} are too close for ${r ? "related" : "unrelated"} notes`); }
+    return related;
+  };
+  const all = [...ix.notes.keys()];
+  assert.ok(check(pickCanvas(ix, all, { relations: false, label: "", group: false }).doc, "pick, ungrouped") > 0, "the sample has related notes among those picked");
+  check(pickCanvas(ix, all, { relations: false, label: "", group: true }).doc, "pick, grouped");
+  check(toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }).doc, "view from a note");
+  check(structureCanvas(ix, byTitle("Charger"), "full").doc, "structure");
+  const added = addToCanvas({ nodes: [], edges: [] }, ix, null, all.slice(0, 60)).doc; check(added, "add to canvas");
+  check(autoLayout(added, ix).doc, "auto-layout");
+  // the columns of a view from a note are still three widths apart
   const near = (xs: number[]): number[] => [...new Set(xs)].sort((a, b) => a - b);
-  const c = pickCanvas(ix, [...ix.notes.keys()], { relations: false, label: "", group: false }), cols = near(c.doc.nodes.map((n) => n.x));
-  assert.ok(cols.length >= 2); for (let i = 1; i < cols.length; i++) assert.equal(cols[i]! - cols[i - 1]!, 4 * 280, "a gap of 3 widths between columns");
-  const rows = near(c.doc.nodes.map((n) => n.y)); assert.ok(rows.length >= 1);
-  for (let i = 1; i < rows.length; i++) { const above = c.doc.nodes.filter((n) => n.y === rows[i - 1]!), top = Math.max(...above.map((n) => n.height)); assert.equal(rows[i]! - rows[i - 1]! - top, 3 * 90, "a gap of 3 heights between rows"); }
   const t = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }), tc = near(t.doc.nodes.map((n) => n.x));
-  for (let i = 1; i < tc.length; i++) assert.equal(tc[i]! - tc[i - 1]!, 4 * 280, "the layered canvas too");
-  for (const col of tc) { const ys = t.doc.nodes.filter((n) => n.x === col).sort((a, b) => a.y - b.y); for (let i = 1; i < ys.length; i++) assert.ok(ys[i]!.y - ys[i - 1]!.y - ys[i - 1]!.height >= 3 * 90 - 1, "3 heights between stacked cards"); }
+  for (let i = 1; i < tc.length; i++) assert.equal(tc[i]! - tc[i - 1]!, 4 * 280, "the layered canvas: a gap of 3 widths between columns");
+});
+
+test("a row of parts under an assembly is one card width apart; the row is three card heights below the assembly (D-0096)", () => {
+  const f = (id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500000${id.replace(/\D/g, "").padStart(4, "0")}gap-test\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
+  const v = buildIndex(new Map([f("OBJ-00001", "Charger", 'hasPart: ["[[Cable]]", "[[Plug]]", "[[Board]]"]\n'), f("OBJ-00002", "Cable"), f("OBJ-00003", "Plug"), f("OBJ-00004", "Board", 'hasPart: ["[[Chip]]"]\n'), f("OBJ-00005", "Chip"), f("OBJ-00006", "Lone")]), { classes });
+  const gap = (a: { x: number; width: number }, b: { x: number; width: number }): number => b.x - (a.x + a.width);
+  const one = addToCanvas({ nodes: [], edges: [] }, v, null, ["Charger.md"]).doc, parent = one.nodes[0]!;
+  const row = addChildren(one, v, "Charger.md", ["Cable.md", "Plug.md", "Board.md"]).doc.nodes.filter((n) => n.id !== parent.id).sort((a, b) => a.x - b.x);
+  assert.deepEqual([gap(row[0]!, row[1]!), gap(row[1]!, row[2]!)], [280, 280], "parts of one assembly are not related to each other: one width apart");
+  assert.equal(row[0]!.y - (parent.y + parent.height), 270, "the row is three heights below the assembly");
+  // a structure canvas: the parts of an assembly are one width apart too, and the assembly is centred over them
+  const sc = structureCanvas(v, "Charger.md", "direct").doc.nodes, parts = sc.filter((n) => cdNotePath(n as never) !== "Charger.md").sort((a, b) => a.x - b.x);
+  assert.deepEqual([gap(parts[0]!, parts[1]!), gap(parts[1]!, parts[2]!)], [280, 280]);
+  // a note with no relationship goes one height under the cards already there, and one width from its neighbour
+  const withLone = addToCanvas(one, v, null, ["Lone.md"]).doc, lone = withLone.nodes.find((n) => cdNotePath(n as never) === "Lone.md")!;
+  assert.equal(lone.y - (parent.y + parent.height), 90, "an unrelated note is one height below");
+  // auto-layout: an assembly's parts are one width apart, notes with no relationship are one width apart in the grid beneath
+  const laid = autoLayout(addToCanvas({ nodes: [], edges: [] }, v, null, [...v.notes.keys()]).doc, v).doc, at = (t: string) => laid.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
+  assert.equal(gap(at("Cable"), at("Plug")), 280, "auto-layout: parts one width apart");
+  assert.equal(at("Cable").y - (at("Charger").y + at("Charger").height), 270, "auto-layout: parts three heights below the assembly");
 });
 
 test("picked notes are grouped by type: one labelled box each, the cards inside it, nothing overlapping (D-0080)", () => {

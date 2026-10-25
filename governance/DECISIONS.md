@@ -1113,3 +1113,15 @@ Rules: WKB-043 (Active).
 5. Limits: as D-0094 (placement by the row rules, not the old positions; the selection read from an undocumented canvas internal; not run in real Obsidian). The 200-card stop counts every card on the canvas, not only the branch.
 
 Rules: WKB-044 (Active).
+
+## D-0096 — Spacing between cards depends on whether their notes are related
+
+2026-10-25 · Spencer · Accepted (owner, chat: "When there is a relationship between them, keep the 3x height or width rule. When there is no relationship between them, keep 1x height or width. So, space between a note linked to another note should be 3x the space between two notes that do not have a relationship to each other")
+
+1. **Rule.** Two cards whose notes are joined by a resolved relationship, in either direction and of any kind, are three card widths across or three card heights down apart (840 or 270, as in D-0079). Two cards whose notes are not joined are one card width or height apart (280 or 90). It changes the gap D-0079 set for every pair; it replaces WKB-030.
+2. **What follows.** The parts of one assembly are not related to each other, so a row of parts is one width apart, while the row is three heights below the assembly. Cousins in a tree, and a note with no relationship to any card already on the canvas, are one width or height from their neighbours. A card is never closer than its pair's gap to any card on the canvas, so a related pair is never closer than three, and an unrelated pair never closer than one.
+3. **Where it applies.** Every canvas the Workbench writes or changes: a view from a note (the columns stay three widths apart; cards stacked in a column are one height apart unless related), Pick notes (grid and group boxes), the Structure canvases, Add to canvas, Add children, and Auto-layout.
+4. **Placement.** New cards are placed on a grid of one-width and one-height steps. A card that goes under or over a note it relates to is still a whole related gap under or over it, never beside it and a little lower.
+5. **Limits.** Only notes count. Cards that are not notes (free text, groups, "not in vault") are kept one width or height from everything. A canvas already saved keeps its layout until Auto-layout is run on it. "Related" counts only relationships in the vault, not lines the person drew on the canvas. The constants are `SPACING` (3) and `SPACING_UNRELATED` (1) in `canvas.ts`; there is still no setting in the panel.
+
+Rules: WKB-030 (changed).

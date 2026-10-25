@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Workbench canvas spacing: cards of related notes stay three card widths or heights apart; cards of unrelated notes are one apart (a row of parts is tight, the row sits three heights under its assembly). Applies to every canvas view, Pick notes, Add to canvas, Add children and Auto-layout. WKB-030, D-0096
 - Workbench canvas: Collapse layer, Expand layer, Collapse all and Expand all for the chosen cards (panel buttons and commands). Expand all stops at 200 cards on the canvas. WKB-044, D-0095
 - Workbench canvas: collapse and expand note cards. A collapsed card hides its parts (and their parts) and shows "▸ +N hidden"; expand puts the direct parts back one layer at a time. Panel button and command "Collapse or expand the selected canvas cards". WKB-043, D-0094
 - Workbench merge: choose the owner of each area. Merge shows seven areas (part facts, structure, properties, interfaces and connections, behavior, requirements, other relationships) with the recommended owner preselected; the other note's members go under "Not carried over". The choice is saved as `bomOwns` so later BOM updates change only what the BOM still owns. BOM-035 (changed), BOM-036, WKB-027, D-0053; OD-14 closed.
