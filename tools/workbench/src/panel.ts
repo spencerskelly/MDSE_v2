@@ -23,6 +23,8 @@ export interface PanelHost {
   /** D-0088: a new canvas of the selected assembly's structure. */
   openStructureCanvas?(path: string, mode: "direct" | "full"): Promise<string>;
   /** D-0088: a new canvas (replacing the preview) of a note and the notes a view shows. */
+  /** D-0089: apply the layout rules to the canvas that is open in the main window. */
+  autoLayout?(): Promise<string>;
   newCanvasFrom?(anchor: string, paths: string[]): Promise<string>;
   openPickCanvas?(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
@@ -111,6 +113,14 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return t.title ? wrapSec() : box;
   }
 
+  /* D-0089: apply the layout rules to the open canvas. Adding notes never moves anything; this does, when asked. */
+  const layoutButton = (cls = "sm"): HTMLElement | null => { if (!host.autoLayout) return null; const b = h("button", { class: cls, title: "Rearrange the note cards on the canvas that is open in the main window by the layout rules: assemblies over parts, general over specialized, use cases left of requirements, functions and tests below requirements, objects below functions" }, "Auto-layout canvas"); b.addEventListener("click", () => busy(b, "Laying out…", () => host.autoLayout!())); return b; };
+  function layoutView(): HTMLElement {
+    const btn = layoutButton("sm pri");
+    return h("div", {}, h("p", {}, "Adding notes to a canvas never moves a card that is already there. Auto-layout is the one action that does: it rearranges the note cards of the canvas open in the main window by these rules."),
+      h("ul", {}, h("li", {}, "An assembly is above its parts, centred over them; a general element is above the specialized one."), h("li", {}, "A use case is to the left of the requirement it relates to, in the same row."), h("li", {}, "A function and a test case are below the requirement they relate to; an object is below the function."), h("li", {}, "Where rules disagree, ownership and specialization win."), h("li", {}, "Notes with no relationship to another note on the canvas go to a grid below. Cards that are not notes (text, groups, images) stay where they are.")),
+      btn ? h("div", { class: "row" }, btn) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
+  }
   /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
   const ADDABLE = new Set<V.Lens>(["structure", "functional", "states", "requirements", "design", "internal"]);
   function addBar(ts: V.TableData[]): HTMLElement | null {
@@ -130,7 +140,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom!(anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -312,6 +322,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "review") body.append(reviewView());
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
+      else if (lens === "layout") body.append(layoutView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }

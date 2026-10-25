@@ -16,6 +16,8 @@ declare const WB: {
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   cardNotePath: (node: any) => string | null;
+  structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
+  autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
@@ -54,6 +56,7 @@ const ensureFolder = async (app: any, dir: string): Promise<void> => {
   let at = "";
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
 };
+const parseDoc = (text: string): any => { try { const d = JSON.parse(text); return { nodes: d.nodes ?? [], edges: d.edges ?? [], ...d }; } catch { return { nodes: [], edges: [] }; } };
 const removePreview = async (app: any): Promise<void> => { const f = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH); if (f) await app.vault.delete(f); };
 
 /** Writes the preview (one scratch file, overwritten each time) and shows it in the main window. Nothing is kept until the person saves. */
@@ -152,6 +155,7 @@ function hostFor(plugin: any): any {
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
+    autoLayout: () => plugin.autoLayoutCanvas(),
     newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
@@ -334,6 +338,33 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
+  /** D-0089: the canvas the person has open in the main window: the last canvas that was in front, else the preview. */
+  canvasTarget(): { path: string; leaf: any } | null {
+    const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
+    const leaf = this.canvasLeaf, v = leaf?.view, path: string | undefined = v?.file?.path;
+    if (path && v.getViewType?.() === "canvas" && (!v.containerEl || v.containerEl.isConnected) && this.app.vault.getAbstractFileByPath(path)) return { path, leaf };
+    const open = this.app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === WB.PREVIEW_PATH);
+    return open && this.preview ? { path: WB.PREVIEW_PATH, leaf: open } : null;
+  }
+  /** Changes a canvas file; an open canvas is saved first so a card the person just moved is not lost. */
+  async editTarget(t: { path: string; leaf: any }, fn: (text: string) => string | null): Promise<void> {
+    try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
+    const f = this.app.vault.getAbstractFileByPath(t.path);
+    if (f) await this.app.vault.process(f, (x: string) => fn(x) ?? x);
+  }
+  /** D-0089: apply the layout rules to the cards of the open canvas. */
+  async autoLayoutCanvas(): Promise<string> {
+    await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Open a canvas in the main window first.";
+    let res: { moved: number; kept: number } | null = null;
+    await this.editTarget(t, (text) => { const r = WB.autoLayout(parseDoc(text), this.ix); res = r; return r.moved ? JSON.stringify(r.doc, null, 2) : null; });
+    const r = res as { moved: number; kept: number } | null;
+    if (!r) return "Could not read that canvas.";
+    this.app.workspace.revealLeaf(t.leaf);
+    return r.moved ? `Laid out ${r.moved} card${r.moved === 1 ? "" : "s"} on ${t.path}${r.kept ? `; ${r.kept} other card${r.kept === 1 ? "" : "s"} (not notes) left where ${r.kept === 1 ? "it was" : "they were"}` : ""}.` : "Nothing moved: the cards already follow the layout rules.";
+  }
+
   /** D-0088: a new canvas preview of one assembly: the note, its parent assemblies above, its direct parts or every layer of parts below. */
   async openStructureCanvas(path: string, mode: "direct" | "full"): Promise<string> {
     await this.ensureIndex();
@@ -344,13 +375,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
   async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string> {
     await this.ensureIndex();
-    if (!replace && this.preview && this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return this.addToCanvasPreview(null, paths, relations);
+    if (!replace && this.canvasTarget()) return this.addToCanvasPreview(null, paths, relations);
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
   async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false): Promise<string> {
     await this.ensureIndex();
+    const target = replace ? null : this.canvasTarget();
+    if (target && target.path !== WB.PREVIEW_PATH) {                                // D-0089: the canvas that is open in the main window, whichever file it is
+      let res: { added: number; present: number } | null = null;
+      await this.editTarget(target, (text) => { const r = WB.addToCanvas(parseDoc(text), this.ix, anchor, paths, { relations }); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
+      const r = res as { added: number; present: number } | null;
+      if (!r) return "Could not read that canvas.";
+      this.app.workspace.revealLeaf(target.leaf);
+      return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Nothing else on it moved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
+    }
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
     if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
       const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });

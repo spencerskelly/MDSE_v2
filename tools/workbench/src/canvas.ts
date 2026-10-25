@@ -240,6 +240,67 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
   return { doc: out, added: fresh.length, present, lineIds };
 }
 
+/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
+export function autoLayout(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; moved: number; kept: number } {
+  const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const node = new Map<string, CanvasNode>();
+  for (const n of out.nodes) { if (n.type === "group") continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
+  const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX;
+  if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
+  const title = (p: string): string => ix.notes.get(p)!.title, typeOf = (p: string): string => ix.notes.get(p)!.type;
+  const TIER: Record<string, number | undefined> = { "Use Case": 0, Requirement: 0, Behavior: 1, Verification: 1, Object: 2 };
+  const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
+  const rel = new Map<string, Set<string>>(), down = new Map<string, Set<string>>(), up = new Map<string, Set<string>>();
+  const link = (m: Map<string, Set<string>>, a: string, b: string): void => { (m.get(a) ?? m.set(a, new Set()).get(a)!).add(b); };
+  const reaches = (a: string, b: string): boolean => { const seen = new Set<string>(), st = [a]; while (st.length) { const x = st.pop()!; if (x === b) return true; if (seen.has(x)) continue; seen.add(x); for (const y of down.get(x) ?? []) st.push(y); } return false; };
+  const above = (a: string, b: string): void => { if (a === b || down.get(a)?.has(b) || reaches(b, a)) return; link(down, a, b); link(up, b, a); };
+  const edges = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to && inSet.has(e.from) && inSet.has(e.to));
+  for (const e of edges) { link(rel, e.from, e.to!); link(rel, e.to!, e.from); }
+  for (const e of edges) { if (OWNS.has(e.kind)) above(e.from, e.to!); else if (e.kind === "specializes") above(e.to!, e.from); }
+  for (const e of edges) { if (OWNS.has(e.kind) || e.kind === "specializes") continue; const ta = TIER[typeOf(e.from)], tb = TIER[typeOf(e.to!)]; if (ta !== undefined && tb !== undefined && ta !== tb) ta < tb ? above(e.from, e.to!) : above(e.to!, e.from); }
+  const row = new Map<string, number>(), rowOf = (p: string): number => { const k = row.get(p); if (k !== undefined) return k; const r = Math.max(-1, ...[...(up.get(p) ?? [])].map(rowOf)) + 1; row.set(p, r); return r; };
+  for (const p of paths) rowOf(p);
+  /* connected groups of notes; a note with no relationship to any other on the canvas goes to the grid */
+  const comp = new Map<string, number>(); let nc = 0;
+  for (const p of paths) { if (comp.has(p) || !rel.get(p)?.size) continue; const st = [p]; comp.set(p, nc); while (st.length) for (const q of rel.get(st.pop()!) ?? []) if (!comp.has(q)) { comp.set(q, nc); st.push(q); } nc++; }
+  const pos = new Map<string, { x: number; y: number }>();
+  const box = paths.map((p) => node.get(p)!), ox = Math.min(...box.map((n) => n.x)), oy = Math.min(...box.map((n) => n.y));
+  let cursorX = ox, bottom = oy;
+  const comps = [...Array(nc).keys()].map((c) => paths.filter((p) => comp.get(p) === c)).sort((a, b) => b.length - a.length || title(a[0]!).localeCompare(title(b[0]!)));
+  for (const members of comps) {
+    const rows = new Map<number, string[]>(); for (const p of members) (rows.get(row.get(p)!) ?? rows.set(row.get(p)!, []).get(row.get(p)!)!).push(p);
+    const keys = [...rows.keys()].sort((a, b) => a - b), px = new Map<string, number>();
+    const sweep = (list: string[], want: Map<string, number>): void => { let prev = -Infinity; for (const p of list) { const x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + CX, want.get(p) ?? prev + CX); px.set(p, x); prev = x; } };
+    const bary = (p: string, side: Map<string, Set<string>>): number | undefined => { const xs = [...(side.get(p) ?? [])].filter((q) => px.has(q)).map((q) => px.get(q)!); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined; };
+    for (const r of keys) {
+      const list = rows.get(r)!, want = new Map<string, number>();
+      for (const p of list) { const b = bary(p, up); if (b !== undefined) want.set(p, b); }
+      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)! - want.get(b)! : Number(want.has(b)) - Number(want.has(a))) || (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || (typeOf(a) === "Use Case" ? 0 : 1) - (typeOf(b) === "Use Case" ? 0 : 1) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+      for (const uc of list.filter((p) => typeOf(p) === "Use Case")) {        // a use case sits to the left of the requirements it relates to
+        const reqs = list.filter((q) => typeOf(q) === "Requirement" && rel.get(uc)?.has(q)), first = reqs.length ? Math.min(...reqs.map((q) => list.indexOf(q))) : -1;
+        if (first >= 0 && list.indexOf(uc) > first) { list.splice(list.indexOf(uc), 1); list.splice(first, 0, uc); }
+      }
+      sweep(list, want);
+    }
+    for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
+      const list = rows.get(r)!, want = new Map<string, number>();
+      for (const p of list) { const b = bary(p, down); if (b !== undefined) want.set(p, b); }
+      sweep(list, new Map([...list].map((p) => [p, want.get(p) ?? px.get(p)!] as const)));
+    }
+    const minX = Math.min(...members.map((p) => px.get(p)!)), maxX = Math.max(...members.map((p) => px.get(p)!));
+    let y = oy;
+    for (const r of keys) { for (const p of rows.get(r)!) pos.set(p, { x: cursorX + px.get(p)! - minX, y }); y += Math.max(...rows.get(r)!.map((p) => node.get(p)!.height)) + GY; }
+    bottom = Math.max(bottom, y - GY); cursorX += maxX - minX + CX;
+  }
+  const alone = paths.filter((p) => !comp.has(p)).sort((a, b) => (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || typeOf(a).localeCompare(typeOf(b)) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+  if (alone.length) { const y0 = comps.length ? bottom + GY : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CX, y: y0 + (i / 6) * (Math.max(...alone.map((q) => node.get(q)!.height)) + GY) })); } }
+  let moved = 0;
+  for (const [p, at] of pos) { const n = node.get(p)!; if (n.x !== Math.round(at.x) || n.y !== Math.round(at.y)) moved++; n.x = Math.round(at.x); n.y = Math.round(at.y); }
+  const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
+  for (const e of out.edges) { const a = byId.get(e.fromNode), b = byId.get(e.toNode); if (a && b && done.has(a.id) && done.has(b.id)) Object.assign(e, sideOf(a, b)); }
+  return { doc: out, moved, kept: out.nodes.length - node.size };
+}
+
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?: Partial<ViewSpec>): CanvasResult {
   const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;

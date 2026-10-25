@@ -1301,17 +1301,17 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                                               
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["merge", "Merge notes"], ["edit", "Edit"]];
+                                                                                                                                                                                          
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
-  { id: "canvas", label: "Canvas", lenses: ["pick", "common"] },
+  { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", merge: "Everything", edit: "Everything" };
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", merge: "Everything", edit: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
-const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "merge";
+const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
                                                                                                                                                    
                                         
@@ -1631,6 +1631,67 @@ function addToCanvas(doc           , ix            , anchor               , path
     out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
   }
   return { doc: out, added: fresh.length, present, lineIds };
+}
+
+/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
+function autoLayout(doc           , ix            )                                                  {
+  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const node = new Map                    ();
+  for (const n of out.nodes) { if (n.type === "group") continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
+  const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX;
+  if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
+  const title = (p        )         => ix.notes.get(p) .title, typeOf = (p        )         => ix.notes.get(p) .type;
+  const TIER                                     = { "Use Case": 0, Requirement: 0, Behavior: 1, Verification: 1, Object: 2 };
+  const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
+  const rel = new Map                     (), down = new Map                     (), up = new Map                     ();
+  const link = (m                          , a        , b        )       => { (m.get(a) ?? m.set(a, new Set()).get(a) ).add(b); };
+  const reaches = (a        , b        )          => { const seen = new Set        (), st = [a]; while (st.length) { const x = st.pop() ; if (x === b) return true; if (seen.has(x)) continue; seen.add(x); for (const y of down.get(x) ?? []) st.push(y); } return false; };
+  const above = (a        , b        )       => { if (a === b || down.get(a)?.has(b) || reaches(b, a)) return; link(down, a, b); link(up, b, a); };
+  const edges = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to && inSet.has(e.from) && inSet.has(e.to));
+  for (const e of edges) { link(rel, e.from, e.to ); link(rel, e.to , e.from); }
+  for (const e of edges) { if (OWNS.has(e.kind)) above(e.from, e.to ); else if (e.kind === "specializes") above(e.to , e.from); }
+  for (const e of edges) { if (OWNS.has(e.kind) || e.kind === "specializes") continue; const ta = TIER[typeOf(e.from)], tb = TIER[typeOf(e.to )]; if (ta !== undefined && tb !== undefined && ta !== tb) ta < tb ? above(e.from, e.to ) : above(e.to , e.from); }
+  const row = new Map                (), rowOf = (p        )         => { const k = row.get(p); if (k !== undefined) return k; const r = Math.max(-1, ...[...(up.get(p) ?? [])].map(rowOf)) + 1; row.set(p, r); return r; };
+  for (const p of paths) rowOf(p);
+  /* connected groups of notes; a note with no relationship to any other on the canvas goes to the grid */
+  const comp = new Map                (); let nc = 0;
+  for (const p of paths) { if (comp.has(p) || !rel.get(p)?.size) continue; const st = [p]; comp.set(p, nc); while (st.length) for (const q of rel.get(st.pop() ) ?? []) if (!comp.has(q)) { comp.set(q, nc); st.push(q); } nc++; }
+  const pos = new Map                                  ();
+  const box = paths.map((p) => node.get(p) ), ox = Math.min(...box.map((n) => n.x)), oy = Math.min(...box.map((n) => n.y));
+  let cursorX = ox, bottom = oy;
+  const comps = [...Array(nc).keys()].map((c) => paths.filter((p) => comp.get(p) === c)).sort((a, b) => b.length - a.length || title(a[0] ).localeCompare(title(b[0] )));
+  for (const members of comps) {
+    const rows = new Map                  (); for (const p of members) (rows.get(row.get(p) ) ?? rows.set(row.get(p) , []).get(row.get(p) ) ).push(p);
+    const keys = [...rows.keys()].sort((a, b) => a - b), px = new Map                ();
+    const sweep = (list          , want                     )       => { let prev = -Infinity; for (const p of list) { const x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + CX, want.get(p) ?? prev + CX); px.set(p, x); prev = x; } };
+    const bary = (p        , side                          )                     => { const xs = [...(side.get(p) ?? [])].filter((q) => px.has(q)).map((q) => px.get(q) ); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined; };
+    for (const r of keys) {
+      const list = rows.get(r) , want = new Map                ();
+      for (const p of list) { const b = bary(p, up); if (b !== undefined) want.set(p, b); }
+      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)  - want.get(b)  : Number(want.has(b)) - Number(want.has(a))) || (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || (typeOf(a) === "Use Case" ? 0 : 1) - (typeOf(b) === "Use Case" ? 0 : 1) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+      for (const uc of list.filter((p) => typeOf(p) === "Use Case")) {        // a use case sits to the left of the requirements it relates to
+        const reqs = list.filter((q) => typeOf(q) === "Requirement" && rel.get(uc)?.has(q)), first = reqs.length ? Math.min(...reqs.map((q) => list.indexOf(q))) : -1;
+        if (first >= 0 && list.indexOf(uc) > first) { list.splice(list.indexOf(uc), 1); list.splice(first, 0, uc); }
+      }
+      sweep(list, want);
+    }
+    for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
+      const list = rows.get(r) , want = new Map                ();
+      for (const p of list) { const b = bary(p, down); if (b !== undefined) want.set(p, b); }
+      sweep(list, new Map([...list].map((p) => [p, want.get(p) ?? px.get(p) ]         )));
+    }
+    const minX = Math.min(...members.map((p) => px.get(p) )), maxX = Math.max(...members.map((p) => px.get(p) ));
+    let y = oy;
+    for (const r of keys) { for (const p of rows.get(r) ) pos.set(p, { x: cursorX + px.get(p)  - minX, y }); y += Math.max(...rows.get(r) .map((p) => node.get(p) .height)) + GY; }
+    bottom = Math.max(bottom, y - GY); cursorX += maxX - minX + CX;
+  }
+  const alone = paths.filter((p) => !comp.has(p)).sort((a, b) => (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || typeOf(a).localeCompare(typeOf(b)) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+  if (alone.length) { const y0 = comps.length ? bottom + GY : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CX, y: y0 + (i / 6) * (Math.max(...alone.map((q) => node.get(q) .height)) + GY) })); } }
+  let moved = 0;
+  for (const [p, at] of pos) { const n = node.get(p) ; if (n.x !== Math.round(at.x) || n.y !== Math.round(at.y)) moved++; n.x = Math.round(at.x); n.y = Math.round(at.y); }
+  const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
+  for (const e of out.edges) { const a = byId.get(e.fromNode), b = byId.get(e.toNode); if (a && b && done.has(a.id) && done.has(b.id)) Object.assign(e, sideOf(a, b)); }
+  return { doc: out, moved, kept: out.nodes.length - node.size };
 }
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
@@ -4090,6 +4151,8 @@ function editView(c         )              {
                                                                    
                                                                                
                                                                                            
+                                                                                      
+                                 
                                                                    
                                                                                                                          
                                  
@@ -4178,6 +4241,14 @@ function mountPanel(root             , host           , opt                     
     return t.title ? wrapSec() : box;
   }
 
+  /* D-0089: apply the layout rules to the open canvas. Adding notes never moves anything; this does, when asked. */
+  const layoutButton = (cls = "sm")                     => { if (!host.autoLayout) return null; const b = h("button", { class: cls, title: "Rearrange the note cards on the canvas that is open in the main window by the layout rules: assemblies over parts, general over specialized, use cases left of requirements, functions and tests below requirements, objects below functions" }, "Auto-layout canvas"); b.addEventListener("click", () => busy(b, "Laying out…", () => host.autoLayout ())); return b; };
+  function layoutView()              {
+    const btn = layoutButton("sm pri");
+    return h("div", {}, h("p", {}, "Adding notes to a canvas never moves a card that is already there. Auto-layout is the one action that does: it rearranges the note cards of the canvas open in the main window by these rules."),
+      h("ul", {}, h("li", {}, "An assembly is above its parts, centred over them; a general element is above the specialized one."), h("li", {}, "A use case is to the left of the requirement it relates to, in the same row."), h("li", {}, "A function and a test case are below the requirement they relate to; an object is below the function."), h("li", {}, "Where rules disagree, ownership and specialization win."), h("li", {}, "Notes with no relationship to another note on the canvas go to a grid below. Cards that are not notes (text, groups, images) stay where they are.")),
+      btn ? h("div", { class: "row" }, btn) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
+  }
   /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
   const ADDABLE = new Set        (["structure", "functional", "states", "requirements", "design", "internal"]);
   function addBar(ts               )                     {
@@ -4197,7 +4268,7 @@ function mountPanel(root             , host           , opt                     
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom (anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -4379,6 +4450,7 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "review") body.append(reviewView());
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
+      else if (lens === "layout") body.append(layoutView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
@@ -4407,7 +4479,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, autoLayout, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -4427,6 +4499,8 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                           
                                                                                                                                                                            
                                              
+                                                                           
+                                                                               
                                                                                                           
                                                                
                                                                        
@@ -4465,6 +4539,7 @@ const ensureFolder = async (app     , dir        )                => {
   let at = "";
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
 };
+const parseDoc = (text        )      => { try { const d = JSON.parse(text); return { nodes: d.nodes ?? [], edges: d.edges ?? [], ...d }; } catch { return { nodes: [], edges: [] }; } };
 const removePreview = async (app     )                => { const f = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH); if (f) await app.vault.delete(f); };
 
 /** Writes the preview (one scratch file, overwritten each time) and shows it in the main window. Nothing is kept until the person saves. */
@@ -4563,6 +4638,7 @@ function hostFor(plugin     )      {
     addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path        , mode                   ) => plugin.openStructureCanvas(path, mode),
+    autoLayout: () => plugin.autoLayoutCanvas(),
     newCanvasFrom: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
@@ -4745,6 +4821,33 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
+  /** D-0089: the canvas the person has open in the main window: the last canvas that was in front, else the preview. */
+  canvasTarget()                                     {
+    const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
+    const leaf = this.canvasLeaf, v = leaf?.view, path                     = v?.file?.path;
+    if (path && v.getViewType?.() === "canvas" && (!v.containerEl || v.containerEl.isConnected) && this.app.vault.getAbstractFileByPath(path)) return { path, leaf };
+    const open = this.app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === WB.PREVIEW_PATH);
+    return open && this.preview ? { path: WB.PREVIEW_PATH, leaf: open } : null;
+  }
+  /** Changes a canvas file; an open canvas is saved first so a card the person just moved is not lost. */
+  async editTarget(t                             , fn                                 )                {
+    try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
+    const f = this.app.vault.getAbstractFileByPath(t.path);
+    if (f) await this.app.vault.process(f, (x        ) => fn(x) ?? x);
+  }
+  /** D-0089: apply the layout rules to the cards of the open canvas. */
+  async autoLayoutCanvas()                  {
+    await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Open a canvas in the main window first.";
+    let res                                         = null;
+    await this.editTarget(t, (text) => { const r = WB.autoLayout(parseDoc(text), this.ix); res = r; return r.moved ? JSON.stringify(r.doc, null, 2) : null; });
+    const r = res                                          ;
+    if (!r) return "Could not read that canvas.";
+    this.app.workspace.revealLeaf(t.leaf);
+    return r.moved ? `Laid out ${r.moved} card${r.moved === 1 ? "" : "s"} on ${t.path}${r.kept ? `; ${r.kept} other card${r.kept === 1 ? "" : "s"} (not notes) left where ${r.kept === 1 ? "it was" : "they were"}` : ""}.` : "Nothing moved: the cards already follow the layout rules.";
+  }
+
   /** D-0088: a new canvas preview of one assembly: the note, its parent assemblies above, its direct parts or every layer of parts below. */
   async openStructureCanvas(path        , mode                   )                  {
     await this.ensureIndex();
@@ -4755,13 +4858,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
   async openPickCanvas(paths          , label        , relations         , group         , replace         )                  {
     await this.ensureIndex();
-    if (!replace && this.preview && this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return this.addToCanvasPreview(null, paths, relations);
+    if (!replace && this.canvasTarget()) return this.addToCanvasPreview(null, paths, relations);
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
   async addToCanvasPreview(anchor               , paths          , relations = true, replace = false)                  {
     await this.ensureIndex();
+    const target = replace ? null : this.canvasTarget();
+    if (target && target.path !== WB.PREVIEW_PATH) {                                // D-0089: the canvas that is open in the main window, whichever file it is
+      let res                                            = null;
+      await this.editTarget(target, (text) => { const r = WB.addToCanvas(parseDoc(text), this.ix, anchor, paths, { relations }); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
+      const r = res                                             ;
+      if (!r) return "Could not read that canvas.";
+      this.app.workspace.revealLeaf(target.leaf);
+      return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Nothing else on it moved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
+    }
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
     if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
       const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });

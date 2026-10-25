@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -619,4 +619,28 @@ test("a structure canvas: the note, its parent assemblies above, parts below, li
   // the other canvases: a line to a card in a lower row leaves the bottom
   const g = addToCanvas({ nodes: [], edges: [] }, v, null, ["Charger.md", "Cable.md"]);
   assert.ok(g.doc.edges.every((e) => e.fromSide === "bottom" && e.toSide === "top"), "added notes: the parent's line leaves the bottom");
+});
+
+test("auto-layout puts a use case left of its requirement, tests and functions below it, assemblies over their parts, and leaves other cards alone (D-0089)", () => {
+  const f = (type: string, id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: ${type}\nid: ${id}\nuid: 202610250000${id.replace(/\D/g, "").padStart(5, "0")}auto-layout-\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
+  const v = buildIndex(new Map([
+    f("Use Case", "UC-00001", "Charge a truck"), f("Requirement", "REQ-00001", "Charge fast", 'refines: ["[[Charge a truck]]"]\n'),
+    f("Behavior", "BEH-00001", "Deliver power", 'satisfies: ["[[Charge fast]]"]\n'), f("Verification", "VER-00001", "Power test", 'verifies: ["[[Charge fast]]"]\n'),
+    f("Object", "OBJ-00001", "Charger", 'performs: ["[[Deliver power]]"]\nhasPart: ["[[Cable]]", "[[Plug]]"]\n'),
+    f("Object", "OBJ-00002", "Cable"), f("Object", "OBJ-00003", "Plug"), f("Object", "OBJ-00009", "Loose"),
+  ]), { classes });
+  const doc = addToCanvas({ nodes: [], edges: [] }, v, null, [...v.notes.keys()]).doc;
+  const scrambled = { nodes: [...doc.nodes.map((n, i) => ({ ...n, x: (i * 37) % 5 * 50, y: (i * 53) % 3 * 40 })), { id: "memo", type: "text" as const, x: 7, y: 9, width: 100, height: 50, text: "my own note" }], edges: doc.edges };
+  const r = autoLayout(scrambled, v), at = (t: string) => r.doc.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
+  assert.equal(at("Charge a truck").y, at("Charge fast").y); assert.ok(at("Charge a truck").x < at("Charge fast").x, "use case to the left");
+  assert.ok(at("Power test").y > at("Charge fast").y && at("Deliver power").y > at("Charge fast").y, "tests and functions below the requirement");
+  assert.ok(at("Charger").y > at("Deliver power").y, "object below function");
+  for (const p of ["Cable", "Plug"]) assert.ok(at(p).y > at("Charger").y);
+  assert.equal(at("Charger").x, (at("Cable").x + at("Plug").x) / 2, "assembly centred over its parts");
+  assert.ok(at("Loose").y > Math.max(...["Cable", "Charger"].map((p) => at(p).y)), "an unrelated note goes to the grid beneath");
+  assert.deepEqual(r.doc.nodes.find((n) => n.id === "memo"), scrambled.nodes.find((n) => n.id === "memo"), "a card that is not a note stays");
+  assert.ok(r.kept >= 1);
+  const idem = autoLayout(r.doc, v); assert.equal(idem.moved, 0, "laying out a laid-out canvas moves nothing");
+  const ca = r.doc.edges.find((e) => { const a = r.doc.nodes.find((n) => n.id === e.fromNode)!, b = r.doc.nodes.find((n) => n.id === e.toNode)!; return cdNotePath(a as never) === "Charger.md" && cdNotePath(b as never) === "Cable.md"; })!;
+  assert.deepEqual([ca.fromSide, ca.toSide], ["bottom", "top"]);
 });

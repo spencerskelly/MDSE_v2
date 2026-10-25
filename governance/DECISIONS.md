@@ -1032,3 +1032,15 @@ Rules: WKB-027, WKB-036 (Active).
 Not done: Internal structure has no ports-and-connections diagram; the standalone Workbench page has none of these buttons.
 
 Rules: WKB-037 (Active).
+
+## D-0089 — Add to the open canvas; a separate Auto-layout action
+
+2026-10-25 · Spencer · Accepted (owner, chat: "when selecting any add to canvas option, the notes should be added to the canvas open and selected in the main window. Any addition to a canvas should not perform a new canvas layout, only add the elements. A separate auto-layout button should be added to allow the user to apply the layout rules assigned, including the parent on top of child, use case to the left of a requirement, test below a requirement, etc.")
+
+1. Target: the canvas file of the last canvas leaf that was in front (the same leaf the selection polling follows), else the preview if it is open, else a new preview. Before, additions went only to the preview file. The canvas view is asked to save first, so a card just moved by hand is not overwritten; the file is then changed in place.
+2. An addition only places the new cards (D-0083, D-0085 placement near related notes); existing cards are never moved. The "Canvas of this view" and structure buttons (D-0088) remain explicit new canvases.
+3. Auto-layout (Canvas menu > Auto-layout, and a button beside the add buttons) moves the note cards of the open canvas by the rules in WKB-038. Cards that are not notes and groups stay. Use case left of requirement is new in this rule; D-0085's placement of a new requirement under a use case is unchanged for additions.
+4. Not verified in Obsidian: that an open canvas view reloads when its file is changed this way. If it does not, close and reopen the canvas.
+5. Not done: the added cards are not selected on the canvas; groups made by "Pick notes" are not resized by Auto-layout.
+
+Rules: WKB-038 (Active).

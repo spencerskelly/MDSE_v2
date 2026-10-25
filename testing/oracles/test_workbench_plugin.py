@@ -389,6 +389,22 @@ class WorkbenchPlugin(unittest.TestCase):
                 self.assertTrue(all(e["fromSide"] == "bottom" and e["toSide"] == "top" for e in doc["edges"]), label)
                 pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
                 pg.wait_for_selector("button:has-text('Canvas: direct parts')")
+            # the canvas open in the main window is the one added to, and nothing on it moves (D-0089)
+            pg.evaluate("""() => { window.__files['Mine.canvas'] = JSON.stringify({ nodes: [{ id: 'memo', type: 'text', x: 5, y: 7, width: 100, height: 50, text: 'mine' }], edges: [] });
+              window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''; window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', file: { path: 'Mine.canvas' }, canvas: { selection: new Set() }, save: async () => {} } }; }""")
+            pg.click("button:has-text('shown to canvas')")
+            pg.wait_for_function("() => JSON.parse(window.__files['Mine.canvas']).nodes.length > 1", timeout=4000)
+            mine = pg.evaluate("JSON.parse(window.__files['Mine.canvas'])")
+            self.assertEqual([n for n in mine["nodes"] if n["id"] == "memo"][0]["x"], 5)
+            self.assertEqual(pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas']"), "", "the preview was not touched")
+            # auto-layout is a separate action
+            pg.evaluate("""() => { const d = JSON.parse(window.__files['Mine.canvas']); const keep = d.nodes.filter((n) => n.id !== 'memo'), other = [...window.__plugin.ix.notes.keys()].find((k) => !keep.some((n) => n.text.includes(k.slice(0, -3))));
+              d.nodes.push({ id: 'pile', type: 'text', x: keep[0].x, y: keep[0].y, width: 280, height: 90, text: '**[[' + other.slice(0, -3) + '|x]]**' }); window.__files['Mine.canvas'] = JSON.stringify(d); }""")
+            scrambled = pg.evaluate("window.__files['Mine.canvas']")
+            pg.click("button:has-text('Auto-layout canvas')")
+            pg.wait_for_function("s => window.__files['Mine.canvas'] !== s", arg=scrambled, timeout=4000)
+            laid = pg.evaluate("JSON.parse(window.__files['Mine.canvas'])")
+            self.assertEqual([n for n in laid["nodes"] if n["id"] == "memo"][0]["y"], 7)
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
