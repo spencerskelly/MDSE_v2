@@ -291,28 +291,50 @@ const cvMark = (n: CanvasNode, count: number): void => { n.text = (n.text ?? "")
 const cvParts = (ix: ModelIndex, p: string): string[] => [...new Set(ix.edges.filter((e) => e.kind === "hasPart" && e.to && !e.reverse && e.from === p && e.to !== p && ix.notes.has(e.to)).map((e) => e.to!))];
 const cvFind = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
 
-/** Collapse a note card: the cards of its parts, and of their parts and so on, are removed from the canvas with their lines, and the card is marked "+N hidden". A part card stays when something outside the collapsing branch is joined to it (another assembly that is shown, a line the person drew), and so do the cards below it. Nothing in the vault changes. */
-export function collapseCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; hidden: number; kept: number } {
-  const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
-  const pc = cvFind(out, parent); if (!pc || pc.type !== "text") return { doc: out, hidden: 0, kept: 0 };
-  const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)] as const));
-  const branch = new Set<string>(), st = [parent];                                   // card ids of the parts below, found through hasPart
-  while (st.length) { const x = st.pop()!; for (const q of cvParts(ix, x)) { const c = cvFind(out, q); if (c && c.id !== pc.id && !branch.has(c.id)) { branch.add(c.id); st.push(q); } } }
-  for (let again = true; again;) {                                                   // a card joined to anything outside the branch stays, and its branch with it
+/** Removes cards from a canvas with their lines (D-0095). A card in `gone` stays, with everything that hangs only below it, when a line joins it to a card that is neither in `gone` nor in `owners` (the cards whose part lines may go with it): another shown assembly, a line the person drew. Returns how many cards were removed. */
+function cvPrune(out: CanvasDoc, gone: Set<string>, owners: Set<string>): number {
+  for (let again = true; again;) {
     again = false;
     for (const e of out.edges) {
-      const a = branch.has(e.fromNode), b = branch.has(e.toNode);
+      const a = gone.has(e.fromNode), b = gone.has(e.toNode);
       if (a === b) continue;
       const inner = a ? e.fromNode : e.toNode, outer = a ? e.toNode : e.fromNode;
-      if (outer === pc.id) continue;                                                 // lines to the parent go with the cards
-      if (branch.delete(inner)) again = true;
+      if (owners.has(outer)) continue;
+      if (gone.delete(inner)) again = true;
     }
   }
-  const before = out.nodes.length, ids = branch;
-  out.nodes = out.nodes.filter((n) => !ids.has(n.id)); out.edges = out.edges.filter((e) => !ids.has(e.fromNode) && !ids.has(e.toNode));
-  const hiddenCount = cvParts(ix, parent).filter((q) => !cvFind(out, q)).length;
-  cvMark(pc, hiddenCount);
-  return { doc: out, hidden: before - out.nodes.length, kept: cvParts(ix, parent).length - hiddenCount };
+  const before = out.nodes.length;
+  out.nodes = out.nodes.filter((n) => !gone.has(n.id)); out.edges = out.edges.filter((e) => !gone.has(e.fromNode) && !gone.has(e.toNode));
+  return before - out.nodes.length;
+}
+const cvMissing = (doc: CanvasDoc, ix: ModelIndex, p: string): number => cvParts(ix, p).filter((q) => !cvFind(doc, q)).length;
+/** The visible branch of a card (D-0095): the cards of its parts that are on the canvas, found through hasPart, by path with their depth below it (the card itself is 0). */
+function cvBranch(doc: CanvasDoc, ix: ModelIndex, root: string): Map<string, number> {
+  const depth = new Map<string, number>([[root, 0]]), q = [root];
+  while (q.length) { const p = q.shift()!, d = depth.get(p)!; for (const k of cvParts(ix, p)) if (!depth.has(k) && cvFind(doc, k)) { depth.set(k, d + 1); q.push(k); } }
+  return depth;
+}
+const cvClone = (doc: CanvasDoc): CanvasDoc => ({ nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) });
+
+/** Collapse a note card: the cards of its parts, and of their parts and so on, are removed from the canvas with their lines, and the card is marked "+N hidden". A part card stays when something outside the collapsing branch is joined to it (another assembly that is shown, a line the person drew), and so do the cards below it. Nothing in the vault changes. */
+export function collapseCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; hidden: number; kept: number } {
+  const out = cvClone(doc), pc = cvFind(out, parent); if (!pc || pc.type !== "text") return { doc: out, hidden: 0, kept: 0 };
+  const branch = new Set<string>(), st = [parent];                                   // card ids of the parts below, found through hasPart
+  while (st.length) { const x = st.pop()!; for (const q of cvParts(ix, x)) { const c = cvFind(out, q); if (c && c.id !== pc.id && !branch.has(c.id)) { branch.add(c.id); st.push(q); } } }
+  const hidden = cvPrune(out, branch, new Set([pc.id])), n = cvMissing(out, ix, parent);
+  cvMark(pc, n);
+  return { doc: out, hidden, kept: cvParts(ix, parent).length - n };
+}
+
+/** Collapse one layer (D-0095): the deepest layer of cards under the card is removed with its lines, and each card that lost parts is marked "+N hidden". The same keep rule as collapseCard applies. A card with nothing shown below it is left alone. */
+export function collapseLayer(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; hidden: number } {
+  const out = cvClone(doc), pc = cvFind(out, parent); if (!pc || pc.type !== "text") return { doc: out, hidden: 0 };
+  const depth = cvBranch(out, ix, parent), deepest = Math.max(...depth.values());
+  if (deepest < 1) return { doc: out, hidden: 0 };
+  const ids = (pick: (d: number) => boolean): Set<string> => new Set([...depth].filter(([, d]) => pick(d)).map(([p]) => cvFind(out, p)!.id));
+  const hidden = cvPrune(out, ids((d) => d === deepest), ids((d) => d < deepest));
+  for (const [p, d] of depth) if (d === deepest - 1) { const c = cvFind(out, p); const n = cvMissing(out, ix, p); if (c && c.type === "text" && n > 0) cvMark(c, n); }
+  return { doc: out, hidden };
 }
 
 /** Expand a collapsed card: its direct parts are added as one row under it (as addChildren does, D-0090) and the marker is removed. A part that has parts of its own comes back collapsed, so a tree is opened one layer at a time. Cards that were moved before the collapse are placed again by the row rules. */
@@ -331,6 +353,36 @@ export function toggleCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { do
   if (!c || !cvParts(ix, parent).length) return { doc, action: "none", changed: 0 };
   if (isCollapsed(c)) { const r = expandCard(doc, ix, parent); return { doc: r.doc, action: "expanded", changed: r.added }; }
   const r = collapseCard(doc, ix, parent); return { doc: r.doc, action: r.hidden ? "collapsed" : "none", changed: r.hidden };
+}
+
+/** Expand one layer (D-0095): every card in the card's visible branch that has parts not on the canvas (the card itself, and the cards of parts already shown) gets its direct parts, so each branch grows by one layer. */
+export function expandLayer(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; added: number } {
+  if (!cvFind(doc, parent)) return { doc, added: 0 };
+  let cur = doc, added = 0;
+  for (const p of [...cvBranch(doc, ix, parent).keys()].filter((q) => cvMissing(doc, ix, q) > 0)) { const r = expandCard(cur, ix, p); cur = r.doc; added += r.added; }
+  return { doc: cur, added };
+}
+
+/** Expand all layers (D-0095): expands layer after layer until every part below the card is on the canvas, or the canvas holds MAX_PICK cards (then `capped` is true). A part that is its own ancestor is added once. */
+export function expandAll(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; added: number; capped: boolean } {
+  let cur = doc, added = 0, capped = false;
+  for (;;) {
+    if (cur.nodes.length >= MAX_PICK) { capped = [...cvBranch(cur, ix, parent).keys()].some((q) => cvMissing(cur, ix, q) > 0); break; }
+    const r = expandLayer(cur, ix, parent); if (!r.added) break;
+    cur = r.doc; added += r.added;
+  }
+  return { doc: cur, added, capped };
+}
+
+export type CardAction = "toggle" | "collapseLayer" | "expandLayer" | "collapseAll" | "expandAll";
+/** One entry point for the panel and the commands (D-0094, D-0095). `changed` is the number of cards removed or added. */
+export function cardAction(doc: CanvasDoc, ix: ModelIndex, parent: string, kind: CardAction): { doc: CanvasDoc; action: "collapsed" | "expanded" | "none"; changed: number; capped: boolean } {
+  if (!cvFind(doc, parent) || !cvParts(ix, parent).length) return { doc, action: "none", changed: 0, capped: false };
+  if (kind === "toggle") { const r = toggleCard(doc, ix, parent); return { ...r, capped: false }; }
+  if (kind === "collapseLayer") { const r = collapseLayer(doc, ix, parent); return { doc: r.doc, action: r.hidden ? "collapsed" : "none", changed: r.hidden, capped: false }; }
+  if (kind === "collapseAll") { const r = collapseCard(doc, ix, parent); return { doc: r.doc, action: r.hidden ? "collapsed" : "none", changed: r.hidden, capped: false }; }
+  if (kind === "expandLayer") { const r = expandLayer(doc, ix, parent); return { doc: r.doc, action: r.added ? "expanded" : "none", changed: r.added, capped: false }; }
+  const r = expandAll(doc, ix, parent); return { doc: r.doc, action: r.added ? "expanded" : "none", changed: r.added, capped: r.capped };
 }
 
 /** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */

@@ -20,7 +20,7 @@ declare const WB: {
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   refreshCanvas: (doc: any, ix: any) => { doc: any; redrawn: number; missing: number; linesAdded: number; linesRemoved: number };
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
-  toggleCard: (doc: any, ix: any, parent: string) => { doc: any; action: "collapsed" | "expanded" | "none"; changed: number };
+  cardAction: (doc: any, ix: any, parent: string, kind: string) => { doc: any; action: "collapsed" | "expanded" | "none"; changed: number; capped: boolean };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
@@ -159,7 +159,7 @@ function hostFor(plugin: any): any {
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
-    toggleCards: () => plugin.toggleSelectedCards(),
+    cardAction: (kind: string) => plugin.cardActionOnSelected(kind),
     refreshCanvas: () => plugin.refreshCanvasView(),
     addChildren: (parent: string, paths: string[]) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
@@ -382,21 +382,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     return paths;
   }
-  /** D-0094: collapse each chosen card that is expanded and expand each that is collapsed. Collapse removes the cards of its parts and their lines; expand adds the direct parts back. Nothing in the vault changes. */
-  async toggleSelectedCards(): Promise<string> {
+  /** D-0094, D-0095: apply one collapse/expand action to each card chosen on the canvas in front. Kinds: toggle, collapseLayer, expandLayer, collapseAll, expandAll. Nothing in the vault changes. */
+  async cardActionOnSelected(kind: string): Promise<string> {
     await this.ensureIndex();
     const t = this.canvasTarget(); if (!t) return "Open a canvas in the main window first.";
     try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
     const paths = this.selectedCardPaths(); if (!paths.length) return "Select one or more note cards on the canvas first.";
-    const done = { collapsed: 0, expanded: 0, none: 0 };
+    const done = { collapsed: 0, expanded: 0, none: 0 }; let changed = 0, capped = false;
     await this.editTarget(t, (text) => {
       let doc = parseDoc(text);
-      for (const p of paths) { const r = WB.toggleCard(doc, this.ix, p); doc = r.doc; done[r.action]++; }
+      for (const p of paths) { const r = WB.cardAction(doc, this.ix, p, kind); doc = r.doc; done[r.action]++; changed += r.changed; capped = capped || r.capped; }
       return done.collapsed + done.expanded ? JSON.stringify(doc, null, 2) : null;
     });
     this.app.workspace.revealLeaf(t.leaf);
-    const bits = [done.collapsed && `collapsed ${done.collapsed}`, done.expanded && `expanded ${done.expanded}`].filter(Boolean).join(", ");
-    return bits ? `${bits[0]!.toUpperCase()}${bits.slice(1)} card${done.collapsed + done.expanded === 1 ? "" : "s"}.` : "Nothing to do: the selected cards have no parts.";
+    if (!done.collapsed && !done.expanded) return kind.startsWith("collapse") ? "Nothing to collapse: no parts are shown below the selected cards." : kind.startsWith("expand") ? "Nothing to expand: every part is already on the canvas, or the selected cards have no parts." : "Nothing to do: the selected cards have no parts.";
+    const verb = done.collapsed ? `Collapsed ${done.collapsed} card${done.collapsed === 1 ? "" : "s"}, ${changed} card${changed === 1 ? "" : "s"} removed` : `Expanded ${done.expanded} card${done.expanded === 1 ? "" : "s"}, ${changed} card${changed === 1 ? "" : "s"} added`;
+    return `${verb}.${capped ? " Stopped at the card limit; use Expand layer to continue." : ""}`;
   }
 
   /** D-0089: apply the layout rules to the cards of the open canvas. */
@@ -567,7 +568,11 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk: boolean) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
     this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk: boolean) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
-    this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.toggleSelectedCards().then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
+    this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.cardActionOnSelected("toggle").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
+    this.addCommand({ id: "collapse-layer", name: "Collapse one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
+    this.addCommand({ id: "expand-layer", name: "Expand one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("expandLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
+    this.addCommand({ id: "collapse-all", name: "Collapse all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
+    this.addCommand({ id: "expand-all", name: "Expand all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("expandAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk: boolean) => { if (!this.preview || !this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
     this.registerEvent(this.app.workspace.on("file-menu", (menu: any, f: any) => {
       if (f?.extension !== "md") return;

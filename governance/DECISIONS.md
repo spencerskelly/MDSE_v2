@@ -1101,3 +1101,15 @@ Rules: IMP-131 (Active).
 5. Limits: a collapsed card forgets where its parts were, so expanding places them by the D-0090 row rules, not where you had moved them. There is no menu entry on a card's own right-click, because Obsidian's canvas has no stable API for it. Not run in real Obsidian: the selection is read from an undocumented canvas internal, as in D-0082, and an open canvas may need closing and reopening to show the change.
 
 Rules: WKB-043 (Active).
+
+## D-0095 — Collapse and expand by one layer or by all layers
+
+2026-10-25 · Spencer · Accepted (owner, chat: "Expand/Collapse one layer with Expand/Collapse all layers would be great")
+
+1. Four actions on each chosen canvas card, in the panel and as commands: Collapse layer, Expand layer, Collapse all, Expand all. Collapse all is the D-0094 collapse. The one-click toggle of D-0094 stays as a command only.
+2. Collapse layer removes the deepest layer of cards shown under the card, with their lines, and marks each card that lost parts "▸ +N hidden". The D-0094 keep rule applies: a card that something outside the branch is joined to stays. Repeated, it peels the branch back one layer at a time to the card itself.
+3. Expand layer gives every card in the card's visible branch that has parts missing from the canvas its direct parts, so each branch grows by one layer. Expand all repeats that until every part below the card is shown, and stops once the canvas holds 200 cards (the Pick notes limit), saying so; Expand layer continues from there.
+4. Expand adds all of a card's direct parts, including any the person had deleted by hand from a card that was not marked collapsed.
+5. Limits: as D-0094 (placement by the row rules, not the old positions; the selection read from an undocumented canvas internal; not run in real Obsidian). The 200-card stop counts every card on the canvas, not only the branch.
+
+Rules: WKB-044 (Active).
