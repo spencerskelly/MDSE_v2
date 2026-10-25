@@ -1308,17 +1308,17 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                                     
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["edit", "Edit"]];
+                                                                                                                                                                               
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
-  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "edit"] },
+  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common"] },
 ];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", edit: "Everything" };
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", merge: "Everything", edit: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
-const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common";
+const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "merge";
 
                                                                                                                                                    
                                         
@@ -3600,7 +3600,11 @@ const EDIT_STYLE = `
 `;
 
                                                                    
-const SAVED                                                      = { mode: "manage", ref: null, stale: false };
+const SAVED                                                                         = { mode: "manage", ref: null, stale: false, mergeWith: "" };
+/** Open the Edit lens on its Merge tab (D-0086). */
+function setEditMode(mode      )       { SAVED.mode = mode; }
+/** The note to offer as the other half of a merge when the Merge tab opens, so two notes chosen elsewhere do not have to be searched for again. */
+function setMergeWith(path        )       { SAVED.mergeWith = path; }
 /** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
 function markEditStale()       { SAVED.stale = true; }
 /** Called by the panel when a rebuilt index arrives; redraws only after our own write, so a form being filled is not lost to an unrelated rebuild. */
@@ -3861,10 +3865,15 @@ function editView(c         )              {
     v.append(aliasBox, ownersBox);
     /* mark the open note */
     if (from && from.type === "Object") {
-      let other              = null;
+      let other              = SAVED.mergeWith ? ix.notes.get(SAVED.mergeWith) ?? null : null;
+      if (other && other.path !== from.path) {                                          // D-0086: the BOM part is the one that stays when only one of the two is a BOM part (as the suggested matches do)
+        const bom = (n      )          => String(n.meta.eaType ?? "") === "BOM";
+        if (bom(from) && !bom(other)) MERGE_SAVED.keep = "this"; else if (bom(other) && !bom(from)) MERGE_SAVED.keep = "other";
+      } else other = null;
+      SAVED.mergeWith = "";
       const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e       ) => { MERGE_SAVED.keep = (e.target                     ).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
       const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from .path);
-      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, "").el);
+      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, other?.path ?? "").el);
       v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
         h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
           if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
@@ -4144,6 +4153,9 @@ function mountPanel(root             , host           , opt                     
     return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
+  /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
+  function openMerge(other        )       { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
+
   /* ---- lenses ---- */
   function dashboardView()              {
     const d = V.dashboard(ix ), pct = (a        , b        )         => (b ? Math.round((100 * a) / b) + "%" : "n/a");
@@ -4156,7 +4168,7 @@ function mountPanel(root             , host           , opt                     
   function noteView()              {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
-    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note")));
+    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
     if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges                             , dir              )              => {
@@ -4246,7 +4258,8 @@ function mountPanel(root             , host           , opt                     
     const c = commonRelated(ix , given), kindsOf = (by                                          )         => by.map((b) => `${note(b.from) .title}: ${b.kinds.join(", ")}`).join(" · ");
     const addBtn = (label        , paths          , cls = "sm")              => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas (given[0] , paths))); return b; };
     const row = (r                                                                )              => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
-    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
+    const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p) .type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0] ; openMerge(given[1] ); } }, "Merge these two…") : null;
+    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), mergeBtn ? h("div", { class: "row" }, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
     if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
     return box;
@@ -4275,8 +4288,8 @@ function mountPanel(root             , host           , opt                     
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e       ) => { pinned = !(e.target                    ).checked; draw(); } }), " follow the selected note") : null);
     const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
-      const items = g.lenses.filter((k) => k !== "edit" || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k) [1]]         ), here = g.lenses.includes(lens);
-      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; lens = v; if (v !== "edit") editEl = null; draw(); } },
+      const items = g.lenses.filter((k) => (k !== "edit" && k !== "merge") || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k) [1]]         ), here = g.lenses.includes(lens);
+      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
     const acts = h("div", { class: "acts" });

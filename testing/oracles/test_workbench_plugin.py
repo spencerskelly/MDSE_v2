@@ -442,6 +442,43 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_merge_has_its_own_entry_points_and_takes_two_chosen_notes(self):
+        notes = {f"10_Model/{q.name}": q.read_text() for q in (ROOT / "testing/fixtures/charger-merge").glob("*.md")}
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 1000})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
+            pg.wait_for_selector("header >> text=CHG-1")
+            # from the note itself
+            pg.select_option("select[aria-label='Note menu']", label="Note")
+            pg.click("button:has-text('Merge with another note')")
+            pg.wait_for_selector("text=/as the same part as/")
+            # from the Note menu
+            pg.select_option("select[aria-label='Model menu']", label="Dashboard")
+            pg.select_option("select[aria-label='Note menu']", label="Merge notes")
+            pg.wait_for_selector("text=/as the same part as/")
+            # two notes chosen on the canvas: the other one is already picked, and the BOM part stays
+            pg.select_option("select[aria-label='Canvas menu']", label="Common related")
+            pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", ["10_Model/Charger.md", "10_Model/CHG-1.md"])
+            pg.click("button:has-text('Merge these two')")
+            pg.wait_for_selector("text=/as the same part as/")
+            self.assertEqual(pg.locator("select[aria-label='Which note stays']").input_value(), "other", "CHG-1 is the BOM part, so it stays")
+            pg.click("button:has-text('Preview alias')")
+            pg.wait_for_selector(".diff .add:has-text('aliasOf')")
+            self.assertEqual(errors, [])
+            b.close()
+
     def test_merge_tab_finds_matches_marks_aliases_merges_and_undoes(self):
         notes = {f"10_Model/{q.name}": q.read_text() for q in (ROOT / "testing/fixtures/charger-merge").glob("*.md")}
         errors = []

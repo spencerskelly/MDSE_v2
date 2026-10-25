@@ -38,7 +38,11 @@ export const EDIT_STYLE = `
 `;
 
 type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text";
-const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean } = { mode: "manage", ref: null, stale: false };
+const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean; mergeWith: string } = { mode: "manage", ref: null, stale: false, mergeWith: "" };
+/** Open the Edit lens on its Merge tab (D-0086). */
+export function setEditMode(mode: Mode): void { SAVED.mode = mode; }
+/** The note to offer as the other half of a merge when the Merge tab opens, so two notes chosen elsewhere do not have to be searched for again. */
+export function setMergeWith(path: string): void { SAVED.mergeWith = path; }
 /** A write or an undo changed the files: the next index refresh redraws the Edit lens so its lists show the new state. */
 export function markEditStale(): void { SAVED.stale = true; }
 /** Called by the panel when a rebuilt index arrives; redraws only after our own write, so a form being filled is not lost to an unrelated rebuild. */
@@ -299,10 +303,15 @@ export function editView(c: EditCtx): HTMLElement {
     v.append(aliasBox, ownersBox);
     /* mark the open note */
     if (from && from.type === "Object") {
-      let other: Note | null = null;
+      let other: Note | null = SAVED.mergeWith ? ix.notes.get(SAVED.mergeWith) ?? null : null;
+      if (other && other.path !== from.path) {                                          // D-0086: the BOM part is the one that stays when only one of the two is a BOM part (as the suggested matches do)
+        const bom = (n: Note): boolean => String(n.meta.eaType ?? "") === "BOM";
+        if (bom(from) && !bom(other)) MERGE_SAVED.keep = "this"; else if (bom(other) && !bom(from)) MERGE_SAVED.keep = "other";
+      } else other = null;
+      SAVED.mergeWith = "";
       const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e: Event) => { MERGE_SAVED.keep = (e.target as HTMLSelectElement).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
       const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from!.path);
-      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, "").el);
+      pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, other?.path ?? "").el);
       v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
         h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
           if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }

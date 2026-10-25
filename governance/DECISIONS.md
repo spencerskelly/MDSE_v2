@@ -990,3 +990,18 @@ Rules: WKB-033 (Active).
 5. **Not covered.** Ports, flows, allocations and other kinds do not set a direction. A note that must be under two others at different heights is placed under the lower. Existing canvases are not re-arranged. The rule is by kind of note, so an Actor, Document or Issue has no tier and sits beside what it relates to.
 
 Rules: WKB-032, WKB-034 (Active).
+
+## D-0086 — Merge has its own entry points; a BOM part is the note that stays
+
+2026-10-24 · Spencer · Accepted (owner, chat: "It seems we lost a merge button. I'd like to test what happens when I merge a BOM element and a model element")
+
+The Merge tab was not removed; D-0084's menus put it under Note > Edit > Merge, two steps from the note. Added direct routes:
+
+1. Note menu: "Merge notes" (opens Edit on the Merge tab).
+2. Note view of an Object note: "Merge with another note…".
+3. Common related, with exactly two Object notes chosen: "Merge these two…", with the other note already picked.
+4. Which note stays: when exactly one of the pair carries `eaType: BOM`, that note is the survivor by default (as the "Find matches" suggestions already did). The owners table can still be changed before Preview.
+
+Nothing changes in how a merge is previewed, applied or undone.
+
+Rules: WKB-033, WKB-035 (Active).
