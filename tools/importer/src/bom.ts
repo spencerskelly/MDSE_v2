@@ -366,6 +366,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   };
   // children per parent, usage names, conflicts, older-revision users
   const link = `\`${o.sourceName}\``, files: OutFile[] = [];
+  const revisionReview: Array<{ parent: string; line: string; child: string; pinned: string; selected: string; row: number }> = [];
   const byParent = new Map<string, Usage[]>(); for (const u of okUsage) (byParent.get(u.parent) ?? byParent.set(u.parent, []).get(u.parent)!).push(u);
   // A part number that an earlier BOM already put in the vault is kept as it is; say so when this file does not agree with it (same part number and revision, different lines).
   for (const pn of partPns) {
@@ -375,10 +376,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.${HINT_UPDATE}` });
   }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
-  let conflicts = 0;   // D-0063: a child note carries nothing about the assemblies above it; the pin is on the parent's usage and in its flagConflict callout
+  let conflicts = 0; // Historical revision pins are retained as review records.
   for (const u of okUsage) {
     const l = latest.get(u.child); if (!l || bomIsDrawing(u)) continue;
-    if (l.rev !== u.childRev) conflicts++;
+    // Historical revision mismatch is not a semantic conflict.
   }
   const replaces = new Map<string, Set<string>>();
   for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
@@ -419,7 +420,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         const mult = discrete && u.amount !== "1" ? ` [${u.amount}]` : "";
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");
         const lc = latest.get(u.child);
-        if (lc && lc.rev !== u.childRev) flags.push(flagCallout("flagConflict", `Pins ${u.child} at an older revision`, link, [`Line ${u.line || "?"} pins revision ${JSON.stringify(u.childRev)} of ${u.child}; its latest revision is ${JSON.stringify(lc.rev)}.`]));
+        if (lc && lc.rev !== u.childRev) revisionReview.push({ parent: pn, line: u.line, child: u.child, pinned: u.childRev, selected: lc.rev, row: u.row });
         if (u.alternates.length || u.altParts.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${[...u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")), ...u.altParts.map((a) => `part ${a.pn}${a.rev ? " revision " + JSON.stringify(a.rev) : ""}${a.name ? " (" + a.name + ")" : ""}${[a.mfr, a.mpn].some(Boolean) ? ", " + [a.mfr, a.mpn].filter(Boolean).join(" ") : ""}${a.amount ? ", quantity " + a.amount + (a.unit ? " " + a.unit : "") : ""}, line ${a.line}, row ${a.row}`)].join("; ")}`);
         if (u.prevChild) srcLines.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
       }
@@ -435,7 +436,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
+    if (revisionReview.some((r) => r.parent === pn)) extra.push(["noteReview", "[[Old Revision Usage]]"]);
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
+    const older = revisionReview.filter((r) => r.parent === pn);
+    if (older.length) body.push("**Older revision usages**", "", ...older.map((r) => `- Line ${r.line || "?"}: ${r.child} pinned at ${JSON.stringify(r.pinned)}, selected definition at ${JSON.stringify(r.selected)}; source row ${r.row}.`), "", "See [[Old Revision Usage]].", "");
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
@@ -443,6 +447,17 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
       sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });
   }
 
+  if (revisionReview.length) {
+    const reviewPath = "99_System/11_Import/Old Revision Usage.md";
+    const prior = [...(o.existing?.files ?? []), ...o.pending].find(([p]) => p === reviewPath)?.[1] ?? "# Old Revision Usage\n\nHistorical BOM revision pins retained on assembly usages.\n";
+    const recognized = (x: string): boolean => x.startsWith("- [[") && x.includes("; source ");
+    const oldLines = prior.split("\n");
+    const entries = new Set(oldLines.filter(recognized));
+    for (const v of revisionReview) entries.add(`- [[${info.get(v.parent)?.base ?? v.parent}]] line ${v.line || "?"}: ${v.child} pinned ${JSON.stringify(v.pinned)}, selected definition ${JSON.stringify(v.selected)}; source ${o.sourceName}, row ${v.row}.`);
+    const header = oldLines.filter((x) => !recognized(x)).join("\n").trimEnd();
+    files.push({ path: reviewPath, content: header + "\n\n" + [...entries].sort().join("\n") + "\n" });
+    findings.push({ level: "info", code: "REV_REVIEW_INDEX", message: `${revisionReview.length} historical revision usage(s) retained and indexed without individual flagConflict entries.` });
+  }
   // EA <-> BOM join on part number: a report only, nothing is corrected on either side (BOM-004). The EA key is not settled, so
   // a title that contains the part number as a whole token counts as a match.
   let eaMatched = 0;
