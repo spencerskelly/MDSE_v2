@@ -116,7 +116,10 @@ export function commonRelated(ix: ModelIndex, paths: string[]): { all: Array<{ p
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
 }
 
-/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+/** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
+const LAYER: Record<string, number | undefined> = { "Use Case": 0, Requirement: 1, Behavior: 2, Verification: 2, Object: 3 };
+
+/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. Direction counts (D-0085): a part goes under its assembly, a specialized element under the general one, an owned element (requirement, action, state, child) under its owner, and by kind of note a requirement goes under a use case, a function and a test case under a requirement, an object under a function. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
 export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map<string, CanvasNode>();
@@ -133,29 +136,45 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
     (nb.get(e.from) ?? nb.set(e.from, new Set()).get(e.from)!).add(e.to); (nb.get(e.to) ?? nb.set(e.to, new Set()).get(e.to)!).add(e.from);
   }
   const CX = W + GX, CY = H + GY, title = (p: string): string => ix.notes.get(p)!.title;
+  const rel2 = new Map<string, "below" | "above">();                                   // where `a` goes relative to `b`, from how they are joined
+  const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse || e.from === e.to) continue;
+    if (OWNS.has(e.kind)) { rel2.set(`${e.to}|${e.from}`, "below"); rel2.set(`${e.from}|${e.to}`, "above"); }
+    else if (e.kind === "specializes") { rel2.set(`${e.from}|${e.to}`, "below"); rel2.set(`${e.to}|${e.from}`, "above"); }
+  }
+  const dirOf = (a: string, b: string): "below" | "above" | "side" => {
+    const d = rel2.get(`${a}|${b}`); if (d) return d;
+    const ra = LAYER[ix.notes.get(a)!.type], rb = LAYER[ix.notes.get(b)!.type];
+    return ra !== undefined && rb !== undefined && ra !== rb ? (ra > rb ? "below" : "above") : "side";
+  };
+  const aboveCount = (p: string): number => [...(nb.get(p) ?? [])].filter((q) => dirOf(p, q) === "below").length;   // how many notes must sit over this one
+  const tier = (sign: 1 | -1): Array<[number, number]> => { const l: Array<[number, number]> = []; for (let dy = 1; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++) l.push([dx, sign * dy]); return l.sort((p, q) => Math.abs(p[1]) + 0.45 * Math.abs(p[0]) - Math.abs(q[1]) - 0.45 * Math.abs(q[0]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || p[0] - q[0]); };
+  const tiers = { below: tier(1), above: tier(-1) };
   const free = (c: CanvasNode, x: number, y: number): boolean => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + c.width + 40 && y < n.y + n.height + 40 && n.y < y + c.height + 40);
   const put = (p: string, x: number, y: number): CanvasNode => { const c = cardOf.get(p)!; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); out.nodes.push(c); at.set(p, c); return c; };
   const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0 };
   const rings: Array<Array<[number, number]>> = [];                                  // grid steps around a card, nearest first, right before left
   for (let r = 1; r <= 30; r++) { const ring: Array<[number, number]> = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
-  const placeNear = (p: string, ref: CanvasNode): void => {                           // beside `ref`, and as close as it can be to every other placed note this one relates to
-    const c = cardOf.get(p)!, others = [...(nb.get(p) ?? [])].map((q) => at.get(q)).filter((n): n is CanvasNode => !!n);
+  const placeNear = (p: string, ref: CanvasNode, refPath: string): void => {          // beside, under or over `refPath`'s card by how they are joined, and as close as it can be to every other placed note this one relates to
+    const c = cardOf.get(p)!, others = [...(nb.get(p) ?? [])].map((q) => [q, at.get(q)] as const).filter((o): o is readonly [string, CanvasNode] => !!o[1]), d = dirOf(p, refPath);
     if (others.length > 1) {
       let best: { x: number; y: number; score: number } | null = null;
-      for (const o of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
+      for (const [, o] of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
         const x = o.x + dx * CX, y = o.y + dy * CY; if (!free(c, x, y)) continue;
-        const score = others.reduce((sum, q) => sum + Math.abs(q.x - x) / CX + Math.abs(q.y - y) / CY, 0);
+        const score = others.reduce((sum, [q, n]) => { const w = dirOf(p, q), off = (w === "below" && y < n.y + n.height) || (w === "above" && y + c.height > n.y) ? 4 : 0; return sum + off + Math.abs(n.x - x) / CX + Math.abs(n.y - y) / CY; }, 0);
         if (!best || score < best.score - 1e-9) best = { x, y, score };
       }
       if (best) { put(p, best.x, best.y); return; }
     }
+    if (d !== "side") for (const [dx, dy] of tiers[d]) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
     for (const ring of rings) for (const [dx, dy] of ring) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
     put(p, ref.x + 31 * CX, ref.y);
   };
   const spread = (queue: string[]): void => {                                       // breadth first: each new note beside the one it relates to
     while (queue.length) {
       const from = queue.shift()!, ref = at.get(from)!;
-      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref); queue.push(q); }
+      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref, from); queue.push(q); }
     }
   };
   const around = [...onCanvas.keys()].filter((p) => [...(nb.get(p) ?? [])].some((q) => isFresh.has(q)));
@@ -163,7 +182,7 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
   spread(around);
   let cursor = 0;                                                                   // free space below the existing cards for notes related to nothing placed
   const seed = (p: string): void => { const c = cardOf.get(p)!; for (;; cursor++) { const x = base.x + (cursor % 6) * CX, y = base.y + Math.floor(cursor / 6) * CY; if (free(c, x, y)) { put(p, x, y); cursor++; return; } } };
-  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
+  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => aboveCount(x) - aboveCount(y) || (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
   for (const p of left) { if (at.has(p)) continue; seed(p); spread([p]); }
   const lineIds: string[] = [];
   if (opts.relations !== false) for (const e of ix.edges) {

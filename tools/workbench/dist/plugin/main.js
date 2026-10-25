@@ -1318,14 +1318,14 @@ const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && 
                                                                                                                                                                                        
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix            , paths          )         => paths.map((p) => C(ix, p));
-                                                                                                                 
+                                                                                                                                                                                                                             
 
 function lensTables(ix            , lens      , sel        , o              = {})              {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)  : null;
   const out              = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
-    const st = structure(ix, sel, 6, 40, ["hasPart"]), flat                                   = [];
+    const st = structure(ix, sel, o.tree === "direct" ? 1 : 6, 40, ["hasPart"]), flat                                   = [];
     const walk = (t          , level        )       => {
       flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
@@ -1509,7 +1509,10 @@ function commonRelated(ix            , paths          )                         
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
 }
 
-/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+/** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
+const LAYER                                     = { "Use Case": 0, Requirement: 1, Behavior: 2, Verification: 2, Object: 3 };
+
+/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. Direction counts (D-0085): a part goes under its assembly, a specialized element under the general one, an owned element (requirement, action, state, child) under its owner, and by kind of note a requirement goes under a use case, a function and a test case under a requirement, an object under a function. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
 function addToCanvas(doc           , ix            , anchor               , paths          , opts                          = {})                                                                        {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map                    ();
@@ -1526,29 +1529,45 @@ function addToCanvas(doc           , ix            , anchor               , path
     (nb.get(e.from) ?? nb.set(e.from, new Set()).get(e.from) ).add(e.to); (nb.get(e.to) ?? nb.set(e.to, new Set()).get(e.to) ).add(e.from);
   }
   const CX = W + GX, CY = H + GY, title = (p        )         => ix.notes.get(p) .title;
+  const rel2 = new Map                           ();                                   // where `a` goes relative to `b`, from how they are joined
+  const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse || e.from === e.to) continue;
+    if (OWNS.has(e.kind)) { rel2.set(`${e.to}|${e.from}`, "below"); rel2.set(`${e.from}|${e.to}`, "above"); }
+    else if (e.kind === "specializes") { rel2.set(`${e.from}|${e.to}`, "below"); rel2.set(`${e.to}|${e.from}`, "above"); }
+  }
+  const dirOf = (a        , b        )                             => {
+    const d = rel2.get(`${a}|${b}`); if (d) return d;
+    const ra = LAYER[ix.notes.get(a) .type], rb = LAYER[ix.notes.get(b) .type];
+    return ra !== undefined && rb !== undefined && ra !== rb ? (ra > rb ? "below" : "above") : "side";
+  };
+  const aboveCount = (p        )         => [...(nb.get(p) ?? [])].filter((q) => dirOf(p, q) === "below").length;   // how many notes must sit over this one
+  const tier = (sign        )                          => { const l                          = []; for (let dy = 1; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++) l.push([dx, sign * dy]); return l.sort((p, q) => Math.abs(p[1]) + 0.45 * Math.abs(p[0]) - Math.abs(q[1]) - 0.45 * Math.abs(q[0]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || p[0] - q[0]); };
+  const tiers = { below: tier(1), above: tier(-1) };
   const free = (c            , x        , y        )          => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + c.width + 40 && y < n.y + n.height + 40 && n.y < y + c.height + 40);
   const put = (p        , x        , y        )             => { const c = cardOf.get(p) ; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); out.nodes.push(c); at.set(p, c); return c; };
   const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0 };
   const rings                                 = [];                                  // grid steps around a card, nearest first, right before left
   for (let r = 1; r <= 30; r++) { const ring                          = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
-  const placeNear = (p        , ref            )       => {                           // beside `ref`, and as close as it can be to every other placed note this one relates to
-    const c = cardOf.get(p) , others = [...(nb.get(p) ?? [])].map((q) => at.get(q)).filter((n)                  => !!n);
+  const placeNear = (p        , ref            , refPath        )       => {          // beside, under or over `refPath`'s card by how they are joined, and as close as it can be to every other placed note this one relates to
+    const c = cardOf.get(p) , others = [...(nb.get(p) ?? [])].map((q) => [q, at.get(q)]         ).filter((o)                                     => !!o[1]), d = dirOf(p, refPath);
     if (others.length > 1) {
       let best                                                 = null;
-      for (const o of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
+      for (const [, o] of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
         const x = o.x + dx * CX, y = o.y + dy * CY; if (!free(c, x, y)) continue;
-        const score = others.reduce((sum, q) => sum + Math.abs(q.x - x) / CX + Math.abs(q.y - y) / CY, 0);
+        const score = others.reduce((sum, [q, n]) => { const w = dirOf(p, q), off = (w === "below" && y < n.y + n.height) || (w === "above" && y + c.height > n.y) ? 4 : 0; return sum + off + Math.abs(n.x - x) / CX + Math.abs(n.y - y) / CY; }, 0);
         if (!best || score < best.score - 1e-9) best = { x, y, score };
       }
       if (best) { put(p, best.x, best.y); return; }
     }
+    if (d !== "side") for (const [dx, dy] of tiers[d]) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
     for (const ring of rings) for (const [dx, dy] of ring) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
     put(p, ref.x + 31 * CX, ref.y);
   };
   const spread = (queue          )       => {                                       // breadth first: each new note beside the one it relates to
     while (queue.length) {
       const from = queue.shift() , ref = at.get(from) ;
-      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref); queue.push(q); }
+      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref, from); queue.push(q); }
     }
   };
   const around = [...onCanvas.keys()].filter((p) => [...(nb.get(p) ?? [])].some((q) => isFresh.has(q)));
@@ -1556,7 +1575,7 @@ function addToCanvas(doc           , ix            , anchor               , path
   spread(around);
   let cursor = 0;                                                                   // free space below the existing cards for notes related to nothing placed
   const seed = (p        )       => { const c = cardOf.get(p) ; for (;; cursor++) { const x = base.x + (cursor % 6) * CX, y = base.y + Math.floor(cursor / 6) * CY; if (free(c, x, y)) { put(p, x, y); cursor++; return; } } };
-  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
+  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => aboveCount(x) - aboveCount(y) || (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
   for (const p of left) { if (at.has(p)) continue; seed(p); spread([p]); }
   const lineIds           = [];
   if (opts.relations !== false) for (const e of ix.edges) {
@@ -4074,7 +4093,7 @@ function mountPanel(root             , host           , opt                     
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let canvasSel           = [], pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
+  let tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -4084,16 +4103,38 @@ function mountPanel(root             , host           , opt                     
     d.addEventListener("toggle", () => { secs.set(k, (d                      ).open); });
     return d;
   }
-  function tableView(t             )              {
-    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {});
+  /** The note a table row stands for: the first single cell with a note path, in column order (D-0085). */
+  const rowNote = (t             , r                             )                => { for (const c of t.columns) { const v = r[c.key]; if (v && typeof v === "object" && !Array.isArray(v) && v.path && ix .notes.has(v.path)) return v.path; } return null; };
+  function tableView(t             , ticks = false)              {
+    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}), tickable = ticks && !!host.addToCanvas && t.rows.some((r) => rowNote(t, r));
     const wrapSec = ()              => { const kids = [...box.childNodes]; return sec(t.id, t.title || "Table", kids           , { count: t.rows.length }); };
     if (t.note) box.append(h("div", { class: "mut", style: "font-size:12px;margin-bottom:4px" }, t.note));
     if (!t.rows.length) { box.append(empty(t.empty)); return t.title ? wrapSec() : box; }
     const shown = t.rows.slice(0, CAP);
-    box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
+    const tick = (r                             )              => {
+      const p = rowNote(t, r); if (!p) return h("td", {});
+      return h("td", {}, h("input", { type: "checkbox", "aria-label": "Tick for the canvas", checked: rowTicks.has(p), onchange: (e       ) => { if ((e.target                    ).checked) rowTicks.add(p); else rowTicks.delete(p); if (tickCount) tickCount.textContent = `${rowTicks.size} ticked`; } }));
+    };
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, tickable ? tick(r) : null, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
     if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
     if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
+  }
+
+  /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
+  const ADDABLE = new Set        (["structure", "functional", "states", "requirements", "design", "internal"]);
+  function addBar(ts               )                     {
+    if (!host.addToCanvas) return null;
+    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p)              => !!p))].slice(0, MAX_PICK);
+    if (!shown.length) return null;
+    const root = sel && ix .notes.has(sel) ? sel : "", anchor = root || shown[0] ;
+    const run = (b             , paths          )       => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => host.addToCanvas (anchor, paths)); };
+    const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
+    some.addEventListener("click", () => run(some, [...rowTicks].filter((p) => ix .notes.has(p))));
+    const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
+    every.addEventListener("click", () => run(every, root && !shown.includes(root) ? [root, ...shown] : shown));
+    tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /* ---- lenses ---- */
@@ -4128,6 +4169,7 @@ function mountPanel(root             , host           , opt                     
   }
   const chip = (label        , on         , fn                      )              => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e       ) => { fn((e.target                    ).checked); draw(); } }), " " + label);
   function scopeBar()                     {
+    if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e       ) => { tree = (e.target                     ).value               ; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
       lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e       ) => { table = (e.target                     ).value                ; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]]         ).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
@@ -4270,7 +4312,12 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
-      else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
+      else {
+        const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        if (ab) body.append(ab); else tickCount = null;
+        for (const t of ts) body.append(tableView(t, canAdd));
+      }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
     wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
   }
@@ -4639,7 +4686,10 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async addToCanvasPreview(anchor               , paths          , relations = true)                  {
     await this.ensureIndex();
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [...(anchor ? [anchor] : []), ...paths], { relations, label: anchor ? this.ix.notes.get(anchor)?.title ?? "" : "", group: false }));
+    if (!f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
+      const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
+      return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+    }
     let res                                            = null;
     await this.editPreview((text) => {
       const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths, { relations }); res = r;

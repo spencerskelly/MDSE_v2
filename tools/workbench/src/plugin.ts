@@ -343,7 +343,10 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async addToCanvasPreview(anchor: string | null, paths: string[], relations = true): Promise<string> {
     await this.ensureIndex();
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [...(anchor ? [anchor] : []), ...paths], { relations, label: anchor ? this.ix.notes.get(anchor)?.title ?? "" : "", group: false }));
+    if (!f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
+      const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
+      return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+    }
     let res: { added: number; present: number } | null = null;
     await this.editPreview((text) => {
       const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths, { relations }); res = r;

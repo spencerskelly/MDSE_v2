@@ -367,6 +367,19 @@ class WorkbenchPlugin(unittest.TestCase):
             # one card again: back to the note
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; }""", two[0])
             pg.wait_for_function("document.querySelector(\"select[aria-label='Note menu']\").selectedOptions[0].textContent === 'Note'", timeout=3000)
+
+            # Structure view: full tree or direct parts, and tick rows to add to the canvas (D-0085)
+            pg.select_option("select[aria-label='Note menu']", label="Structure")
+            pg.wait_for_selector("select[aria-label='How much of the structure']")
+            pg.select_option("select[aria-label='How much of the structure']", label="Direct parts only")
+            pg.wait_for_selector("button:has-text('Add ticked to canvas')")
+            pg.click("button:has-text('Add ticked to canvas')")
+            pg.wait_for_selector("text=Tick at least one row first.")
+            pg.locator("input[aria-label='Tick for the canvas']").first.check()
+            pg.click("button:has-text('Add ticked to canvas')")
+            pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
+            pg.click("button:has-text('shown to canvas')")
+            pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):

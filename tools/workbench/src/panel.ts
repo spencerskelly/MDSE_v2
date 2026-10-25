@@ -79,7 +79,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let canvasSel: string[] = [], pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  let tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -89,16 +89,38 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     d.addEventListener("toggle", () => { secs.set(k, (d as HTMLDetailsElement).open); });
     return d;
   }
-  function tableView(t: V.TableData): HTMLElement {
-    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {});
+  /** The note a table row stands for: the first single cell with a note path, in column order (D-0085). */
+  const rowNote = (t: V.TableData, r: Record<string, V.TableCell>): string | null => { for (const c of t.columns) { const v = r[c.key]; if (v && typeof v === "object" && !Array.isArray(v) && v.path && ix!.notes.has(v.path)) return v.path; } return null; };
+  function tableView(t: V.TableData, ticks = false): HTMLElement {
+    const cols = t.columns.filter((c) => !compact || !c.wide), box = h("div", {}), tickable = ticks && !!host.addToCanvas && t.rows.some((r) => rowNote(t, r));
     const wrapSec = (): HTMLElement => { const kids = [...box.childNodes]; return sec(t.id, t.title || "Table", kids as Child[], { count: t.rows.length }); };
     if (t.note) box.append(h("div", { class: "mut", style: "font-size:12px;margin-bottom:4px" }, t.note));
     if (!t.rows.length) { box.append(empty(t.empty)); return t.title ? wrapSec() : box; }
     const shown = t.rows.slice(0, CAP);
-    box.append(h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
+    const tick = (r: Record<string, V.TableCell>): HTMLElement => {
+      const p = rowNote(t, r); if (!p) return h("td", {});
+      return h("td", {}, h("input", { type: "checkbox", "aria-label": "Tick for the canvas", checked: rowTicks.has(p), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) rowTicks.add(p); else rowTicks.delete(p); if (tickCount) tickCount.textContent = `${rowTicks.size} ticked`; } }));
+    };
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, tickable ? tick(r) : null, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
     if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
     if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
+  }
+
+  /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
+  const ADDABLE = new Set<V.Lens>(["structure", "functional", "states", "requirements", "design", "internal"]);
+  function addBar(ts: V.TableData[]): HTMLElement | null {
+    if (!host.addToCanvas) return null;
+    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p): p is string => !!p))].slice(0, MAX_PICK);
+    if (!shown.length) return null;
+    const root = sel && ix!.notes.has(sel) ? sel : "", anchor = root || shown[0]!;
+    const run = (b: HTMLElement, paths: string[]): void => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => host.addToCanvas!(anchor, paths)); };
+    const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
+    some.addEventListener("click", () => run(some, [...rowTicks].filter((p) => ix!.notes.has(p))));
+    const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
+    every.addEventListener("click", () => run(every, root && !shown.includes(root) ? [root, ...shown] : shown));
+    tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /* ---- lenses ---- */
@@ -133,6 +155,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
   function scopeBar(): HTMLElement | null {
+    if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
       lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e: Event) => { table = (e.target as HTMLSelectElement).value as typeof table; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]] as const).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
@@ -275,7 +298,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
-      else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
+      else {
+        const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        if (ab) body.append(ab); else tickCount = null;
+        for (const t of ts) body.append(tableView(t, canAdd));
+      }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
     wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
   }

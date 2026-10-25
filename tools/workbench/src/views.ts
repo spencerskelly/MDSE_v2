@@ -488,14 +488,14 @@ export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string }
+export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct" }
 
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
   const out: TableData[] = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
-    const st = structure(ix, sel, 6, 40, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
+    const st = structure(ix, sel, o.tree === "direct" ? 1 : 6, 40, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
     const walk = (t: TreeNode, level: number): void => {
       flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);

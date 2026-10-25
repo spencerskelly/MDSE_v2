@@ -558,3 +558,39 @@ test("notes related to two or more chosen notes are listed, with the kinds that 
   assert.deepEqual(commonRelated(ix, ["nope.md", "nope2.md"]), { all: [], some: [] });
   const sorted = r.some.map((x) => x.count); assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "most shared first");
 });
+
+test("added notes are placed by what they are: parts under the assembly, specializations under the general, requirements under use cases, functions and test cases under requirements, objects under functions (D-0085)", () => {
+  const f = (type: string, id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: ${type}\nid: ${id}\nuid: 202610240000${id.replace(/\D/g, "").padStart(5, "0")}tier-order--\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
+  const v = buildIndex(new Map([
+    f("Use Case", "UC-00001", "Charge a truck", 'drives: ["[[Charge fast]]"]\n'), f("Requirement", "REQ-00001", "Charge fast"),
+    f("Behavior", "BEH-00001", "Deliver power", 'satisfies: ["[[Charge fast]]"]\n'), f("Verification", "VER-00001", "Power test", 'verifies: ["[[Charge fast]]"]\n'),
+    f("Object", "OBJ-00001", "Charger", 'performs: ["[[Deliver power]]"]\nhasPart: ["[[Cable]]", "[[Plug]]", "[[Lid]]"]\n'),
+    f("Object", "OBJ-00002", "Cable"), f("Object", "OBJ-00003", "Plug"), f("Object", "OBJ-00004", "Lid"),
+    f("Object", "OBJ-00005", "Vehicle"), f("Object", "OBJ-00006", "Truck", 'specializes: ["[[Vehicle]]"]\n'),
+  ]), { classes });
+  const at = (doc: { nodes: Array<{ x: number; y: number; type: string; text?: string }> }, t: string) => doc.nodes.find((n) => n.type === "text" && cdNotePath(n as never) === `${t}.md`)!;
+  const all = addToCanvas({ nodes: [], edges: [] }, v, null, [...v.notes.keys()]).doc;
+  const y = (t: string) => at(all, t).y, x = (t: string) => at(all, t).x;
+  assert.ok(y("Charge a truck") < y("Charge fast"), "requirements are under use cases");
+  assert.ok(y("Charge fast") < y("Deliver power"), "functions are under requirements");
+  assert.ok(y("Charge fast") < y("Power test"), "test cases are under requirements");
+  assert.ok(y("Deliver power") < y("Charger"), "objects are under functions");
+  for (const p of ["Cable", "Plug", "Lid"]) assert.ok(y("Charger") < y(p), `${p} is under the assembly`);
+  assert.equal(new Set(["Cable", "Plug", "Lid"].map((p) => y(p))).size, 1, "the parts sit in a row");
+  assert.ok(y("Vehicle") < y("Truck"), "the specialized element is under the general");
+  // an element already there stays; the rest are put over or under it by what they are
+  const one = addToCanvas({ nodes: [], edges: [] }, v, null, ["Charge fast.md"]).doc, req = one.nodes[0]!;
+  const more = addToCanvas(one, v, "Charge fast.md", ["Charge a truck.md", "Deliver power.md", "Power test.md"]).doc;
+  assert.deepEqual(more.nodes[0], req, "the requirement has not moved");
+  assert.ok(y2(more, "Charge a truck") < req.y && y2(more, "Deliver power") > req.y && y2(more, "Power test") > req.y);
+  assert.ok(Math.abs(x2(more, "Charge a truck") - req.x) <= 1120, "and next to it, not far across");
+  function y2(d: typeof more, t: string): number { return at(d as never, t).y; } function x2(d: typeof more, t: string): number { return at(d as never, t).x; }
+});
+
+test("the structure view shows the full tree or only the direct parts (D-0085)", () => {
+  const top = byTitle("Charger"), full = V.lensTables(ix, "structure", top, { tree: "full" })[0]!, direct = V.lensTables(ix, "structure", top, { tree: "direct" })[0]!;
+  assert.ok(direct.rows.length >= 2 && direct.rows.length <= full.rows.length);
+  assert.ok(direct.rows.every((r) => Number(r.level) <= 1), "no row deeper than the direct parts");
+  assert.deepEqual(V.lensTables(ix, "structure", top, {})[0]!.rows.length, full.rows.length, "full is the default");
+  assert.ok(full.rows.some((r) => Number(r.level) >= 2) ? full.rows.length > direct.rows.length : true);
+});

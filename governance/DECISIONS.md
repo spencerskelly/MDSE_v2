@@ -974,3 +974,19 @@ Rules: WKB-032 (Active).
 5. **Not covered.** Choosing edges or groups. The standalone Workbench page keeps its own tabs. The Edit lens edits the model, so it sits under Note, not Canvas.
 
 Rules: WKB-033 (Active).
+
+## D-0085 — Direct parts or full tree; add shown notes to the canvas; placement by what the notes are
+
+2026-10-24 · Spencer · Accepted (owner, chat: "two options to show structure of an element, one with a full tree, one with only direct parts. When structure, behavior, requirements, states tab is open, there should be the option to add some or all elements shown to the canvas. When adding elements to a canvas: parts should be placed under the assembly; specialized elements should be under the general element; requirements should be under use cases; functions should be under requirements; objects should be under functions; test cases should be under requirements").
+
+1. **Structure.** A menu on the Structure view: "Full tree" (the default, as before) or "Direct parts only" (the parts the note owns itself, one level). The rolled-up parts list and where-used tables are not changed by it.
+2. **Add to canvas.** On the Structure, Function, States, Requirements, Design types and Internal structure views each table row that stands for a note has a tick box. "Add ticked to canvas" puts the ticked notes on the canvas preview; "Add all N shown to canvas" puts every note the tables list there (the selected note included, so it is the top of what is added). The notes shown in other columns of a row (what satisfies it, who performs it) are not added unless they have a row of their own. At most 200 at a time. Ticks clear when the view or the selected note changes.
+3. **Placement by direction.** Added to D-0083's rule that a new note goes beside a note it relates to, and nothing already there moves: where the pair is joined decides which side.
+   - A part goes under its assembly; an element a note owns (a child, action, state, owned requirement) goes under its owner (`hasPart`, `hasChild`, `hasAction`, `hasState`, `hasRequirement`).
+   - A specialized element goes under the general one (`specializes`).
+   - Otherwise by kind of note, top first: Use Case, then Requirement, then Behavior (function) and Verification (test case), then Object. A requirement goes under a use case, a function and a test case under a requirement, an object under a function. Two notes of the same tier, or of a kind not in the list, sit side by side.
+   - Siblings fan out in a row beneath (or above) their parent, nearest the parent first, then the next row. A note that relates to several placed notes takes the place nearest all of them, kept on the right side of each where it can be. When a canvas is started from nothing, the note with nothing above it is placed first, so the hierarchy hangs from the top.
+4. **No preview open.** Adding from these views starts a new preview with the same placement.
+5. **Not covered.** Ports, flows, allocations and other kinds do not set a direction. A note that must be under two others at different heights is placed under the lower. Existing canvases are not re-arranged. The rule is by kind of note, so an Actor, Document or Issue has no tier and sits beside what it relates to.
+
+Rules: WKB-032, WKB-034 (Active).
