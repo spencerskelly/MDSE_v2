@@ -1475,6 +1475,58 @@ function pickCanvas(ix            , paths          , opts                       
   return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
 
+/** The note a card stands for: a file card, or a text card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
+function cardNotePath(node                        )                {
+  if (!node) return null;
+  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
+  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
+  return m ? (/\.md$/i.test(m[1] ) ? m[1]  : m[1] + ".md") : null;
+}
+
+/** Notes related to `path` (D-0082): every resolved relationship either way, as the other note's path with the kinds that join them. */
+function relatedNotes(ix            , path        )                                           {
+  const by = new Map                     ();
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse) continue;
+    const other = e.from === path ? e.to : e.to === path ? e.from : null;
+    if (other && other !== path && ix.notes.has(other)) (by.get(other) ?? by.set(other, new Set()).get(other) ).add(e.kind);
+  }
+  return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
+}
+
+/** Adds notes to a canvas that already holds cards (D-0082). New cards go in columns to the right of `anchor`'s card (or below everything when it is not on the canvas), at most ADD_ROWS to a column, spaced as in D-0079 and moved right until they overlap nothing. A note already on the canvas is not added twice. Lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+const ADD_ROWS = 8;
+function addToCanvas(doc           , ix            , anchor               , paths          )                                                                        {
+  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const onCanvas = new Map                    ();
+  for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
+  const fresh = [...new Set(paths)].filter((p) => ix.notes.has(p) && !onCanvas.has(p)), present = new Set(paths.filter((p) => onCanvas.has(p))).size;
+  if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
+  const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
+  const freshId = (pre        )         => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
+  const cards = fresh.map((p) => noteCard(ix, p, freshId("p")));
+  const a = anchor ? onCanvas.get(anchor) : undefined, solids = out.nodes.filter((n) => n.type !== "group");
+  const colsN = Math.ceil(cards.length / ADD_ROWS), step = W + GX;
+  const colH = (c        )         => { const col = cards.slice(c * ADD_ROWS, (c + 1) * ADD_ROWS); return col.reduce((s, x) => s + x.height, 0) + (col.length - 1) * GY; };
+  const tallest = Math.max(...Array.from({ length: colsN }, (_, c) => colH(c)));
+  let x0 = a ? a.x + step : solids.length ? Math.max(...solids.map((n) => n.x + n.width)) + GX : 0, top = a ? a.y + a.height / 2 - tallest / 2 : solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0;
+  if (!a && solids.length) x0 = Math.min(...solids.map((n) => n.x));
+  const place = (dx        )               => cards.map((c, i) => { const col = Math.floor(i / ADD_ROWS), row = cards.slice(col * ADD_ROWS, i).reduce((s, x) => s + x.height + GY, 0); return { ...c, x: Math.round(x0 + dx + col * step), y: Math.round(top + row) }; });
+  const clash = (list              )          => list.some((c) => solids.some((n) => c.x < n.x + n.width + 40 && n.x < c.x + c.width + 40 && c.y < n.y + n.height + 40 && n.y < c.y + c.height + 40));
+  let dx = 0, placed = place(0);
+  for (let t = 0; t < 40 && clash(placed); t++) { dx += step; placed = place(dx); }
+  out.nodes.push(...placed);
+  const at = new Map                    (); for (const [p, n] of onCanvas) at.set(p, n); fresh.forEach((p, i) => at.set(p, placed[i] ));
+  const isNew = new Set(fresh), lineIds           = [];
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse || !(isNew.has(e.from) || isNew.has(e.to))) continue;
+    const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
+    const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
+    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
+  }
+  return { doc: out, added: fresh.length, present, lineIds };
+}
+
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 function toCanvas(ix            , start        , profile         , spec                    )               {
   const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;
@@ -1829,16 +1881,12 @@ function edDiff(before               , after        )                           
 
 
 
+
 /** Ids of every line already in the doc (the ones the Workbench drew). Anything else that appears later was drawn by the person. */
 const cdEdgeIds = (doc           )              => new Set(doc.edges.map((e) => e.id));
 
 /** The note a card stands for: a file card, or a requirement card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
-function cdNotePath(node                        )                {
-  if (!node) return null;
-  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
-  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
-  return m ? (/\.md$/i.test(m[1] ) ? m[1]  : m[1] + ".md") : null;
-}
+const cdNotePath = (node                        )                => cardNotePath(node);
 
                                                                                                             
 /** Lines in `doc` whose id is not in `known`, with the note at each end (null when that card is not a note). */
@@ -3924,6 +3972,8 @@ function editView(c         )              {
                                                                              
                                                                        
                                                            
+                                                                                  
+                                                                 
                                                                                                        
                                  
                                                               
@@ -4024,6 +4074,12 @@ function mountPanel(root             , host           , opt                     
       return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix , n.path), "out")], { count: outgoing(ix , n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix , n.path), "in")], { count: incoming(ix , n.path).length }));
+    const rn = relatedNotes(ix , n.path);
+    if (host.addToCanvas && rn.length) {       // D-0082
+      const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
+      all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas (n.path, rn.map((r) => r.path))));
+      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas (n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+    }
     if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix .bySymbol.has(u.type) ? note(ix .bySymbol.get(u.type)) .title : u.type + " (not in vault)", path: ix .bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
     return box;
   }
@@ -4167,7 +4223,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -4185,6 +4241,8 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                                                         
                                                                             
                                                                           
+                                                                                                                                              
+                                             
                                                                                                           
                                                                
                                                                        
@@ -4318,6 +4376,7 @@ function hostFor(plugin     )      {
     openNote: (p        ) => plugin.app.workspace.openLinkText(p, "", false),
     openTable: (lens        ) => plugin.openTable(lens),
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
+    addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths          , label        , relations         , group         ) => plugin.openPickCanvas(paths, label, relations, group),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
@@ -4458,6 +4517,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (f && f.extension === "md" && this.ix?.notes.has(f.path)) this.selected = f.path;
     if (this.selected) this.apps.forEach((a     ) => a.select(this.selected));
   }
+  /** D-0082: a note card chosen on a canvas becomes the selected note. Obsidian has no event for it, so look after a click or key press in a canvas. */
+  canvasSelection() {
+    const view = this.app.workspace.activeLeaf?.view ?? this.app.workspace.getActiveViewOfType?.(obsidian.ItemView);
+    if (!view || view.getViewType?.() !== "canvas") return;
+    const sel = view.canvas?.selection; if (!sel || sel.size !== 1) return;
+    const node = [...sel][0]; let data     ; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { return; }
+    const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
+    if (p && p !== this.selected && this.ix?.notes.has(p)) { this.selected = p; this.apps.forEach((a     ) => a.select(p)); }
+  }
   onFileOpen(f     ) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a     ) => a.select(f.path)); } }
 
   /* ---- views ---- */
@@ -4485,6 +4553,24 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openPickCanvas(paths          , label        , relations         , group         )                  {
     await this.ensureIndex();
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
+  }
+
+  /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
+  async addToCanvasPreview(anchor        , paths          )                  {
+    await this.ensureIndex();
+    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [anchor, ...paths], { relations: true, label: this.ix.notes.get(anchor)?.title ?? "", group: false }));
+    let res                                            = null;
+    await this.editPreview((text) => {
+      const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths); res = r;
+      if (!r.added) return null;
+      for (const id of r.lineIds) this.preview .edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
+      return JSON.stringify(r.doc, null, 2);
+    });
+    const r = res                                             ;
+    if (!r) return "Could not read the canvas preview.";
+    const open = this.app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === WB.PREVIEW_PATH); if (open) this.app.workspace.revealLeaf(open);
+    return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to the canvas preview${r.present ? ` (${r.present} already there)` : ""}. Not saved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
   }
 
   /* ---- saving a preview ---- */
@@ -4605,6 +4691,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       menu.addItem((i     ) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f     ) => this.onFileOpen(f)));
+    for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
     this.registerEvent(this.app.vault.on("modify", (f     ) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session

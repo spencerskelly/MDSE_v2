@@ -88,6 +88,58 @@ export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: b
   return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
 
+/** The note a card stands for: a file card, or a text card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
+export function cardNotePath(node: CanvasNode | undefined): string | null {
+  if (!node) return null;
+  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
+  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
+  return m ? (/\.md$/i.test(m[1]!) ? m[1]! : m[1] + ".md") : null;
+}
+
+/** Notes related to `path` (D-0082): every resolved relationship either way, as the other note's path with the kinds that join them. */
+export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string; kinds: string[] }> {
+  const by = new Map<string, Set<string>>();
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse) continue;
+    const other = e.from === path ? e.to : e.to === path ? e.from : null;
+    if (other && other !== path && ix.notes.has(other)) (by.get(other) ?? by.set(other, new Set()).get(other)!).add(e.kind);
+  }
+  return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
+}
+
+/** Adds notes to a canvas that already holds cards (D-0082). New cards go in columns to the right of `anchor`'s card (or below everything when it is not on the canvas), at most ADD_ROWS to a column, spaced as in D-0079 and moved right until they overlap nothing. A note already on the canvas is not added twice. Lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+export const ADD_ROWS = 8;
+export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[]): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
+  const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const onCanvas = new Map<string, CanvasNode>();
+  for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
+  const fresh = [...new Set(paths)].filter((p) => ix.notes.has(p) && !onCanvas.has(p)), present = new Set(paths.filter((p) => onCanvas.has(p))).size;
+  if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
+  const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
+  const freshId = (pre: string): string => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
+  const cards = fresh.map((p) => noteCard(ix, p, freshId("p")));
+  const a = anchor ? onCanvas.get(anchor) : undefined, solids = out.nodes.filter((n) => n.type !== "group");
+  const colsN = Math.ceil(cards.length / ADD_ROWS), step = W + GX;
+  const colH = (c: number): number => { const col = cards.slice(c * ADD_ROWS, (c + 1) * ADD_ROWS); return col.reduce((s, x) => s + x.height, 0) + (col.length - 1) * GY; };
+  const tallest = Math.max(...Array.from({ length: colsN }, (_, c) => colH(c)));
+  let x0 = a ? a.x + step : solids.length ? Math.max(...solids.map((n) => n.x + n.width)) + GX : 0, top = a ? a.y + a.height / 2 - tallest / 2 : solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0;
+  if (!a && solids.length) x0 = Math.min(...solids.map((n) => n.x));
+  const place = (dx: number): CanvasNode[] => cards.map((c, i) => { const col = Math.floor(i / ADD_ROWS), row = cards.slice(col * ADD_ROWS, i).reduce((s, x) => s + x.height + GY, 0); return { ...c, x: Math.round(x0 + dx + col * step), y: Math.round(top + row) }; });
+  const clash = (list: CanvasNode[]): boolean => list.some((c) => solids.some((n) => c.x < n.x + n.width + 40 && n.x < c.x + c.width + 40 && c.y < n.y + n.height + 40 && n.y < c.y + c.height + 40));
+  let dx = 0, placed = place(0);
+  for (let t = 0; t < 40 && clash(placed); t++) { dx += step; placed = place(dx); }
+  out.nodes.push(...placed);
+  const at = new Map<string, CanvasNode>(); for (const [p, n] of onCanvas) at.set(p, n); fresh.forEach((p, i) => at.set(p, placed[i]!));
+  const isNew = new Set(fresh), lineIds: string[] = [];
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse || !(isNew.has(e.from) || isNew.has(e.to))) continue;
+    const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
+    const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
+    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
+  }
+  return { doc: out, added: fresh.length, present, lineIds };
+}
+
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?: Partial<ViewSpec>): CanvasResult {
   const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;

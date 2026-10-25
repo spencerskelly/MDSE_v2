@@ -6,7 +6,7 @@ import type { Child } from "./ui.ts";
 import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
-import { MAX_PICK } from "./canvas.ts";
+import { MAX_PICK, relatedNotes } from "./canvas.ts";
 import { editView, setEditRef, editRefresh, markEditStale, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
@@ -18,6 +18,8 @@ export interface PanelHost {
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
+  /** Put notes on the canvas preview beside the selected note's card (D-0082). */
+  addToCanvas?(anchor: string, paths: string[]): Promise<string>;
   openPickCanvas?(paths: string[], label: string, relations: boolean, group: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
   /** Review actions. Resolves to a message and a way back. */
@@ -118,6 +120,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix!, n.path), "out")], { count: outgoing(ix!, n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix!, n.path), "in")], { count: incoming(ix!, n.path).length }));
+    const rn = relatedNotes(ix!, n.path);
+    if (host.addToCanvas && rn.length) {       // D-0082
+      const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
+      all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
+      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+    }
     if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
     return box;
   }

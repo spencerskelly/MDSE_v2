@@ -939,3 +939,15 @@ Rules: WKB-029 (Active).
 4. **Not covered.** I could not look at the canvas in Obsidian from here. The small type is written as `<small>` in the card text; whether Obsidian shows it smaller than the name in a canvas card is not verified. A file card showed a live preview of the note's text; a text card does not.
 
 Rules: WKB-031 (Active).
+
+## D-0082 — Choosing a note card on a canvas selects it; related notes can be added to the canvas
+
+2026-10-24 · Spencer · Accepted (owner, chat: "when i select a note in the canvas, workbench should switch to viewing that note. when a note is selected, I'd like the ability to add related notes to the canvas").
+
+1. **Selection follows the canvas.** After a click or key press in a canvas, if exactly one card is chosen and it stands for a note in the index (a text card whose first line links the note, or a file card), that note becomes the Workbench's selected note and the panel shows it. Obsidian has no event for canvas selection, so the plugin looks a moment after each click or key press; it reads the canvas's own `selection`, an internal that Obsidian does not document. Not verified in Obsidian from here; the test uses a stand-in with the same shape that the existing line-editing already reads.
+2. **Related notes.** The Note lens has a section "Add related notes to the canvas" listing every note joined to the selected one by a resolved relationship in either direction, with the kinds that join them. A "+" adds one; "Add all N related to canvas" adds them all.
+3. **Placement.** New cards go in columns to the right of the selected note's card, with a gap of three card widths (D-0079), at most 8 to a column, and move right until they overlap no card. A note already on the canvas is not added again. When the selected note's card is not on the canvas the cards go below everything. Lines are drawn between each new card and every note on the canvas it relates to, and are marked as the Workbench's own so they are not mistaken for lines the person drew.
+4. **No preview open.** The selected note and the chosen ones make a new preview canvas.
+5. **Not covered.** Only the temporary preview canvas is changed; a canvas the person saved or made by hand is not. Relatives of relatives (more than one step) are added by selecting a new card and adding again. A card removed from the canvas is not removed from the model.
+
+Rules: WKB-032 (Active).

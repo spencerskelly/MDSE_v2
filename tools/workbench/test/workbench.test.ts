@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { toCanvas, pickCanvas, cardName, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, ADD_ROWS, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -492,4 +492,32 @@ test("a card is named by the name, else the description; the part number, else t
   const w2 = buildIndex(bom, { classes, parserReport: bom.get("99_System/11_Import/Parser Check.md") });
   const card = pickCanvas(w2, ["BOM/Parts/Cables/Parts/buy/09190-301.md"], { relations: false, label: "" }).doc.nodes.find((x) => x.type === "text" && !/Object \(/.test(x.label ?? "") && x.text)!;
   assert.ok(/^\*\*\[\[BOM\/Parts\/Cables\/Parts\/buy\/09190-301\|CABLE ASSY 3M\]\]\*\*<br><small>09190-301<\/small>$/.test(card.text!), card.text);
+});
+
+test("related notes are added to a canvas beside the selected note's card, once, joined by lines, overlapping nothing (D-0082)", () => {
+  const c = byTitle("Charger"), rel = relatedNotes(ix, c);
+  assert.ok(rel.length >= 3 && rel.every((r) => r.path !== c && ix.notes.has(r.path) && r.kinds.length), "related notes with the kinds that join them");
+  assert.equal(new Set(rel.map((r) => r.path)).size, rel.length);
+  const base = pickCanvas(ix, [c], { relations: false, label: "", group: false }).doc, before = JSON.stringify(base);
+  const r = addToCanvas(base, ix, c, rel.map((x) => x.path));
+  assert.equal(JSON.stringify(base), before, "the input canvas is not changed");
+  assert.equal(r.added, rel.length); assert.equal(r.doc.nodes.length, 1 + rel.length); assert.equal(r.present, 0);
+  const anchor = r.doc.nodes[0]!, news = r.doc.nodes.slice(1);
+  assert.ok(news.every((n) => n.x >= anchor.x + 280 + 840), "to the right of the card, a gap of 3 widths");
+  assert.equal(new Set(r.doc.nodes.map((n) => n.id)).size, r.doc.nodes.length, "unique ids");
+  for (let i = 0; i < news.length; i++) for (let j = i + 1; j < news.length; j++) { const a = news[i]!, b = news[j]!; assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, "no overlap"); }
+  assert.ok(r.doc.edges.length >= 1 && r.doc.edges.every((e) => r.doc.nodes.some((n) => n.id === e.fromNode) && r.doc.nodes.some((n) => n.id === e.toNode)));
+  assert.deepEqual(r.lineIds.sort(), r.doc.edges.map((e) => e.id).sort(), "every line is reported, so the plugin knows it drew them");
+  const again = addToCanvas(r.doc, ix, c, rel.map((x) => x.path));
+  assert.equal(again.added, 0); assert.equal(again.present, rel.length); assert.equal(again.doc.nodes.length, r.doc.nodes.length, "not added twice");
+  // a card in the way: the new column moves right
+  const blocker = { id: "blk", type: "text" as const, x: anchor.x + 280 + 840, y: anchor.y - 100, width: 300, height: 300, text: "free" };
+  const moved = addToCanvas({ nodes: [...base.nodes, blocker], edges: [] }, ix, c, [rel[0]!.path]).doc.nodes.find((n) => cdNotePath(n) === rel[0]!.path)!;
+  assert.ok(moved.x >= blocker.x + blocker.width, "moved clear of the card in the way");
+  // a long list wraps into columns
+  const many = [...ix.notes.keys()].filter((p) => p !== c), wide = addToCanvas(base, ix, c, many);
+  assert.equal(wide.added, many.length); assert.ok(new Set(wide.doc.nodes.slice(1).map((n) => n.x)).size === Math.ceil(many.length / ADD_ROWS));
+  // the anchor is not on the canvas: below everything
+  const off = addToCanvas(base, ix, "nope.md", [rel[0]!.path]).doc.nodes[1]!; assert.ok(off.y >= anchor.y + anchor.height);
+  assert.equal(addToCanvas(base, ix, c, ["not-in-index.md"]).added, 0);
 });

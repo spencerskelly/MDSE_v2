@@ -14,6 +14,8 @@ declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string }) => any;
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
+  addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[]) => { doc: any; added: number; present: number; lineIds: string[] };
+  cardNotePath: (node: any) => string | null;
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
@@ -147,6 +149,7 @@ function hostFor(plugin: any): any {
     openNote: (p: string) => plugin.app.workspace.openLinkText(p, "", false),
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
+    addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean) => plugin.openPickCanvas(paths, label, relations, group),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
@@ -287,6 +290,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (f && f.extension === "md" && this.ix?.notes.has(f.path)) this.selected = f.path;
     if (this.selected) this.apps.forEach((a: any) => a.select(this.selected));
   }
+  /** D-0082: a note card chosen on a canvas becomes the selected note. Obsidian has no event for it, so look after a click or key press in a canvas. */
+  canvasSelection() {
+    const view = this.app.workspace.activeLeaf?.view ?? this.app.workspace.getActiveViewOfType?.(obsidian.ItemView);
+    if (!view || view.getViewType?.() !== "canvas") return;
+    const sel = view.canvas?.selection; if (!sel || sel.size !== 1) return;
+    const node = [...sel][0]; let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { return; }
+    const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
+    if (p && p !== this.selected && this.ix?.notes.has(p)) { this.selected = p; this.apps.forEach((a: any) => a.select(p)); }
+  }
   onFileOpen(f: any) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); } }
 
   /* ---- views ---- */
@@ -314,6 +326,24 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean): Promise<string> {
     await this.ensureIndex();
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
+  }
+
+  /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
+  async addToCanvasPreview(anchor: string, paths: string[]): Promise<string> {
+    await this.ensureIndex();
+    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [anchor, ...paths], { relations: true, label: this.ix.notes.get(anchor)?.title ?? "", group: false }));
+    let res: { added: number; present: number } | null = null;
+    await this.editPreview((text) => {
+      const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths); res = r;
+      if (!r.added) return null;
+      for (const id of r.lineIds) this.preview!.edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
+      return JSON.stringify(r.doc, null, 2);
+    });
+    const r = res as { added: number; present: number } | null;
+    if (!r) return "Could not read the canvas preview.";
+    const open = this.app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === WB.PREVIEW_PATH); if (open) this.app.workspace.revealLeaf(open);
+    return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to the canvas preview${r.present ? ` (${r.present} already there)` : ""}. Not saved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
   }
 
   /* ---- saving a preview ---- */
@@ -434,6 +464,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       menu.addItem((i: any) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
+    for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
     this.registerEvent(this.app.vault.on("modify", (f: any) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session

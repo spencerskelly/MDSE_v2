@@ -3,6 +3,7 @@
  * drew, work out which relationship kinds the two notes allow, and tidy the scratch canvas afterwards. The Obsidian shell
  * (plugin.ts) shows the dropdown and applies the plan. A canvas line is a picture; it never becomes model meaning by itself. */
 import type { CanvasDoc, CanvasEdge, CanvasNode } from "./canvas.ts";
+import { cardNotePath } from "./canvas.ts";
 import type { ModelIndex, Note } from "./index.ts";
 import { ED_RELS, planAddRelationship, edUsageKinds } from "./edit.ts";
 import type { EdRel, EditPlan } from "./edit.ts";
@@ -11,12 +12,7 @@ import type { EdRel, EditPlan } from "./edit.ts";
 export const cdEdgeIds = (doc: CanvasDoc): Set<string> => new Set(doc.edges.map((e) => e.id));
 
 /** The note a card stands for: a file card, or a requirement card whose first line is the note's link. Group, "not in vault" and free text cards stand for none. */
-export function cdNotePath(node: CanvasNode | undefined): string | null {
-  if (!node) return null;
-  if (node.type === "file") return node.file && /\.md$/i.test(node.file) ? node.file : null;
-  const m = /^\*\*\[\[([^\]|]+)/.exec(node.text ?? "");
-  return m ? (/\.md$/i.test(m[1]!) ? m[1]! : m[1] + ".md") : null;
-}
+export const cdNotePath = (node: CanvasNode | undefined): string | null => cardNotePath(node);
 
 export interface DrawnLine { id: string; from: string | null; to: string | null; fromCard: string; toCard: string }
 /** Lines in `doc` whose id is not in `known`, with the note at each end (null when that card is not a note). */

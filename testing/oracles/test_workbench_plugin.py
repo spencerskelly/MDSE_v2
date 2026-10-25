@@ -18,7 +18,7 @@ PCE_PATH = "00 Product Definition/MHE/PCE25/PCE25.md"
 FAKE = r"""
 window.__files = {}; window.__dirs = {}; window.__notices = []; window.__opened = []; window.__cmds = {}; window.__menu = 0; window.__data = null; window.__ev = {}; window.__where = []; window.__active = null; window.__evs = {}; let views = {};
 class ItemView { constructor(leaf) { this.leaf = leaf; this.app = window.__app; this.contentEl = document.createElement('div'); this.contentEl.empty = function () { this.replaceChildren(); }; document.body.append(this.contentEl); } }
-class Plugin { constructor(app) { this.app = app; } addCommand(c) { window.__cmds[c.id] = c; } registerView(t, f) { views[t] = f; } addRibbonIcon() {} registerEvent(e) { return e; } addSettingTab(t) { window.__tab = t; } async loadData() { return window.__data; } async saveData(d) { window.__data = JSON.parse(JSON.stringify(d)); } }
+class Plugin { constructor(app) { this.app = app; } addCommand(c) { window.__cmds[c.id] = c; } registerView(t, f) { views[t] = f; } addRibbonIcon() {} registerEvent(e) { return e; } registerDomEvent(el, ev, fn) { el.addEventListener(ev, fn); } addSettingTab(t) { window.__tab = t; } async loadData() { return window.__data; } async saveData(d) { window.__data = JSON.parse(JSON.stringify(d)); } }
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.containerEl = document.createElement('div'); this.containerEl.empty = function () { this.replaceChildren(); }; } }
 const deco = (e) => { e.empty = function () { this.replaceChildren(); }; e.setText = function (t) { this.textContent = t; }; e.createEl = function (tag, o = {}) { const c = deco(document.createElement(tag)); if (o.text) c.textContent = o.text; if (o.cls) c.className = o.cls; this.append(c); return c; }; e.createDiv = function (o = {}) { return this.createEl('div', o); }; return e; };
 class Setting { constructor(el) { this.el = el; this.name = ''; } setName(n) { this.name = n; return this; } setDesc() { return this; }
@@ -340,6 +340,20 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + A[:-3] + "|") for n in picked["nodes"]), "the ticked note is on the canvas")
             self.assertTrue(any(n["type"] == "group" and n.get("label") for n in picked["nodes"]), "boxed by type")
             self.assertTrue(all(n["type"] == "text" for n in picked["nodes"] if n["type"] != "group") and len(picked["nodes"]) >= 3)
+
+            # a card chosen on the canvas becomes the selected note, and its related notes can be added to the canvas (D-0082)
+            T, title = pg.evaluate("""() => { const ix = window.__plugin.ix, e = ix.edges.find((x) => x.to && !x.reverse && x.from !== x.to); return [e.to, ix.notes.get(e.to).title]; }""")
+            pg.evaluate("p => window.__plugin.openPickCanvas([p], '', false, false)", T)
+            pg.wait_for_function("p => JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas']).nodes.length === 1")
+            pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
+            pg.wait_for_selector(f"header >> text={title}")
+            pg.click("button[role=tab]:text-is('Note')")
+            pg.click("summary:has-text('Add related notes to the canvas')")
+            pg.click("button:has-text('related to canvas')")
+            pg.wait_for_selector("text=/Added \\d+ note/")
+            added = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
+            self.assertGreaterEqual(len([n for n in added["nodes"] if n["type"] == "text"]), 2, "related notes were added beside the card")
+            self.assertTrue(added["edges"], "and joined to it by a line")
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
