@@ -35,10 +35,12 @@ export function cardName(n: { title: string; id: string; meta: Record<string, un
   const name = n.title.replace(/[|\[\]\n]/g, " ").replace(/\s+/g, " ").trim(), pn = String(n.meta.partNumber ?? "").trim(), sub = pn || n.id || "";
   return { name, sub: sub && sub !== name ? sub : "" };
 }
+/** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
+export const RETIRED_COLOR = "1";
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
-  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, color = TYPE_COLOR[n.type], { name, sub } = cardName(n);
-  const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, small = sub ? `<br><small>${sub.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
+  const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, into = retired ? String(n.meta.mergedInto).match(/\[\[([^\]|#]+)/)?.[1]?.trim() ?? "" : "", small0 = retired ? `retired${into ? ` → ${into}` : ""}` : sub, small = small0 ? `<br><small>${small0.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
   if (isRequirement(n)) {
     const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
     return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `${link}${n.subtype ? ` · ${n.subtype}` : ""}${small}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
@@ -148,7 +150,7 @@ export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string
   for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const other = e.from === path ? e.to : e.to === path ? e.from : null;
-    if (other && other !== path && ix.notes.has(other)) (by.get(other) ?? by.set(other, new Set()).get(other)!).add(e.kind);
+    if (other && other !== path && ix.notes.has(other) && !ix.notes.get(other)!.meta.mergedInto) (by.get(other) ?? by.set(other, new Set()).get(other)!).add(e.kind);
   }
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
 }
@@ -280,6 +282,55 @@ export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, path
     }
   }
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
+}
+
+/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
+export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
+  const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  let redrawn = 0, missing = 0;
+  const cardOf = new Map<string, CanvasNode>();
+  for (const n of out.nodes) {
+    if (n.type === "group") continue;
+    const p = cardNotePath(n); if (!p) continue;
+    if (!ix.notes.has(p)) {
+      if (n.type === "text" && n.color !== RETIRED_COLOR) { n.color = RETIRED_COLOR; redrawn++; }
+      if (n.type === "text" && n.text && !/not found/.test(n.text)) n.text += "<br><small>note not found</small>";
+      missing++; continue;
+    }
+    if (!cardOf.has(p)) cardOf.set(p, n);
+    if (n.type === "text") {
+      const fresh = noteCard(ix, p, n.id), before = JSON.stringify([n.text, n.color, n.height]);
+      n.text = fresh.text; n.height = fresh.height; if (fresh.color) n.color = fresh.color; else delete n.color;
+      if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
+    } else {
+      const want = ix.notes.get(p)!.meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p)!.type];
+      if (want && n.color !== want) { n.color = want; redrawn++; }
+    }
+  }
+  const drawn = (e: CanvasEdge): boolean => new RegExp(`^[ea]\\d+(?:${EDGE_REF_SEP}.*)?$`).test(e.id);                          // ids the Workbench gives; a line the person drew has another id
+  const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)] as const));
+  const labelOf = (e: { kind: string; label: string }): string => [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+  const real = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to);
+  let linesRemoved = 0, linesAdded = 0;
+  const hadDrawn = out.edges.some(drawn);
+  out.edges = out.edges.filter((e) => {
+    if (!drawn(e)) return true;
+    const a = pathOf.get(e.fromNode), b = pathOf.get(e.toNode); if (!a || !b || !ix.notes.has(a) || !ix.notes.has(b)) return true;
+    const live = real.some((r) => r.from === a && r.to === b && labelOf(r) === (e.label ?? ""));
+    if (!live) linesRemoved++;
+    return live;
+  });
+  if (hadDrawn) {
+    const taken = new Set(out.edges.map((e) => e.id)); let k = 0;
+    for (const r of real) {
+      const f = cardOf.get(r.from), t = cardOf.get(r.to!); if (!f || !t || f === t) continue;
+      const label = labelOf(r);
+      if (out.edges.some((e) => e.fromNode === f.id && e.toNode === t.id && (e.label ?? "") === label)) continue;
+      while (taken.has("a" + k)) k++; taken.add("a" + k);
+      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label }); linesAdded++;
+    }
+  }
+  return { doc: out, redrawn, missing, linesAdded, linesRemoved };
 }
 
 /** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */

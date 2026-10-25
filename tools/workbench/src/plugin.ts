@@ -18,6 +18,7 @@ declare const WB: {
   cardNotePath: (node: any) => string | null;
   structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
+  refreshCanvas: (doc: any, ix: any) => { doc: any; redrawn: number; missing: number; linesAdded: number; linesRemoved: number };
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
@@ -157,6 +158,7 @@ function hostFor(plugin: any): any {
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
+    refreshCanvas: () => plugin.refreshCanvasView(),
     addChildren: (parent: string, paths: string[]) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
@@ -354,6 +356,18 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
     const f = this.app.vault.getAbstractFileByPath(t.path);
     if (f) await this.app.vault.process(f, (x: string) => fn(x) ?? x);
+  }
+  /** D-0091: re-read the vault, then bring the open canvas's note cards and Workbench lines up to date with it. */
+  async refreshCanvasView(): Promise<string> {
+    this.files = await readVault(this.app); await this.rebuild(); await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Index refreshed. Open a canvas in the main window to refresh it too.";
+    let res: { redrawn: number; missing: number; linesAdded: number; linesRemoved: number } | null = null, changed = false;
+    await this.editTarget(t, (text) => { const r = WB.refreshCanvas(parseDoc(text), this.ix); res = r; const next = JSON.stringify(r.doc, null, 2); changed = r.redrawn + r.linesAdded + r.linesRemoved > 0; return changed ? next : null; });
+    const r = res as { redrawn: number; missing: number; linesAdded: number; linesRemoved: number } | null;
+    if (!r) return "Could not read that canvas.";
+    this.app.workspace.revealLeaf(t.leaf);
+    const bits = [r.redrawn ? `${r.redrawn} card${r.redrawn === 1 ? "" : "s"} redrawn` : "", r.linesAdded ? `${r.linesAdded} line${r.linesAdded === 1 ? "" : "s"} added` : "", r.linesRemoved ? `${r.linesRemoved} line${r.linesRemoved === 1 ? "" : "s"} removed` : "", r.missing ? `${r.missing} note${r.missing === 1 ? "" : "s"} not found (shown red)` : ""].filter(Boolean);
+    return bits.length ? `Refreshed ${t.path}: ${bits.join(", ")}.` : `${t.path} already matches the vault.`;
   }
   /** D-0089: apply the layout rules to the cards of the open canvas. */
   async autoLayoutCanvas(): Promise<string> {

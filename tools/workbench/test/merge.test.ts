@@ -58,7 +58,11 @@ const f2 = apply(f1, merge), ix2 = build(f2);
 
 test("merging leaves one note per part: the BOM note keeps its identity and takes the EA note's content", () => {
   assert.equal(merge.merged, 1);
-  assert.ok(!f2.has(CTRL) && f2.has(PART));
+  assert.ok(f2.has(CTRL) && f2.has(PART));
+  const stub = f2.get(CTRL)!;
+  assert.match(stub, /^status: Retired$/m); assert.match(stub, /^mergedInto: \["\[\[SYN-CTRL-1\]\]"\]$/m);
+  assert.equal(stub.split("\n---\n")[1]!.trim(), "", "nothing but the header: no text, no SysML"); assert.doesNotMatch(stub, /```sysml|## /);
+  assert.equal(/^id: (.+)$/m.exec(stub)![1], /^id: (.+)$/m.exec(f1.get(CTRL)!)![1], "the id stays reserved");
   const n = f2.get(PART)!, was = f1.get(PART)!;
   assert.equal(/^id: (.+)$/m.exec(n)![1], /^id: (.+)$/m.exec(was)![1]);
   assert.equal(/^uid: (.+)$/m.exec(n)![1], /^uid: (.+)$/m.exec(was)![1]);
@@ -126,7 +130,7 @@ test("two notes merged into one survivor in one batch, and an alias chain resolv
   const ix = build(f), m = M.planNoteMerge(ix, f);
   assert.equal(m.merged, 2);
   const out = apply(f, m);
-  assert.ok(!out.has(extra) && !out.has(CTRL) && out.has(PART));
+  assert.ok(/^status: Retired$/m.test(out.get(extra)!) && /^status: Retired$/m.test(out.get(CTRL)!) && !/^status: Retired$/m.test(out.get(PART)!));
   const n = out.get(PART)!;
   assert.match(n, /OBJ-00004 \(uid /); assert.match(n, /OBJ-00005 \(uid /);
   for (const x of build(out).notes.values()) { assert.deepEqual(x.warnings, [], x.path); assert.deepEqual(x.issues, [], x.path); }

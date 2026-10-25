@@ -409,6 +409,8 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("s => window.__files['Mine.canvas'] !== s", arg=scrambled, timeout=4000)
             laid = pg.evaluate("JSON.parse(window.__files['Mine.canvas'])")
             self.assertEqual([n for n in laid["nodes"] if n["id"] == "memo"][0]["y"], 7)
+            pg.click("button:has-text('Refresh canvas')")
+            pg.wait_for_selector("text=/already matches the vault|Refreshed Mine.canvas/")
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
@@ -505,6 +507,17 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(pg.locator("select[aria-label='Which note stays']").input_value(), "other", "CHG-1 is the BOM part, so it stays")
             pg.click("button:has-text('Preview alias')")
             pg.wait_for_selector(".diff .add:has-text('aliasOf')")
+            # one step: merge now keeps the BOM note and retires the other (D-0091)
+            pg.click("button:has-text('Merge now')")
+            pg.wait_for_selector("text=Who owns what")
+            pg.click("button:has-text('Preview merge')")
+            pg.wait_for_selector(".callout:has-text('retired after merging')")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_function("() => /status: Retired/.test(window.__notes['10_Model/Charger.md'])", timeout=4000)
+            stub = pg.evaluate("window.__notes['10_Model/Charger.md']")
+            self.assertIn("mergedInto", stub); self.assertNotIn("```sysml", stub)
+            self.assertNotIn("status: Retired", pg.evaluate("window.__notes['10_Model/CHG-1.md']"))
+            self.assertNotIn("aliasOf", pg.evaluate("window.__notes['10_Model/CHG-1.md']"))
             self.assertEqual(errors, [])
             b.close()
 
@@ -548,9 +561,9 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(pg.locator("select[aria-label='Owner of Structure']").input_value(), "both")
             self.assertEqual(pg.locator("select[aria-label='Owner of Interfaces and connections']").input_value(), "both")
             pg.click("button:has-text('Preview merge')")
-            pg.wait_for_selector(".callout:has-text('removed after merging')")
+            pg.wait_for_selector(".callout:has-text('retired after merging')")
             pg.click("button:has-text('Apply')")
-            pg.wait_for_function("() => !('10_Model/Charger.md' in window.__notes)")
+            pg.wait_for_function("() => /status: Retired/.test(window.__notes['10_Model/Charger.md'] || '')")
             merged = pg.evaluate("p => window.__notes[p]", "10_Model/CHG-1.md")
             self.assertIn("port dcOut : OBJ_00001::DcPort;", merged)
             self.assertIn("## Former ids", merged)
@@ -558,9 +571,9 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertIn("[[CHG-1|Charger]]", station)
             self.assertIn("part charger : OBJ_00003::P_CHG_1;", station)
 
-            # undo brings the removed note and every rewritten link back
+            # undo brings the retired note's content and every rewritten link back
             pg.click("button:has-text('Undo')")
-            pg.wait_for_function("() => '10_Model/Charger.md' in window.__notes")
+            pg.wait_for_function("() => !/status: Retired/.test(window.__notes['10_Model/Charger.md'] || '')")
             self.assertIn("[[Charger]]", pg.evaluate("p => window.__notes[p]", "10_Model/Station.md"))
             b.close()
         self.assertEqual(errors, [])

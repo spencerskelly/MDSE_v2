@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -673,4 +673,27 @@ test("direct parts show only direct parts in every Structure table, and children
   assert.equal(new Set(k2.map((n) => n.y)).size, 1); assert.ok(k2.every((n) => Math.abs(n.x - (parent.x - 1120)) >= 280), "nothing on the memo");
   const again = addChildren(r.doc, v, "Charger.md", ["Cable.md", "Plug.md"]); assert.equal(again.added, 0); assert.equal(again.present, 2);
   const cold = addChildren({ nodes: [], edges: [] }, v, "Charger.md", ["Cable.md"]); assert.equal(cold.doc.nodes.length, 2, "the parent is put on first");
+});
+
+test("a retired note is a red card that names the note it went into, and Refresh redraws cards and lines from the vault without moving anything (D-0091)", () => {
+  const f = (id: string, title: string, props = "", extra = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500002${id.replace(/\D/g, "").padStart(4, "0")}refresh-test\nstatus: ${extra ? "Retired" : "Draft"}\n${extra}${props}tags: []\n---\n# ${title}\n`];
+  const v1 = buildIndex(new Map([f("OBJ-00001", "Charger", 'hasPart: ["[[Cable]]", "[[Plug]]"]\n'), f("OBJ-00002", "Cable"), f("OBJ-00003", "Plug")]), { classes });
+  const doc = addToCanvas({ nodes: [], edges: [] }, v1, null, [...v1.notes.keys()]).doc;
+  assert.equal(doc.edges.length, 2);
+  const pos = JSON.stringify(doc.nodes.map((n) => [n.id, n.x, n.y]));
+  // in the vault now: Plug is retired into Cable, Charger no longer owns Plug, Cable has a new name
+  const v2 = buildIndex(new Map([f("OBJ-00001", "Charger", 'hasPart: ["[[Cable]]"]\n'), [ "Cable.md", "---\ntype: Object\nid: OBJ-00002\nuid: 202610250000200002refresh-test\nstatus: Draft\nname: Power cable\ntags: []\n---\n# Cable\n"], f("OBJ-00003", "Plug", "", 'tags-note: x\nmergedInto: ["[[Cable]]"]\n')]), { classes });
+  const r = refreshCanvas(doc, v2), at = (t: string) => r.doc.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
+  assert.equal(JSON.stringify(r.doc.nodes.map((n) => [n.id, n.x, n.y])), pos, "nothing moved");
+  assert.match(at("Cable").text!, /Power cable/);
+  assert.equal(at("Plug").color, "1"); assert.match(at("Plug").text!, /retired → Cable/);
+  assert.equal(r.linesRemoved, 1, "the Charger to Plug line is gone"); assert.equal(r.doc.edges.length, 2, "Charger to Cable stays, Plug to Cable is new");
+  assert.ok(r.linesAdded >= 1, "the new relationship from Plug to Cable is drawn");
+  // a note that is not in the vault any more
+  const gone = refreshCanvas(doc, buildIndex(new Map([f("OBJ-00001", "Charger")]), { classes }));
+  assert.equal(gone.missing, 2); assert.ok(gone.doc.nodes.filter((n) => n.color === "1").length === 2);
+  // a line the person drew is never touched
+  const mine = { nodes: doc.nodes, edges: [...doc.edges, { id: "9f3ab2c4d5e6f7a8", fromNode: doc.nodes[1]!.id, toNode: doc.nodes[2]!.id, fromSide: "right" as const, toSide: "left" as const, toEnd: "arrow" as const }] };
+  assert.ok(refreshCanvas(mine, v2).doc.edges.some((e) => e.id === "9f3ab2c4d5e6f7a8"));
+  assert.equal(refreshCanvas(r.doc, v2).redrawn + refreshCanvas(r.doc, v2).linesAdded + refreshCanvas(r.doc, v2).linesRemoved, 0, "refreshing twice changes nothing more");
 });

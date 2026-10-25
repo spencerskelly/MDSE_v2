@@ -436,6 +436,7 @@ export function pickRows(ix: ModelIndex, text: string, type = "", limit = 500): 
   const words = text.toLowerCase().split(/\s+/).filter(Boolean), out: Note[] = [];
   for (const n of ix.notes.values()) {
     if (type && n.type !== type) continue;
+    if (n.meta.mergedInto) continue;                                                  // D-0091: a retired stub is not offered; its content is in the note it points at
     if (words.length) { const hay = `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""} ${n.meta.aliases ?? ""}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
     out.push(n);
   }
@@ -472,7 +473,7 @@ const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
 export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "pick" | "common" | "layout" | "merge" | "edit";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout"], ["merge", "Merge notes"], ["edit", "Edit"]];
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string; lenses: Lens[] }> = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },

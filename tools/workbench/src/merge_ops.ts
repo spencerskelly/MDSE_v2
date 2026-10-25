@@ -154,7 +154,7 @@ export function mgSuggest(ix: ModelIndex): MgSuggestion[] {
   const bom: Array<{ n: Note; pn: string; name: string }> = [], ea: Note[] = [];
   const taken = new Set(mgAliasPairs(ix).flatMap((p) => [p.absorbed]));
   for (const n of ix.notes.values()) {
-    if (n.type !== "Object") continue;
+    if (n.type !== "Object" || n.meta.mergedInto) continue;
     const pn = n.sourceLines.map((l) => /^- BOM Part Number:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean);
     if (pn) bom.push({ n, pn, name: n.sourceLines.map((l) => /^- Name:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean) ?? "" });
     else if (!taken.has(n.path)) ea.push(n);
@@ -322,6 +322,19 @@ function mgMergeFrontmatter(s: MgNote, a: MgNote, names: Map<string, string>, su
   return out;
 }
 
+/** The note a merge retires (D-0091, and the rule that a note is never deleted): only its identity, `status: Retired` and a link to the note that kept its content. Its SysML, text and source lines are all in the surviving note. */
+function mgRetired(text: string, survivorName: string): string {
+  const nl = text.includes("\r\n") ? "\r\n" : "\n", n = MDSE.parse(text.replace(/\r\n/g, "\n"));
+  const keep = ["type", "subtype", "id", "uid"], fm: string[] = [];
+  for (const k of keep) if (n.meta[k] !== undefined && String(n.meta[k]) !== "") fm.push(`${k}: ${n.meta[k]}`);
+  fm.push("status: Retired", "tags: [retired]", `mergedInto: [${JSON.stringify(`[[${survivorName}]]`)}]`);
+  return `---\n${fm.join("\n")}\n---\n`.replace(/\n/g, nl);
+}
+/** Merges the given pairs straight away, without an `aliasOf` line first (D-0091). */
+export function planMergePairs(ix: ModelIndex, files: Map<string, string>, pairs: Array<{ absorbed: string; survivor: string }>, chosen?: Map<string, MgOwners>): MergeResult {
+  return planNoteMerge(ix, files, pairs.map((p) => ({ absorbed: p.absorbed, survivor: p.survivor, target: ix.notes.get(p.survivor)?.name ?? p.survivor })), chosen);
+}
+
 /* ---- the merge ------------------------------------------------------------------------------------------------------- */
 export interface MergeResult extends EditPlan { merged: number; carried: number; notCarried: number; rewritten: number }
 /** Merges every absorbed note into its survivor (the end of its alias chain) and rewrites the links and symbols that named it. */
@@ -329,7 +342,7 @@ export function planNoteMerge(ix: ModelIndex, files: Map<string, string>, pairs?
   const fail = (p: string): MergeResult => ({ ...mgBad(p), merged: 0, carried: 0, notCarried: 0, rewritten: 0 });
   const list = pairs ?? mgAliasPairs(ix);
   if (!list.length) return fail("There are no aliases to merge.");
-  const roots = mgRoots(ix, mgAliasPairs(ix));
+  const known = mgAliasPairs(ix).filter((k) => !list.some((p) => p.absorbed === k.absorbed)), roots = mgRoots(ix, [...known, ...list]);       // D-0091: a pair given here needs no alias in the file first
   if (typeof roots === "string") return fail(roots);
   const abs = list.map((p) => p.absorbed), surv = new Set<string>();
   for (const a of abs) {
@@ -423,7 +436,7 @@ export function planNoteMerge(ix: ModelIndex, files: Map<string, string>, pairs?
     const final = i >= 0 ? writes[i]!.after : t;
     if (i >= 0) writes[i] = { path, before, after: final }; else writes.push({ path, before, after: final });
   }
-  for (const a of abs) writes.push({ path: a, before: files.get(a)!, after: "", remove: true });
+  for (const a of abs) writes.push({ path: a, before: files.get(a)!, after: mgRetired(files.get(a)!, ix.notes.get(roots.get(a)!)!.name) });     // D-0091: the removed note stays as a retired stub that points at the note that kept its content
   void notes;
   return { summary: `Merge ${abs.length} note${abs.length === 1 ? "" : "s"} into ${surv.size}: ${[...surv].slice(0, 3).map((s) => ix.notes.get(s)!.title).join(", ")}${surv.size > 3 ? "…" : ""}. ${carried} SysML member${carried === 1 ? "" : "s"} carried over${notCarried ? `, ${notCarried} kept apart for review` : ""}; links and references updated in ${rewritten} other note${rewritten === 1 ? "" : "s"}.`,
     writes, problems: [], merged: abs.length, carried, notCarried, rewritten };

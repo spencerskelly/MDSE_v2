@@ -70,15 +70,15 @@ export function editView(c: EditCtx): HTMLElement {
     if (!p) return;
     if (p.problems.length) { previewBox.append(h("div", { class: "callout flagConflict" }, h("b", {}, "Not possible"), ...p.problems.map((x) => h("div", {}, x)))); return; }
     previewBox.append(h("div", { class: "mut", style: "font-size:12px" }, p.summary));
-    const SHOWN = 8, big = p.writes.filter((w) => !w.remove).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove);
+    const SHOWN = 8, big = p.writes.filter((w) => !w.remove && !/^status: Retired$/m.test(w.after)).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove || (/^status: Retired$/m.test(w.after) && !/^status: Retired$/m.test(w.before ?? "")));
     for (const w of big) {
       const d = ED.edDiff(w.before, w.after);
       previewBox.append(h("div", { class: "mut", style: "font-size:11.5px;margin-top:4px" }, (w.before === null ? "New file: " : "Changes: ") + w.path),
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
-    const rest = p.writes.filter((w) => !w.remove).length - big.length;
+    const rest = p.writes.filter((w) => !w.remove && !/^status: Retired$/m.test(w.after)).length - big.length;
     if (rest > 0) previewBox.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, `… and ${rest} more changed file${rest === 1 ? "" : "s"}, shown when you apply (Undo restores them all).`));
-    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} removed after merging`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
+    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} retired after merging (kept as a stub that links to the note that stays)`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
     applyRow.append(h("button", { class: "sm pri", onclick: async (e: Event) => {
       const b = e.target as HTMLButtonElement; b.disabled = true; SAVED.stale = true;
       try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
@@ -310,10 +310,14 @@ export function editView(c: EditCtx): HTMLElement {
       } else other = null;
       SAVED.mergeWith = "";
       const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e: Event) => { MERGE_SAVED.keep = (e.target as HTMLSelectElement).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
-      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from!.path);
+      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from!.path && !n.meta.mergedInto);
       pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, other?.path ?? "").el);
       v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
-        h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", title: "Merge the two notes in one step: the note that stays takes the other\'s structure, behavior, requirements and properties, and the other is retired", onclick: () => {
+          if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
+          const keepThis = MERGE_SAVED.keep === "this", sv = keepThis ? from!.path : other.path, ab = keepThis ? other.path : from!.path;
+          openOwners({ absorbed: ab, survivor: sv, target: ix.notes.get(sv)!.name });
+        } }, "Merge now…"), h("button", { class: "sm", onclick: () => {
           if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
           showPlan(MERGE_SAVED.keep === "other" ? MG.planAliasMark(ix, host.files(), from!.path, other.path) : MG.planAliasMark(ix, host.files(), other.path, from!.path));
         } }, "Preview alias")));
@@ -326,17 +330,20 @@ export function editView(c: EditCtx): HTMLElement {
       if (!list) return;
       if (!list.length) { found.append(h("div", { class: "empty", style: "padding:6px 0" }, "No BOM part matches an EA note by part number or name.")); return; }
       const lab: Record<string, string> = { pn: "PN", title: "name has number", name: "close name" };
-      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones become aliases.`),
+      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones can be merged now (the BOM part stays) or only marked as aliases.`),
         h("table", { class: "rl" }, h("tbody", {}, ...list.slice(0, 300).map((s) => {
           const top = s.candidates[0]!, key = s.survivor + "|" + top.path;
           return h("tr", {}, h("td", {}, h("input", { type: "checkbox", "aria-label": `Alias ${title(top.path)}`, checked: MERGE_SAVED.pick.has(key), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) MERGE_SAVED.pick.add(key); else MERGE_SAVED.pick.delete(key); showPlan(null); } })),
             h("td", {}, h("b", {}, s.pn), " ", h("span", { class: "mut" }, title(s.survivor))), h("td", {}, "→ ", title(top.path), s.candidates.length > 1 ? h("span", { class: "mut" }, ` (+${s.candidates.length - 1} more)`) : null),
             h("td", {}, h("span", { class: "tag k" }, lab[top.level] ?? top.level)));
         }))),
-        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => {
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", title: "Merge each ticked pair now: the BOM part keeps its note and takes the model note\'s content; the model note is retired", onclick: () => {
+          const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s!, absorbed: a! }));
+          showPlan(pairs.length ? MG.planMergePairs(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
+        } }, "Merge ticked now"), h("button", { class: "sm", onclick: () => {
           const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s!, absorbed: a! }));
           showPlan(pairs.length ? MG.planAliasMarkMany(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
-        } }, "Mark ticked as aliases")));
+        } }, "Mark ticked as aliases only")));
     };
     v.append(h("div", { style: "margin-top:10px" }, h("b", {}, "BOM parts and EA notes"), helpBtn("suggest")),
       h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {

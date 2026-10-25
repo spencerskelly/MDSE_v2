@@ -1266,6 +1266,7 @@ function pickRows(ix            , text        , type = "", limit = 500)         
   const words = text.toLowerCase().split(/\s+/).filter(Boolean), out         = [];
   for (const n of ix.notes.values()) {
     if (type && n.type !== type) continue;
+    if (n.meta.mergedInto) continue;                                                  // D-0091: a retired stub is not offered; its content is in the note it points at
     if (words.length) { const hay = `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""} ${n.meta.aliases ?? ""}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
     out.push(n);
   }
@@ -1302,7 +1303,7 @@ const traceRelated = (r          , sel        )          => r.path === sel || [r
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
                                                                                                                                                                                           
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout"], ["merge", "Merge notes"], ["edit", "Edit"]];
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },
@@ -1428,10 +1429,12 @@ function cardName(n                                                             
   const name = n.title.replace(/[|\[\]\n]/g, " ").replace(/\s+/g, " ").trim(), pn = String(n.meta.partNumber ?? "").trim(), sub = pn || n.id || "";
   return { name, sub: sub && sub !== name ? sub : "" };
 }
+/** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
+const RETIRED_COLOR = "1";
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix            , path        , key        )             {
-  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , color = TYPE_COLOR[n.type], { name, sub } = cardName(n);
-  const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, small = sub ? `<br><small>${sub.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
+  const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, into = retired ? String(n.meta.mergedInto).match(/\[\[([^\]|#]+)/)?.[1]?.trim() ?? "" : "", small0 = retired ? `retired${into ? ` → ${into}` : ""}` : sub, small = small0 ? `<br><small>${small0.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
   if (isRequirement(n)) {
     const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
     return { ...base, type: "text", height: Math.min(520, 110 + Math.ceil(clip.length / 38) * 22), text: `${link}${n.subtype ? ` · ${n.subtype}` : ""}${small}\n\n${clip || "_no requirement text_"}`, ...(color ? { color } : {}) };
@@ -1541,7 +1544,7 @@ function relatedNotes(ix            , path        )                             
   for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const other = e.from === path ? e.to : e.to === path ? e.from : null;
-    if (other && other !== path && ix.notes.has(other)) (by.get(other) ?? by.set(other, new Set()).get(other) ).add(e.kind);
+    if (other && other !== path && ix.notes.has(other) && !ix.notes.get(other) .meta.mergedInto) (by.get(other) ?? by.set(other, new Set()).get(other) ).add(e.kind);
   }
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
 }
@@ -1673,6 +1676,55 @@ function addChildren(doc           , ix            , parent        , paths      
     }
   }
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
+}
+
+/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
+function refreshCanvas(doc           , ix            )                                                                                                 {
+  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  let redrawn = 0, missing = 0;
+  const cardOf = new Map                    ();
+  for (const n of out.nodes) {
+    if (n.type === "group") continue;
+    const p = cardNotePath(n); if (!p) continue;
+    if (!ix.notes.has(p)) {
+      if (n.type === "text" && n.color !== RETIRED_COLOR) { n.color = RETIRED_COLOR; redrawn++; }
+      if (n.type === "text" && n.text && !/not found/.test(n.text)) n.text += "<br><small>note not found</small>";
+      missing++; continue;
+    }
+    if (!cardOf.has(p)) cardOf.set(p, n);
+    if (n.type === "text") {
+      const fresh = noteCard(ix, p, n.id), before = JSON.stringify([n.text, n.color, n.height]);
+      n.text = fresh.text; n.height = fresh.height; if (fresh.color) n.color = fresh.color; else delete n.color;
+      if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
+    } else {
+      const want = ix.notes.get(p) .meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p) .type];
+      if (want && n.color !== want) { n.color = want; redrawn++; }
+    }
+  }
+  const drawn = (e            )          => new RegExp(`^[ea]\\d+(?:${EDGE_REF_SEP}.*)?$`).test(e.id);                          // ids the Workbench gives; a line the person drew has another id
+  const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)]         ));
+  const labelOf = (e                                 )         => [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+  const real = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to);
+  let linesRemoved = 0, linesAdded = 0;
+  const hadDrawn = out.edges.some(drawn);
+  out.edges = out.edges.filter((e) => {
+    if (!drawn(e)) return true;
+    const a = pathOf.get(e.fromNode), b = pathOf.get(e.toNode); if (!a || !b || !ix.notes.has(a) || !ix.notes.has(b)) return true;
+    const live = real.some((r) => r.from === a && r.to === b && labelOf(r) === (e.label ?? ""));
+    if (!live) linesRemoved++;
+    return live;
+  });
+  if (hadDrawn) {
+    const taken = new Set(out.edges.map((e) => e.id)); let k = 0;
+    for (const r of real) {
+      const f = cardOf.get(r.from), t = cardOf.get(r.to ); if (!f || !t || f === t) continue;
+      const label = labelOf(r);
+      if (out.edges.some((e) => e.fromNode === f.id && e.toNode === t.id && (e.label ?? "") === label)) continue;
+      while (taken.has("a" + k)) k++; taken.add("a" + k);
+      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label }); linesAdded++;
+    }
+  }
+  return { doc: out, redrawn, missing, linesAdded, linesRemoved };
 }
 
 /** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
@@ -2804,7 +2856,7 @@ function mgSuggest(ix            )                 {
   const bom                                               = [], ea         = [];
   const taken = new Set(mgAliasPairs(ix).flatMap((p) => [p.absorbed]));
   for (const n of ix.notes.values()) {
-    if (n.type !== "Object") continue;
+    if (n.type !== "Object" || n.meta.mergedInto) continue;
     const pn = n.sourceLines.map((l) => /^- BOM Part Number:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean);
     if (pn) bom.push({ n, pn, name: n.sourceLines.map((l) => /^- Name:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean) ?? "" });
     else if (!taken.has(n.path)) ea.push(n);
@@ -2972,6 +3024,19 @@ function mgMergeFrontmatter(s        , a        , names                     , su
   return out;
 }
 
+/** The note a merge retires (D-0091, and the rule that a note is never deleted): only its identity, `status: Retired` and a link to the note that kept its content. Its SysML, text and source lines are all in the surviving note. */
+function mgRetired(text        , survivorName        )         {
+  const nl = text.includes("\r\n") ? "\r\n" : "\n", n = MDSE.parse(text.replace(/\r\n/g, "\n"));
+  const keep = ["type", "subtype", "id", "uid"], fm           = [];
+  for (const k of keep) if (n.meta[k] !== undefined && String(n.meta[k]) !== "") fm.push(`${k}: ${n.meta[k]}`);
+  fm.push("status: Retired", "tags: [retired]", `mergedInto: [${JSON.stringify(`[[${survivorName}]]`)}]`);
+  return `---\n${fm.join("\n")}\n---\n`.replace(/\n/g, nl);
+}
+/** Merges the given pairs straight away, without an `aliasOf` line first (D-0091). */
+function planMergePairs(ix            , files                     , pairs                                               , chosen                        )              {
+  return planNoteMerge(ix, files, pairs.map((p) => ({ absorbed: p.absorbed, survivor: p.survivor, target: ix.notes.get(p.survivor)?.name ?? p.survivor })), chosen);
+}
+
 /* ---- the merge ------------------------------------------------------------------------------------------------------- */
                                                                                                                  
 /** Merges every absorbed note into its survivor (the end of its alias chain) and rewrites the links and symbols that named it. */
@@ -2979,7 +3044,7 @@ function planNoteMerge(ix            , files                     , pairs        
   const fail = (p        )              => ({ ...mgBad(p), merged: 0, carried: 0, notCarried: 0, rewritten: 0 });
   const list = pairs ?? mgAliasPairs(ix);
   if (!list.length) return fail("There are no aliases to merge.");
-  const roots = mgRoots(ix, mgAliasPairs(ix));
+  const known = mgAliasPairs(ix).filter((k) => !list.some((p) => p.absorbed === k.absorbed)), roots = mgRoots(ix, [...known, ...list]);       // D-0091: a pair given here needs no alias in the file first
   if (typeof roots === "string") return fail(roots);
   const abs = list.map((p) => p.absorbed), surv = new Set        ();
   for (const a of abs) {
@@ -3073,7 +3138,7 @@ function planNoteMerge(ix            , files                     , pairs        
     const final = i >= 0 ? writes[i] .after : t;
     if (i >= 0) writes[i] = { path, before, after: final }; else writes.push({ path, before, after: final });
   }
-  for (const a of abs) writes.push({ path: a, before: files.get(a) , after: "", remove: true });
+  for (const a of abs) writes.push({ path: a, before: files.get(a) , after: mgRetired(files.get(a) , ix.notes.get(roots.get(a) ) .name) });     // D-0091: the removed note stays as a retired stub that points at the note that kept its content
   void notes;
   return { summary: `Merge ${abs.length} note${abs.length === 1 ? "" : "s"} into ${surv.size}: ${[...surv].slice(0, 3).map((s) => ix.notes.get(s) .title).join(", ")}${surv.size > 3 ? "…" : ""}. ${carried} SysML member${carried === 1 ? "" : "s"} carried over${notCarried ? `, ${notCarried} kept apart for review` : ""}; links and references updated in ${rewritten} other note${rewritten === 1 ? "" : "s"}.`,
     writes, problems: [], merged: abs.length, carried, notCarried, rewritten };
@@ -3711,7 +3776,7 @@ function mountWorkbench(root             , host       = {})      {
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
-const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgOwnerRows, planNoteMerge };
+const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgOwnerRows, planMergePairs, planNoteMerge };
 
                     
                                
@@ -3772,15 +3837,15 @@ function editView(c         )              {
     if (!p) return;
     if (p.problems.length) { previewBox.append(h("div", { class: "callout flagConflict" }, h("b", {}, "Not possible"), ...p.problems.map((x) => h("div", {}, x)))); return; }
     previewBox.append(h("div", { class: "mut", style: "font-size:12px" }, p.summary));
-    const SHOWN = 8, big = p.writes.filter((w) => !w.remove).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove);
+    const SHOWN = 8, big = p.writes.filter((w) => !w.remove && !/^status: Retired$/m.test(w.after)).slice(0, SHOWN), gone = p.writes.filter((w) => w.remove || (/^status: Retired$/m.test(w.after) && !/^status: Retired$/m.test(w.before ?? "")));
     for (const w of big) {
       const d = ED.edDiff(w.before, w.after);
       previewBox.append(h("div", { class: "mut", style: "font-size:11.5px;margin-top:4px" }, (w.before === null ? "New file: " : "Changes: ") + w.path),
         h("div", { class: "diff" }, ...d.removed.map((l) => h("div", { class: "del" }, l || " ")), ...d.added.map((l) => h("div", { class: "add" }, l || " "))));
     }
-    const rest = p.writes.filter((w) => !w.remove).length - big.length;
+    const rest = p.writes.filter((w) => !w.remove && !/^status: Retired$/m.test(w.after)).length - big.length;
     if (rest > 0) previewBox.append(h("div", { class: "mut", style: "font-size:12px;margin-top:4px" }, `… and ${rest} more changed file${rest === 1 ? "" : "s"}, shown when you apply (Undo restores them all).`));
-    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} removed after merging`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
+    if (gone.length) previewBox.append(h("div", { class: "callout flagConflict", style: "margin-top:6px" }, h("b", {}, `${gone.length} note${gone.length === 1 ? "" : "s"} retired after merging (kept as a stub that links to the note that stays)`), ...gone.slice(0, 12).map((w) => h("div", {}, w.path)), gone.length > 12 ? h("div", {}, `… and ${gone.length - 12} more`) : null));
     applyRow.append(h("button", { class: "sm pri", onclick: async (e       ) => {
       const b = e.target                     ; b.disabled = true; SAVED.stale = true;
       try { const r = await host.applyPlan(p); if (SAVED.mode === "manage") SAVED.ref = null; if (SAVED.mode === "ports") { PORT_SAVED.editing = ""; PORT_SAVED.spec = null; } c.done(r.message, r.undo); if (p.writes[0]?.before === null) c.open(p.writes[0].path); }
@@ -4012,10 +4077,14 @@ function editView(c         )              {
       } else other = null;
       SAVED.mergeWith = "";
       const pickWrap = h("div", {}), keepSel = h("select", { "aria-label": "Which note stays", onchange: (e       ) => { MERGE_SAVED.keep = (e.target                     ).value; showPlan(null); } }, ...opts([["other", "The other note stays (this one is merged into it)"], ["this", "This note stays (the other is merged into it)"]], MERGE_SAVED.keep));
-      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from .path);
+      const items = [...ix.notes.values()].filter((n) => n.type === "Object" && n.path !== from .path && !n.meta.mergedInto);
       pickWrap.append(picker(items, (n) => { other = n; showPlan(null); }, other?.path ?? "").el);
       v.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Mark "${from.title}" as the same part as…`), helpBtn("alias")), pickWrap, field("Which note stays", keepSel, "mergeKeep"),
-        h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", title: "Merge the two notes in one step: the note that stays takes the other\'s structure, behavior, requirements and properties, and the other is retired", onclick: () => {
+          if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
+          const keepThis = MERGE_SAVED.keep === "this", sv = keepThis ? from .path : other.path, ab = keepThis ? other.path : from .path;
+          openOwners({ absorbed: ab, survivor: sv, target: ix.notes.get(sv) .name });
+        } }, "Merge now…"), h("button", { class: "sm", onclick: () => {
           if (!other) { showPlan({ summary: "", writes: [], problems: ["Pick the other note first."] }); return; }
           showPlan(MERGE_SAVED.keep === "other" ? MG.planAliasMark(ix, host.files(), from .path, other.path) : MG.planAliasMark(ix, host.files(), other.path, from .path));
         } }, "Preview alias")));
@@ -4028,17 +4097,20 @@ function editView(c         )              {
       if (!list) return;
       if (!list.length) { found.append(h("div", { class: "empty", style: "padding:6px 0" }, "No BOM part matches an EA note by part number or name.")); return; }
       const lab                         = { pn: "PN", title: "name has number", name: "close name" };
-      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones become aliases.`),
+      found.append(h("div", { class: "mut", style: "font-size:12px" }, `${list.length} BOM part${list.length === 1 ? "" : "s"} with a candidate; ${list.filter((x) => x.confident).length} confident. Ticked ones can be merged now (the BOM part stays) or only marked as aliases.`),
         h("table", { class: "rl" }, h("tbody", {}, ...list.slice(0, 300).map((s) => {
           const top = s.candidates[0] , key = s.survivor + "|" + top.path;
           return h("tr", {}, h("td", {}, h("input", { type: "checkbox", "aria-label": `Alias ${title(top.path)}`, checked: MERGE_SAVED.pick.has(key), onchange: (e       ) => { if ((e.target                    ).checked) MERGE_SAVED.pick.add(key); else MERGE_SAVED.pick.delete(key); showPlan(null); } })),
             h("td", {}, h("b", {}, s.pn), " ", h("span", { class: "mut" }, title(s.survivor))), h("td", {}, "→ ", title(top.path), s.candidates.length > 1 ? h("span", { class: "mut" }, ` (+${s.candidates.length - 1} more)`) : null),
             h("td", {}, h("span", { class: "tag k" }, lab[top.level] ?? top.level)));
         }))),
-        h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => {
+        h("div", { class: "acts2" }, h("button", { class: "sm pri", title: "Merge each ticked pair now: the BOM part keeps its note and takes the model note\'s content; the model note is retired", onclick: () => {
+          const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s , absorbed: a  }));
+          showPlan(pairs.length ? MG.planMergePairs(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
+        } }, "Merge ticked now"), h("button", { class: "sm", onclick: () => {
           const pairs = [...MERGE_SAVED.pick].map((k) => k.split("|")).map(([s, a]) => ({ survivor: s , absorbed: a  }));
           showPlan(pairs.length ? MG.planAliasMarkMany(ix, host.files(), pairs) : { summary: "", writes: [], problems: ["Tick at least one match."] });
-        } }, "Mark ticked as aliases")));
+        } }, "Mark ticked as aliases only")));
     };
     v.append(h("div", { style: "margin-top:10px" }, h("b", {}, "BOM parts and EA notes"), helpBtn("suggest")),
       h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => {
@@ -4195,6 +4267,8 @@ function editView(c         )              {
                                                                                            
                                                                                       
                                  
+                                                                                
+                                    
                                                                                         
                                                                  
                                                                    
@@ -4287,11 +4361,12 @@ function mountPanel(root             , host           , opt                     
 
   /* D-0089: apply the layout rules to the open canvas. Adding notes never moves anything; this does, when asked. */
   const layoutButton = (cls = "sm")                     => { if (!host.autoLayout) return null; const b = h("button", { class: cls, title: "Rearrange the note cards on the canvas that is open in the main window by the layout rules: assemblies over parts, general over specialized, use cases left of requirements, functions and tests below requirements, objects below functions" }, "Auto-layout canvas"); b.addEventListener("click", () => busy(b, "Laying out…", () => host.autoLayout ())); return b; };
+  const refreshButton = (cls = "sm")                     => { if (!host.refreshCanvas) return null; const b = h("button", { class: cls, title: "Re-read the vault and update the canvas open in the main window: cards show the notes\' current names, retired notes show red, lines follow the relationships. Nothing moves." }, "Refresh canvas"); b.addEventListener("click", () => busy(b, "Refreshing…", () => host.refreshCanvas ())); return b; };
   function layoutView()              {
     const btn = layoutButton("sm pri");
     return h("div", {}, h("p", {}, "Adding notes to a canvas never moves a card that is already there. Auto-layout is the one action that does: it rearranges the note cards of the canvas open in the main window by these rules."),
       h("ul", {}, h("li", {}, "An assembly is above its parts, centred over them; a general element is above the specialized one."), h("li", {}, "A use case is to the left of the requirement it relates to, in the same row."), h("li", {}, "A function and a test case are below the requirement they relate to; an object is below the function."), h("li", {}, "Where rules disagree, ownership and specialization win."), h("li", {}, "Notes with no relationship to another note on the canvas go to a grid below. Cards that are not notes (text, groups, images) stay where they are.")),
-      btn ? h("div", { class: "row" }, btn) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
+      btn ? h("div", { class: "row" }, btn, refreshButton()) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "Refresh canvas re-reads the vault and updates the cards and lines of the open canvas without moving anything."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
   }
   /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
   const ADDABLE = new Set        (["structure", "functional", "states", "requirements", "design", "internal"]);
@@ -4321,7 +4396,7 @@ function mountPanel(root             , host           , opt                     
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom (anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -4532,7 +4607,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -4554,6 +4629,7 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                              
                                                                            
                                                                                                                                                                     
+                                                                                                                                 
                                                                                
                                                                                                           
                                                                
@@ -4693,6 +4769,7 @@ function hostFor(plugin     )      {
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path        , mode                   ) => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
+    refreshCanvas: () => plugin.refreshCanvasView(),
     addChildren: (parent        , paths          ) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
@@ -4890,6 +4967,18 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
     const f = this.app.vault.getAbstractFileByPath(t.path);
     if (f) await this.app.vault.process(f, (x        ) => fn(x) ?? x);
+  }
+  /** D-0091: re-read the vault, then bring the open canvas's note cards and Workbench lines up to date with it. */
+  async refreshCanvasView()                  {
+    this.files = await readVault(this.app); await this.rebuild(); await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Index refreshed. Open a canvas in the main window to refresh it too.";
+    let res                                                                                        = null, changed = false;
+    await this.editTarget(t, (text) => { const r = WB.refreshCanvas(parseDoc(text), this.ix); res = r; const next = JSON.stringify(r.doc, null, 2); changed = r.redrawn + r.linesAdded + r.linesRemoved > 0; return changed ? next : null; });
+    const r = res                                                                                         ;
+    if (!r) return "Could not read that canvas.";
+    this.app.workspace.revealLeaf(t.leaf);
+    const bits = [r.redrawn ? `${r.redrawn} card${r.redrawn === 1 ? "" : "s"} redrawn` : "", r.linesAdded ? `${r.linesAdded} line${r.linesAdded === 1 ? "" : "s"} added` : "", r.linesRemoved ? `${r.linesRemoved} line${r.linesRemoved === 1 ? "" : "s"} removed` : "", r.missing ? `${r.missing} note${r.missing === 1 ? "" : "s"} not found (shown red)` : ""].filter(Boolean);
+    return bits.length ? `Refreshed ${t.path}: ${bits.join(", ")}.` : `${t.path} already matches the vault.`;
   }
   /** D-0089: apply the layout rules to the cards of the open canvas. */
   async autoLayoutCanvas()                  {

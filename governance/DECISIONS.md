@@ -1055,3 +1055,16 @@ Rules: WKB-038 (Active).
 4. Not changed: Full tree keeps every layer; other views keep D-0085 placement.
 
 Rules: WKB-039 (Active).
+
+## D-0091 — Merge in one step, keep the BOM note, retire the model note; Refresh canvas
+
+2026-10-25 · Spencer · Accepted (owner, chat: "When I merge notes, it only adds an alias relationship. ... select two notes that define the same part and merge the notes into one. This will need to be done many times, with the BOM note being kept (future BOM updates need to be imported cleanly, updating those parts). The BOM note should inherit all structure, behavior, and requirements from the modeled note, and the modeled note should be retired. Retired notes, if placed on a canvas, should appear red and only have a yaml link to the merged note. A canvas refresh button should update the canvas view so any changes made to the vault appear correctly on the canvas.")
+
+1. Cause of "only an alias": Preview alias / Mark ticked as aliases wrote `aliasOf` only; the merge itself was a second step (Merge… on the alias list) that was easy to miss. Now Merge now… (one pair) and Merge ticked now (many, from Find matches) do the merge directly, through the owners table and Preview merge; marking an alias alone stays available as "Mark ticked as aliases only" / "Preview alias".
+2. Survivor: the BOM part when exactly one of the pair is a BOM part (as D-0086); otherwise the one chosen. Content moved into it: D-0087 (everything, conflicts written out, not dropped).
+3. Retire, do not delete: the standing rule is that a note is never deleted (AI_INSTRUCTIONS: set `status` to Retired, the id stays reserved). The merged-away note becomes a stub of identity fields, `status: Retired`, `tags: [retired]` and `mergedInto`. This replaces the earlier behaviour where the file was deleted (D-0034). Property order is the validated one (`status`, then `tags`, then other keys).
+4. Retired notes: excluded from Pick notes, Find matches, merge pickers and related lists; the canvas card is red with "retired → <kept note>". Links and symbols in other notes already point at the kept note, so the stub is referenced only by old canvases.
+5. Refresh canvas: see WKB-041. It also re-reads the vault first, so a canvas edited against an out-of-date index is brought up to date.
+6. Not verified: a later EA import. The kept note carries the removed note's `EA GUID` source lines, and the importer finds notes by those lines, so the EA element should map to the kept note; what the importer then writes into a BOM note was not tested. The retired stub has no GUID line, so it is not matched. Test this on a copy before relying on it. Also not verified in Obsidian: that an open canvas reloads after Refresh (close and reopen if not).
+
+Rules: WKB-040, WKB-041 (Active).
