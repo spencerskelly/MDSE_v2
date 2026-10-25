@@ -1005,3 +1005,17 @@ The Merge tab was not removed; D-0084's menus put it under Note > Edit > Merge, 
 Nothing changes in how a merge is previewed, applied or undone.
 
 Rules: WKB-033, WKB-035 (Active).
+
+## D-0087 — A merge keeps everything from both notes in the surviving note
+
+2026-10-25 · Spencer · Accepted (owner, chat: "when elements are merged, all relationships should be added to the kept note. the remaining note should have all yaml, body text, v2 definition of both merged elements. ... The key is that parts, generalizations, ports, etc should be moved into the one element.")
+
+Replaces the recommendation in D-0053/WKB-027 (BOM note owns part facts and structure, the other note owns the rest; the other note's members go under "Not carried over").
+
+1. Every area defaults to Keep both. Parts, ports, generalizations, requirements, behavior and relationship links of the removed note are inserted into the surviving note's SysML v2 block; plain properties, body text and source lines are carried over.
+2. A member or property both notes have with different values: the surviving note's value is kept in place and the removed note's is written out under `## Not carried over from <title>` (members as `sysml`, properties as `yaml`). This now includes `status`, `eaType`, `subtype` and `sourceRole`, which were previously dropped without a trace.
+3. The owners table stays as an optional prompt: choosing one note for an area still leaves the other's members out of the block, under "Not carried over".
+4. Unchanged: which note survives (BOM part by default), link and symbol rewriting in other notes, `## Former ids`, preview, undo.
+5. A BOM update after a keep-both merge changes only the description and revision and leaves the model's parts in the block (tested in `merge.test.ts`).
+
+Rules: WKB-027, WKB-036 (Active).

@@ -206,21 +206,29 @@ const mergeWith = (over: Partial<M.MgOwners>): string => {
 const dupLine = /^ {8}part dup : OBJ_00003::GenericModule;$/m;
 const inBlock = (n: string): string => MDSE.extractSysml(n) as string;
 
-test("the owner table has seven areas and recommends the BOM note for part facts and structure, the EA note for the rest", () => {
+test("the owner table has seven areas and recommends keeping both in every area (D-0087)", () => {
   assert.deepEqual(rowsDup.map((r) => r.id), ["facts", "structure", "properties", "interfaces", "behavior", "requirements", "relationships"]);
   const by = Object.fromEntries(rowsDup.map((r) => [r.id, r])) as Record<string, M.MgAreaRow>;
-  assert.equal(by.facts!.recommended, "survivor"); assert.equal(by.structure!.recommended, "survivor");
-  for (const id of ["interfaces", "behavior", "requirements", "relationships"]) assert.equal(by[id]!.recommended, "absorbed", id);
+  for (const r of rowsDup) assert.equal(r.recommended, "both", r.id);
   assert.ok(by.interfaces!.absorbed >= 5 && by.interfaces!.survivor === 0); assert.equal(by.structure!.absorbed, 1);
 });
 
-test("with the recommended owners the EA note's own structure stays out of the BOM note and nothing is lost", () => {
+test("with the default owners every part, port and relationship of the EA note is in the surviving note's block (D-0087)", () => {
   const n = mergeWith({});
-  assert.doesNotMatch(inBlock(n), dupLine);
-  assert.match(n, /## Not carried over from Controller \(owned by|## Not carried over from Controller\n/);
-  assert.match(n, /part dup : OBJ_00003::GenericModule;/, "it is kept in the note's text");
+  assert.match(inBlock(n), dupLine, "the EA note's own part is moved in");
+  const ports = (inBlock(n).match(/^\s*port \w+ :/gm) ?? []).length;
+  assert.ok(ports >= 5 + 1, `the EA note's ports are in the block (${ports})`);
   assert.doesNotMatch(n, /^bomOwns:/m, "the BOM still owns facts and structure, which is the default");
   assert.equal(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1]);
+  assert.match(n, /description: CHARGE CONTROLLER BOARD/);
+});
+
+test("a property both notes have with different values keeps the surviving note's and writes the other out (D-0087)", () => {
+  const f = new Map(withDup); f.set(CTRL, f.get(CTRL)!.replace(/^status: .*$/m, "status: Approved"));
+  const p = M.planNoteMerge(buildIndex(f, { classes }), f, undefined, new Map([[CTRL, recommended()]]));
+  const n = p.writes.find((w) => w.path === PART)!.after;
+  assert.match(n, /```yaml\nstatus: Approved\n```/);
+  assert.doesNotMatch(n.split("\n---\n")[0]!, /^status: Approved/m);
 });
 
 test("giving structure to the EA note keeps its usages, records that the BOM no longer owns structure, and a BOM update then leaves structure alone", () => {
@@ -259,4 +267,14 @@ test("a note edited before the merge is not made clean by it", () => {
   const p = M.planNoteMerge(buildIndex(edited, { classes }), edited, undefined, new Map([[CTRL, recommended()]]));
   const n = p.writes.find((w) => w.path === PART)!.after;
   assert.notEqual(bomOwnedHash(n), /^importHash: (\w+)$/m.exec(n)![1], "the change is still a conflict for the next BOM update");
+});
+
+test("a BOM update after a keep-both merge changes the description and revision and leaves the model's parts alone (D-0087)", () => {
+  const n = mergeWith({});
+  const files = new Map(f1); files.set(PART, n); files.delete(CTRL);
+  const s = scanBomUpdate(parseDelimited(gridV2("CONTROLLER BOARD V2", "2", "-1")), bomOpts(files));
+  assert.deepEqual(s.holds, []);
+  assert.deepEqual(s.items.filter((i) => i.pn === "SYN-CTRL-1").map((i) => i.category).sort(), ["DESCRIPTION", "NEW_REVISION"]);
+  const r = applyBomUpdate(s, { approved: new Set(s.items.filter((i) => i.pn === "SYN-CTRL-1").map((i) => i.id)), sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00" });
+  assert.match(inBlock(r.writes.find((w) => w.path === PART)!.content), dupLine);
 });

@@ -290,7 +290,7 @@ export function editView(c: EditCtx): HTMLElement {
       if (typeof rows === "string") { showPlan({ summary: "", writes: [], problems: [rows] }); return; }
       const sT = title(p.survivor), aT = title(p.absorbed), chosen: Record<string, MG.MgOwner> = Object.fromEntries(rows.map((r) => [r.id, r.recommended]));
       ownersBox.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Who owns what: ${aT} into ${sT}`), helpBtn("owners")),
-        h("div", { class: "mut", style: "font-size:12px" }, "Pick the note whose members and properties each area keeps. The other note's go under “Not carried over”, not lost. A later BOM update changes only the areas the BOM note still owns."),
+        h("div", { class: "mut", style: "font-size:12px" }, "Every area defaults to Keep both: all parts, ports, relationships and properties of both notes end up in the surviving note. Pick one note for an area only to leave the other's out; those go under “Not carried over”, not lost. Where both have the same member or property with different values, the surviving note's is kept and the other is written out there. A later BOM update changes only the areas the BOM note still owns."),
         h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => {
           const sel = h("select", { "aria-label": `Owner of ${r.label}`, onchange: (e: Event) => { chosen[r.id] = (e.target as HTMLSelectElement).value as MG.MgOwner; showPlan(null); } },
             ...opts([["both", "Keep both" + (r.recommended === "both" ? " (recommended)" : "")], ["survivor", sT + (r.recommended === "survivor" ? " (recommended)" : "")], ["absorbed", aT + (r.recommended === "absorbed" ? " (recommended)" : "")]], r.recommended));

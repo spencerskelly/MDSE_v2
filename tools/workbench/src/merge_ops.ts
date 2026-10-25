@@ -211,14 +211,10 @@ function mgDrop(block: string, drop: MgMem[]): string {
   }
   return out;
 }
-/** The recommended owner of every area for two notes. When exactly one is a BOM note it recommends the BOM note for part facts and structure, and the other note for the rest unless the BOM note already has members there. */
-function mgRecommend(S: MgNote, A: MgNote, sm: MgMem[], am: MgMem[]): MgOwners {
-  const out = {} as MgOwners, sb = mgIsBomNote(S), ab = mgIsBomNote(A), bom: "survivor" | "absorbed" | null = sb && !ab ? "survivor" : ab && !sb ? "absorbed" : null;
-  for (const a of BOM_AREAS) {
-    if (!bom) { out[a.id] = "both"; continue; }
-    const model = bom === "survivor" ? "absorbed" : "survivor", bomHas = (bom === "survivor" ? sm : am).some((m) => m.area === a.id) || (a.id === "facts" && (bom === "survivor" ? S : A).fm.some((f) => MG_FACT_KEY.test(f.key)));
-    out[a.id] = a.bom ? bom : bomHas ? "both" : model;
-  }
+/** The recommended owner of every area: both (D-0087). Everything either note has moves into the surviving note; a member or property that both have with different values keeps the surviving note's and the other is written out under "Not carried over", never dropped. Giving an area to one note is still a choice in the owners table. */
+function mgRecommend(_S: MgNote, _A: MgNote, _sm: MgMem[], _am: MgMem[]): MgOwners {
+  const out = {} as MgOwners;
+  for (const a of BOM_AREAS) out[a.id] = "both";
   return out;
 }
 /** The table the merge dialog shows for one alias pair: per area, how many members each note has and the recommended owner. */
@@ -317,9 +313,11 @@ function mgMergeFrontmatter(s: MgNote, a: MgNote, names: Map<string, string>, su
   for (const f of a.fm) {   // plain properties only the removed note has are carried over; the import stamp never is, it describes the survivor's own content
     if (done.has(f.key) || MG_CORE.has(f.key) || f.key === "aliasOf" || f.key === "bomOwns" || (/^import(Source|edOn|Hash)$/.test(f.key) && s.fm.some((x) => x.key === "importHash")) || f.lines.some((x) => x.includes("[["))) continue;
     if (MG_FACT_KEY.test(f.key) && ctx.facts === "survivor") { ctx.dropped.absorbed.push(...f.lines); continue; }
-    if (s.fm.some((x) => x.key === f.key) && !(MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed")) continue;
+    const same = s.fm.find((x) => x.key === f.key);
+    if (same && !(MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed")) { if (mgNorm(same.lines.join(" ")) !== mgNorm(f.lines.join(" "))) ctx.dropped.absorbed.push(...f.lines); continue; }      // same property, different value: the surviving note's stays, the other is written out
     out.push(...f.lines); done.add(f.key); notes.push(`property ${f.key} carried over`);
   }
+  for (const f of a.fm) if (["status", "eaType", "subtype", "sourceRole"].includes(f.key)) { const mine = s.fm.find((x) => x.key === f.key); if (mine && mgNorm(mine.lines.join(" ")) !== mgNorm(f.lines.join(" ")) && !out.includes(f.lines[0]!)) ctx.dropped.absorbed.push(...f.lines); }
   for (const [k, l] of merged) if (!done.has(k) && l.length) out.push(`${k}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
   return out;
 }
@@ -372,7 +370,7 @@ export function planNoteMerge(ix: ModelIndex, files: Map<string, string>, pairs?
         if (r.notCarried.length) extra = `## Not carried over from ${an.title}\n\nThe surviving note already had these with a different value. Decide which to keep.\n\n\`\`\`sysml\n${r.notCarried.join("\n")}\n\`\`\``;
       }
       const fmCtx: MgFactsCtx = { facts: owners.facts, dropped };
-      const own2 = (title: string, owner: string, sysml: string[], yaml: string[]): string => `## Not carried over from ${title}\n\nThe owner of these areas was set to ${owner} at the merge. Move a member back by hand if it should stay.\n\n` + (sysml.length ? `\`\`\`sysml\n${sysml.join("\n")}\n\`\`\`` : "") + (sysml.length && yaml.length ? "\n\n" : "") + (yaml.length ? `\`\`\`yaml\n${yaml.join("\n")}\n\`\`\`` : "");
+      const own2 = (title: string, owner: string, owners: MgOwners, sysml: string[], yaml: string[]): string => `## Not carried over from ${title}\n\n${Object.values(owners).some((v) => v !== "both") ? `The owner of these areas was set to ${owner} at the merge.` : `${owner} already has a different value for these, and its value was kept.`} Move a member back by hand if it should stay.\n\n` + (sysml.length ? `\`\`\`sysml\n${sysml.join("\n")}\n\`\`\`` : "") + (sysml.length && yaml.length ? "\n\n" : "") + (yaml.length ? `\`\`\`yaml\n${yaml.join("\n")}\n\`\`\`` : "");
       const sz = mgZone(S.zone), az = mgZone(A.zone);
       const aTitle = mgTitle(az.main, an.title), sTitle = mgTitle(sz.main, sn.title), aBody = mgWithoutTitle(az.main);
       const zoneParts = [sz.main];
@@ -383,8 +381,8 @@ export function planNoteMerge(ix: ModelIndex, files: Map<string, string>, pairs?
       if (aliases.length) zoneParts.push(`## Aliases\n\n${aliases.join("\n")}`);
       zoneParts.push(`## Former ids\n\n${former.join("\n")}`);
       let fm = mgMergeFrontmatter(S, A, nameMap, sn.name, notes, block !== null ? scanSysml(block).defs[0]?.symbol ?? "" : "", fmCtx);
-      if (aGone.length || dropped.absorbed.length) zoneParts.push(own2(an.title, sn.title, aGone, dropped.absorbed));
-      if (sGone.length || dropped.survivor.length) zoneParts.push(own2(sn.title, an.title, sGone, dropped.survivor));
+      if (aGone.length || dropped.absorbed.length) zoneParts.push(own2(an.title, sn.title, owners, aGone, dropped.absorbed));
+      if (sGone.length || dropped.survivor.length) zoneParts.push(own2(sn.title, an.title, owners, sGone, dropped.survivor));
       const bomIsS = mgIsBomNote(S), bomSide = bomIsS ? S : mgIsBomNote(A) ? A : null, bomText = bomIsS ? text : at;
       const stampM = bomSide && /^importHash: ([0-9a-f]{16})$/m.exec(bomText), stampOk = !!stampM && bomOwnedHash(bomText) === stampM[1];
       if (bomSide && fm.some((l) => l.startsWith("importHash:"))) {      // D-0053: which areas a later BOM update may still change

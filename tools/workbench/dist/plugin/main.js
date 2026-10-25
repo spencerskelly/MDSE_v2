@@ -2712,14 +2712,10 @@ function mgDrop(block        , drop         )         {
   }
   return out;
 }
-/** The recommended owner of every area for two notes. When exactly one is a BOM note it recommends the BOM note for part facts and structure, and the other note for the rest unless the BOM note already has members there. */
-function mgRecommend(S        , A        , sm         , am         )           {
-  const out = {}            , sb = mgIsBomNote(S), ab = mgIsBomNote(A), bom                                 = sb && !ab ? "survivor" : ab && !sb ? "absorbed" : null;
-  for (const a of BOM_AREAS) {
-    if (!bom) { out[a.id] = "both"; continue; }
-    const model = bom === "survivor" ? "absorbed" : "survivor", bomHas = (bom === "survivor" ? sm : am).some((m) => m.area === a.id) || (a.id === "facts" && (bom === "survivor" ? S : A).fm.some((f) => MG_FACT_KEY.test(f.key)));
-    out[a.id] = a.bom ? bom : bomHas ? "both" : model;
-  }
+/** The recommended owner of every area: both (D-0087). Everything either note has moves into the surviving note; a member or property that both have with different values keeps the surviving note's and the other is written out under "Not carried over", never dropped. Giving an area to one note is still a choice in the owners table. */
+function mgRecommend(_S        , _A        , _sm         , _am         )           {
+  const out = {}            ;
+  for (const a of BOM_AREAS) out[a.id] = "both";
   return out;
 }
 /** The table the merge dialog shows for one alias pair: per area, how many members each note has and the recommended owner. */
@@ -2818,9 +2814,11 @@ function mgMergeFrontmatter(s        , a        , names                     , su
   for (const f of a.fm) {   // plain properties only the removed note has are carried over; the import stamp never is, it describes the survivor's own content
     if (done.has(f.key) || MG_CORE.has(f.key) || f.key === "aliasOf" || f.key === "bomOwns" || (/^import(Source|edOn|Hash)$/.test(f.key) && s.fm.some((x) => x.key === "importHash")) || f.lines.some((x) => x.includes("[["))) continue;
     if (MG_FACT_KEY.test(f.key) && ctx.facts === "survivor") { ctx.dropped.absorbed.push(...f.lines); continue; }
-    if (s.fm.some((x) => x.key === f.key) && !(MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed")) continue;
+    const same = s.fm.find((x) => x.key === f.key);
+    if (same && !(MG_FACT_KEY.test(f.key) && ctx.facts === "absorbed")) { if (mgNorm(same.lines.join(" ")) !== mgNorm(f.lines.join(" "))) ctx.dropped.absorbed.push(...f.lines); continue; }      // same property, different value: the surviving note's stays, the other is written out
     out.push(...f.lines); done.add(f.key); notes.push(`property ${f.key} carried over`);
   }
+  for (const f of a.fm) if (["status", "eaType", "subtype", "sourceRole"].includes(f.key)) { const mine = s.fm.find((x) => x.key === f.key); if (mine && mgNorm(mine.lines.join(" ")) !== mgNorm(f.lines.join(" ")) && !out.includes(f.lines[0] )) ctx.dropped.absorbed.push(...f.lines); }
   for (const [k, l] of merged) if (!done.has(k) && l.length) out.push(`${k}: [${l.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
   return out;
 }
@@ -2873,7 +2871,7 @@ function planNoteMerge(ix            , files                     , pairs        
         if (r.notCarried.length) extra = `## Not carried over from ${an.title}\n\nThe surviving note already had these with a different value. Decide which to keep.\n\n\`\`\`sysml\n${r.notCarried.join("\n")}\n\`\`\``;
       }
       const fmCtx             = { facts: owners.facts, dropped };
-      const own2 = (title        , owner        , sysml          , yaml          )         => `## Not carried over from ${title}\n\nThe owner of these areas was set to ${owner} at the merge. Move a member back by hand if it should stay.\n\n` + (sysml.length ? `\`\`\`sysml\n${sysml.join("\n")}\n\`\`\`` : "") + (sysml.length && yaml.length ? "\n\n" : "") + (yaml.length ? `\`\`\`yaml\n${yaml.join("\n")}\n\`\`\`` : "");
+      const own2 = (title        , owner        , owners          , sysml          , yaml          )         => `## Not carried over from ${title}\n\n${Object.values(owners).some((v) => v !== "both") ? `The owner of these areas was set to ${owner} at the merge.` : `${owner} already has a different value for these, and its value was kept.`} Move a member back by hand if it should stay.\n\n` + (sysml.length ? `\`\`\`sysml\n${sysml.join("\n")}\n\`\`\`` : "") + (sysml.length && yaml.length ? "\n\n" : "") + (yaml.length ? `\`\`\`yaml\n${yaml.join("\n")}\n\`\`\`` : "");
       const sz = mgZone(S.zone), az = mgZone(A.zone);
       const aTitle = mgTitle(az.main, an.title), sTitle = mgTitle(sz.main, sn.title), aBody = mgWithoutTitle(az.main);
       const zoneParts = [sz.main];
@@ -2884,8 +2882,8 @@ function planNoteMerge(ix            , files                     , pairs        
       if (aliases.length) zoneParts.push(`## Aliases\n\n${aliases.join("\n")}`);
       zoneParts.push(`## Former ids\n\n${former.join("\n")}`);
       let fm = mgMergeFrontmatter(S, A, nameMap, sn.name, notes, block !== null ? scanSysml(block).defs[0]?.symbol ?? "" : "", fmCtx);
-      if (aGone.length || dropped.absorbed.length) zoneParts.push(own2(an.title, sn.title, aGone, dropped.absorbed));
-      if (sGone.length || dropped.survivor.length) zoneParts.push(own2(sn.title, an.title, sGone, dropped.survivor));
+      if (aGone.length || dropped.absorbed.length) zoneParts.push(own2(an.title, sn.title, owners, aGone, dropped.absorbed));
+      if (sGone.length || dropped.survivor.length) zoneParts.push(own2(sn.title, an.title, owners, sGone, dropped.survivor));
       const bomIsS = mgIsBomNote(S), bomSide = bomIsS ? S : mgIsBomNote(A) ? A : null, bomText = bomIsS ? text : at;
       const stampM = bomSide && /^importHash: ([0-9a-f]{16})$/m.exec(bomText), stampOk = !!stampM && bomOwnedHash(bomText) === stampM[1];
       if (bomSide && fm.some((l) => l.startsWith("importHash:"))) {      // D-0053: which areas a later BOM update may still change
@@ -2974,7 +2972,7 @@ const ED_HELP                         = {
   alias: { title: "Alias (same part)", what: "Marks one note as the same part as another. Nothing is merged yet: the alias is a line in the note's header that you can review and clear.", options: ["Written as `aliasOf` on the note that will go away.", "Merge turns every alias into one note per part."] },
   mergeKeep: { title: "Which note stays", what: "The note that stays keeps its file name, id, uid and SysML package. The other note's content is folded into it and its file is removed.", options: ["Usually the BOM note, because its file name is the part number.", "Links and references to the removed note are rewritten to the one that stays; its old name is kept as an alias.", "The removed note's id and uid are listed under Former ids."] },
   mergeAll: { title: "Merge", what: "Combines each aliased pair into one note: header fields, text, Source lines and SysML members. Anything both notes say differently is kept apart under a heading for you to decide, never overwritten.", options: ["You see the changed files before anything is written.", "Undo brings the removed notes back."] },
-  owners: { title: "Who owns what", what: "Each area has one owner. The owner's members are kept; the other note's go under \"Not carried over\" in the merged note, not lost.", options: ["Part facts and Structure are the two a BOM can own; they are recommended for the BOM note.", "The rest is recommended for the EA note.", "A later BOM update changes only what the BOM note still owns (`bomOwns`)."] },
+  owners: { title: "Who owns what", what: "Each area has one owner. The owner's members are kept; the other note's go under \"Not carried over\" in the merged note, not lost.", options: ["Every area defaults to Keep both: everything either note has is moved into the surviving note.", "Part facts and Structure are the two a BOM can own; give one to the model note only if a BOM update should leave it alone.", "A later BOM update changes only what the BOM note still owns (`bomOwns`)."] },
   suggest: { title: "Find matches", what: "Looks for EA notes that are the same part as a BOM part. Confident matches are the EA part number (PN) equal to the BOM number, or the number inside the EA name, with one candidate only.", options: ["PN: the EA part number line equals the BOM number.", "Name has number: the BOM number appears in the EA title.", "Close name: similar words only; never selected for you."] },
   doc: { title: "Description", what: "Free text that explains why this relationship exists. Written as a doc comment inside it.", options: ["Plain words; no limit."], note: "Documentation" },
   custom: { title: "Other attribute", what: "A name and a value you define that the list does not offer, written as an attribute inside the relationship.", options: ["Name: letters, digits, underscore.", "Value: a number or text. Anything else is stored as a comment."], note: "Attribute usage" },
@@ -3845,7 +3843,7 @@ function editView(c         )              {
       if (typeof rows === "string") { showPlan({ summary: "", writes: [], problems: [rows] }); return; }
       const sT = title(p.survivor), aT = title(p.absorbed), chosen                             = Object.fromEntries(rows.map((r) => [r.id, r.recommended]));
       ownersBox.append(h("div", { style: "margin-top:10px" }, h("b", {}, `Who owns what: ${aT} into ${sT}`), helpBtn("owners")),
-        h("div", { class: "mut", style: "font-size:12px" }, "Pick the note whose members and properties each area keeps. The other note's go under “Not carried over”, not lost. A later BOM update changes only the areas the BOM note still owns."),
+        h("div", { class: "mut", style: "font-size:12px" }, "Every area defaults to Keep both: all parts, ports, relationships and properties of both notes end up in the surviving note. Pick one note for an area only to leave the other's out; those go under “Not carried over”, not lost. Where both have the same member or property with different values, the surviving note's is kept and the other is written out there. A later BOM update changes only the areas the BOM note still owns."),
         h("table", { class: "rl" }, h("tbody", {}, ...rows.map((r) => {
           const sel = h("select", { "aria-label": `Owner of ${r.label}`, onchange: (e       ) => { chosen[r.id] = (e.target                     ).value              ; showPlan(null); } },
             ...opts([["both", "Keep both" + (r.recommended === "both" ? " (recommended)" : "")], ["survivor", sT + (r.recommended === "survivor" ? " (recommended)" : "")], ["absorbed", aT + (r.recommended === "absorbed" ? " (recommended)" : "")]], r.recommended));
