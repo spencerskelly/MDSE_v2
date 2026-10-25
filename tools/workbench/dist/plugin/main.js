@@ -1692,6 +1692,55 @@ function addChildren(doc           , ix            , parent        , paths      
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
 }
 
+/** Collapse and expand (D-0094). The collapsed state lives on the card itself, as a last line "▸ +N hidden" (N = direct parts not on the canvas), so it survives saving and needs no sidecar. A card with no marker is expanded. */
+const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
+const isCollapsed = (n                        )          => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
+const cvMark = (n            , count        )       => { n.text = (n.text ?? "").replace(CV_COLLAPSE_RE, ""); if (count > 0) { n.text += `<br><small>▸ +${count} hidden</small>`; n.height = Math.max(n.height, H + 24); } };
+const cvParts = (ix            , p        )           => [...new Set(ix.edges.filter((e) => e.kind === "hasPart" && e.to && !e.reverse && e.from === p && e.to !== p && ix.notes.has(e.to)).map((e) => e.to ))];
+const cvFind = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+
+/** Collapse a note card: the cards of its parts, and of their parts and so on, are removed from the canvas with their lines, and the card is marked "+N hidden". A part card stays when something outside the collapsing branch is joined to it (another assembly that is shown, a line the person drew), and so do the cards below it. Nothing in the vault changes. */
+function collapseCard(doc           , ix            , parent        )                                                   {
+  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const pc = cvFind(out, parent); if (!pc || pc.type !== "text") return { doc: out, hidden: 0, kept: 0 };
+  const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)]         ));
+  const branch = new Set        (), st = [parent];                                   // card ids of the parts below, found through hasPart
+  while (st.length) { const x = st.pop() ; for (const q of cvParts(ix, x)) { const c = cvFind(out, q); if (c && c.id !== pc.id && !branch.has(c.id)) { branch.add(c.id); st.push(q); } } }
+  for (let again = true; again;) {                                                   // a card joined to anything outside the branch stays, and its branch with it
+    again = false;
+    for (const e of out.edges) {
+      const a = branch.has(e.fromNode), b = branch.has(e.toNode);
+      if (a === b) continue;
+      const inner = a ? e.fromNode : e.toNode, outer = a ? e.toNode : e.fromNode;
+      if (outer === pc.id) continue;                                                 // lines to the parent go with the cards
+      if (branch.delete(inner)) again = true;
+    }
+  }
+  const before = out.nodes.length, ids = branch;
+  out.nodes = out.nodes.filter((n) => !ids.has(n.id)); out.edges = out.edges.filter((e) => !ids.has(e.fromNode) && !ids.has(e.toNode));
+  const hiddenCount = cvParts(ix, parent).filter((q) => !cvFind(out, q)).length;
+  cvMark(pc, hiddenCount);
+  return { doc: out, hidden: before - out.nodes.length, kept: cvParts(ix, parent).length - hiddenCount };
+}
+
+/** Expand a collapsed card: its direct parts are added as one row under it (as addChildren does, D-0090) and the marker is removed. A part that has parts of its own comes back collapsed, so a tree is opened one layer at a time. Cards that were moved before the collapse are placed again by the row rules. */
+function expandCard(doc           , ix            , parent        )                                                     {
+  const pc0 = cvFind(doc, parent); if (!pc0 || pc0.type !== "text") return { doc, added: 0, present: 0 };
+  const had = new Set(doc.nodes.map((n) => n.id)), r = addChildren(doc, ix, parent, cvParts(ix, parent));
+  const out = r.doc, pc = cvFind(out, parent) ;
+  cvMark(pc, 0);
+  for (const n of out.nodes) if (!had.has(n.id) && n.type === "text") { const p = cardNotePath(n); if (p && cvParts(ix, p).length) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); }
+  return { doc: out, added: r.added, present: r.present };
+}
+
+/** One call for a button or a click: collapse an expanded card, expand a collapsed one. A card with no parts is left alone. */
+function toggleCard(doc           , ix            , parent        )                                                                                 {
+  const c = cvFind(doc, parent);
+  if (!c || !cvParts(ix, parent).length) return { doc, action: "none", changed: 0 };
+  if (isCollapsed(c)) { const r = expandCard(doc, ix, parent); return { doc: r.doc, action: "expanded", changed: r.added }; }
+  const r = collapseCard(doc, ix, parent); return { doc: r.doc, action: r.hidden ? "collapsed" : "none", changed: r.hidden };
+}
+
 /** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
 function refreshCanvas(doc           , ix            )                                                                                                 {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
@@ -1708,7 +1757,8 @@ function refreshCanvas(doc           , ix            )                          
     if (!cardOf.has(p)) cardOf.set(p, n);
     if (n.type === "text") {
       const fresh = noteCard(ix, p, n.id), before = JSON.stringify([n.text, n.color, n.height]);
-      n.text = fresh.text; n.height = fresh.height; if (fresh.color) n.color = fresh.color; else delete n.color;
+      const was = isCollapsed(n);
+      n.text = fresh.text; n.height = fresh.height; if (was) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); if (fresh.color) n.color = fresh.color; else delete n.color;
       if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
     } else {
       const want = ix.notes.get(p) .meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p) .type];
@@ -4380,6 +4430,8 @@ function editView(c         )              {
                                                                                            
                                                                                       
                                  
+                                                                        
+                                  
                                                                                 
                                     
                                                                                         
@@ -4474,12 +4526,13 @@ function mountPanel(root             , host           , opt                     
 
   /* D-0089: apply the layout rules to the open canvas. Adding notes never moves anything; this does, when asked. */
   const layoutButton = (cls = "sm")                     => { if (!host.autoLayout) return null; const b = h("button", { class: cls, title: "Rearrange the note cards on the canvas that is open in the main window by the layout rules: assemblies over parts, general over specialized, use cases left of requirements, functions and tests below requirements, objects below functions" }, "Auto-layout canvas"); b.addEventListener("click", () => busy(b, "Laying out…", () => host.autoLayout ())); return b; };
+  const collapseButton = (cls = "sm")                     => { if (!host.toggleCards) return null; const b = h("button", { class: cls, title: "Collapse or expand the note cards chosen on the canvas in the main window. Collapse removes the cards of its parts (and their parts) with their lines and marks the card '+N hidden'; expand puts the direct parts back in a row beneath it. Nothing in the vault changes." }, "Collapse / expand"); b.addEventListener("click", () => busy(b, "Working…", () => host.toggleCards ())); return b; };
   const refreshButton = (cls = "sm")                     => { if (!host.refreshCanvas) return null; const b = h("button", { class: cls, title: "Re-read the vault and update the canvas open in the main window: cards show the notes\' current names, retired notes show red, lines follow the relationships. Nothing moves." }, "Refresh canvas"); b.addEventListener("click", () => busy(b, "Refreshing…", () => host.refreshCanvas ())); return b; };
   function layoutView()              {
     const btn = layoutButton("sm pri");
     return h("div", {}, h("p", {}, "Adding notes to a canvas never moves a card that is already there. Auto-layout is the one action that does: it rearranges the note cards of the canvas open in the main window by these rules."),
       h("ul", {}, h("li", {}, "An assembly is above its parts, centred over them; a general element is above the specialized one."), h("li", {}, "A use case is to the left of the requirement it relates to, in the same row."), h("li", {}, "A function and a test case are below the requirement they relate to; an object is below the function."), h("li", {}, "Where rules disagree, ownership and specialization win."), h("li", {}, "Notes with no relationship to another note on the canvas go to a grid below. Cards that are not notes (text, groups, images) stay where they are.")),
-      btn ? h("div", { class: "row" }, btn, refreshButton()) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "Refresh canvas re-reads the vault and updates the cards and lines of the open canvas without moving anything."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
+      btn ? h("div", { class: "row" }, btn, refreshButton(), collapseButton()) : h("div", { class: "mut" }, "The canvas needs Obsidian."), h("div", { class: "mut" }, "Refresh canvas re-reads the vault and updates the cards and lines of the open canvas without moving anything."), h("div", { class: "mut" }, "There is no undo here beyond Obsidian's own; save a copy of the canvas first if you have arranged it by hand."));
   }
   /* D-0085: on the Structure, Function, States, Requirements, Design types and Internal structure views, put some or all of the notes shown on the canvas. */
   const ADDABLE = new Set        (["structure", "functional", "states", "requirements", "design", "internal"]);
@@ -4509,7 +4562,7 @@ function mountPanel(root             , host           , opt                     
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom (anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButton(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -4732,7 +4785,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -4756,6 +4809,7 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                                                                                                                     
                                                                                                                                  
                                                                                
+                                                                                                                              
                                                                                                           
                                                                
                                                                        
@@ -4894,6 +4948,7 @@ function hostFor(plugin     )      {
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path        , mode                   ) => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
+    toggleCards: () => plugin.toggleSelectedCards(),
     refreshCanvas: () => plugin.refreshCanvasView(),
     addChildren: (parent        , paths          ) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths, true, true),
@@ -5105,6 +5160,34 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const bits = [r.redrawn ? `${r.redrawn} card${r.redrawn === 1 ? "" : "s"} redrawn` : "", r.linesAdded ? `${r.linesAdded} line${r.linesAdded === 1 ? "" : "s"} added` : "", r.linesRemoved ? `${r.linesRemoved} line${r.linesRemoved === 1 ? "" : "s"} removed` : "", r.missing ? `${r.missing} note${r.missing === 1 ? "" : "s"} not found (shown red)` : ""].filter(Boolean);
     return bits.length ? `Refreshed ${t.path}: ${bits.join(", ")}.` : `${t.path} already matches the vault.`;
   }
+  /** The note paths of the cards chosen on the canvas in front, read the same way as canvasSelection(). */
+  selectedCardPaths()           {
+    const t = this.canvasTarget(), view = t?.leaf?.view, sel = view?.canvas?.selection, paths           = [];
+    if (!sel) return paths;
+    for (const node of sel) {
+      let data     ; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
+      if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
+    }
+    return paths;
+  }
+  /** D-0094: collapse each chosen card that is expanded and expand each that is collapsed. Collapse removes the cards of its parts and their lines; expand adds the direct parts back. Nothing in the vault changes. */
+  async toggleSelectedCards()                  {
+    await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Open a canvas in the main window first.";
+    try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
+    const paths = this.selectedCardPaths(); if (!paths.length) return "Select one or more note cards on the canvas first.";
+    const done = { collapsed: 0, expanded: 0, none: 0 };
+    await this.editTarget(t, (text) => {
+      let doc = parseDoc(text);
+      for (const p of paths) { const r = WB.toggleCard(doc, this.ix, p); doc = r.doc; done[r.action]++; }
+      return done.collapsed + done.expanded ? JSON.stringify(doc, null, 2) : null;
+    });
+    this.app.workspace.revealLeaf(t.leaf);
+    const bits = [done.collapsed && `collapsed ${done.collapsed}`, done.expanded && `expanded ${done.expanded}`].filter(Boolean).join(", ");
+    return bits ? `${bits[0] .toUpperCase()}${bits.slice(1)} card${done.collapsed + done.expanded === 1 ? "" : "s"}.` : "Nothing to do: the selected cards have no parts.";
+  }
+
   /** D-0089: apply the layout rules to the cards of the open canvas. */
   async autoLayoutCanvas()                  {
     await this.ensureIndex();
@@ -5273,6 +5356,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk         ) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
     this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk         ) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
+    this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.toggleSelectedCards().then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk         ) => { if (!this.preview || !this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
     this.registerEvent(this.app.workspace.on("file-menu", (menu     , f     ) => {
       if (f?.extension !== "md") return;

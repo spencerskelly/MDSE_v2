@@ -1089,3 +1089,15 @@ Rules: WKB-042 (Active).
 3. Disabled buttons give no note; the lack of a note is itself the signal that the button was not active. Not added: a reason for why a button is disabled.
 
 Rules: IMP-131 (Active).
+
+## D-0094 — Collapse and expand note cards on a canvas
+
+2026-10-25 · Spencer · Accepted (owner, chat: "I want to be able to expand and collapse notes on the canvas"; chose hide/show related notes over a card-detail toggle)
+
+1. Collapse removes the cards of a card's parts, their parts and so on (found through `hasPart`) from the canvas, with their lines, and marks the card with a last line "▸ +N hidden" (N = direct parts not on the canvas). Expand puts the direct parts back as one row below the card (as in D-0090) and removes the marker; a part that has parts of its own returns collapsed, so a tree opens one layer at a time.
+2. The collapsed state is the marker on the card and nothing else: no sidecar file, nothing in the vault. Refresh canvas keeps a collapsed card collapsed.
+3. A part card is kept, with everything below it, when anything outside the collapsing branch is joined to it: another shown assembly that holds it, or a line the person drew. Collapse never deletes a card something else still depends on.
+4. Surfaces: the panel button "Collapse / expand" and the command "Collapse or expand the selected canvas cards". Each chosen card toggles; a card with no parts is left alone.
+5. Limits: a collapsed card forgets where its parts were, so expanding places them by the D-0090 row rules, not where you had moved them. There is no menu entry on a card's own right-click, because Obsidian's canvas has no stable API for it. Not run in real Obsidian: the selection is read from an undocumented canvas internal, as in D-0082, and an open canvas may need closing and reopening to show the change.
+
+Rules: WKB-043 (Active).

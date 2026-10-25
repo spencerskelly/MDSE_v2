@@ -284,6 +284,55 @@ export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, path
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
 }
 
+/** Collapse and expand (D-0094). The collapsed state lives on the card itself, as a last line "▸ +N hidden" (N = direct parts not on the canvas), so it survives saving and needs no sidecar. A card with no marker is expanded. */
+const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
+export const isCollapsed = (n: CanvasNode | undefined): boolean => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
+const cvMark = (n: CanvasNode, count: number): void => { n.text = (n.text ?? "").replace(CV_COLLAPSE_RE, ""); if (count > 0) { n.text += `<br><small>▸ +${count} hidden</small>`; n.height = Math.max(n.height, H + 24); } };
+const cvParts = (ix: ModelIndex, p: string): string[] => [...new Set(ix.edges.filter((e) => e.kind === "hasPart" && e.to && !e.reverse && e.from === p && e.to !== p && ix.notes.has(e.to)).map((e) => e.to!))];
+const cvFind = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+
+/** Collapse a note card: the cards of its parts, and of their parts and so on, are removed from the canvas with their lines, and the card is marked "+N hidden". A part card stays when something outside the collapsing branch is joined to it (another assembly that is shown, a line the person drew), and so do the cards below it. Nothing in the vault changes. */
+export function collapseCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; hidden: number; kept: number } {
+  const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const pc = cvFind(out, parent); if (!pc || pc.type !== "text") return { doc: out, hidden: 0, kept: 0 };
+  const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)] as const));
+  const branch = new Set<string>(), st = [parent];                                   // card ids of the parts below, found through hasPart
+  while (st.length) { const x = st.pop()!; for (const q of cvParts(ix, x)) { const c = cvFind(out, q); if (c && c.id !== pc.id && !branch.has(c.id)) { branch.add(c.id); st.push(q); } } }
+  for (let again = true; again;) {                                                   // a card joined to anything outside the branch stays, and its branch with it
+    again = false;
+    for (const e of out.edges) {
+      const a = branch.has(e.fromNode), b = branch.has(e.toNode);
+      if (a === b) continue;
+      const inner = a ? e.fromNode : e.toNode, outer = a ? e.toNode : e.fromNode;
+      if (outer === pc.id) continue;                                                 // lines to the parent go with the cards
+      if (branch.delete(inner)) again = true;
+    }
+  }
+  const before = out.nodes.length, ids = branch;
+  out.nodes = out.nodes.filter((n) => !ids.has(n.id)); out.edges = out.edges.filter((e) => !ids.has(e.fromNode) && !ids.has(e.toNode));
+  const hiddenCount = cvParts(ix, parent).filter((q) => !cvFind(out, q)).length;
+  cvMark(pc, hiddenCount);
+  return { doc: out, hidden: before - out.nodes.length, kept: cvParts(ix, parent).length - hiddenCount };
+}
+
+/** Expand a collapsed card: its direct parts are added as one row under it (as addChildren does, D-0090) and the marker is removed. A part that has parts of its own comes back collapsed, so a tree is opened one layer at a time. Cards that were moved before the collapse are placed again by the row rules. */
+export function expandCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; added: number; present: number } {
+  const pc0 = cvFind(doc, parent); if (!pc0 || pc0.type !== "text") return { doc, added: 0, present: 0 };
+  const had = new Set(doc.nodes.map((n) => n.id)), r = addChildren(doc, ix, parent, cvParts(ix, parent));
+  const out = r.doc, pc = cvFind(out, parent)!;
+  cvMark(pc, 0);
+  for (const n of out.nodes) if (!had.has(n.id) && n.type === "text") { const p = cardNotePath(n); if (p && cvParts(ix, p).length) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); }
+  return { doc: out, added: r.added, present: r.present };
+}
+
+/** One call for a button or a click: collapse an expanded card, expand a collapsed one. A card with no parts is left alone. */
+export function toggleCard(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; action: "collapsed" | "expanded" | "none"; changed: number } {
+  const c = cvFind(doc, parent);
+  if (!c || !cvParts(ix, parent).length) return { doc, action: "none", changed: 0 };
+  if (isCollapsed(c)) { const r = expandCard(doc, ix, parent); return { doc: r.doc, action: "expanded", changed: r.added }; }
+  const r = collapseCard(doc, ix, parent); return { doc: r.doc, action: r.hidden ? "collapsed" : "none", changed: r.hidden };
+}
+
 /** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
 export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
@@ -300,7 +349,8 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
     if (!cardOf.has(p)) cardOf.set(p, n);
     if (n.type === "text") {
       const fresh = noteCard(ix, p, n.id), before = JSON.stringify([n.text, n.color, n.height]);
-      n.text = fresh.text; n.height = fresh.height; if (fresh.color) n.color = fresh.color; else delete n.color;
+      const was = isCollapsed(n);
+      n.text = fresh.text; n.height = fresh.height; if (was) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); if (fresh.color) n.color = fresh.color; else delete n.color;
       if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
     } else {
       const want = ix.notes.get(p)!.meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p)!.type];

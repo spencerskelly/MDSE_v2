@@ -20,6 +20,7 @@ declare const WB: {
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   refreshCanvas: (doc: any, ix: any) => { doc: any; redrawn: number; missing: number; linesAdded: number; linesRemoved: number };
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
+  toggleCard: (doc: any, ix: any, parent: string) => { doc: any; action: "collapsed" | "expanded" | "none"; changed: number };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
@@ -158,6 +159,7 @@ function hostFor(plugin: any): any {
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
+    toggleCards: () => plugin.toggleSelectedCards(),
     refreshCanvas: () => plugin.refreshCanvasView(),
     addChildren: (parent: string, paths: string[]) => plugin.addToCanvasPreview(parent, paths, true, false, parent),
     newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
@@ -369,6 +371,34 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const bits = [r.redrawn ? `${r.redrawn} card${r.redrawn === 1 ? "" : "s"} redrawn` : "", r.linesAdded ? `${r.linesAdded} line${r.linesAdded === 1 ? "" : "s"} added` : "", r.linesRemoved ? `${r.linesRemoved} line${r.linesRemoved === 1 ? "" : "s"} removed` : "", r.missing ? `${r.missing} note${r.missing === 1 ? "" : "s"} not found (shown red)` : ""].filter(Boolean);
     return bits.length ? `Refreshed ${t.path}: ${bits.join(", ")}.` : `${t.path} already matches the vault.`;
   }
+  /** The note paths of the cards chosen on the canvas in front, read the same way as canvasSelection(). */
+  selectedCardPaths(): string[] {
+    const t = this.canvasTarget(), view = t?.leaf?.view, sel = view?.canvas?.selection, paths: string[] = [];
+    if (!sel) return paths;
+    for (const node of sel) {
+      let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
+      if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
+    }
+    return paths;
+  }
+  /** D-0094: collapse each chosen card that is expanded and expand each that is collapsed. Collapse removes the cards of its parts and their lines; expand adds the direct parts back. Nothing in the vault changes. */
+  async toggleSelectedCards(): Promise<string> {
+    await this.ensureIndex();
+    const t = this.canvasTarget(); if (!t) return "Open a canvas in the main window first.";
+    try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
+    const paths = this.selectedCardPaths(); if (!paths.length) return "Select one or more note cards on the canvas first.";
+    const done = { collapsed: 0, expanded: 0, none: 0 };
+    await this.editTarget(t, (text) => {
+      let doc = parseDoc(text);
+      for (const p of paths) { const r = WB.toggleCard(doc, this.ix, p); doc = r.doc; done[r.action]++; }
+      return done.collapsed + done.expanded ? JSON.stringify(doc, null, 2) : null;
+    });
+    this.app.workspace.revealLeaf(t.leaf);
+    const bits = [done.collapsed && `collapsed ${done.collapsed}`, done.expanded && `expanded ${done.expanded}`].filter(Boolean).join(", ");
+    return bits ? `${bits[0]!.toUpperCase()}${bits.slice(1)} card${done.collapsed + done.expanded === 1 ? "" : "s"}.` : "Nothing to do: the selected cards have no parts.";
+  }
+
   /** D-0089: apply the layout rules to the cards of the open canvas. */
   async autoLayoutCanvas(): Promise<string> {
     await this.ensureIndex();
@@ -537,6 +567,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk: boolean) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
     this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk: boolean) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
+    this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.toggleSelectedCards().then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk: boolean) => { if (!this.preview || !this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
     this.registerEvent(this.app.workspace.on("file-menu", (menu: any, f: any) => {
       if (f?.extension !== "md") return;
