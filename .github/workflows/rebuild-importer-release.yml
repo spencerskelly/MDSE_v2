@@ -1,4 +1,4 @@
-# D-0073 acceptance rebuild: reconciled historical trace no-op fixture with read-only semantics.
+# D-0073 acceptance rebuild; revision-review source rebuild on 2026-10-25.
 name: Rebuild MDSE importer release
 on:
   push:
