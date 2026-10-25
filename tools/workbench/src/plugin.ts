@@ -14,7 +14,7 @@ declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string }) => any;
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
-  addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[]) => { doc: any; added: number; present: number; lineIds: string[] };
+  addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   cardNotePath: (node: any) => string | null;
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
@@ -150,7 +150,7 @@ function hostFor(plugin: any): any {
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
-    openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean) => plugin.openPickCanvas(paths, label, relations, group),
+    openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
@@ -323,19 +323,21 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
-  async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean): Promise<string> {
+  /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
+  async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string> {
     await this.ensureIndex();
+    if (!replace && this.preview && this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return this.addToCanvasPreview(null, paths, relations);
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
-  async addToCanvasPreview(anchor: string, paths: string[]): Promise<string> {
+  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true): Promise<string> {
     await this.ensureIndex();
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [anchor, ...paths], { relations: true, label: this.ix.notes.get(anchor)?.title ?? "", group: false }));
+    if (!f || !this.preview) return writePreview(this, WB.pickCanvas(this.ix, [...(anchor ? [anchor] : []), ...paths], { relations, label: anchor ? this.ix.notes.get(anchor)?.title ?? "" : "", group: false }));
     let res: { added: number; present: number } | null = null;
     await this.editPreview((text) => {
-      const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths); res = r;
+      const r = WB.addToCanvas(JSON.parse(text), this.ix, anchor, paths, { relations }); res = r;
       if (!r.added) return null;
       for (const id of r.lineIds) this.preview!.edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
       return JSON.stringify(r.doc, null, 2);

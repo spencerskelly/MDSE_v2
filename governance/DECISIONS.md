@@ -951,3 +951,14 @@ Rules: WKB-031 (Active).
 5. **Not covered.** Only the temporary preview canvas is changed; a canvas the person saved or made by hand is not. Relatives of relatives (more than one step) are added by selecting a new card and adding again. A card removed from the canvas is not removed from the model.
 
 Rules: WKB-032 (Active).
+
+## D-0083 — Adding notes to a canvas leaves the cards that are there and puts related notes together
+
+2026-10-24 · Spencer · Accepted (owner, chat: "when notes are added to a canvas, the existing notes remain where they are. when notes are added that have relationships, they should be placed near each other").
+
+1. **Nothing moves.** Adding notes never moves, resizes or removes a card already on the canvas. Pick notes' "Place on canvas" now adds to the open preview instead of replacing it; a new button "New canvas" replaces it (boxed by type as in D-0080 when that is ticked). The boxes by type apply to a new canvas only. With no preview open, "Place on canvas" makes one.
+2. **Placement by relationship.** Each new note is placed beside a note it relates to, one step (a card plus the gap of D-0079) away, to the right first, then below, above and left, and outward when those are taken. It goes beside that note's card when the note is on the canvas, else beside the new note it relates to, so a chain or tree of new notes spreads outward from where it joins the old cards. A note related to several placed notes takes the free place nearest to all of them. A new note related to nothing placed goes in free space below the existing cards, one cluster of related notes after another, six places across. Nothing overlaps.
+3. **Lines.** Replaces the column placement of D-0082 item 3; lines are as there, and are left off when "draw relationships" is unticked.
+4. **Not covered.** A note with very many relations fills the places around it, so some of its relations are a few steps away (the test allows five). Placement is by relationship only, not by type or name. The first note placed decides where a cluster goes; the layout is not optimised as a whole.
+
+Rules: WKB-032 (Active).

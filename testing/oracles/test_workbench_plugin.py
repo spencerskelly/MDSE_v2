@@ -334,7 +334,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=/\\d+ match/")
             pg.click("button:has-text('Tick all listed')")
             self.assertRegex(pg.inner_text("body"), r"[1-9]\d* ticked")
-            pg.click("button:has-text('Place on canvas')")
+            pg.click("button:has-text('New canvas')")
             pg.wait_for_selector("text=/Canvas preview opened/")
             picked = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + A[:-3] + "|") for n in picked["nodes"]), "the ticked note is on the canvas")
@@ -343,7 +343,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # a card chosen on the canvas becomes the selected note, and its related notes can be added to the canvas (D-0082)
             T, title = pg.evaluate("""() => { const ix = window.__plugin.ix, e = ix.edges.find((x) => x.to && !x.reverse && x.from !== x.to); return [e.to, ix.notes.get(e.to).title]; }""")
-            pg.evaluate("p => window.__plugin.openPickCanvas([p], '', false, false)", T)
+            pg.evaluate("p => window.__plugin.openPickCanvas([p], '', false, false, true)", T)
             pg.wait_for_function("p => JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas']).nodes.length === 1")
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
             pg.wait_for_selector(f"header >> text={title}")

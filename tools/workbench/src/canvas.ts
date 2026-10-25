@@ -107,9 +107,8 @@ export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
 }
 
-/** Adds notes to a canvas that already holds cards (D-0082). New cards go in columns to the right of `anchor`'s card (or below everything when it is not on the canvas), at most ADD_ROWS to a column, spaced as in D-0079 and moved right until they overlap nothing. A note already on the canvas is not added twice. Lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
-export const ADD_ROWS = 8;
-export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[]): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
+/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map<string, CanvasNode>();
   for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
@@ -117,22 +116,49 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
   if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
   const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
   const freshId = (pre: string): string => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
-  const cards = fresh.map((p) => noteCard(ix, p, freshId("p")));
-  const a = anchor ? onCanvas.get(anchor) : undefined, solids = out.nodes.filter((n) => n.type !== "group");
-  const colsN = Math.ceil(cards.length / ADD_ROWS), step = W + GX;
-  const colH = (c: number): number => { const col = cards.slice(c * ADD_ROWS, (c + 1) * ADD_ROWS); return col.reduce((s, x) => s + x.height, 0) + (col.length - 1) * GY; };
-  const tallest = Math.max(...Array.from({ length: colsN }, (_, c) => colH(c)));
-  let x0 = a ? a.x + step : solids.length ? Math.max(...solids.map((n) => n.x + n.width)) + GX : 0, top = a ? a.y + a.height / 2 - tallest / 2 : solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0;
-  if (!a && solids.length) x0 = Math.min(...solids.map((n) => n.x));
-  const place = (dx: number): CanvasNode[] => cards.map((c, i) => { const col = Math.floor(i / ADD_ROWS), row = cards.slice(col * ADD_ROWS, i).reduce((s, x) => s + x.height + GY, 0); return { ...c, x: Math.round(x0 + dx + col * step), y: Math.round(top + row) }; });
-  const clash = (list: CanvasNode[]): boolean => list.some((c) => solids.some((n) => c.x < n.x + n.width + 40 && n.x < c.x + c.width + 40 && c.y < n.y + n.height + 40 && n.y < c.y + c.height + 40));
-  let dx = 0, placed = place(0);
-  for (let t = 0; t < 40 && clash(placed); t++) { dx += step; placed = place(dx); }
-  out.nodes.push(...placed);
-  const at = new Map<string, CanvasNode>(); for (const [p, n] of onCanvas) at.set(p, n); fresh.forEach((p, i) => at.set(p, placed[i]!));
-  const isNew = new Set(fresh), lineIds: string[] = [];
+  const cardOf = new Map(fresh.map((p) => [p, noteCard(ix, p, freshId("p"))] as const));
+  const solids = out.nodes.filter((n) => n.type !== "group"), at = new Map<string, CanvasNode>(onCanvas), isFresh = new Set(fresh);
+  const nb = new Map<string, Set<string>>();                                          // who relates to whom, among the new notes and those already on the canvas
   for (const e of ix.edges) {
-    if (!e.to || e.reverse || !(isNew.has(e.from) || isNew.has(e.to))) continue;
+    if (!e.to || e.reverse || e.from === e.to || !(isFresh.has(e.from) || isFresh.has(e.to)) || !(isFresh.has(e.from) || onCanvas.has(e.from)) || !(isFresh.has(e.to) || onCanvas.has(e.to))) continue;
+    (nb.get(e.from) ?? nb.set(e.from, new Set()).get(e.from)!).add(e.to); (nb.get(e.to) ?? nb.set(e.to, new Set()).get(e.to)!).add(e.from);
+  }
+  const CX = W + GX, CY = H + GY, title = (p: string): string => ix.notes.get(p)!.title;
+  const free = (c: CanvasNode, x: number, y: number): boolean => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + c.width + 40 && y < n.y + n.height + 40 && n.y < y + c.height + 40);
+  const put = (p: string, x: number, y: number): CanvasNode => { const c = cardOf.get(p)!; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); out.nodes.push(c); at.set(p, c); return c; };
+  const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0 };
+  const rings: Array<Array<[number, number]>> = [];                                  // grid steps around a card, nearest first, right before left
+  for (let r = 1; r <= 30; r++) { const ring: Array<[number, number]> = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
+  const placeNear = (p: string, ref: CanvasNode): void => {                           // beside `ref`, and as close as it can be to every other placed note this one relates to
+    const c = cardOf.get(p)!, others = [...(nb.get(p) ?? [])].map((q) => at.get(q)).filter((n): n is CanvasNode => !!n);
+    if (others.length > 1) {
+      let best: { x: number; y: number; score: number } | null = null;
+      for (const o of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
+        const x = o.x + dx * CX, y = o.y + dy * CY; if (!free(c, x, y)) continue;
+        const score = others.reduce((sum, q) => sum + Math.abs(q.x - x) / CX + Math.abs(q.y - y) / CY, 0);
+        if (!best || score < best.score - 1e-9) best = { x, y, score };
+      }
+      if (best) { put(p, best.x, best.y); return; }
+    }
+    for (const ring of rings) for (const [dx, dy] of ring) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
+    put(p, ref.x + 31 * CX, ref.y);
+  };
+  const spread = (queue: string[]): void => {                                       // breadth first: each new note beside the one it relates to
+    while (queue.length) {
+      const from = queue.shift()!, ref = at.get(from)!;
+      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref); queue.push(q); }
+    }
+  };
+  const around = [...onCanvas.keys()].filter((p) => [...(nb.get(p) ?? [])].some((q) => isFresh.has(q)));
+  around.sort((x, y) => (x === anchor ? -1 : 0) - (y === anchor ? -1 : 0));
+  spread(around);
+  let cursor = 0;                                                                   // free space below the existing cards for notes related to nothing placed
+  const seed = (p: string): void => { const c = cardOf.get(p)!; for (;; cursor++) { const x = base.x + (cursor % 6) * CX, y = base.y + Math.floor(cursor / 6) * CY; if (free(c, x, y)) { put(p, x, y); cursor++; return; } } };
+  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
+  for (const p of left) { if (at.has(p)) continue; seed(p); spread([p]); }
+  const lineIds: string[] = [];
+  if (opts.relations !== false) for (const e of ix.edges) {
+    if (!e.to || e.reverse || !(isFresh.has(e.from) || isFresh.has(e.to))) continue;
     const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
     const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
     out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);

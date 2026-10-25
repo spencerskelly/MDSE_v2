@@ -1501,9 +1501,8 @@ function relatedNotes(ix            , path        )                             
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
 }
 
-/** Adds notes to a canvas that already holds cards (D-0082). New cards go in columns to the right of `anchor`'s card (or below everything when it is not on the canvas), at most ADD_ROWS to a column, spaced as in D-0079 and moved right until they overlap nothing. A note already on the canvas is not added twice. Lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
-const ADD_ROWS = 8;
-function addToCanvas(doc           , ix            , anchor               , paths          )                                                                        {
+/** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
+function addToCanvas(doc           , ix            , anchor               , paths          , opts                          = {})                                                                        {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map                    ();
   for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
@@ -1511,22 +1510,49 @@ function addToCanvas(doc           , ix            , anchor               , path
   if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
   const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
   const freshId = (pre        )         => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
-  const cards = fresh.map((p) => noteCard(ix, p, freshId("p")));
-  const a = anchor ? onCanvas.get(anchor) : undefined, solids = out.nodes.filter((n) => n.type !== "group");
-  const colsN = Math.ceil(cards.length / ADD_ROWS), step = W + GX;
-  const colH = (c        )         => { const col = cards.slice(c * ADD_ROWS, (c + 1) * ADD_ROWS); return col.reduce((s, x) => s + x.height, 0) + (col.length - 1) * GY; };
-  const tallest = Math.max(...Array.from({ length: colsN }, (_, c) => colH(c)));
-  let x0 = a ? a.x + step : solids.length ? Math.max(...solids.map((n) => n.x + n.width)) + GX : 0, top = a ? a.y + a.height / 2 - tallest / 2 : solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0;
-  if (!a && solids.length) x0 = Math.min(...solids.map((n) => n.x));
-  const place = (dx        )               => cards.map((c, i) => { const col = Math.floor(i / ADD_ROWS), row = cards.slice(col * ADD_ROWS, i).reduce((s, x) => s + x.height + GY, 0); return { ...c, x: Math.round(x0 + dx + col * step), y: Math.round(top + row) }; });
-  const clash = (list              )          => list.some((c) => solids.some((n) => c.x < n.x + n.width + 40 && n.x < c.x + c.width + 40 && c.y < n.y + n.height + 40 && n.y < c.y + c.height + 40));
-  let dx = 0, placed = place(0);
-  for (let t = 0; t < 40 && clash(placed); t++) { dx += step; placed = place(dx); }
-  out.nodes.push(...placed);
-  const at = new Map                    (); for (const [p, n] of onCanvas) at.set(p, n); fresh.forEach((p, i) => at.set(p, placed[i] ));
-  const isNew = new Set(fresh), lineIds           = [];
+  const cardOf = new Map(fresh.map((p) => [p, noteCard(ix, p, freshId("p"))]         ));
+  const solids = out.nodes.filter((n) => n.type !== "group"), at = new Map                    (onCanvas), isFresh = new Set(fresh);
+  const nb = new Map                     ();                                          // who relates to whom, among the new notes and those already on the canvas
   for (const e of ix.edges) {
-    if (!e.to || e.reverse || !(isNew.has(e.from) || isNew.has(e.to))) continue;
+    if (!e.to || e.reverse || e.from === e.to || !(isFresh.has(e.from) || isFresh.has(e.to)) || !(isFresh.has(e.from) || onCanvas.has(e.from)) || !(isFresh.has(e.to) || onCanvas.has(e.to))) continue;
+    (nb.get(e.from) ?? nb.set(e.from, new Set()).get(e.from) ).add(e.to); (nb.get(e.to) ?? nb.set(e.to, new Set()).get(e.to) ).add(e.from);
+  }
+  const CX = W + GX, CY = H + GY, title = (p        )         => ix.notes.get(p) .title;
+  const free = (c            , x        , y        )          => !solids.some((n) => x < n.x + n.width + 40 && n.x < x + c.width + 40 && y < n.y + n.height + 40 && n.y < y + c.height + 40);
+  const put = (p        , x        , y        )             => { const c = cardOf.get(p) ; c.x = Math.round(x); c.y = Math.round(y); solids.push(c); out.nodes.push(c); at.set(p, c); return c; };
+  const base = { x: solids.length ? Math.min(...solids.map((n) => n.x)) : 0, y: solids.length ? Math.max(...solids.map((n) => n.y + n.height)) + GY : 0 };
+  const rings                                 = [];                                  // grid steps around a card, nearest first, right before left
+  for (let r = 1; r <= 30; r++) { const ring                          = []; for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]); ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1]) || (p[0] > 0 ? 0 : 1) - (q[0] > 0 ? 0 : 1) || Math.abs(p[1]) - Math.abs(q[1]) || p[1] - q[1]); rings.push(ring); }
+  const placeNear = (p        , ref            )       => {                           // beside `ref`, and as close as it can be to every other placed note this one relates to
+    const c = cardOf.get(p) , others = [...(nb.get(p) ?? [])].map((q) => at.get(q)).filter((n)                  => !!n);
+    if (others.length > 1) {
+      let best                                                 = null;
+      for (const o of others) for (const ring of rings.slice(0, 3)) for (const [dx, dy] of ring) {
+        const x = o.x + dx * CX, y = o.y + dy * CY; if (!free(c, x, y)) continue;
+        const score = others.reduce((sum, q) => sum + Math.abs(q.x - x) / CX + Math.abs(q.y - y) / CY, 0);
+        if (!best || score < best.score - 1e-9) best = { x, y, score };
+      }
+      if (best) { put(p, best.x, best.y); return; }
+    }
+    for (const ring of rings) for (const [dx, dy] of ring) if (free(c, ref.x + dx * CX, ref.y + dy * CY)) { put(p, ref.x + dx * CX, ref.y + dy * CY); return; }
+    put(p, ref.x + 31 * CX, ref.y);
+  };
+  const spread = (queue          )       => {                                       // breadth first: each new note beside the one it relates to
+    while (queue.length) {
+      const from = queue.shift() , ref = at.get(from) ;
+      for (const q of [...(nb.get(from) ?? [])].filter((x) => isFresh.has(x) && !at.has(x) ).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))) { placeNear(q, ref); queue.push(q); }
+    }
+  };
+  const around = [...onCanvas.keys()].filter((p) => [...(nb.get(p) ?? [])].some((q) => isFresh.has(q)));
+  around.sort((x, y) => (x === anchor ? -1 : 0) - (y === anchor ? -1 : 0));
+  spread(around);
+  let cursor = 0;                                                                   // free space below the existing cards for notes related to nothing placed
+  const seed = (p        )       => { const c = cardOf.get(p) ; for (;; cursor++) { const x = base.x + (cursor % 6) * CX, y = base.y + Math.floor(cursor / 6) * CY; if (free(c, x, y)) { put(p, x, y); cursor++; return; } } };
+  const left = fresh.filter((p) => !at.has(p)).sort((x, y) => (nb.get(y)?.size ?? 0) - (nb.get(x)?.size ?? 0) || title(x).localeCompare(title(y)) || x.localeCompare(y));
+  for (const p of left) { if (at.has(p)) continue; seed(p); spread([p]); }
+  const lineIds           = [];
+  if (opts.relations !== false) for (const e of ix.edges) {
+    if (!e.to || e.reverse || !(isFresh.has(e.from) || isFresh.has(e.to))) continue;
     const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
     const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
     out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
@@ -3981,7 +4007,7 @@ function editView(c         )              {
                                                            
                                                                                   
                                                                  
-                                                                                                       
+                                                                                                                         
                                  
                                                               
                                                                                                            
@@ -4128,14 +4154,16 @@ function mountPanel(root             , host           , opt                     
     const count = h("span", { class: "mut" }), boxes = new Map                          ();
     const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
     const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
-    const place = h("button", { class: "sm pri", title: "Preview the ticked notes as an Obsidian Canvas. Nothing is saved until you choose Save canvas." }, "Place on canvas");
-    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Creating…", () => host.openPickCanvas ([...pickSel], pickText, pickRel, pickGroup)); });
+    const place = h("button", { class: "sm pri", title: "Add the ticked notes to the canvas preview that is open; nothing already on it moves, and related notes are put next to each other. With none open this makes one. Nothing is saved until you choose Save canvas." }, "Place on canvas");
+    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Placing…", () => host.openPickCanvas ([...pickSel], pickText, pickRel, pickGroup, false)); });
+    const fresh = h("button", { class: "sm", title: "Replace the canvas preview with a new one made of the ticked notes (boxed by type when that is ticked)" }, "New canvas");
+    fresh.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(fresh, "Creating…", () => host.openPickCanvas ([...pickSel], pickText, pickRel, pickGroup, true)); });
     const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
       h("button", { class: "sm", onclick: () => tickAll(true) }, "Tick all listed"), h("button", { class: "sm", onclick: () => tickAll(false) }, "Untick listed"),
       h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
       h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e       ) => { pickRel = (e.target                    ).checked; } }), " draw relationships"),
-      h("label", { title: "Put the notes in one labelled box for each type, so a long list is easy to move around" }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e       ) => { pickGroup = (e.target                    ).checked; } }), " group by type"), count,
-      host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."));
+      h("label", { title: "Put the notes in one labelled box for each type, so a long list is easy to move around. Applies to a new canvas." }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e       ) => { pickGroup = (e.target                    ).checked; } }), " group by type"), count,
+      host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."), host.openPickCanvas ? fresh : null);
     if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); bar.append(b); }
     upd();
     const list = h("div", {}, ...notes.map((n) => {

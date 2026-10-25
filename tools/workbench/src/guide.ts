@@ -14,7 +14,7 @@ export const GUIDE: GuideSection[] = [
     "Interfaces: ports, interface definitions and what flows. Graph: a radial picture around one note. Relationships: every link, filterable by kind.",
     "Review: everything the import or the model needs a person to decide.",
     "Pick notes: type a word or phrase, tick the notes you want from the list (name or description holds it), then Place on canvas. The ticked notes become a canvas preview, in one labelled box for each note type (untick “group by type” for a plain grid), with the relationships between them drawn if you leave that ticked. Save canvas… keeps it.",
-    "On a canvas, choosing a note card makes this panel show that note. In the Note tab, Add related notes to the canvas puts one related note (+) or all of them beside the card." ] },
+    "On a canvas, choosing a note card makes this panel show that note. In the Note tab, Add related notes to the canvas puts one related note (+) or all of them beside the card. Notes already on the canvas stay where they are, and new notes that relate to each other are put next to each other. Place on canvas in Pick notes adds to the open canvas the same way; New canvas starts a fresh one." ] },
   { title: "Working through an import", body: [
     "1. Open Review. Start with high severity (format problems, duplicate ids), then flags, then provisional links.",
     "2. Flags are callouts in the notes. A flagLink is a relationship or element the importer did not write; the callout says why and names the EA GUID. Decide it, fix the SysML or the link, then use Resolve to remove that one flag.",

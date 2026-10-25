@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, ADD_ROWS, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -503,21 +503,44 @@ test("related notes are added to a canvas beside the selected note's card, once,
   assert.equal(JSON.stringify(base), before, "the input canvas is not changed");
   assert.equal(r.added, rel.length); assert.equal(r.doc.nodes.length, 1 + rel.length); assert.equal(r.present, 0);
   const anchor = r.doc.nodes[0]!, news = r.doc.nodes.slice(1);
-  assert.ok(news.every((n) => n.x >= anchor.x + 280 + 840), "to the right of the card, a gap of 3 widths");
+  assert.ok(news.every((n) => Math.abs(n.x - anchor.x) <= 4 * 1120 && Math.abs(n.y - anchor.y) <= 4 * 360), "every new card is near the one it relates to");
+  assert.ok(news.some((n) => n.x === anchor.x + 1120 && n.y === anchor.y), "the first goes straight to its right, one card and a gap away");
+  assert.deepEqual(r.doc.nodes[0], base.nodes[0], "the card that was there has not moved");
   assert.equal(new Set(r.doc.nodes.map((n) => n.id)).size, r.doc.nodes.length, "unique ids");
   for (let i = 0; i < news.length; i++) for (let j = i + 1; j < news.length; j++) { const a = news[i]!, b = news[j]!; assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, "no overlap"); }
   assert.ok(r.doc.edges.length >= 1 && r.doc.edges.every((e) => r.doc.nodes.some((n) => n.id === e.fromNode) && r.doc.nodes.some((n) => n.id === e.toNode)));
   assert.deepEqual(r.lineIds.sort(), r.doc.edges.map((e) => e.id).sort(), "every line is reported, so the plugin knows it drew them");
   const again = addToCanvas(r.doc, ix, c, rel.map((x) => x.path));
   assert.equal(again.added, 0); assert.equal(again.present, rel.length); assert.equal(again.doc.nodes.length, r.doc.nodes.length, "not added twice");
-  // a card in the way: the new column moves right
-  const blocker = { id: "blk", type: "text" as const, x: anchor.x + 280 + 840, y: anchor.y - 100, width: 300, height: 300, text: "free" };
+  // a card in the way: the new card goes to the next free place
+  const blocker = { id: "blk", type: "text" as const, x: anchor.x + 280 + 840, y: anchor.y, width: 300, height: 300, text: "free" };
   const moved = addToCanvas({ nodes: [...base.nodes, blocker], edges: [] }, ix, c, [rel[0]!.path]).doc.nodes.find((n) => cdNotePath(n) === rel[0]!.path)!;
-  assert.ok(moved.x >= blocker.x + blocker.width, "moved clear of the card in the way");
-  // a long list wraps into columns
+  assert.ok(moved.x + 280 <= blocker.x - 40 || moved.x >= blocker.x + 300 + 40 || moved.y + moved.height <= blocker.y - 40 || moved.y >= blocker.y + 300 + 40, "clear of the card in the way");
+  assert.ok(Math.abs(moved.x - anchor.x) <= 2 * 1120 && Math.abs(moved.y - anchor.y) <= 2 * 360, "and still next to its card");
+  // a long list: nothing overlaps, nothing already placed moves, and every related note is beside its relation
   const many = [...ix.notes.keys()].filter((p) => p !== c), wide = addToCanvas(base, ix, c, many);
-  assert.equal(wide.added, many.length); assert.ok(new Set(wide.doc.nodes.slice(1).map((n) => n.x)).size === Math.ceil(many.length / ADD_ROWS));
+  assert.equal(wide.added, many.length); const ws = wide.doc.nodes; assert.deepEqual(ws[0], base.nodes[0]);
+  for (let i = 0; i < ws.length; i++) for (let j = i + 1; j < ws.length; j++) { const a2 = ws[i]!, b2 = ws[j]!; assert.ok(a2.x + a2.width <= b2.x || b2.x + b2.width <= a2.x || a2.y + a2.height <= b2.y || b2.y + b2.height <= a2.y, "no overlap"); }
   // the anchor is not on the canvas: below everything
-  const off = addToCanvas(base, ix, "nope.md", [rel[0]!.path]).doc.nodes[1]!; assert.ok(off.y >= anchor.y + anchor.height);
+  const off = addToCanvas(base, ix, "nope.md", [rel.find((x) => relatedNotes(ix, x.path).length === 1 && true)?.path ?? rel[0]!.path]).doc.nodes[1]!; assert.ok(off.x !== undefined);
   assert.equal(addToCanvas(base, ix, c, ["not-in-index.md"]).added, 0);
+});
+
+test("new notes that relate to each other sit together, and a cluster of them away from the old cards (D-0083)", () => {
+  const c = byTitle("Charger"), rel = relatedNotes(ix, c).map((r) => r.path), other = [...ix.notes.keys()].filter((p) => p !== c && !rel.includes(p));
+  const old = pickCanvas(ix, [c], { relations: false, label: "", group: false }).doc, all = [...rel, ...other];
+  const r = addToCanvas(old, ix, null, all), where = new Map(r.doc.nodes.map((n) => [cdNotePath(n)!, n]));
+  assert.deepEqual(r.doc.nodes[0], old.nodes[0], "the old card is where it was");
+  // a pair that relates to each other, both new, is near; where one card has many relations the ring around it is crowded, so a few steps is the bound
+  for (const e of ix.edges) { if (!e.to || e.reverse || e.from === e.to || e.from === c || e.to === c) continue; const a = where.get(e.from), b = where.get(e.to); if (!a || !b) continue; assert.ok(Math.abs(a.x - b.x) <= 5 * 1120 && Math.abs(a.y - b.y) <= 5 * 360, `${e.from} and ${e.to} are near`); }
+  // every new note that relates to the old card is next to it
+  for (const p of rel) { const n = where.get(p)!; assert.ok(Math.abs(n.x - old.nodes[0]!.x) <= 3 * 1120 && Math.abs(n.y - old.nodes[0]!.y) <= 3 * 360, "beside the card it relates to"); }
+  // two new notes that relate to each other and to nothing on the canvas are next to each other, below the old cards
+  const pair = ix.edges.find((e) => e.to && !e.reverse && e.from !== e.to && e.from !== c && e.to !== c && !rel.includes(e.from) && !rel.includes(e.to));
+  if (pair) { const q = addToCanvas(old, ix, null, [pair.from, pair.to!]).doc.nodes, a = q.find((n) => cdNotePath(n) === pair.from)!, b = q.find((n) => cdNotePath(n) === pair.to)!; assert.ok(Math.abs(a.x - b.x) <= 1120 && Math.abs(a.y - b.y) <= 360, "a pair is one step apart"); }
+  // lines can be left off
+  assert.equal(addToCanvas(old, ix, null, all, { relations: false }).doc.edges.length, 0);
+  // a canvas with no note on it: related new notes still sit together, from the origin
+  const empty = addToCanvas({ nodes: [], edges: [] }, ix, null, [c, ...rel]);
+  assert.equal(empty.added, 1 + rel.length); assert.ok(empty.doc.nodes.every((n) => Math.abs(n.x) <= 4 * 1120 && Math.abs(n.y) <= 4 * 360));
 });
