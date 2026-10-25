@@ -444,14 +444,13 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
-    if (revisionReview.some((r) => r.parent === pn)) extra.push(["noteReview", "[[Old Revision Usage]]"]);
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const older = revisionReview.filter((r) => r.parent === pn);
     if (older.length) body.push("**Older revision usages**", "", ...older.map((r) => `- Line ${r.line || "?"}: ${r.child} pinned at ${JSON.stringify(r.pinned)}, selected definition at ${JSON.stringify(r.selected)}; source row ${r.row}.`), "", "See [[Old Revision Usage]].", "");
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
-      relFields: [], extraFields: extra, partNumber: pn, ...(!isDoc && replaces.get(pn)?.size ? { aliases: [...replaces.get(pn)!].sort() } : {}), bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
+      relFields: older.length ? [["noteReview", ["Old Revision Usage"]]] : [], extraFields: extra, partNumber: pn, ...(!isDoc && replaces.get(pn)?.size ? { aliases: [...replaces.get(pn)!].sort() } : {}), bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
       sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });
   }
 
