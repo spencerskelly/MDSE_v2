@@ -4,6 +4,7 @@
  * from the SysML v2 text, not from YAML fields. */
 import type { Edge, EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
+import { compareNotes } from "./compare.ts";
 
 export interface TreeNode { path: string | null; label: string; detail: string; kind: string; qty: number; children: TreeNode[]; cycle?: boolean; more?: number }
 const node = (path: string | null, label: string, kind = "", detail = "", qty = 1): TreeNode => ({ path, label, detail, kind, qty, children: [] });
@@ -472,15 +473,15 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "pick" | "common" | "layout" | "merge" | "edit";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["merge", "Merge notes"], ["edit", "Edit"]];
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "pick" | "common" | "layout" | "compare" | "merge" | "edit";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string; lenses: Lens[] }> = [
-  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },
+  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "compare", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", merge: "Everything", edit: "Everything" };
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
 export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
@@ -489,7 +490,7 @@ export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct" }
+export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string }
 
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
@@ -510,6 +511,19 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+  } else if (lens === "compare") {
+    if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
+    const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)! : null;
+    if (!o2) return [{ id: "compare", title: `Compare ${n.title}`, columns: [], rows: [], empty: "Choose the second note above." }];
+    const r = compareNotes(ix, n.path, o2.path)!, A = n.title, B = o2.title, ind = (l: number): string => "\u00a0\u00a0".repeat(l);
+    const plainRows = (l: Array<{ what: string; a: string; b: string }>): Array<Record<string, TableCell>> => l.map((x) => ({ what: x.what, a: x.a, b: x.b }));
+    const cols = (w: string): TableData["columns"] => [{ key: "what", label: w }, { key: "a", label: A, wide: true }, { key: "b", label: B, wide: true }];
+    out.push({ id: "compare-sum", title: `${A} and ${B}`, columns: [], rows: [], empty: r.same ? "No differences found in properties, members, relationships or structure." : `${r.differing} difference${r.differing === 1 ? "" : "s"}: ${r.props.length} propert${r.props.length === 1 ? "y" : "ies"}, ${r.members.length} other member${r.members.length === 1 ? "" : "s"}, ${r.links.length} relationship${r.links.length === 1 ? "" : "s"}, ${r.structure.length} structure row${r.structure.length === 1 ? "" : "s"}.` });
+    out.push({ id: "compare-props", title: "Properties that differ", columns: cols("Property"), rows: plainRows(r.props), empty: "No property differs." });
+    out.push({ id: "compare-structure", title: "Structure, down to the parts that differ", columns: [{ key: "a", label: A }, { key: "b", label: B }, { key: "diff", label: "Difference", wide: true }],
+      rows: r.structure.map((x) => ({ a: x.pathA ? { text: ind(x.level) + x.a!, path: x.pathA } : "", b: x.pathB ? { text: ind(x.level) + x.b!, path: x.pathB } : "", diff: x.diff })), empty: "The parts match: same parts, quantities and revisions at every level." });
+    out.push({ id: "compare-members", title: "Other SysML members that differ (ports, attributes, behavior, requirements)", columns: cols("Area"), rows: plainRows(r.members), empty: "No other member differs." });
+    out.push({ id: "compare-links", title: "Relationships that differ", columns: cols("Kind"), rows: plainRows(r.links), empty: "No relationship differs." });
   } else if (lens === "design") {
     if (!n) return [{ id: "design", title: "Design types", columns: [], rows: [], empty: "Select a note in Obsidian to see its design types." }];
     const dt = designTypes(ix, sel), flat: Array<Record<string, TableCell>> = [];

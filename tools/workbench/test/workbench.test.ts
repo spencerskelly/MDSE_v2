@@ -697,3 +697,27 @@ test("a retired note is a red card that names the note it went into, and Refresh
   assert.ok(refreshCanvas(mine, v2).doc.edges.some((e) => e.id === "9f3ab2c4d5e6f7a8"));
   assert.equal(refreshCanvas(r.doc, v2).redrawn + refreshCanvas(r.doc, v2).linesAdded + refreshCanvas(r.doc, v2).linesRemoved, 0, "refreshing twice changes nothing more");
 });
+
+import { compareNotes } from "../src/compare.ts";
+test("compare lists what differs between two notes and shows the structure down to the parts that differ (D-0092)", () => {
+  const f = (id: string, title: string, props = "", block = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500003${id.replace(/\D/g, "").padStart(4, "0")}compare-test\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n${block}`];
+  const v = buildIndex(new Map([
+    f("OBJ-00001", "Charger A", 'description: Charger\nrevision: "-1"\nhasPart: ["[[Cable A]]", "[[Plug A]]", "[[Board A]]", "[[Lid A]]"]\n'),
+    f("OBJ-00011", "Charger B", 'description: Charger\nrevision: "-2"\nhasPart: ["[[Cable B]]", "[[Plug B]]", "[[Board B]]"]\n'),
+    f("OBJ-00002", "Cable A", 'partNumber: C-1\n'), f("OBJ-00012", "Cable B", 'partNumber: C-1\n'),
+    f("OBJ-00003", "Plug A", 'partNumber: P-1\n'), f("OBJ-00013", "Plug B", 'partNumber: P-1\n'),
+    f("OBJ-00004", "Board A", 'partNumber: B-1\nhasPart: ["[[Chip A]]", "[[Cap A]]"]\n'), f("OBJ-00014", "Board B", 'partNumber: B-1\nhasPart: ["[[Chip B]]"]\n'),
+    f("OBJ-00005", "Chip A", 'partNumber: U-1\nhasPart: ["[[Die A]]"]\n'), f("OBJ-00015", "Chip B", 'partNumber: U-1\nhasPart: ["[[Die B]]"]\n'),
+    f("OBJ-00006", "Die A", 'partNumber: D-1\nrevision: "-1"\n'), f("OBJ-00016", "Die B", 'partNumber: D-1\nrevision: "-2"\n'),
+    f("OBJ-00007", "Cap A", 'partNumber: K-1\n'), f("OBJ-00008", "Lid A", 'partNumber: L-1\n'),
+  ]), { classes });
+  const r = compareNotes(v, "Charger A.md", "Charger B.md")!;
+  assert.deepEqual(r.props.map((x) => x.what), ["revision"]);
+  const rows = r.structure.map((x) => `${"  ".repeat(x.level)}${x.a ?? x.b}: ${x.diff}`);
+  assert.ok(rows.some((x) => /^Board A: differs below/.test(x)), rows.join("\n"));
+  assert.ok(rows.some((x) => /^  Cap A: only in A/.test(x)));
+  assert.ok(rows.some((x) => /^Lid A: only in A/.test(x)));
+  assert.ok(rows.some((x) => /^    Die A: revision differs/.test(x)), "down to the part that differs");
+  assert.ok(!rows.some((x) => /Cable|Plug/.test(x)), "parts that match are not listed");
+  assert.equal(compareNotes(v, "Charger A.md", "Charger A.md")!.same, true);
+});

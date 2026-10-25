@@ -89,7 +89,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -158,6 +158,16 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
+  /* D-0092: compare the selected note with another: what differs, and the structure down to the parts that differ. */
+  function openCompare(other: string): void { cmpOther = other; lens = "compare"; editEl = null; draw(); }
+  function compareBar(): HTMLElement {
+    const found = V.pickRows(ix!, cmpText, "", 60).notes.filter((x) => x.path !== sel);
+    const pick = h("select", { "aria-label": "Note to compare with", style: "max-width:100%", onchange: (e: Event) => { cmpOther = (e.target as HTMLSelectElement).value; draw(); } },
+      h("option", { value: "" }, found.length ? "Choose the note to compare with…" : "No note matches"), ...found.map((x) => h("option", { value: x.path, selected: x.path === cmpOther || undefined }, `${x.title}  (${x.type}${x.id ? ", " + x.id : ""})`)));
+    if (cmpOther && !found.some((x) => x.path === cmpOther) && ix!.notes.has(cmpOther)) pick.insertBefore(h("option", { value: cmpOther, selected: true }, ix!.notes.get(cmpOther)!.title), pick.children[1] ?? null);
+    return h("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0" }, h("span", { class: "mut" }, "Compare with"),
+      h("input", { type: "search", placeholder: "Search by name, id or part number", value: cmpText, "aria-label": "Search for the note to compare with", style: "flex:1;min-width:140px", onchange: (e: Event) => { cmpText = (e.target as HTMLInputElement).value; cmpOther = ""; draw(); } }), pick);
+  }
   function openMerge(other: string): void { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
 
   /* ---- lenses ---- */
@@ -172,7 +182,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   function noteView(): HTMLElement {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
-    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null));
+    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null, h("button", { class: "sm", style: "margin-left:4px", title: "List what differs between this note and another, with the structure down to the parts that differ", onclick: () => openCompare("") }, "Compare with another note…")));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
     if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges: ReturnType<typeof outgoing>, dir: "out" | "in"): HTMLElement => {
@@ -264,7 +274,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const addBtn = (label: string, paths: string[], cls = "sm"): HTMLElement => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas!(given[0]!, paths))); return b; };
     const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
     const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p)!.type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0]!; openMerge(given[1]!); } }, "Merge these two…") : null;
-    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), mergeBtn ? h("div", { class: "row" }, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
+    const cmpBtn = given.length === 2 ? h("button", { class: "sm pri", title: "List what differs between these two notes, with the structure down to the parts that differ", onclick: () => { sel = given[0]!; openCompare(given[1]!); } }, "Compare these two") : null;
+    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), cmpBtn || mergeBtn ? h("div", { class: "row" }, cmpBtn, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
     if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
     return box;
@@ -340,8 +351,9 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
+        if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }

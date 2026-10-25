@@ -19,8 +19,8 @@ const mgBase = (target: string): string => (target.trim().replace(/\.md$/i, "").
 
 /* ---- reading a note into its parts --------------------------------------------------------------------------- */
 interface MgFm { key: string; lines: string[] }
-interface MgNote { fm: MgFm[]; meta: Record<string, string>; zone: string; src: string[] | null; block: string | null; crlf: boolean }
-function mgRead(text: string): MgNote | null {
+export interface MgNote { fm: MgFm[]; meta: Record<string, string>; zone: string; src: string[] | null; block: string | null; crlf: boolean }
+export function mgRead(text: string): MgNote | null {
   const crlf = text.includes("\r\n"), norm = text.replace(/\r\n/g, "\n");
   let n;
   try { n = MDSE.parse(norm); } catch { return null; }
@@ -194,9 +194,9 @@ export type MgOwners = Record<AreaId, MgOwner>;
 export interface MgAreaRow { id: AreaId; label: string; hint: string; bom: boolean; survivor: number; absorbed: number; recommended: MgOwner }
 const MG_FACT_KEY = /^(description|manufacturer\d+|mfgPn\d+)$/;
 const mgIsBomNote = (n: MgNote): boolean => n.fm.some((f) => f.key === "importHash") || !!n.src?.some((l) => /^- BOM Part Number:/.test(l));
-interface MgMem { start: number; end: number; area: AreaId; text: string }
+export interface MgMem { start: number; end: number; area: AreaId; text: string }
 /** The members of the one definition in a block, each with its area. null when the block has no single definition this can read. */
-function mgMembers(block: string | null): MgMem[] | null {
+export function mgMembers(block: string | null): MgMem[] | null {
   if (block === null) return [];
   const S = scanSysml(block); if (S.defs.length !== 1) return null;
   const d = S.defs[0]!, at = edFindDef(block, d.keyword, d.name); if (!at?.open) return [];

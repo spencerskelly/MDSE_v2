@@ -1068,3 +1068,14 @@ Rules: WKB-039 (Active).
 6. Not verified: a later EA import. The kept note carries the removed note's `EA GUID` source lines, and the importer finds notes by those lines, so the EA element should map to the kept note; what the importer then writes into a BOM note was not tested. The retired stub has no GUID line, so it is not matched. Test this on a copy before relying on it. Also not verified in Obsidian: that an open canvas reloads after Refresh (close and reopen if not).
 
 Rules: WKB-040, WKB-041 (Active).
+
+## D-0092 — Compare two notes
+
+2026-10-25 · Spencer · Accepted (owner, chat: "I'd like a compare function that shows two objects and lists the differences. The structure should display down to the parts that differ.")
+
+1. A read-only lens, Compare notes, in the Note menu. The second note is chosen from a search list on the lens, or comes from the Note view button or from two cards chosen on a canvas.
+2. Output: a one-line count, then tables for properties, structure, other SysML members and relationships (WKB-042). Only differences are listed; a part is shown when it is only on one side, its quantity or its facts differ, or something below it differs.
+3. Why matching by part number then name: the duplicated structures that BOM work and modeling produce are different notes for the same part, so matching by note alone would call every part different.
+4. Limits: depth 12; quantities are compared as the rolled quantity of one usage list (several usages of the same note are added); relationship fields written as YAML links are compared as relationships, other YAML fields as properties; two parts matched by name only (no part number) may be wrong matches when names repeat. Not verified on the real model.
+
+Rules: WKB-042 (Active).

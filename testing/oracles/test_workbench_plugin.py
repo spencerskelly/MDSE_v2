@@ -491,6 +491,13 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
+            # compare (D-0092)
+            pg.select_option("select[aria-label='Note menu']", label="Compare notes")
+            pg.wait_for_selector("text=Choose the second note above.")
+            pg.select_option("select[aria-label='Note to compare with']", value="10_Model/Charger.md")
+            pg.wait_for_selector("text=Properties that differ")
+            pg.wait_for_selector("text=Structure, down to the parts that differ")
+            pg.wait_for_selector("text=/\\d+ differences?:/")
             # from the note itself
             pg.select_option("select[aria-label='Note menu']", label="Note")
             pg.click("button:has-text('Merge with another note')")

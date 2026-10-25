@@ -842,6 +842,7 @@ const incoming = (ix            , path        )         => ix.inn.get(path) ?? [
  * from the SysML v2 text, not from YAML fields. */
 
 
+
                                                                                                                                                           
 const node = (path               , label        , kind = "", detail = "", qty = 1)           => ({ path, label, detail, kind, qty, children: [] });
 const nm = (ix            , p               , fallback        )         => (p ? ix.notes.get(p)?.title ?? fallback : fallback);
@@ -1309,15 +1310,15 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                                                          
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["merge", "Merge notes"], ["edit", "Edit"]];
+                                                                                                                                                                                                      
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
-  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "merge", "edit"] },
+  { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "compare", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", merge: "Everything", edit: "Everything" };
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
 const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
@@ -1326,7 +1327,7 @@ const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && 
                                                                                                                                                                                        
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix            , paths          )         => paths.map((p) => C(ix, p));
-                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                                                                           
 
 function lensTables(ix            , lens      , sel        , o              = {})              {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)  : null;
@@ -1347,6 +1348,19 @@ function lensTables(ix            , lens      , sel        , o              = {}
     const walkUp = (t          , level        )       => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+  } else if (lens === "compare") {
+    if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
+    const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)  : null;
+    if (!o2) return [{ id: "compare", title: `Compare ${n.title}`, columns: [], rows: [], empty: "Choose the second note above." }];
+    const r = compareNotes(ix, n.path, o2.path) , A = n.title, B = o2.title, ind = (l        )         => "\u00a0\u00a0".repeat(l);
+    const plainRows = (l                                               )                                   => l.map((x) => ({ what: x.what, a: x.a, b: x.b }));
+    const cols = (w        )                       => [{ key: "what", label: w }, { key: "a", label: A, wide: true }, { key: "b", label: B, wide: true }];
+    out.push({ id: "compare-sum", title: `${A} and ${B}`, columns: [], rows: [], empty: r.same ? "No differences found in properties, members, relationships or structure." : `${r.differing} difference${r.differing === 1 ? "" : "s"}: ${r.props.length} propert${r.props.length === 1 ? "y" : "ies"}, ${r.members.length} other member${r.members.length === 1 ? "" : "s"}, ${r.links.length} relationship${r.links.length === 1 ? "" : "s"}, ${r.structure.length} structure row${r.structure.length === 1 ? "" : "s"}.` });
+    out.push({ id: "compare-props", title: "Properties that differ", columns: cols("Property"), rows: plainRows(r.props), empty: "No property differs." });
+    out.push({ id: "compare-structure", title: "Structure, down to the parts that differ", columns: [{ key: "a", label: A }, { key: "b", label: B }, { key: "diff", label: "Difference", wide: true }],
+      rows: r.structure.map((x) => ({ a: x.pathA ? { text: ind(x.level) + x.a , path: x.pathA } : "", b: x.pathB ? { text: ind(x.level) + x.b , path: x.pathB } : "", diff: x.diff })), empty: "The parts match: same parts, quantities and revisions at every level." });
+    out.push({ id: "compare-members", title: "Other SysML members that differ (ports, attributes, behavior, requirements)", columns: cols("Area"), rows: plainRows(r.members), empty: "No other member differs." });
+    out.push({ id: "compare-links", title: "Relationships that differ", columns: cols("Kind"), rows: plainRows(r.links), empty: "No relationship differs." });
   } else if (lens === "design") {
     if (!n) return [{ id: "design", title: "Design types", columns: [], rows: [], empty: "Select a note in Obsidian to see its design types." }];
     const dt = designTypes(ix, sel), flat                                   = [];
@@ -3151,6 +3165,105 @@ function planNoteMerge(ix            , files                     , pairs        
     writes, problems: [], merged: abs.length, carried, notCarried, rewritten };
 }
 
+/* compare.ts */
+/* Compare two notes (D-0092): what differs in their properties, their other SysML members, their relationships, and their structure down to
+ * the parts that differ. Parts are matched between the two trees by note, else by part number, else by name, so two copies of the same assembly
+ * kept as separate notes (a BOM note and a modeled note) line up. Pure functions over the index. */
+
+
+
+
+                                                                                                                                                                    
+                                                         
+                                                                                                                                        
+
+const SKIP = new Set(["id", "uid", "primarySymbol", "sourceRole", "importHash", "importedOn", "importSource", "bomOwns", "tags"]);
+const FACT = /^(description|partNumber|revision|name|manufacturer\d+|mfgPn\d+)$/;
+const norm = (s        )         => s.replace(/\s+/g, " ").trim();
+const pnOf = (n      )         => String(n.meta.partNumber ?? "").trim() || (n.sourceLines.map((l) => /^- BOM Part Number:\s*(.+?)\s*$/.exec(l)?.[1]).find(Boolean) ?? "") || "";
+const titleKey = (n      )         => n.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Properties and members that differ between two notes. */
+function plain(ix            , a      , b      )                                                 {
+  const props             = [], keys = [...new Set([...Object.keys(a.meta), ...Object.keys(b.meta)])].filter((k) => !SKIP.has(k)).sort();
+  if (a.type !== b.type) props.push({ what: "type", a: a.type, b: b.type });
+  for (const k of keys) {
+    if (k === "type") continue;
+    const x = a.meta[k], y = b.meta[k];
+    const isLinks = (v         )          => typeof v === "string" && v.includes("[[");
+    if (isLinks(x) || isLinks(y)) continue;                                                // relationship fields are compared below
+    if (norm(String(x ?? "")) !== norm(String(y ?? ""))) props.push({ what: k, a: String(x ?? ""), b: String(y ?? "") });
+  }
+  const members             = [];
+  /* other members come from the SysML block's own lines */
+  const lines = (n      )                      => {
+    const out = new Map                (); if (!n.block) return out;
+    const mems = mgMembers(n.block) ?? [];
+    for (const m of mems) { if (m.area === "structure") continue; const t = norm(m.text.replace(n.def?.symbol ?? "\u0000", "SELF").replace(/\/\/.*$/gm, "")); out.set(t, m.area); }
+    return out;
+  };
+  const la = lines(a), lb = lines(b);
+  for (const [t, area] of la) if (!lb.has(t)) members.push({ what: area, a: t, b: "" });
+  for (const [t, area] of lb) if (!la.has(t)) members.push({ what: area, a: "", b: t });
+  members.sort((x, y) => x.what.localeCompare(y.what) || (x.a || x.b).localeCompare(y.a || y.b));
+  /* relationships other than parts, by kind and the name of what they point at */
+  const rel = (n      )                      => { const m = new Map                (); for (const e of outgoing(ix, n.path)) { if (e.kind === "hasPart" || !e.to || e.reverse || e.kind === "mergedInto") continue; const k = `${e.kind} ${ix.notes.get(e.to)?.title ?? e.to}`; m.set(k, (m.get(k) ?? 0) + 1); } return m; };
+  const ra = rel(a), rb = rel(b), links             = [];
+  for (const [k, n] of ra) if ((rb.get(k) ?? 0) < n) links.push({ what: k.split(" ")[0] , a: k.slice(k.indexOf(" ") + 1), b: "" });
+  for (const [k, n] of rb) if ((ra.get(k) ?? 0) < n) links.push({ what: k.split(" ")[0] , a: "", b: k.slice(k.indexOf(" ") + 1) });
+  links.sort((x, y) => x.what.localeCompare(y.what) || (x.a || x.b).localeCompare(y.a || y.b));
+  return { props, members, links };
+}
+
+                                                                        
+function kidsOf(ix            , p        )        {
+  const acc = new Map             ();
+  for (const e of outgoing(ix, p)) {
+    if (e.kind !== "hasPart" || !e.to || e.reverse || !ix.notes.has(e.to)) continue;
+    const m = measuredOf(e.detail), q = m ? m.qty : qtyOf(e.label), unit = m ? m.unit : "", key = e.to + "\u0000" + unit, cur = acc.get(key);
+    acc.set(key, { path: e.to, qty: (cur?.qty ?? 0) + q, unit, label: ix.notes.get(e.to) .title });
+  }
+  return [...acc.values()].sort((x, y) => x.label.localeCompare(y.label) || x.path.localeCompare(y.path));
+}
+const countBelow = (ix            , p        , stack           = [])         => stack.includes(p) || stack.length > 12 ? 0 : kidsOf(ix, p).reduce((n, k) => n + 1 + countBelow(ix, k.path, [...stack, p]), 0);
+const qtyText = (k     )         => `${Math.round(k.qty * 1000) / 1000}${k.unit ? " " + k.unit : ""}`;
+
+function factsDiffer(a      , b      )           {
+  const out           = [];
+  for (const k of new Set([...Object.keys(a.meta), ...Object.keys(b.meta)])) if (FACT.test(k) && k !== "name" && a.meta[k] !== undefined && b.meta[k] !== undefined && norm(String(a.meta[k])) !== norm(String(b.meta[k]))) out.push(k);
+  return out;
+}
+
+/** The structure of two notes side by side, only where they differ; the rows above a difference are kept so it can be found. */
+function tree(ix            , pa        , pb        , level        , stack          )           {
+  const ka = kidsOf(ix, pa), kb = kidsOf(ix, pb), usedB = new Set        (), pairs                                  = [];
+  const take = (k     , test                     )             => { const i = kb.findIndex((o, j) => !usedB.has(j) && test(o)); if (i < 0) return null; usedB.add(i); return kb[i] ; };
+  const matched = ka.map((k)                    => [k, take(k, (o) => o.path === k.path)]);                          // same note
+  for (const m of matched) if (!m[1]) { const pn = pnOf(ix.notes.get(m[0].path) ); if (pn) m[1] = take(m[0], (o) => pnOf(ix.notes.get(o.path) ).toLowerCase() === pn.toLowerCase()); }   // same part number
+  for (const m of matched) if (!m[1]) { const t = titleKey(ix.notes.get(m[0].path) ); if (t) m[1] = take(m[0], (o) => titleKey(ix.notes.get(o.path) ) === t); }                                        // same name
+  for (const [x, y] of matched) pairs.push([x, y]);
+  kb.forEach((k, j) => { if (!usedB.has(j)) pairs.push([null, k]); });
+  const out           = [];
+  for (const [x, y] of pairs) {
+    if (x && !y) { out.push({ level, a: x.label, b: null, pathA: x.path, pathB: null, diff: `only in A (${qtyText(x)}${countBelow(ix, x.path) ? `, ${countBelow(ix, x.path)} part${countBelow(ix, x.path) === 1 ? "" : "s"} below` : ""})` }); continue; }
+    if (!x && y) { out.push({ level, a: null, b: y.label, pathA: null, pathB: y.path, diff: `only in B (${qtyText(y)}${countBelow(ix, y.path) ? `, ${countBelow(ix, y.path)} part${countBelow(ix, y.path) === 1 ? "" : "s"} below` : ""})` }); continue; }
+    if (!x || !y) continue;
+    const own           = [];
+    if (qtyText(x) !== qtyText(y)) own.push(`quantity ${qtyText(x)} vs ${qtyText(y)}`);
+    const f = factsDiffer(ix.notes.get(x.path) , ix.notes.get(y.path) ); if (f.length) own.push(`${f.join(", ")} differ${f.length === 1 ? "s" : ""}`);
+    const below = stack.length < 12 && !stack.includes(x.path + "|" + y.path) ? tree(ix, x.path, y.path, level + 1, [...stack, x.path + "|" + y.path]) : [];
+    if (own.length || below.length) { out.push({ level, a: x.label, b: y.label, pathA: x.path, pathB: y.path, diff: own.length ? own.join("; ") + (below.length ? "; differs below" : "") : "differs below" }); out.push(...below); }
+  }
+  return out;
+}
+
+function compareNotes(ix            , pa        , pb        )                   {
+  const a = ix.notes.get(pa), b = ix.notes.get(pb); if (!a || !b) return null;
+  const p = plain(ix, a, b), structure = tree(ix, pa, pb, 0, [pa + "|" + pb]);
+  const differing = p.props.length + p.members.length + p.links.length + structure.length;
+  return { ...p, structure, same: differing === 0, differing };
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -3783,7 +3896,7 @@ function mountWorkbench(root             , host       = {})      {
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
-const MG = { mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgOwnerRows, planMergePairs, planNoteMerge };
+const MG = { mgRead, mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgMembers, mgOwnerRows, planMergePairs, planNoteMerge };
 
                     
                                
@@ -4338,7 +4451,7 @@ function mountPanel(root             , host           , opt                     
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
+  let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -4407,6 +4520,16 @@ function mountPanel(root             , host           , opt                     
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
+  /* D-0092: compare the selected note with another: what differs, and the structure down to the parts that differ. */
+  function openCompare(other        )       { cmpOther = other; lens = "compare"; editEl = null; draw(); }
+  function compareBar()              {
+    const found = V.pickRows(ix , cmpText, "", 60).notes.filter((x) => x.path !== sel);
+    const pick = h("select", { "aria-label": "Note to compare with", style: "max-width:100%", onchange: (e       ) => { cmpOther = (e.target                     ).value; draw(); } },
+      h("option", { value: "" }, found.length ? "Choose the note to compare with…" : "No note matches"), ...found.map((x) => h("option", { value: x.path, selected: x.path === cmpOther || undefined }, `${x.title}  (${x.type}${x.id ? ", " + x.id : ""})`)));
+    if (cmpOther && !found.some((x) => x.path === cmpOther) && ix .notes.has(cmpOther)) pick.insertBefore(h("option", { value: cmpOther, selected: true }, ix .notes.get(cmpOther) .title), pick.children[1] ?? null);
+    return h("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0" }, h("span", { class: "mut" }, "Compare with"),
+      h("input", { type: "search", placeholder: "Search by name, id or part number", value: cmpText, "aria-label": "Search for the note to compare with", style: "flex:1;min-width:140px", onchange: (e       ) => { cmpText = (e.target                    ).value; cmpOther = ""; draw(); } }), pick);
+  }
   function openMerge(other        )       { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
 
   /* ---- lenses ---- */
@@ -4421,7 +4544,7 @@ function mountPanel(root             , host           , opt                     
   function noteView()              {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
-    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null));
+    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null, h("button", { class: "sm", style: "margin-left:4px", title: "List what differs between this note and another, with the structure down to the parts that differ", onclick: () => openCompare("") }, "Compare with another note…")));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
     if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges                             , dir              )              => {
@@ -4513,7 +4636,8 @@ function mountPanel(root             , host           , opt                     
     const addBtn = (label        , paths          , cls = "sm")              => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas (given[0] , paths))); return b; };
     const row = (r                                                                )              => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
     const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p) .type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0] ; openMerge(given[1] ); } }, "Merge these two…") : null;
-    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), mergeBtn ? h("div", { class: "row" }, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
+    const cmpBtn = given.length === 2 ? h("button", { class: "sm pri", title: "List what differs between these two notes, with the structure down to the parts that differ", onclick: () => { sel = given[0] ; openCompare(given[1] ); } }, "Compare these two") : null;
+    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), cmpBtn || mergeBtn ? h("div", { class: "row" }, cmpBtn, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
     if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
     return box;
@@ -4589,8 +4713,9 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
+        if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
