@@ -18,7 +18,7 @@ PCE_PATH = "00 Product Definition/MHE/PCE25/PCE25.md"
 FAKE = r"""
 window.__files = {}; window.__dirs = {}; window.__notices = []; window.__opened = []; window.__cmds = {}; window.__menu = 0; window.__data = null; window.__ev = {}; window.__where = []; window.__active = null; window.__evs = {}; let views = {};
 class ItemView { constructor(leaf) { this.leaf = leaf; this.app = window.__app; this.contentEl = document.createElement('div'); this.contentEl.empty = function () { this.replaceChildren(); }; document.body.append(this.contentEl); } }
-class Plugin { constructor(app) { this.app = app; } addCommand(c) { window.__cmds[c.id] = c; } registerView(t, f) { views[t] = f; } addRibbonIcon() {} registerEvent(e) { return e; } registerDomEvent(el, ev, fn) { el.addEventListener(ev, fn); } addSettingTab(t) { window.__tab = t; } async loadData() { return window.__data; } async saveData(d) { window.__data = JSON.parse(JSON.stringify(d)); } }
+class Plugin { constructor(app) { this.app = app; } addCommand(c) { window.__cmds[c.id] = c; } registerView(t, f) { views[t] = f; } addRibbonIcon() {} registerEvent(e) { return e; } registerDomEvent(el, ev, fn) { el.addEventListener(ev, fn); } registerInterval(id) { return id; } addSettingTab(t) { window.__tab = t; } async loadData() { return window.__data; } async saveData(d) { window.__data = JSON.parse(JSON.stringify(d)); } }
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.containerEl = document.createElement('div'); this.containerEl.empty = function () { this.replaceChildren(); }; } }
 const deco = (e) => { e.empty = function () { this.replaceChildren(); }; e.setText = function (t) { this.textContent = t; }; e.createEl = function (tag, o = {}) { const c = deco(document.createElement(tag)); if (o.text) c.textContent = o.text; if (o.cls) c.className = o.cls; this.append(c); return c; }; e.createDiv = function (o = {}) { return this.createEl('div', o); }; return e; };
 class Setting { constructor(el) { this.el = el; this.name = ''; } setName(n) { this.name = n; return this; } setDesc() { return this; }
@@ -64,6 +64,9 @@ undefined;
 """
 
 
+GROUP = {"Tables": "Model", "Structure": "Note"}
+
+
 @unittest.skipIf(sync_playwright is None or not MAIN.exists(), "playwright or built plugin unavailable")
 class WorkbenchPlugin(unittest.TestCase):
     def test_right_panel_follows_note_and_opens_table_and_canvas_in_main_window(self):
@@ -104,7 +107,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # table: opens in the main window for the selected note
             for lens in ("Tables", "Structure"):
-                pg.click(f"button[role=tab]:text-is('{lens}')")
+                pg.select_option(f"select[aria-label='{GROUP[lens]} menu']", label=lens)
             pg.click("button:has-text('Table in main window')")
             pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
             self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
@@ -177,7 +180,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
-            pg.click("button[role=tab]:has-text('Edit')")
+            pg.select_option("select[aria-label='Note menu']", label="Edit")
             pg.click("button:has-text('Add relationship')")
 
             # relationship: dropdown of kinds, searchable target browser, preview diff, apply, undo
@@ -226,7 +229,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("() => !Object.keys(window.__notes).some(k => k.startsWith('10_Model/New/'))")
 
             # change / properties / remove from the note's relationship list
-            pg.click("button[role=tab]:has-text('Edit')")
+            pg.select_option("select[aria-label='Note menu']", label="Edit")
             pg.click(".mded .tabs button:has-text('Relationships')")
             pg.wait_for_timeout(500)
             pg.wait_for_selector("table.rl")
@@ -328,7 +331,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '77ee88ff99aa00bb')", arg=PREVIEW)
 
             # pick notes by a word in the name or description, tick some, place them on a canvas (D-0078)
-            pg.click("button[role=tab]:text-is('Pick notes')")
+            pg.select_option("select[aria-label='Canvas menu']", label="Pick notes")
             pg.fill("input[aria-label='Search for notes to place on a canvas']", "o")
             pg.keyboard.press("Tab")
             pg.wait_for_selector("text=/\\d+ match/")
@@ -347,13 +350,23 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("p => JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas']).nodes.length === 1")
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
             pg.wait_for_selector(f"header >> text={title}")
-            pg.click("button[role=tab]:text-is('Note')")
+            pg.select_option("select[aria-label='Note menu']", label="Note")
             pg.click("summary:has-text('Add related notes to the canvas')")
             pg.click("button:has-text('related to canvas')")
             pg.wait_for_selector("text=/Added \\d+ note/")
             added = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertGreaterEqual(len([n for n in added["nodes"] if n["type"] == "text"]), 2, "related notes were added beside the card")
             self.assertTrue(added["edges"], "and joined to it by a line")
+
+            # two or more cards chosen on the canvas open the Common related lens, found by the 300 ms look, without any click (D-0084)
+            two = pg.evaluate("""() => { const e = window.__plugin.ix.edges.find((x) => x.to && !x.reverse && x.from !== x.to); return [e.from, e.to]; }""")
+            pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", two)
+            pg.wait_for_selector("text=Chosen on the canvas", timeout=3000)
+            self.assertEqual(pg.evaluate("document.querySelector(\"select[aria-label='Canvas menu']\").selectedOptions[0].textContent"), "Common related")
+            pg.wait_for_selector("text=/Related to all 2/")
+            # one card again: back to the note
+            pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; }""", two[0])
+            pg.wait_for_function("document.querySelector(\"select[aria-label='Note menu']\").selectedOptions[0].textContent === 'Note'", timeout=3000)
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):
@@ -374,7 +387,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
-            pg.click("button[role=tab]:has-text('Edit')")
+            pg.select_option("select[aria-label='Note menu']", label="Edit")
             pg.click(".mded .tabs button:has-text('Ports')")
 
             # a conjugated, counted port typed by a port definition chosen in the browser
@@ -434,7 +447,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
-            pg.click("button[role=tab]:has-text('Edit')")
+            pg.select_option("select[aria-label='Note menu']", label="Edit")
             pg.click(".mded .tabs button:has-text('Merge')")
 
             # the EA part number matches the BOM number: a confident match, ticked for us

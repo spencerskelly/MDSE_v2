@@ -290,14 +290,23 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (f && f.extension === "md" && this.ix?.notes.has(f.path)) this.selected = f.path;
     if (this.selected) this.apps.forEach((a: any) => a.select(this.selected));
   }
-  /** D-0082: a note card chosen on a canvas becomes the selected note. Obsidian has no event for it, so look after a click or key press in a canvas. */
+  /** D-0082, D-0084: the note cards chosen on a canvas. Obsidian has no event for it, so the chosen cards are read from the canvas's own `selection` (an undocumented internal) every 300 ms while a canvas has been in front, and after a click or key press.
+   *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
+  canvasLeaf: any = null; canvasKey = "";
   canvasSelection() {
-    const view = this.app.workspace.activeLeaf?.view ?? this.app.workspace.getActiveViewOfType?.(obsidian.ItemView);
-    if (!view || view.getViewType?.() !== "canvas") return;
-    const sel = view.canvas?.selection; if (!sel || sel.size !== 1) return;
-    const node = [...sel][0]; let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { return; }
-    const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
-    if (p && p !== this.selected && this.ix?.notes.has(p)) { this.selected = p; this.apps.forEach((a: any) => a.select(p)); }
+    const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
+    if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
+    const leaf = this.canvasLeaf, view = leaf?.view; if (!view || view.getViewType?.() !== "canvas" || !view.canvas || (view.containerEl && !view.containerEl.isConnected)) return;
+    const sel = view.canvas.selection; if (!sel) return;
+    const paths: string[] = [];
+    for (const node of sel) {
+      let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
+      if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
+    }
+    const key = paths.join("\n"); if (key === this.canvasKey) return; this.canvasKey = key;
+    if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
+    this.selected = paths[0]!; this.apps.forEach((a: any) => { a.setCanvasSelection?.(paths); });
   }
   onFileOpen(f: any) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); } }
 
@@ -467,6 +476,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
     for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
+    this.registerInterval(window.setInterval(() => { try { this.canvasSelection(); } catch { /* a canvas internal that moved must never break the plugin */ } }, 300));
     this.registerEvent(this.app.vault.on("modify", (f: any) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session

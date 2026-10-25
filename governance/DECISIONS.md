@@ -962,3 +962,15 @@ Rules: WKB-032 (Active).
 4. **Not covered.** A note with very many relations fills the places around it, so some of its relations are a few steps away (the test allows five). Placement is by relationship only, not by type or name. The first note placed decides where a cluster goes; the layout is not optimised as a whole.
 
 Rules: WKB-032 (Active).
+
+## D-0084 — Three menus in the panel; the cards chosen on a canvas drive it; common related notes
+
+2026-10-24 · Spencer · Accepted (owner, chat: "When I select a note in the canvas, the workbench pane still remains on a single element. I need to be able to select a note and perform functions from it. I also want to be able to select two or more elements and show a list of common related elements. I'd like different ways to view the note details under one drop-down, and ways to view model details under another drop-down. methods of editing the canvas should be under another drop-down").
+
+1. **Three menus** replace the row of lens buttons: **Note** (Note, Structure, Design types, Internal structure, Function, States, Requirements, Edit), **Model** (Dashboard, Tables, Review) and **Canvas** (Pick notes, Common related). The menu holding the current view shows its name and is highlighted.
+2. **Reading the canvas.** D-0082 looked for the chosen cards only after a click or key press, which in your Obsidian did not switch the panel (the cause is not known; I could not run Obsidian). The plugin now also looks every 300 ms at the last canvas that was in front, so choosing a card works even when the click is missed and when the panel itself has been clicked since. It reads the canvas's `selection`, an undocumented Obsidian internal. If it still does not follow, the internal differs in your version and I need to see what it exposes.
+3. **One card** chosen: that note is selected and the panel shows it in the Note or other Note-menu view you were in, with all its functions, including Add related notes to the canvas. **Two or more**: the panel opens the Common related lens, listing the chosen notes, the notes related to all of them, and (with three or more chosen) those related to at least two, each with the kinds that join it to each chosen note. "+" and "Add all" put them on the canvas, between the chosen cards (D-0083). A new single choice leaves the Common related lens for the Note lens.
+4. **Not done.** The pop-up over a chosen card that was offered "if it helps in separation". The menus and the Common related lens cover the separation; a pop-up needs Obsidian's canvas internals for its position and I cannot test it here. Say if you still want it.
+5. **Not covered.** Choosing edges or groups. The standalone Workbench page keeps its own tabs. The Edit lens edits the model, so it sits under Note, not Canvas.
+
+Rules: WKB-033 (Active).

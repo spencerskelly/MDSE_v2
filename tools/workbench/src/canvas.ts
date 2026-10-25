@@ -107,6 +107,15 @@ export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
 }
 
+/** Notes related to two or more of the given notes (D-0084). `all` are related to every one of them, with the kinds that join each; `some` are related to at least two but not all, most first. The given notes themselves are left out. */
+export function commonRelated(ix: ModelIndex, paths: string[]): { all: Array<{ path: string; by: Array<{ from: string; kinds: string[] }> }>; some: Array<{ path: string; count: number; by: Array<{ from: string; kinds: string[] }> }> } {
+  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p).map((r) => [r.path, r.kinds] as const))] as const);
+  const count = new Map<string, Array<{ from: string; kinds: string[] }>>();
+  for (const [p, m] of per) for (const [q, kinds] of m) if (!given.includes(q)) (count.get(q) ?? count.set(q, []).get(q)!).push({ from: p, kinds });
+  const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).filter((r) => r.count >= 2 || given.length === 1).sort((a, b) => b.count - a.count || ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
+  return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
+}
+
 /** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
 export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };

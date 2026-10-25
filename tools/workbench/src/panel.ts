@@ -6,7 +6,7 @@ import type { Child } from "./ui.ts";
 import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
-import { MAX_PICK, relatedNotes } from "./canvas.ts";
+import { MAX_PICK, relatedNotes, commonRelated } from "./canvas.ts";
 import { editView, setEditRef, editRefresh, markEditStale, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
@@ -33,6 +33,8 @@ export interface PanelHost {
 export interface PanelApp {
   setIndex(ix: ModelIndex | null, loading?: string): void;
   select(path: string): void;
+  /** The note cards chosen on a canvas, in the order chosen (D-0084). Two or more open the Common related lens; one is the same as select. */
+  setCanvasSelection(paths: string[]): void;
   setLens(lens: V.Lens): void;
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
@@ -41,7 +43,7 @@ export interface PanelApp {
 
 const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
-.mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}
+.mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
@@ -77,7 +79,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  let canvasSel: string[] = [], pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : 1000;
@@ -193,6 +195,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
   }
 
+  /* D-0084: the notes related to every note chosen on the canvas. */
+  function commonView(): HTMLElement {
+    const given = canvasSel.filter((p) => ix!.notes.has(p));
+    if (given.length < 2) return empty("Choose two or more note cards on the canvas (hold Shift to add to a choice) and the notes related to all of them are listed here.");
+    const c = commonRelated(ix!, given), kindsOf = (by: Array<{ from: string; kinds: string[] }>): string => by.map((b) => `${note(b.from)!.title}: ${b.kinds.join(", ")}`).join(" · ");
+    const addBtn = (label: string, paths: string[], cls = "sm"): HTMLElement => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas!(given[0]!, paths))); return b; };
+    const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
+    const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
+    box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
+    if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
+    return box;
+  }
+
   /* ---- canvas settings (compact) ---- */
   function canvasSettings(): HTMLElement {
     const prof = V.PROFILES.find((p) => p.name === V.LENS_PROFILE[lens])!, sp: V.ViewSpec = { ...V.defaultSpec(prof), ...spec };
@@ -215,7 +230,11 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
-    const lenses = h("div", { class: "lenses", role: "tablist" }, ...V.LENSES.filter(([k]) => k !== "edit" || !!host.edit).map(([k, label]) => h("button", { role: "tab", "aria-pressed": lens === k, onclick: () => { lens = k; if (k !== "edit") editEl = null; draw(); } }, label)));
+    const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
+      const items = g.lenses.filter((k) => k !== "edit" || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k)![1]] as const), here = g.lenses.includes(lens);
+      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; lens = v; if (v !== "edit") editEl = null; draw(); } },
+        h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
+    }));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       // A direct, all-relationships canvas launcher on the Workbench home screen.
@@ -254,6 +273,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
       else if (lens === "pick") body.append(pickView());
+      else if (lens === "common") body.append(commonView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else for (const t of V.lensTables(ix, lens, sel, { scope, table, text })) body.append(tableView(t));
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
@@ -265,6 +285,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
     select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
+    setCanvasSelection(paths) {
+      const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
+      if (paths.length === 1) { if (lens === "common") lens = "note"; if (!pinned && (!ix || ix.notes.has(paths[0]!))) sel = paths[0]!; }
+      else if (paths.length >= 2) lens = "common";
+      editEl = lens === "edit" ? editEl : null; draw();
+    },
     setLens(l) { lens = l; editEl = null; draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { wrap.remove(); style.remove(); },

@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -543,4 +543,18 @@ test("new notes that relate to each other sit together, and a cluster of them aw
   // a canvas with no note on it: related new notes still sit together, from the origin
   const empty = addToCanvas({ nodes: [], edges: [] }, ix, null, [c, ...rel]);
   assert.equal(empty.added, 1 + rel.length); assert.ok(empty.doc.nodes.every((n) => Math.abs(n.x) <= 4 * 1120 && Math.abs(n.y) <= 4 * 360));
+});
+
+test("notes related to two or more chosen notes are listed, with the kinds that join each (D-0084)", () => {
+  const c = byTitle("Charger"), rel = relatedNotes(ix, c).map((r) => r.path), pair = [c, rel[0]!];
+  const r = commonRelated(ix, pair);
+  assert.ok(r.all.every((x) => !pair.includes(x.path) && x.by.length === 2 && x.by.every((b) => b.kinds.length)), "each is joined to both, and the chosen are left out");
+  assert.ok(r.all.every((x) => relatedNotes(ix, pair[0]!).some((y) => y.path === x.path) && relatedNotes(ix, pair[1]!).some((y) => y.path === x.path)));
+  assert.deepEqual(r.some, [], "with two chosen, every shared note is in 'all'");
+  // three chosen: all is the intersection, some are joined to two
+  const trio = [...ix.notes.keys()].slice(0, 3), t = commonRelated(ix, trio);
+  for (const x of t.all) assert.equal(x.by.length, 3); for (const x of t.some) assert.ok(x.count >= 2 && x.count < 3);
+  assert.deepEqual(commonRelated(ix, [c]).all, [], "one note has no 'common'");
+  assert.deepEqual(commonRelated(ix, ["nope.md", "nope2.md"]), { all: [], some: [] });
+  const sorted = r.some.map((x) => x.count); assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "most shared first");
 });
