@@ -283,16 +283,24 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const nameConflicts = [...nameSeen.values()].filter((x) => x.others.size).sort((a, b) => (a.pn < b.pn ? -1 : a.pn > b.pn ? 1 : a.rev < b.rev ? -1 : a.rev > b.rev ? 1 : a.side < b.side ? -1 : 1));
   const allPns = new Set([...asParent.keys(), ...asChild.keys()]);
 
-  // D-0047: the latest revision is the highest by bomRevCompare, among the revisions the part has as an assembly, else among those its parents pin.
+  // Revision authority: an explicit CURRENT lifecycle designation outranks revision order. If multiple revisions have no unique CURRENT marker, do not classify any pin as known historical.
   const latest = new Map<string, Obs>(), undetermined = new Set<string>(), revsSeen = new Map<string, string[]>();
+  const revisionAuthority = new Set<string>();
   for (const pn of [...allPns].sort()) {
     const pr = asParent.get(pn), cr = asChild.get(pn);
-    const revs = (pr ? [...pr.keys()] : cr ? [...cr.keys()] : []).sort(bomRevCompare), top = revs[revs.length - 1]!;
+    const revs = (pr ? [...pr.keys()] : cr ? [...cr.keys()] : []).sort(bomRevCompare);
+    const observed = new Map([...(cr ?? new Map<string, Obs>()), ...(pr ?? new Map<string, Obs>())]);
+    const designated = [...observed.values()].filter((v) => /^current$/i.test(v.state.trim())).map((v) => v.rev);
+    const uniqueDesignated = [...new Set(designated)];
+    const top = uniqueDesignated.length === 1 ? uniqueDesignated[0]! : revs[revs.length - 1]!;
+    if (uniqueDesignated.length === 1 || observed.size === 1) revisionAuthority.add(pn);
+    if (uniqueDesignated.length > 1) findings.push({ level: "warn", code: "REV_CURRENT_CONFLICT", message: `${pn}: multiple revisions explicitly designated CURRENT; no revision-pin conflicts suppressed.` });
+    else if (!uniqueDesignated.length && observed.size > 1) findings.push({ level: "warn", code: "REV_CURRENT_UNKNOWN", message: `${pn}: multiple revisions without an explicit CURRENT designation; ordering is provisional and pinned-revision differences require review.` });
     const base = (pr ?? cr)!.get(top)!, name = base.name || cr?.get(top)?.name || pr?.get(top)?.name || "";
     latest.set(pn, { ...base, name, source: base.source || cr?.get(top)?.source || "", state: "" });
     const all = [...new Set([...(pr?.keys() ?? []), ...(cr?.keys() ?? [])])].sort(bomRevCompare);
     if (all.length > 1) revsSeen.set(pn, all);
-    if (revs.length > 1) findings.push({ level: "info", code: "REV_BY_ORDER", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")} seen${pr ? " as assembly" : " as pinned child"}; ${JSON.stringify(top)} taken as the latest by revision order.` });
+    if (revs.length > 1) findings.push({ level: "info", code: "REV_SELECTION", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")}; ${JSON.stringify(top)} selected ${uniqueDesignated.length === 1 ? "from explicit CURRENT source designation" : "provisionally by ordering (not verified current)"}.` });
   }
   // A part number a redline struck out and replaced is named by the BOM, so it gets a note too (BOM-022); without one the supersedes dependency would point at nothing.
   const stubs = new Map<string, string[]>();
@@ -376,11 +384,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (diffs.length) findings.push({ level: "warn", code: "EXISTING_DIFFERS", message: `${pn} is already in the vault from an earlier BOM and was left as it is, but this file disagrees on ${diffs.length} line(s): ${diffs.join("; ")}.${HINT_UPDATE}` });
   }
   const lineKey = (u: Usage): number => (bomIsNum(u.line) ? +u.line : 1e12);
-  let conflicts = 0; // Historical revision pins are retained as review records.
-  for (const u of okUsage) {
-    const l = latest.get(u.child); if (!l || bomIsDrawing(u)) continue;
-    // Historical revision mismatch is not a semantic conflict.
-  }
+  let conflicts = 0;
+  for (const u of okUsage) { const l = latest.get(u.child); if (l && !bomIsDrawing(u) && l.rev !== u.childRev && !revisionAuthority.has(u.child)) conflicts++; }
   const replaces = new Map<string, Set<string>>();
   for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
   // D-0056 (BOM-038): the lines of earlier revisions are data and are kept by default. Dropping them is a choice made at import and is counted.
@@ -420,7 +425,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         const mult = discrete && u.amount !== "1" ? ` [${u.amount}]` : "";
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");
         const lc = latest.get(u.child);
-        if (lc && lc.rev !== u.childRev) revisionReview.push({ parent: pn, line: u.line, child: u.child, pinned: u.childRev, selected: lc.rev, row: u.row });
+        if (lc && lc.rev !== u.childRev) {
+          if (revisionAuthority.has(u.child)) revisionReview.push({ parent: pn, line: u.line, child: u.child, pinned: u.childRev, selected: lc.rev, row: u.row });
+          else flags.push(flagCallout("flagConflict", `Current revision of ${u.child} not established`, link, [`Line ${u.line || "?"} pins ${JSON.stringify(u.childRev)}; provisional comparison revision ${JSON.stringify(lc.rev)}. Source has no unambiguous CURRENT designation.`]));
+        }
         if (u.alternates.length || u.altParts.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${[...u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")), ...u.altParts.map((a) => `part ${a.pn}${a.rev ? " revision " + JSON.stringify(a.rev) : ""}${a.name ? " (" + a.name + ")" : ""}${[a.mfr, a.mpn].some(Boolean) ? ", " + [a.mfr, a.mpn].filter(Boolean).join(" ") : ""}${a.amount ? ", quantity " + a.amount + (a.unit ? " " + a.unit : "") : ""}, line ${a.line}, row ${a.row}`)].join("; ")}`);
         if (u.prevChild) srcLines.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
       }
