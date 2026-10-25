@@ -1079,3 +1079,13 @@ Rules: WKB-040, WKB-041 (Active).
 4. Limits: depth 12; quantities are compared as the rolled quantity of one usage list (several usages of the same note are added); relationship fields written as YAML links are compared as relationships, other YAML fields as properties; two parts matched by name only (no part number) may be wrong matches when names repeat. Not verified on the real model.
 
 Rules: WKB-042 (Active).
+
+## D-0093 — The importer page acknowledges button presses
+
+2026-10-25 · Spencer · Accepted (owner, chat: "I'd like the importer to indicate when a button has been pressed. simple indication is fine, but right now a user can't tell if the button press was effective")
+
+1. One delegated click listener on the importer page: the pressed button gets a short "dipped" look, and a small status note at the bottom names it ("▶ Scan for BOM changes") for about 1.6 seconds. It also covers the file-choose buttons.
+2. It confirms receipt only. It does not know whether the work finished or succeeded; that stays in each card's status text. Long operations (translation, vault write) have no progress bar added here.
+3. Disabled buttons give no note; the lack of a note is itself the signal that the button was not active. Not added: a reason for why a button is disabled.
+
+Rules: IMP-131 (Active).

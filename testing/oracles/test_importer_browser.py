@@ -53,6 +53,9 @@ class ImporterBrowser(unittest.TestCase):
                 pg.fill("#whoName", "Spencer"); pg.click("#whoSave"); self.assertIn("first and a last", pg.inner_text("#whoErr"))
                 pg.fill("#whoName", "Spencer Skelly"); self.assertEqual(pg.inner_text("#whoCode"), "skellyspencer"); pg.click("#whoSave")
                 self.assertFalse(pg.is_visible("#whoDlg")); self.assertIn("skellyspencer", pg.inner_text("#who"))
+                # a pressed button is acknowledged: a note names it and the button dips (D-0093)
+                self.assertIn("Save and continue", pg.inner_text("#pressToast"))
+                pg.wait_for_function("document.getElementById('pressToast').classList.contains('on')")
 
                 pg.set_input_files("#qeax", str(d / "x.eapx"))
                 pg.wait_for_function("document.getElementById('srcStatus').textContent.includes('SQLite')")
