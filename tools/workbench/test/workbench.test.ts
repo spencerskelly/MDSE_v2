@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -593,4 +593,30 @@ test("the structure view shows the full tree or only the direct parts (D-0085)",
   assert.ok(direct.rows.every((r) => Number(r.level) <= 1), "no row deeper than the direct parts");
   assert.deepEqual(V.lensTables(ix, "structure", top, {})[0]!.rows.length, full.rows.length, "full is the default");
   assert.ok(full.rows.some((r) => Number(r.level) >= 2) ? full.rows.length > direct.rows.length : true);
+});
+
+test("a structure canvas: the note, its parent assemblies above, parts below, lines from the bottom of the assembly to the top of the part (D-0088)", () => {
+  const f = (id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500000${id.replace(/\D/g, "").padStart(4, "0")}struct-canvas\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
+  const v = buildIndex(new Map([
+    f("OBJ-00001", "Station", 'hasPart: ["[[Charger]]"]\n'), f("OBJ-00009", "Depot", 'hasPart: ["[[Charger]]"]\n'),
+    f("OBJ-00002", "Charger", 'hasPart: ["[[Cable]]", "[[Plug]]", "[[Board]]"]\n'), f("OBJ-00003", "Cable"), f("OBJ-00004", "Plug"),
+    f("OBJ-00005", "Board", 'hasPart: ["[[Chip]]"]\n'), f("OBJ-00006", "Chip", 'hasPart: ["[[Die]]"]\n'), f("OBJ-00007", "Die"),
+  ]), { classes });
+  const nodeOf = (d: { nodes: Array<{ x: number; y: number; type: string; text?: string; id: string; width: number; height: number }> }, t: string) => d.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
+  const d = structureCanvas(v, "Charger.md", "direct").doc, c = nodeOf(d, "Charger");
+  assert.deepEqual(d.nodes.map((n) => cdNotePath(n as never)).sort(), ["Board.md", "Cable.md", "Charger.md", "Depot.md", "Plug.md", "Station.md"], "direct: parents and direct parts only");
+  for (const p of ["Station", "Depot"]) assert.ok(nodeOf(d, p).y < c.y, `${p} is above`);
+  assert.equal(nodeOf(d, "Station").y, nodeOf(d, "Depot").y); assert.equal(new Set(["Cable", "Plug", "Board"].map((p) => nodeOf(d, p).y)).size, 1, "the parts are one row");
+  for (const p of ["Cable", "Plug", "Board"]) assert.ok(nodeOf(d, p).y > c.y);
+  const mid = (a: string[]): number => a.map((p) => nodeOf(d, p).x).reduce((s, x) => s + x, 0) / a.length;
+  assert.equal(mid(["Plug", "Board"]), c.x, "the assembly is centred over its parts");
+  assert.equal(d.edges.length, 5);
+  for (const e of d.edges) { assert.equal(e.fromSide, "bottom"); assert.equal(e.toSide, "top"); const a = d.nodes.find((n) => n.id === e.fromNode)!, b = d.nodes.find((n) => n.id === e.toNode)!; assert.ok(a.y < b.y, "from the assembly down to the part"); }
+  const full = structureCanvas(v, "Charger.md", "full").doc;
+  assert.deepEqual(full.nodes.map((n) => cdNotePath(n as never)).sort(), ["Board.md", "Cable.md", "Charger.md", "Chip.md", "Depot.md", "Die.md", "Plug.md", "Station.md"], "complete BOM: every layer");
+  assert.ok(nodeOf(full, "Chip").y > nodeOf(full, "Board").y && nodeOf(full, "Die").y > nodeOf(full, "Chip").y);
+  assert.equal(full.edges.length, 7); assert.ok(full.edges.every((e) => e.fromSide === "bottom" && e.toSide === "top"));
+  // the other canvases: a line to a card in a lower row leaves the bottom
+  const g = addToCanvas({ nodes: [], edges: [] }, v, null, ["Charger.md", "Cable.md"]);
+  assert.ok(g.doc.edges.every((e) => e.fromSide === "bottom" && e.toSide === "top"), "added notes: the parent's line leaves the bottom");
 });

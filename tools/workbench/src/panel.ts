@@ -20,6 +20,10 @@ export interface PanelHost {
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  /** D-0088: a new canvas of the selected assembly's structure. */
+  openStructureCanvas?(path: string, mode: "direct" | "full"): Promise<string>;
+  /** D-0088: a new canvas (replacing the preview) of a note and the notes a view shows. */
+  newCanvasFrom?(anchor: string, paths: string[]): Promise<string>;
   openPickCanvas?(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string>;
   saveCanvas?(): Promise<string>;
   /** Review actions. Resolves to a message and a way back. */
@@ -112,7 +116,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   function addBar(ts: V.TableData[]): HTMLElement | null {
     if (!host.addToCanvas) return null;
     const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p): p is string => !!p))].slice(0, MAX_PICK);
-    if (!shown.length) return null;
+    if (!shown.length && lens !== "structure") return null;
     const root = sel && ix!.notes.has(sel) ? sel : "", anchor = root || shown[0]!;
     const run = (b: HTMLElement, paths: string[]): void => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => host.addToCanvas!(anchor, paths)); };
     const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
@@ -120,7 +124,13 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
     every.addEventListener("click", () => run(every, root && !shown.includes(root) ? [root, ...shown] : shown));
     tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    const mk = (label: string, title: string, go: () => Promise<string>): HTMLElement => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
+    const fresh: HTMLElement[] = [];
+    if (lens === "structure" && root && host.openStructureCanvas) fresh.push(
+      mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
+      mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "full")));
+    else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom!(anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -149,6 +159,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix!, n.path), "out")], { count: outgoing(ix!, n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix!, n.path), "in")], { count: incoming(ix!, n.path).length }));
     const rn = relatedNotes(ix!, n.path);
     if (host.addToCanvas && rn.length) {       // D-0082
+      if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom!(n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
       const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
       box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));

@@ -45,8 +45,54 @@ function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
   }
   return { ...base, type: "text", height: Math.max(H, 34 + Math.ceil(name.length / 24) * 26 + (sub ? 24 : 0)), text: `${link}${small}`, ...(color ? { color } : {}) };
 }
+/** Which sides a line leaves and enters by (D-0088): a card that is lower than the other is joined top to bottom, so a parent's line leaves its bottom and enters the top of each child; cards in the same row are joined side to side. */
 const sideOf = (a: CanvasNode, b: CanvasNode): { fromSide: CanvasEdge["fromSide"]; toSide: CanvasEdge["toSide"] } =>
-  b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+  b.y - a.y >= H ? { fromSide: "bottom", toSide: "top" } : a.y - b.y >= H ? { fromSide: "top", toSide: "bottom" } : b.x >= a.x ? { fromSide: "right", toSide: "left" } : { fromSide: "left", toSide: "right" };
+
+/** A canvas of one assembly's structure (D-0088). `direct`: the note, the assemblies it is directly in on a row above it, and its direct parts on a row below. `full`: every layer of parts under it, one row per layer, each assembly centred over its parts. A line leaves the bottom of the assembly and enters the top of the part. A part used in several assemblies has one card and a line from each. */
+export function structureCanvas(ix: ModelIndex, root: string, mode: "direct" | "full"): CanvasResult {
+  const rn = ix.notes.get(root);
+  if (!rn) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Structure.canvas", groups: 0, hidden: 0 };
+  const kids = new Map<string, Array<{ to: string; e: ModelIndex["edges"][number] }>>(), parentsOf: Array<{ from: string; e: ModelIndex["edges"][number] }> = [];
+  for (const e of ix.edges) {
+    if (e.kind !== "hasPart" || !e.to || e.reverse || e.from === e.to || !ix.notes.has(e.from) || !ix.notes.has(e.to)) continue;
+    (kids.get(e.from) ?? kids.set(e.from, []).get(e.from)!).push({ to: e.to, e });
+    if (e.to === root) parentsOf.push({ from: e.from, e });
+  }
+  const name = (p: string): string => ix.notes.get(p)!.title;
+  const order = (a: { to: string }, b: { to: string }): number => name(a.to).localeCompare(name(b.to)) || a.to.localeCompare(b.to);
+  for (const l of kids.values()) l.sort(order);
+  /* the spanning tree: each part under the first assembly that reaches it, breadth first, to the depth asked for */
+  const depth = new Map<string, number>([[root, 0]]), tree = new Map<string, string[]>(), queue = [root];
+  let capped = false;
+  while (queue.length) {
+    const p = queue.shift()!, d = depth.get(p)!;
+    if (mode === "direct" && d >= 1) continue;
+    for (const k of kids.get(p) ?? []) {
+      if (depth.has(k.to)) continue;
+      if (depth.size >= MAX_PICK) { capped = true; continue; }
+      depth.set(k.to, d + 1); (tree.get(p) ?? tree.set(p, []).get(p)!).push(k.to); queue.push(k.to);
+    }
+  }
+  const CX = W + GX, CY = H + GY, x = new Map<string, number>(); let slot = 0;
+  const lay = (p: string): void => { const c = tree.get(p) ?? []; if (!c.length) { x.set(p, slot++ * CX); return; } c.forEach(lay); x.set(p, (x.get(c[0]!)! + x.get(c[c.length - 1]!)!) / 2); };
+  lay(root);
+  const nodes: CanvasNode[] = [], at = new Map<string, CanvasNode>(); let n = 0;
+  for (const [p, d] of depth) { const c = noteCard(ix, p, `n${n++}`); c.x = Math.round(x.get(p)!); c.y = d * CY; nodes.push(c); at.set(p, c); }
+  const above = [...new Map(parentsOf.map((q) => [q.from, q])).values()].filter((q) => !at.has(q.from)).sort((a, b) => name(a.from).localeCompare(name(b.from)) || a.from.localeCompare(b.from));
+  const mid = at.get(root)!.x, left = mid - ((above.length - 1) * CX) / 2;
+  above.forEach((q, i) => { const c = noteCard(ix, q.from, `n${n++}`); c.x = Math.round(left + i * CX); c.y = -CY; nodes.push(c); at.set(q.from, c); });
+  const edges: CanvasEdge[] = [], aboveSet = new Set(above.map((q) => q.from));
+  for (const [from, list] of kids) {
+    const f = at.get(from); if (!f) continue;
+    for (const k of list) {
+      const t = at.get(k.to); if (!t) continue;
+      if (aboveSet.has(from) ? k.to !== root : (depth.get(k.to) ?? 0) <= (depth.get(from) ?? 0)) continue;       // above: only the line down to the note; below: only lines that go down a layer
+      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label: [k.e.kind, k.e.label].filter(Boolean).join(" ").slice(0, 60) });
+    }
+  }
+  return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped, fileName: `Structure - ${safe(rn.title)} (${mode === "direct" ? "direct parts" : "complete BOM"}).canvas`, groups: 0, hidden: 0 };
+}
 
 /** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
  * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.

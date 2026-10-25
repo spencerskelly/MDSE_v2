@@ -380,6 +380,15 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
             pg.click("button:has-text('shown to canvas')")
             pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
+            # a canvas of this view (D-0088): complete BOM and direct parts
+            pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
+            for label in ("Canvas: complete BOM", "Canvas: direct parts"):
+                pg.click(f"button:has-text('{label}')")
+                pg.wait_for_function("() => { const t = window.__files['99_System/22_Views/Workbench Preview.canvas']; return !!t && JSON.parse(t).nodes.length > 0; }", timeout=4000)
+                doc = pg.evaluate("JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas'])")
+                self.assertTrue(all(e["fromSide"] == "bottom" and e["toSide"] == "top" for e in doc["edges"]), label)
+                pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
+                pg.wait_for_selector("button:has-text('Canvas: direct parts')")
             self.assertEqual(errors, [])
 
     def test_ports_tab_adds_port_connection_and_flow_with_checks(self):

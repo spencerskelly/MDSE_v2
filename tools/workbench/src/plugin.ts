@@ -151,6 +151,8 @@ function hostFor(plugin: any): any {
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
+    openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
+    newCanvasFrom: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
@@ -332,6 +334,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
+  /** D-0088: a new canvas preview of one assembly: the note, its parent assemblies above, its direct parts or every layer of parts below. */
+  async openStructureCanvas(path: string, mode: "direct" | "full"): Promise<string> {
+    await this.ensureIndex();
+    if (!this.ix.notes.has(path)) throw new Error("Select a note first.");
+    return writePreview(this, WB.structureCanvas(this.ix, path, mode));
+  }
+
   /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
   async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string> {
     await this.ensureIndex();
@@ -340,10 +349,10 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
-  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true): Promise<string> {
+  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false): Promise<string> {
     await this.ensureIndex();
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (!f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
+    if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
       const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
       return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
     }

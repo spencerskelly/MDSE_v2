@@ -1019,3 +1019,16 @@ Replaces the recommendation in D-0053/WKB-027 (BOM note owns part facts and stru
 5. A BOM update after a keep-both merge changes only the description and revision and leaves the model's parts in the block (tested in `merge.test.ts`).
 
 Rules: WKB-027, WKB-036 (Active).
+
+## D-0088 — A canvas for each view; structure canvases in two sizes; parent-to-child lines bottom to top
+
+2026-10-25 · Spencer · Accepted (owner, chat: "For each note view, I'd like the ability to create a canvas focused on that view. For structure, ... direct parts and complete bom ... the note selected with the parent assemblies it is in directly above it and a row of child elements below it, with the links connected to the bottom of the assembly and the tops of the parts. The default view of structure should show the relationships in this way")
+
+1. Structure view: "Canvas: direct parts" and "Canvas: complete BOM", each a new canvas replacing the preview. Direct parts: the note, the assemblies that directly own it in a row above, its direct parts in a row below. Complete BOM: every layer of parts under it, one row per layer.
+2. Line sides (every canvas the Workbench draws, including notes added by D-0083/D-0085): a line between cards at least one card-height apart vertically leaves the bottom of the upper card and enters the top of the lower; otherwise side to side. Before, the horizontal offset decided first.
+3. Other views (Function, States, Requirements, Design types, Internal structure): "Canvas of this view", the note plus the notes the view lists, placed by D-0085. Note view: "Canvas of this note and its related notes".
+4. Layout: the parts of an assembly sit in a row in name order; an assembly is centred over its first and last part; spacing is three card widths (D-0079). A part in several assemblies is placed under the first that reaches it, with a line from each. Up to 200 cards.
+
+Not done: Internal structure has no ports-and-connections diagram; the standalone Workbench page has none of these buttons.
+
+Rules: WKB-037 (Active).

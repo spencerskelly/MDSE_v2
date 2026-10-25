@@ -1438,8 +1438,54 @@ function noteCard(ix            , path        , key        )             {
   }
   return { ...base, type: "text", height: Math.max(H, 34 + Math.ceil(name.length / 24) * 26 + (sub ? 24 : 0)), text: `${link}${small}`, ...(color ? { color } : {}) };
 }
+/** Which sides a line leaves and enters by (D-0088): a card that is lower than the other is joined top to bottom, so a parent's line leaves its bottom and enters the top of each child; cards in the same row are joined side to side. */
 const sideOf = (a            , b            )                                                                     =>
-  b.x > a.x ? { fromSide: "right", toSide: "left" } : b.x < a.x ? { fromSide: "left", toSide: "right" } : b.y >= a.y ? { fromSide: "bottom", toSide: "top" } : { fromSide: "top", toSide: "bottom" };
+  b.y - a.y >= H ? { fromSide: "bottom", toSide: "top" } : a.y - b.y >= H ? { fromSide: "top", toSide: "bottom" } : b.x >= a.x ? { fromSide: "right", toSide: "left" } : { fromSide: "left", toSide: "right" };
+
+/** A canvas of one assembly's structure (D-0088). `direct`: the note, the assemblies it is directly in on a row above it, and its direct parts on a row below. `full`: every layer of parts under it, one row per layer, each assembly centred over its parts. A line leaves the bottom of the assembly and enters the top of the part. A part used in several assemblies has one card and a line from each. */
+function structureCanvas(ix            , root        , mode                   )               {
+  const rn = ix.notes.get(root);
+  if (!rn) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Structure.canvas", groups: 0, hidden: 0 };
+  const kids = new Map                                                               (), parentsOf                                                          = [];
+  for (const e of ix.edges) {
+    if (e.kind !== "hasPart" || !e.to || e.reverse || e.from === e.to || !ix.notes.has(e.from) || !ix.notes.has(e.to)) continue;
+    (kids.get(e.from) ?? kids.set(e.from, []).get(e.from) ).push({ to: e.to, e });
+    if (e.to === root) parentsOf.push({ from: e.from, e });
+  }
+  const name = (p        )         => ix.notes.get(p) .title;
+  const order = (a                , b                )         => name(a.to).localeCompare(name(b.to)) || a.to.localeCompare(b.to);
+  for (const l of kids.values()) l.sort(order);
+  /* the spanning tree: each part under the first assembly that reaches it, breadth first, to the depth asked for */
+  const depth = new Map                ([[root, 0]]), tree = new Map                  (), queue = [root];
+  let capped = false;
+  while (queue.length) {
+    const p = queue.shift() , d = depth.get(p) ;
+    if (mode === "direct" && d >= 1) continue;
+    for (const k of kids.get(p) ?? []) {
+      if (depth.has(k.to)) continue;
+      if (depth.size >= MAX_PICK) { capped = true; continue; }
+      depth.set(k.to, d + 1); (tree.get(p) ?? tree.set(p, []).get(p) ).push(k.to); queue.push(k.to);
+    }
+  }
+  const CX = W + GX, CY = H + GY, x = new Map                (); let slot = 0;
+  const lay = (p        )       => { const c = tree.get(p) ?? []; if (!c.length) { x.set(p, slot++ * CX); return; } c.forEach(lay); x.set(p, (x.get(c[0] )  + x.get(c[c.length - 1] ) ) / 2); };
+  lay(root);
+  const nodes               = [], at = new Map                    (); let n = 0;
+  for (const [p, d] of depth) { const c = noteCard(ix, p, `n${n++}`); c.x = Math.round(x.get(p) ); c.y = d * CY; nodes.push(c); at.set(p, c); }
+  const above = [...new Map(parentsOf.map((q) => [q.from, q])).values()].filter((q) => !at.has(q.from)).sort((a, b) => name(a.from).localeCompare(name(b.from)) || a.from.localeCompare(b.from));
+  const mid = at.get(root) .x, left = mid - ((above.length - 1) * CX) / 2;
+  above.forEach((q, i) => { const c = noteCard(ix, q.from, `n${n++}`); c.x = Math.round(left + i * CX); c.y = -CY; nodes.push(c); at.set(q.from, c); });
+  const edges               = [], aboveSet = new Set(above.map((q) => q.from));
+  for (const [from, list] of kids) {
+    const f = at.get(from); if (!f) continue;
+    for (const k of list) {
+      const t = at.get(k.to); if (!t) continue;
+      if (aboveSet.has(from) ? k.to !== root : (depth.get(k.to) ?? 0) <= (depth.get(from) ?? 0)) continue;       // above: only the line down to the note; below: only lines that go down a layer
+      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label: [k.e.kind, k.e.label].filter(Boolean).join(" ").slice(0, 60) });
+    }
+  }
+  return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped, fileName: `Structure - ${safe(rn.title)} (${mode === "direct" ? "direct parts" : "complete BOM"}).canvas`, groups: 0, hidden: 0 };
+}
 
 /** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
  * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.
@@ -4041,6 +4087,10 @@ function editView(c         )              {
                                                            
                                                                                   
                                                                  
+                                                                   
+                                                                               
+                                                                                           
+                                                                   
                                                                                                                          
                                  
                                                               
@@ -4133,7 +4183,7 @@ function mountPanel(root             , host           , opt                     
   function addBar(ts               )                     {
     if (!host.addToCanvas) return null;
     const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p)              => !!p))].slice(0, MAX_PICK);
-    if (!shown.length) return null;
+    if (!shown.length && lens !== "structure") return null;
     const root = sel && ix .notes.has(sel) ? sel : "", anchor = root || shown[0] ;
     const run = (b             , paths          )       => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => host.addToCanvas (anchor, paths)); };
     const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
@@ -4141,7 +4191,13 @@ function mountPanel(root             , host           , opt                     
     const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
     every.addEventListener("click", () => run(every, root && !shown.includes(root) ? [root, ...shown] : shown));
     tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    const mk = (label        , title        , go                       )              => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
+    const fresh                = [];
+    if (lens === "structure" && root && host.openStructureCanvas) fresh.push(
+      mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
+      mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "full")));
+    else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom (anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -4170,6 +4226,7 @@ function mountPanel(root             , host           , opt                     
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix , n.path), "out")], { count: outgoing(ix , n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix , n.path), "in")], { count: incoming(ix , n.path).length }));
     const rn = relatedNotes(ix , n.path);
     if (host.addToCanvas && rn.length) {       // D-0082
+      if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom (n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
       const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas (n.path, rn.map((r) => r.path))));
       box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas (n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
@@ -4350,7 +4407,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -4505,6 +4562,8 @@ function hostFor(plugin     )      {
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
+    openStructureCanvas: (path        , mode                   ) => plugin.openStructureCanvas(path, mode),
+    newCanvasFrom: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths, true, true),
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path        , change     ) => plugin.updateNote(path, change),
@@ -4686,6 +4745,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
   }
 
+  /** D-0088: a new canvas preview of one assembly: the note, its parent assemblies above, its direct parts or every layer of parts below. */
+  async openStructureCanvas(path        , mode                   )                  {
+    await this.ensureIndex();
+    if (!this.ix.notes.has(path)) throw new Error("Select a note first.");
+    return writePreview(this, WB.structureCanvas(this.ix, path, mode));
+  }
+
   /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
   async openPickCanvas(paths          , label        , relations         , group         , replace         )                  {
     await this.ensureIndex();
@@ -4694,10 +4760,10 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
-  async addToCanvasPreview(anchor               , paths          , relations = true)                  {
+  async addToCanvasPreview(anchor               , paths          , relations = true, replace = false)                  {
     await this.ensureIndex();
     const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (!f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
+    if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
       const all = [...(anchor ? [anchor] : []), ...paths], r = WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
       return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
     }
