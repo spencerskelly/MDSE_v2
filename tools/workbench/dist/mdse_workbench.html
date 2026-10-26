@@ -1623,7 +1623,7 @@ function pickCanvas(ix            , paths          , opts                       
     const byType = new Map                  ();
     for (const p of use) { const t = ix.notes.get(p) .type || "(no type)"; (byType.get(t) ?? byType.set(t, []).get(t) ).push(p); }
     let y = 0, key = 0, before           = [];
-    for (const [t, list] of [...byType].sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [t, list] of [...byType].sort((a, b) => (layoutTier(a[0], "") ?? 9) - (layoutTier(b[0], "") ?? 9) || a[0].localeCompare(b[0]))) {   // D-0102: boxes top to bottom in tier order
       list.sort((a, b) => ix.notes.get(a) .subtype.localeCompare(ix.notes.get(b) .subtype) || ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
       if (before.length) y += list.some((a) => before.some((b) => related.has(`${a}|${b}`))) ? GY : GYU;   // boxes of notes that are related sit a related gap apart
       const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
@@ -1670,7 +1670,7 @@ function commonRelated(ix            , paths          )                         
 }
 
 /** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
-const LAYER                                     = { "Use Case": 0, Requirement: 1, Behavior: 2, Verification: 2, Object: 3 };
+// D-0102: layoutTier (below) says which row a note belongs in
 
 /** Adds notes to a canvas that already holds cards (D-0082, D-0083). Cards already there are never moved. Each new note goes beside a note it relates to: next to that note's card when it is on the canvas, else next to the new note it relates to, so related notes sit together and a chain or tree spreads outward from where it joins. Direction counts (D-0085): a part goes under its assembly, a specialized element under the general one, an owned element (requirement, action, state, child) under its owner, and by kind of note a requirement goes under a use case, a function and a test case under a requirement, an object under a function. A new note related to nothing placed goes in the free space below the existing cards, one cluster of related notes after another. Cards are one card size plus a gap (D-0079) apart and overlap nothing. A note already on the canvas is not added twice. With `relations` (the default) lines are drawn between each new card and every note on the canvas it relates to. The input is not changed. */
 function addToCanvas(doc           , ix            , anchor               , paths          , opts                          = {})                                                                        {
@@ -1698,7 +1698,7 @@ function addToCanvas(doc           , ix            , anchor               , path
   }
   const dirOf = (a        , b        )                             => {
     const d = rel2.get(`${a}|${b}`); if (d) return d;
-    const ra = LAYER[ix.notes.get(a) .type], rb = LAYER[ix.notes.get(b) .type];
+    const na = ix.notes.get(a) , nb2 = ix.notes.get(b) , ra = layoutTier(na.type, na.subtype), rb = layoutTier(nb2.type, nb2.subtype);   // D-0102
     return ra !== undefined && rb !== undefined && ra !== rb ? (ra > rb ? "below" : "above") : "side";
   };
   const aboveCount = (p        )         => [...(nb.get(p) ?? [])].filter((q) => dirOf(p, q) === "below").length;   // how many notes must sit over this one
@@ -1944,15 +1944,25 @@ function refreshCanvas(doc           , ix            )                          
   return { doc: out, redrawn, missing, linesAdded, linesRemoved };
 }
 
-/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
-function autoLayout(doc           , ix            )                                                  {
-  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
-  const node = new Map                    ();
-  for (const n of out.nodes) { if (n.type === "group" || isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
-  const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
-  if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
-  const title = (p        )         => ix.notes.get(p) .title, typeOf = (p        )         => ix.notes.get(p) .type;
-  const TIER                                     = { "Use Case": 0, Requirement: 0, Behavior: 1, Verification: 1, Object: 2 };
+/** D-0102: the row a kind of note is placed in, top to bottom: 0 actors, 1 use cases, 2 requirements, 3 functions with states, flows and verification beside them, 4 interfaces, 5 objects. `undefined` is a side note (issues, info, documents, diagrams...), which goes in a column to the right of the note it relates to. */
+function layoutTier(type        , subtype = "")                     {
+  switch (type) {
+    case "Actor": return 0;
+    case "Use Case": return 1;
+    case "Requirement": return 2;
+    case "Behavior": case "Functional Flow": case "Condition": case "Verification": case "Procedure": case "Result": case "Setup": return 3;
+    case "Object": return subtype === "interface" ? 4 : 5;
+    default: return undefined;
+  }
+}
+const TIER_SLOT                                     = { Behavior: 0, "Functional Flow": 1, Condition: 2, Verification: 3, Procedure: 3, Result: 3, Setup: 3 };   // left to right inside the row of functions
+
+/** The rows of D-0089 and D-0102 for these notes: where each goes, given its height, from the origin down and to the right. Nothing is drawn here. */
+function layoutRows(ix            , paths          , hOf                       , ox        , oy        )                                        {
+  const inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
+  if (!paths.length) return new Map();
+  const title = (p        )         => ix.notes.get(p)?.title ?? p, typeOf = (p        )         => ix.notes.get(p)?.type ?? "";   // a group card stands for several notes and may have no note of its own
+  const tierOf = (p        )                     => layoutTier(typeOf(p), ix.notes.get(p)?.subtype ?? ""), slot = (p        )         => TIER_SLOT[typeOf(p)] ?? 9;
   const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]);
   const rel = new Map                     (), down = new Map                     (), up = new Map                     ();
   const link = (m                          , a        , b        )       => { (m.get(a) ?? m.set(a, new Set()).get(a) ).add(b); };
@@ -1961,14 +1971,15 @@ function autoLayout(doc           , ix            )                             
   const edges = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to && inSet.has(e.from) && inSet.has(e.to));
   for (const e of edges) { link(rel, e.from, e.to ); link(rel, e.to , e.from); }
   for (const e of edges) { if (OWNS.has(e.kind)) above(e.from, e.to ); else if (e.kind === "specializes") above(e.to , e.from); }
-  for (const e of edges) { if (OWNS.has(e.kind) || e.kind === "specializes") continue; const ta = TIER[typeOf(e.from)], tb = TIER[typeOf(e.to )]; if (ta !== undefined && tb !== undefined && ta !== tb) ta < tb ? above(e.from, e.to ) : above(e.to , e.from); }
+  for (const e of edges) { if (OWNS.has(e.kind) || e.kind === "specializes") continue; const ta = tierOf(e.from), tb = tierOf(e.to ); if (ta !== undefined && tb !== undefined && ta !== tb) ta < tb ? above(e.from, e.to ) : above(e.to , e.from); }
   const row = new Map                (), rowOf = (p        )         => { const k = row.get(p); if (k !== undefined) return k; const r = Math.max(-1, ...[...(up.get(p) ?? [])].map(rowOf)) + 1; row.set(p, r); return r; };
   for (const p of paths) rowOf(p);
   /* connected groups of notes; a note with no relationship to any other on the canvas goes to the grid */
   const comp = new Map                (); let nc = 0;
-  for (const p of paths) { if (comp.has(p) || !rel.get(p)?.size) continue; const st = [p]; comp.set(p, nc); while (st.length) for (const q of rel.get(st.pop() ) ?? []) if (!comp.has(q)) { comp.set(q, nc); st.push(q); } nc++; }
+  const sideSet = new Set        (), anchorOf = new Map                ();            // D-0102: a side note (issue, info, document...) goes in a column to the right of the note it relates to
+  for (const p of paths) if (tierOf(p) === undefined) { const a = [...(rel.get(p) ?? [])].filter((q) => tierOf(q) !== undefined).sort((x, y) => title(x).localeCompare(title(y)) || x.localeCompare(y))[0]; if (a) { sideSet.add(p); anchorOf.set(p, a); } }
+  for (const p of paths) { if (comp.has(p) || sideSet.has(p) || !rel.get(p)?.size) continue; const st = [p]; comp.set(p, nc); while (st.length) for (const q of rel.get(st.pop() ) ?? []) if (!comp.has(q) && !sideSet.has(q)) { comp.set(q, nc); st.push(q); } nc++; }
   const pos = new Map                                  ();
-  const box = paths.map((p) => node.get(p) ), ox = Math.min(...box.map((n) => n.x)), oy = Math.min(...box.map((n) => n.y));
   let cursorX = ox, bottom = oy;
   const comps = [...Array(nc).keys()].map((c) => paths.filter((p) => comp.get(p) === c)).sort((a, b) => b.length - a.length || title(a[0] ).localeCompare(title(b[0] )));
   for (const members of comps) {
@@ -1979,11 +1990,7 @@ function autoLayout(doc           , ix            )                             
     for (const r of keys) {
       const list = rows.get(r) , want = new Map                ();
       for (const p of list) { const b = bary(p, up); if (b !== undefined) want.set(p, b); }
-      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)  - want.get(b)  : Number(want.has(b)) - Number(want.has(a))) || (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || (typeOf(a) === "Use Case" ? 0 : 1) - (typeOf(b) === "Use Case" ? 0 : 1) || title(a).localeCompare(title(b)) || a.localeCompare(b));
-      for (const uc of list.filter((p) => typeOf(p) === "Use Case")) {        // a use case sits to the left of the requirements it relates to
-        const reqs = list.filter((q) => typeOf(q) === "Requirement" && rel.get(uc)?.has(q)), first = reqs.length ? Math.min(...reqs.map((q) => list.indexOf(q))) : -1;
-        if (first >= 0 && list.indexOf(uc) > first) { list.splice(list.indexOf(uc), 1); list.splice(first, 0, uc); }
-      }
+      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)  - want.get(b)  : Number(want.has(b)) - Number(want.has(a))) || slot(a) - slot(b) || title(a).localeCompare(title(b)) || a.localeCompare(b));
       sweep(list, want);
     }
     for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
@@ -1993,11 +2000,29 @@ function autoLayout(doc           , ix            )                             
     }
     const minX = Math.min(...members.map((p) => px.get(p) )), maxX = Math.max(...members.map((p) => px.get(p) ));
     let y = oy;
-    for (const r of keys) { for (const p of rows.get(r) ) pos.set(p, { x: cursorX + px.get(p)  - minX, y }); y += Math.max(...rows.get(r) .map((p) => node.get(p) .height)) + GY; }
-    bottom = Math.max(bottom, y - GY); cursorX += maxX - minX + CU;
+    for (const r of keys) { for (const p of rows.get(r) ) pos.set(p, { x: cursorX + px.get(p)  - minX, y }); y += Math.max(...rows.get(r) .map((p) => hOf(p))) + GY; }
+    bottom = Math.max(bottom, y - GY);
+    const mine = [...sideSet].filter((q) => members.includes(anchorOf.get(q) )).sort((a, b) => pos.get(anchorOf.get(a) ) .y - pos.get(anchorOf.get(b) ) .y || title(a).localeCompare(title(b)) || a.localeCompare(b));
+    const sx = cursorX + maxX - minX + CX; let colBottom = -Infinity;
+    let prevSide = "";
+    for (const q of mine) { const yy = Math.max(pos.get(anchorOf.get(q) ) .y, colBottom + (prevSide && rset.has(`${prevSide}|${q}`) ? GY - GYU : 0)); pos.set(q, { x: sx, y: yy }); colBottom = yy + hOf(q) + GYU; prevSide = q; }
+    if (mine.length) bottom = Math.max(bottom, colBottom - GYU);
+    cursorX += maxX - minX + (mine.length ? CX : 0) + CU;
   }
-  const alone = paths.filter((p) => !comp.has(p)).sort((a, b) => (TIER[typeOf(a)] ?? 9) - (TIER[typeOf(b)] ?? 9) || typeOf(a).localeCompare(typeOf(b)) || title(a).localeCompare(title(b)) || a.localeCompare(b));
-  if (alone.length) { const y0 = comps.length ? bottom + GYU : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CU, y: y0 + (i / 6) * (Math.max(...alone.map((q) => node.get(q) .height)) + GYU) })); } }
+  const alone = paths.filter((p) => !comp.has(p) && !sideSet.has(p)).sort((a, b) => (tierOf(a) ?? 9) - (tierOf(b) ?? 9) || typeOf(a).localeCompare(typeOf(b)) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+  if (alone.length) { const y0 = comps.length ? bottom + GYU : oy; for (let i = 0; i < alone.length; i += 6) { const rowP = alone.slice(i, i + 6); rowP.forEach((p, j) => pos.set(p, { x: ox + j * CU, y: y0 + (i / 6) * (Math.max(...alone.map((q) => hOf(q))) + GYU) })); } }
+  return pos;
+}
+
+/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
+function autoLayout(doc           , ix            )                                                  {
+  const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
+  const node = new Map                    ();
+  for (const n of out.nodes) { if (n.type === "group" || isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
+  const paths = [...node.keys()];
+  if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
+  const box = paths.map((p) => node.get(p) ), ox = Math.min(...box.map((n) => n.x)), oy = Math.min(...box.map((n) => n.y));
+  const pos = layoutRows(ix, paths, (p) => node.get(p) .height, ox, oy);
   let moved = 0;
   for (const [p, at] of pos) { const n = node.get(p) ; if (n.x !== Math.round(at.x) || n.y !== Math.round(at.y)) moved++; n.x = Math.round(at.x); n.y = Math.round(at.y); }
   const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
@@ -2097,11 +2122,7 @@ function toCanvas(ix            , start        , profile         , spec         
     }
   }
 
-  // layered layout: one column per depth, rows stacked and centred
-  const cols = new Map                                                              ();
-  for (const n of g.nodes) (cols.get(n.depth) ?? cols.set(n.depth, []).get(n.depth) ).push({ key: id.get(n.path) , path: n.path });
-  const depthOf = new Map(g.nodes.map((n) => [n.path, n.depth]));
-  for (const x of ghosts) (cols.get((depthOf.get(x.anchor) ?? 0) + 1) ?? cols.set((depthOf.get(x.anchor) ?? 0) + 1, []).get((depthOf.get(x.anchor) ?? 0) + 1) ).push({ key: x.key, text: x.text });
+  // D-0102: rows by what a note is (actors, use cases, requirements, functions, interfaces, objects), assemblies over their parts; side notes in a column to the right; references not in the vault beside the note that names them
   const nodes               = [], at = new Map                    (), related = cvRelatedSet(ix);
   const make = (it                                               )             => {
     const base = { id: it.key, x: 0, y: 0, width: W, height: H };
@@ -2113,11 +2134,13 @@ function toCanvas(ix            , start        , profile         , spec         
     if (it.path) return noteCard(ix, it.path, it.key);
     return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
   };
-  for (const [d, list] of [...cols].sort((a, b) => a[0] - b[0])) {
-    const cards = list.map((it) => ({ it, cn: make(it) })), gapAfter = (i        )         => { const a = cards[i] .it.path, b = cards[i + 1]?.it.path; return a && b && related.has(`${a}|${b}`) ? GY : GYU; };   // cards one above the other: a related gap if the notes are related, else the unrelated gap (D-0096)
-    const total = cards.reduce((s, c, i) => s + c.cn.height + (i < cards.length - 1 ? gapAfter(i) : 0), 0);
-    let y = -total / 2;
-    cards.forEach(({ it, cn }, i) => { cn.x = d * (W + GX); cn.y = Math.round(y); y += cn.height + (i < cards.length - 1 ? gapAfter(i) : 0); nodes.push(cn); at.set(it.key, cn); });
+  const cardOf = new Map                    (g.nodes.map((n) => [n.path, make({ key: id.get(n.path) , path: n.path })]         ));
+  const pos = layoutRows(ix, g.nodes.map((n) => n.path), (p) => cardOf.get(p) .height, 0, 0);
+  for (const n of g.nodes) { const cn = cardOf.get(n.path) , to = pos.get(n.path) ?? { x: 0, y: 0 }; cn.x = Math.round(to.x); cn.y = Math.round(to.y); nodes.push(cn); at.set(id.get(n.path) , cn); }
+  const right = Math.max(0, ...nodes.map((n) => n.x + n.width)); let ghostBottom = -Infinity;
+  for (const x of [...ghosts].sort((p, q) => (at.get(id.get(p.anchor) )?.y ?? 0) - (at.get(id.get(q.anchor) )?.y ?? 0))) {
+    const cn = make({ key: x.key, text: x.text }), a = at.get(id.get(x.anchor) );
+    cn.x = right + GX; cn.y = Math.round(Math.max(a?.y ?? 0, ghostBottom)); ghostBottom = cn.y + cn.height + GYU; nodes.push(cn); at.set(x.key, cn);
   }
 
   const edges               = [];

@@ -1187,3 +1187,15 @@ Rules: IMP-133 (new).
 5. **Limits.** Assembly "parent" and "child" go by the parts the SysML blocks declare, so they follow D-0100's pushed-up parts. Layers stop at 12 (specialization, parent) and 8 (child); at most 400 members. Not run in real Obsidian.
 
 Rules: WKB-047, WKB-048 (new).
+
+## D-0102 — Automatic note placement: fixed rows by kind of note
+
+2026-10-25 · Spencer · Accepted (owner, chat: proposed order, answered "Agreed.")
+
+1. **Rows, top to bottom.** Actor; Use Case; Requirement; functions (Behavior, Functional Flow, Condition/states, Verification, Procedure, Result, Setup) with their states, flows and tests beside them; Interface objects; other Objects. (rule WKB-049)
+2. **Side column.** Issue, Info, Document, Artifact, Diagram, Item Flow, Failure Mode and other kinds with no row sit in a column to the right of the cards, level with the note they relate to or below it. (rule WKB-049)
+3. **Applies to** Auto-layout, Add to canvas and the generated view canvases (a view's canvas is a subset of the rows). Where a relationship disagrees with the rows (assembly, specialization) ownership and specialization still win inside a row group.
+4. **Replaces** the D-0089 wording "use case to the left of its requirement in the same row" (WKB-038 updated).
+5. **Not run in real Obsidian.**
+
+Rules: WKB-049 (new); WKB-038 (changed).

@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -474,10 +474,16 @@ test("spacing depends on the pair: cards of related notes are three card sizes a
   check(structureCanvas(ix, byTitle("Charger"), "full").doc, "structure");
   const added = addToCanvas({ nodes: [], edges: [] }, ix, null, all.slice(0, 60)).doc; check(added, "add to canvas");
   check(autoLayout(added, ix).doc, "auto-layout");
-  // the columns of a view from a note are still three widths apart
-  const near = (xs: number[]): number[] => [...new Set(xs)].sort((a, b) => a - b);
-  const t = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }), tc = near(t.doc.nodes.map((n) => n.x));
-  for (let i = 1; i < tc.length; i++) assert.equal(tc[i]! - tc[i - 1]!, 4 * 280, "the layered canvas: a gap of 3 widths between columns");
+  // a view from a note puts the kinds of note in rows, top to bottom (D-0102): of two related notes of different kinds, the lower tier is above
+  const tv = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 });
+  const cardsOf = tv.doc.nodes.map((n) => ({ n, p: cdNotePath(n as never) })).filter((c) => c.p && ix.notes.has(c.p));
+  let ordered = 0;
+  for (const a of cardsOf) for (const b of cardsOf) {
+    const na = ix.notes.get(a.p!)!, nb = ix.notes.get(b.p!)!, ta = layoutTier(na.type, na.subtype), tb = layoutTier(nb.type, nb.subtype);
+    if (ta === undefined || tb === undefined || ta >= tb || !rel.has(`${a.p}|${b.p}`) || na.type === nb.type) continue;
+    ordered++; assert.ok(a.n.y < b.n.y || ix.edges.some((e) => e.kind === "specializes" || e.kind.startsWith("has")) && a.n.y <= b.n.y, `${na.title} (tier ${ta}) is above ${nb.title} (tier ${tb})`);
+  }
+  assert.ok(ordered > 0, "the sample view has related notes of different kinds");
 });
 
 test("a row of parts under an assembly is one card width apart; the row is three card heights below the assembly (D-0096)", () => {
@@ -504,7 +510,7 @@ test("picked notes are grouped by type: one labelled box each, the cards inside 
   const r = pickCanvas(ix, [...ix.notes.keys()], { relations: true, label: "" }), groups = r.doc.nodes.filter((n) => n.type === "group"), cards = r.doc.nodes.filter((n) => n.type !== "group");
   const types = new Set([...ix.notes.values()].map((n) => n.type));
   assert.equal(groups.length, types.size); assert.equal(r.groups, types.size); assert.equal(cards.length, ix.notes.size);
-  assert.deepEqual(groups.map((g) => g.label!.replace(/ \(\d+\)$/, "")), [...types].sort((a, b) => a.localeCompare(b)), "boxes in type order");
+  assert.deepEqual(groups.map((g) => g.label!.replace(/ \(\d+\)$/, "")), [...types].sort((a, b) => (layoutTier(a) ?? 9) - (layoutTier(b) ?? 9) || a.localeCompare(b)), "boxes top to bottom in tier order, then by name (D-0102)");
   assert.ok(r.doc.nodes.slice(0, groups.length).every((n) => n.type === "group"), "boxes come first so cards are drawn over them");
   for (const c of cards) { const owner = groups.filter((g) => c.x >= g.x && c.y >= g.y && c.x + c.width <= g.x + g.width && c.y + c.height <= g.y + g.height); assert.equal(owner.length, 1, "each card sits inside exactly one box"); const t = ix.notes.get(c.file ?? "")?.type; if (t) assert.ok(owner[0]!.label!.startsWith(t + " ("), "in the box for its own type"); }
   for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) { const a = groups[i]!, b = groups[j]!; assert.ok(a.y + a.height <= b.y || b.y + b.height <= a.y, "boxes do not overlap"); }
@@ -652,7 +658,7 @@ test("a structure canvas: the note, its parent assemblies above, parts below, li
   assert.ok(g.doc.edges.every((e) => e.fromSide === "bottom" && e.toSide === "top"), "added notes: the parent's line leaves the bottom");
 });
 
-test("auto-layout puts a use case left of its requirement, tests and functions below it, assemblies over their parts, and leaves other cards alone (D-0089)", () => {
+test("auto-layout puts use cases above requirements, functions with tests beside them below, objects below, assemblies over their parts, and leaves other cards alone (D-0089)", () => {
   const f = (type: string, id: string, title: string, props = ""): [string, string] => [`${title}.md`, `---\ntype: ${type}\nid: ${id}\nuid: 202610250000${id.replace(/\D/g, "").padStart(5, "0")}auto-layout-\nstatus: Draft\n${props}tags: []\n---\n# ${title}\n`];
   const v = buildIndex(new Map([
     f("Use Case", "UC-00001", "Charge a truck"), f("Requirement", "REQ-00001", "Charge fast", 'refines: ["[[Charge a truck]]"]\n'),
@@ -663,8 +669,8 @@ test("auto-layout puts a use case left of its requirement, tests and functions b
   const doc = addToCanvas({ nodes: [], edges: [] }, v, null, [...v.notes.keys()]).doc;
   const scrambled = { nodes: [...doc.nodes.map((n, i) => ({ ...n, x: (i * 37) % 5 * 50, y: (i * 53) % 3 * 40 })), { id: "memo", type: "text" as const, x: 7, y: 9, width: 100, height: 50, text: "my own note" }], edges: doc.edges };
   const r = autoLayout(scrambled, v), at = (t: string) => r.doc.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
-  assert.equal(at("Charge a truck").y, at("Charge fast").y); assert.ok(at("Charge a truck").x < at("Charge fast").x, "use case to the left");
-  assert.ok(at("Power test").y > at("Charge fast").y && at("Deliver power").y > at("Charge fast").y, "tests and functions below the requirement");
+  assert.ok(at("Charge a truck").y < at("Charge fast").y, "use case row above the requirement row (D-0102)");
+  assert.ok(at("Deliver power").y > at("Charge fast").y && at("Power test").y === at("Deliver power").y && at("Power test").x > at("Deliver power").x, "functions below the requirement, tests in the same row to the right of the functions");
   assert.ok(at("Charger").y > at("Deliver power").y, "object below function");
   for (const p of ["Cable", "Plug"]) assert.ok(at(p).y > at("Charger").y);
   assert.equal(at("Charger").x, (at("Cable").x + at("Plug").x) / 2, "assembly centred over its parts");
