@@ -1942,7 +1942,7 @@ const MAX_PARTS = 60;
 function internalCanvas(ix            , path        )               {
   const note = ix.notes.get(path);
   if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
-  const r = internalStructure(ix, path), PW = 360, PORT_W = 180, PORT_H = 40, STEP = PORT_H + 16, TOP = 72, PAD_X = 260, PAD_TOP = 120, PAD_BOTTOM = 80;
+  const r = internalStructure(ix, path), PW = 360, PORT_W = 260, PORT_H = 56, STEP = PORT_H + 16, TOP = 72, PAD_X = 300, PAD_TOP = 120, PAD_BOTTOM = 80;
   const clip = (t        )         => t.replace(/[|[\]\n]/g, " ").replace(/\s+/g, " ").trim();
   const link = (p               , label        )         => (p ? `[[${p.replace(/\.md$/i, "")}|${clip(label)}]]` : clip(label));
   const parts = r.parts.slice(0, MAX_PARTS), capped = r.parts.length > MAX_PARTS;
