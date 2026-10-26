@@ -21,6 +21,29 @@ export function deriveAuthorCode(name: string): string {
   return pad13(last + first);
 }
 
+const letters = (s: string): string => s.toLowerCase().replace(/[^a-z]/g, "");
+
+/** D-0105: EA often holds a short login (`skellys`, `legaspic`) for a person it also holds under a full name or that the vault already knows by a 13-letter code. Every login the run meets is matched to that person, so one person has one code with the most letters available. A login matches (1) a known code that starts with it, or (2) a full EA name whose last name (any 3+ letters of it) followed by the first name's initial letters spells it. A login that matches no one, or more than one, is left as it is. */
+export function resolveLogins(authors: string[], o: AuthorOptions): AuthorOptions {
+  const codes = new Set<string>([...Object.values(o.authorMap), o.fallbackCode].map((c) => c.replace(/-+$/, "")).filter(Boolean));
+  const persons: Array<{ last: string; first: string; code: string }> = [];
+  for (const a of new Set(authors)) {
+    if (!a.includes(" ") && !a.includes(",")) continue;
+    const code = deriveAuthorCode(a), [l, f] = a.includes(",") ? a.split(",") : [a.trim().split(/\s+/).slice(-1)[0], a.trim().split(/\s+/)[0]];
+    persons.push({ last: letters(l ?? ""), first: letters(f ?? ""), code }); codes.add(code.replace(/-+$/, ""));
+  }
+  const map = { ...o.authorMap };
+  for (const a of new Set(authors)) {
+    const L = letters(a);
+    if (!L || a.includes(" ") || a.includes(",") || map[a] || Object.keys(map).some((k) => k.toLowerCase() === a.toLowerCase())) continue;
+    const byCode = [...codes].filter((c) => c.length > L.length && c.startsWith(L));
+    const byName = persons.filter((p) => { for (let n = 3; n <= p.last.length; n++) { const rest = L.slice(n); if (L.startsWith(p.last.slice(0, n)) && rest.length > 0 && p.first.startsWith(rest)) return true; } return false; }).map((p) => p.code.replace(/-+$/, ""));
+    const hit = [...new Set([...byCode, ...byName])];
+    if (hit.length === 1) map[a] = pad13(hit[0]!);
+  }
+  return { ...o, authorMap: map };
+}
+
 export function authorCode(eaAuthor: string, o: AuthorOptions): { code: string; how: "map" | "fallback" | "derived" } {
   const mapped = o.authorMap[eaAuthor] ?? Object.entries(o.authorMap).find(([k]) => k.toLowerCase() === eaAuthor.toLowerCase())?.[1];
   if (mapped) return { code: mapped, how: "map" };
@@ -53,6 +76,7 @@ export interface UidResult { uid: string; evidence: string[] }
 /** Allocates a unique 30-character uid per request in (created, guid) order. `taken` holds uids already in the vault. */
 export function allocateUids(reqs: UidRequest[], a: AuthorOptions, taken: Set<string>, fallbackStamp: string): Map<string, UidResult> {
   const out = new Map<string, UidResult>(), cursor = new Map<string, string>();
+  a = resolveLogins(reqs.map((r) => r.author), a);                                                       // D-0105
   const order = reqs.map((r) => ({ r, stamp: eaTimeStamp(r.created) })).sort((x, y) => {
     const a1 = x.stamp ?? "99999999999999999", b1 = y.stamp ?? "99999999999999999";
     return a1 < b1 ? -1 : a1 > b1 ? 1 : x.r.guid < y.r.guid ? -1 : x.r.guid > y.r.guid ? 1 : 0;

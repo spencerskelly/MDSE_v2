@@ -132,7 +132,8 @@ export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
       if (ro && rn && bomRevCompare(rn, ro) < 0) { out.holds.push({ code: "OLDER_IN_FILE", path: f.path, pn, message: `${pn}: the vault has revision ${JSON.stringify(ro)}, this file's latest is ${JSON.stringify(rn)}.` }); continue; }
       const uo = ownedOf(po, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length, un = ownedOf(pnw, owns).filter((d) => d.kind === "usage" || d.kind === "ref").length;
       add("NEW_REVISION", f.path, pn, `${pn}: revision ${ro ? JSON.stringify(ro) : "(none)"} → ${JSON.stringify(rn)} (${uo} → ${un} lines)`, `revision ${ro || "(none)"}, ${uo} lines`, `revision ${rn}, ${un} lines`);
-      out.replaced.set(f.path, replacedLines(po, owns, ro, nameOfId)); earlierItem(); pnItem(); catItem();
+      if (o.earlierRevisions === "keep") out.replaced.set(f.path, replacedLines(po, owns, ro, nameOfId));   // D-0107: only when earlier revisions are asked for
+      earlierItem(); pnItem(); catItem();
       continue;
     }
     const mo = new Map(ownedOf(po, owns).map((d) => [d.key, d])), mn = new Map(ownedOf(pnw, owns).map((d) => [d.key, d]));

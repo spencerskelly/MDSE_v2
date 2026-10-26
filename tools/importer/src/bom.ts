@@ -403,7 +403,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const replaces = new Map<string, Set<string>>();
   for (const u of okUsage) if (u.prevChild && u.prevChild !== u.child) (replaces.get(u.child) ?? replaces.set(u.child, new Set()).get(u.child)!).add(u.prevChild);
   // D-0056 (BOM-038): the lines of earlier revisions are data and are kept by default. Dropping them is a choice made at import and is counted.
-  const earlierKeep = (o.earlierRevisions ?? "keep") === "keep";
+  const earlierKeep = (o.earlierRevisions ?? "drop") === "keep";   // D-0107: the latest revision is what the vault holds; earlier revisions of an assembly are kept only when asked for
   const earlierRows = (pn: string): Usage[] => { const seen = new Set<string>(), out: Usage[] = []; for (const u of (earlierOf.get(pn) ?? []).slice().sort((a, b) => bomRevCompare(b.parentRev, a.parentRev) || lineKey(a) - lineKey(b) || a.row - b.row)) { const k = [u.parentRev, u.line, u.child, u.childRev, u.amount, u.unit, u.refDes, u.from, u.to].join("\0"); if (!seen.has(k)) { seen.add(k); out.push(u); } } return out; };
   const earlierText = (pn: string): string[] => earlierRows(pn).map((u) => `- Revision ${JSON.stringify(u.parentRev)}, line ${u.line || "?"}: ${u.child}${u.childName ? " (" + u.childName + ")" : ""}${u.childRev ? " at revision " + JSON.stringify(u.childRev) : ""}${u.amount ? ", quantity " + u.amount + (u.unit ? " " + u.unit : "") : ""}${u.refDes ? ", reference " + u.refDes : ""}${u.from ? ", from " + u.from : ""}${u.to ? ", to " + u.to : ""} (row ${u.row})`);
   for (const pn of [...earlierOf.keys()].sort()) {
@@ -463,7 +463,12 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const older = revisionReview.filter((r) => r.parent === pn);
-    if (older.length) body.push("**Older revision usages**", "", ...older.map((r) => `- Line ${r.line || "?"}: ${r.child} pinned at ${JSON.stringify(r.pinned)}, selected definition at ${JSON.stringify(r.selected)}; source row ${r.row}.`), "", "See [[Old Revision Usage]].", "");
+    // D-0107: a part an assembly calls at a revision older than the latest gets one line saying which revision the assembly calls; the vault uses the latest.
+    if (older.length) {
+      const byChild = new Map<string, { pins: string[]; selected: string; lines: string[] }>();
+      for (const r of older) { const c = byChild.get(r.child) ?? byChild.set(r.child, { pins: [], selected: r.selected, lines: [] }).get(r.child)!; if (!c.pins.includes(r.pinned)) c.pins.push(r.pinned); if (r.line && !c.lines.includes(r.line)) c.lines.push(r.line); }
+      body.push("**Older revision usages**", "", ...[...byChild].map(([child, c]) => `- ${child}: called at revision ${c.pins.map((x) => JSON.stringify(x)).join(", ")}${c.lines.length ? ` (line ${c.lines.join(", ")})` : ""}; this vault uses the latest, ${JSON.stringify(c.selected)}.`), "", "See [[Old Revision Usage]].", "");
+    }
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}${d.kept.refDes ? ", reference " + d.kept.refDes : ""}${withDates ? `, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}` : ""}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}${d.other.refDes ? ", reference " + d.other.refDes : ""}${withDates ? `, from ${d.other.from || "-"}, to ${d.other.to || "-"}` : ""}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,

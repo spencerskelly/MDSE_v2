@@ -55,7 +55,7 @@ test("pinned child revision that is not the child's latest: flagConflict on the 
   const r = buildBom(parseDelimited(flatText), baseOpts);
   const parent = byTitle(r.files, "04270-001").content, child = byTitle(r.files, "04766").content;
   assert.doesNotMatch(parent, /\[!flag/, "D-0098: no flag; the latest revision is always the one the property shows");
-  assert.match(parent, /attribute childRevision = "-C99";/); assert.match(parent, /\*\*Older revision usages\*\*/); assert.match(parent, /pinned at "-B99"/);
+  assert.match(parent, /attribute childRevision = "-C99";/); assert.match(parent, /\*\*Older revision usages\*\*/); assert.match(parent, /called at revision "-B99"/);
   assert.doesNotMatch(child, /older revision|04270-001/, "a child note names no assembly above it (D-0063)");
   assert.match(child, /attribute revision = "-C99";/);                                    // latest wins the properties (BOM-007)
   assert.equal(r.summary.conflicts, 0);
@@ -81,7 +81,7 @@ test("the latest revision is the highest by revision order, and the part is impo
   const t = byTitle(r.files, "05274").content;
   assert.match(t, /attribute revision = "A01";/);                                           // the placeholder -099 ranks below a real revision
   assert.match(t, /Revisions in the BOM: "-099", "A01"; the latest is "A01"/);
-  assert.match(byTitle(r.files, "01653").content, /pinned at "-099"/);       // the assembly that pins the placeholder lists it as an older revision (D-0098)
+  assert.match(byTitle(r.files, "01653").content, /called at revision "-099"/);       // the assembly that pins the placeholder lists it as an older revision (D-0098)
   assert.ok(r.findings.some((f) => f.code === "REV_SELECTION" && f.message.startsWith("05274")));
   assert.equal(r.summary.skippedParts, 0);
   assert.deepEqual([["-099", "A01"], ["A01", "B02"], ["-V01", "-V02"], ["A02", "A10"], ["Z99", "A01"]].map(([a, b]) => bomRevCompare(a!, b!)), [-1, -1, -1, -1, -1]);
@@ -121,7 +121,7 @@ test("D-0098: an exact repeat of a line is dropped even when its dates differ; t
   assert.ok(!r2.findings.some((f) => f.code === "DUP_LINE")); assert.ok(r2.findings.some((f) => f.code === "DUP_LINE_REVISIONS"));
   assert.doesNotMatch(p, /\[!flag/, "no flag");
   assert.equal(p.match(/attribute childRevision = /g)!.length, 1); assert.match(p, /attribute childRevision = "-C99";/, "the property is the latest revision");
-  assert.match(p, /pinned at "-B99"/); assert.match(p, /pinned at "-A99"/);                    // older revisions in use are listed in the assembly's body
+  assert.match(p, /called at revision "-B99"/); assert.match(p, /called at revision [^;]*"-A99"/);                    // older revisions in use are listed in the assembly's body
   // quantity differing is still a real conflict, and the callout no longer shows dates
   const q = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, FLAT_ROWS[2]!.replace("\t0.559\t", "\t0.700\t")].join("\n")), baseOpts);
   assert.match(byTitle(q.files, "01141-002").content, /\[!flagValue\]/); assert.doesNotMatch(byTitle(q.files, "01141-002").content, /, from /);
@@ -369,7 +369,7 @@ test("a part number already in the vault raises no NAME_CONFLICT in an import, b
 /* ---- BOM-038: lines of an assembly at an older revision are kept, never dropped without a decision ---- */
 const earlyRow = (p: string, pr: string, l: string, c: string, q = "1"): string => [p, pr.slice(0, 2), pr.slice(2), "ASSY " + p, "buy", "X", l, c, "-A", "99", "PART " + c, "buy", "X", "", "", "", "2/Jan/19", "", q, "ea", p + pr].join("\t");
 const earlyRows = [earlyRow("A-1", "-A01", "1", "B-2"), earlyRow("A-1", "-A01", "2", "C-3", "4"), earlyRow("A-1", "-A01", "3", "D-4"), earlyRow("A-1", "-A02", "1", "B-2", "5"), earlyRow("A-1", "-A02", "2", "E-5")];
-const earlyOpts = (extra: object = {}) => ({ sourceName: "e.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes, existing: null, pending: [] as Array<[string, string]>, ...extra });
+const earlyOpts = (extra: object = {}) => ({ sourceName: "e.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-23T10:00:00", authorCode: "skellyspencer", classes, existing: null, pending: [] as Array<[string, string]>, earlierRevisions: "keep" as const, ...extra });
 
 test("lines of an assembly at an older revision are kept in the note body, not in the SysML structure (BOM-038)", () => {
   const r = buildBom(parseDelimited([FLAT_HEAD, ...earlyRows].join("\n")), earlyOpts());

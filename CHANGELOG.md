@@ -4,6 +4,10 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- EA import: relationships in the SysML block are also YAML link properties (hasPart, specializes, satisfies, performs, allocatedTo and the rest); requirement wording is also the first lines of the body; notes that say the same thing are listed in `Review - Possible Merges.csv`. IMP-136, IMP-137, IMP-097 (changed), D-0108
+- BOM import: the latest revision only. Earlier revisions of an assembly are not written unless asked for; a part called at an older revision is one line in the assembly's body. BOM-046, BOM-038 (changed), D-0107
+- EA import: parts and ports are named from their name, type, a flow, or just `part`/`port`; untyped usages, ports added from an assembly and elements that could not be placed are lines above the SysML block, not flags. IMP-134, IMP-132 (retired), D-0106
+- EA import: a short EA login takes the full 13-letter code of the person it fits. IMP-135, D-0105
 - Workbench Compare notes: parts and assemblies only one of two assemblies has, shown as the path down to each unique part, as a table and as a canvas. WKB-051, D-0104
 - Workbench colors: one hex color per kind of note on every canvas, graph and page (was missing for many kinds, two kinds shared one, presets mixed with hex); interface objects darker; ports, retired and missing links reserved; inherited cards a lighter mix. WKB-050, D-0103
 - Workbench automatic placement: notes go in rows by kind, top to bottom: actor, use case, requirement, functions (states and tests beside), interface objects, objects; issues, info, documents and other kinds in a right-hand column. Auto-layout, Add to canvas and generated canvases. WKB-049, WKB-038 (changed), D-0102

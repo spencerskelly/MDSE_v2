@@ -1224,3 +1224,47 @@ Rules: WKB-050 (new).
 5. **Canvas cards** use the internal ids, so Refresh and Auto-layout leave the picture as drawn.
 
 Rules: WKB-051 (new).
+
+## D-0105 — EA logins take the full code of the person
+
+2026-10-25 · Spencer · Accepted (owner, chat: "those authors should be identified already and always include the maximum number of letters")
+
+1. **Finding.** The test vault holds one person under several codes: `skellyspencer` 16,847 notes, `spencerskelly` 9,435, `skellys------` 5,551; `legaspic-----` 8,672 and `chescalegaspi` 976; `koerfefl-----` 496 and `koerferfloria` 346; `hermanmontano` 219 and `montanoh-----` 8.
+2. **Rule.** A short EA login is matched to the one person it fits (a known code that starts with it, or a full EA name spelled by last name then first name letters). The code keeps the most letters. Two fits or none leave it unchanged. An explicit mapping always wins. (rule IMP-135)
+3. **Limits.** `spencerskelly` (first name last) does not start with `skellys` and cannot be matched by a rule; it needs an entry in the people note (`eaNames`). Existing notes keep their uids; this applies to the next import. Not run on the real EA file.
+
+Rules: IMP-135 (new).
+
+## D-0106 — Parts and ports are named and never flagged
+
+2026-10-25 · Spencer · Accepted (owner, chat: items 5, 6 and 7 of the vault review)
+
+1. **Names.** A part or port takes its EA name, else its type, else the first flow under it, else `part` or `port`. It is found later. (rule IMP-134)
+2. **No flags.** Untyped usages, ports added from an assembly, flow items without a signal and elements that could not be placed are one line each in the "Source: EA" section, directly above the SysML block. Elements with no note to hold them are lines in `Unplaced Review Items`. This also covers actions, states and other elements, not only parts and ports. (rule IMP-134)
+3. **Port types.** Where a port has no type but a port definition of the same name exists, the name is used: already done for ports on a block (IMP-106); not yet for other ports. Not changed here.
+4. **Retires** IMP-132 (D-0099): the grouped callouts. Their items are now lines.
+5. **Expected effect (not re-imported).** The 1,819 flags of the 15.24 import that D-0099 grouped become zero flags for parts and ports; connector link flags (1,181 deferred) stay.
+
+Rules: IMP-134 (new); IMP-132 (retired).
+
+## D-0107 — BOM: the latest revision only
+
+2026-10-25 · Spencer · Accepted (owner, chat: "for now on, we use the latest revision. Parts in an assembly that use an older revision receive one line identifying the rev of the called part")
+
+1. **Default.** Earlier revisions of an assembly are no longer written (D-0056 kept them by default). The option `earlierRevisions: "keep"` remains. A BOM update that replaces a revision no longer keeps the replaced lines. (rule BOM-046)
+2. **Older revision usages.** One line per part an assembly calls at an older revision: the part, the revision(s) called, the line number, and the revision used. The lines no longer give source rows.
+3. **Effect.** In the 15.24 import the biggest note, 5910250, is 349 KB, mostly earlier-revision lines; it becomes a normal note.
+
+Rules: BOM-046 (new); BOM-038 (changed).
+
+## D-0108 — Readable relationships and requirement text; merge list
+
+2026-10-25 · Spencer · Accepted (owner, chat: items 2, 3 and 10 of the vault review)
+
+1. **Relationships as YAML.** Every relationship the SysML block says is also a YAML property of links on the owning note, named as the Workbench names it, so Obsidian shows backlinks and the graph and any reader sees names instead of symbols. The SysML block stays the authority; the Workbench counts YAML and block as one relationship. (rule IMP-136)
+2. **Tension with D-0069.** D-0069 stopped persisting SysML-defined inverse YAML because a second copy can drift. This is forward only, written at import, and the Workbench does not yet rewrite it when the block is edited; it is stale after a Workbench edit until the next import or a regeneration. A regeneration in the Workbench is open work.
+3. **Requirement text** is the first lines of the body, under the title, as well as the `doc`. The same drift limit applies. (rule IMP-097 changed)
+4. **Possible merges.** Notes with the same requirement text, or the same type, name, text and SysML, are rows in `Review - Possible Merges.csv`. Nothing is merged or flagged. (rule IMP-137)
+5. **Heading subtype for requirements** is left for later (owner).
+
+Rules: IMP-136, IMP-137 (new); IMP-097 (changed).

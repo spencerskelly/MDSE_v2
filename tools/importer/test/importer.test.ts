@@ -247,12 +247,23 @@ test("Source: EA does not repeat what SysML or the YAML already say (IMP-096)", 
   assert.match(charger, /^eaType: /m, "EA type and stereotype are in the YAML");
 });
 
-test("requirement wording is the definition's doc, not repeated in the body (IMP-097)", async () => {
+test("requirement wording is the first lines of the body and the definition's doc (IMP-097, D-0108)", async () => {
   const res = await run();
   const req = res.files.find((f) => f.content.includes("outdoor use"))!.content;
   const sysml = req.split("## SysML v2")[1]!;
   assert.match(sysml, /requirement def [\s\S]*doc \/\*[\s\S]*outdoor use[\s\S]*\*\//, "text is a doc comment in the requirement def");
-  assert.equal(req.split("## SysML v2")[0]!.includes("outdoor use"), false, "not duplicated above the SysML block");
+  const above = req.split("## Source: EA")[0]!.split(/^# .*$/m)[1]!;
+  assert.match(above.trim().split("\n")[0]!, /outdoor use/, "and the first lines under the title");
+});
+
+test("D-0108: relationships in the SysML block are also YAML properties, named as the Workbench names them", async () => {
+  const res = await run();
+  const fm = (f: { content: string }): string => f.content.split("\n---\n")[0]!;
+  const all = res.files.filter((f) => !f.bytes && /\.md$/.test(f.path) && !f.path.startsWith("99_System/"));
+  const seen = new Set<string>(); for (const f of all) for (const m of fm(f).matchAll(/^(\w+): \[/gm)) seen.add(m[1]!);
+  for (const k of ["hasPart", "satisfies"]) assert.ok(seen.has(k), `${k} appears as a YAML property`);
+  const charger = fm(named(res, "Charger"));
+  assert.match(charger, /^hasPart: \[.*\[\[[^\]]*\|Power Module\]\]/m, "the Charger lists its Power Module by name");
 });
 
 test("file names the browser would refuse never reach the writer: device names with an extension, invisible characters, lone surrogates", async () => {
@@ -289,17 +300,17 @@ test("parts and ports are typed from PDATA1, which holds a GUID (IMP-104, IMP-10
   assert.equal(res.ledger.filter((l) => l.ea_type === "Port" && l.disposition === "deferred_review").length, 0);
 });
 
-test("D-0099: untyped, added and unmapped findings are one callout per kind on a note, listing each item", async () => {
+test("D-0106: untyped, added and unmapped findings are lines above the SysML block, never flags", async () => {
   const res = await run();
-  let lists = 0;
+  let lines = 0;
   for (const f of res.files) {
     if (f.bytes || !/\.md$/i.test(f.path)) continue;
-    const titles = [...f.content.matchAll(/^> \[!flagLink\] (.*)$/gm)].map((m) => m[1]!);
-    assert.ok(!titles.some((t) => /^(Untyped|Unmapped) |^Port `.*` added from/.test(t)), `${f.path}: old one-per-item title`);
-    for (const k of ["written without a type", "added from an assembly", "not written to SysML"]) assert.ok(titles.filter((t) => t.endsWith(k)).length <= 1, `${f.path}: ${k} twice`);
-    for (const m of f.content.matchAll(/^> \[!flagLink\] (\d+) \w+ (?:written without a type|added from an assembly|not written to SysML)\n((?:> .*\n?)*)/gm)) { lists++; assert.equal((m[2]!.match(/^> - /gm) ?? []).length, +m[1]!, "the number in the title is the number of items listed"); }
+    const titles = [...f.content.matchAll(/^> \[!flag\w+\] (.*)$/gm)].map((m) => m[1]!);
+    assert.ok(!titles.some((t) => /written without a type|added from an assembly|not written to SysML|^(Untyped|Unmapped) /.test(t)), `${f.path}: a flag for a part or port`);
+    const src = (f.content.split("## Source: EA")[1] ?? "").split("## SysML v2")[0]!;
+    lines += (src.match(/^- (Item flow|Port|Part|Action|State|Element) .*(is written without a type|was added from an assembly|has no Signal|not written)/gm) ?? []).length;
   }
-  assert.ok(lists > 0, "the fixture has at least one");
+  assert.ok(lines > 0, "the fixture has at least one");
 });
 
 test("D-0100: a Part inside a Part usage is written on the block that Part points at, not held by the usage", async () => {
@@ -320,7 +331,7 @@ test("a Port under a Part is the block's own port: PDATA3, same name, or added (
   const ev = res.ledger.filter((l) => l.ea_type === "Port").map((l) => l.evidence).join("|");
   assert.match(ev, /merged into Controller\.ctrlIn by PDATA3/); assert.match(ev, /merged into Controller\.ctrlOut by SAME_NAME/); assert.match(ev, /Controller\.spare by ADDED/);
   const note = named(res, "Controller", 1).content;
-  assert.match(note, /\[!flagLink\] 1 port added from an assembly/); assert.match(note, /- port `spare`/);
+  assert.doesNotMatch(note, /\[!flag\w+\] .*added from an assembly/); assert.match(note, /^- Port spare \(EA Port "[^"]*"\) was added from an assembly/m);
 });
 
 test("connectors on Parts act on the Part's block and connect through the Parts (IMP-108, IMP-109)", async () => {
@@ -449,4 +460,23 @@ test("a translated note's file is its id; name, aliases and partNumber are prope
   assert.equal(m.partNumber, "SYN-CTRL-1");
   assert.ok(!/^- EA alias:/m.test(c.content) && !/^- Name:/m.test(c.content), "name and alias are not repeated in Source");
   assert.match(c.content, /^# Controller$/m);
+});
+
+test("D-0108: the YAML relationships and the SysML block are one relationship in the Workbench, not two", async () => {
+  const { buildIndex } = await import("../../workbench/src/index.ts");
+  const res = await run(), files = new Map<string, string>();
+  for (const f of res.files) if (!f.bytes && /\.md$/.test(f.path)) files.set(f.path, f.content);
+  const ix = buildIndex(files, { classes });
+  const twice = new Map<string, number>();
+  for (const e of ix.edges) if (e.to) { const k = `${e.from}|${e.kind}|${e.to}`; twice.set(k, (twice.get(k) ?? 0) + 1); }
+  const via = ix.edges.filter((e) => e.via === "yaml" && ["hasPart", "hasPort", "satisfies", "specializes", "performs", "allocatedTo", "includes"].includes(e.kind));
+  assert.deepEqual(via.map((e) => `${e.from} ${e.kind} ${e.to}`), [], "a relationship the SysML block says is not added again from the YAML");
+});
+
+test("D-0108: notes that say the same thing are listed for merging, not flagged", async () => {
+  const res = await run();
+  const f = res.files.find((x) => x.path.endsWith("Review - Possible Merges.csv"));
+  assert.ok(f, "the list is written with the other review files");
+  assert.match(f!.content.split("\n")[0]!, /^group,why,id,path,name,type,subtype,ea_guid/);
+  for (const x of res.files) if (!x.bytes && /\.md$/.test(x.path)) assert.doesNotMatch(x.content, /Possible Merges|\[!flag\w+\] .*identical/);
 });

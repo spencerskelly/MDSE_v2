@@ -91,7 +91,7 @@ interface Draft {
   key: string; o: EaObject; family: string; entry: ElementEntry; type: string; subtype: string; evidence: string[];
   title: string; uid: string; id: string; baseName: string; path: string; ownDir: string | null; parent: Draft | null; children: Draft[];
   keyword: string | null; pkg: string; ident: string; symbol: string; specializes: Draft[]; usages: UsageRef[];
-  flags: string[]; sourceLines: string[]; describes: string[]; links: Array<[string, Draft]>; existingPath?: string; pkgPath: string[]; members: string[]; verifies: string[];
+  flags: string[]; sourceLines: string[]; describes: string[]; links: Array<[string, Draft]>; /** D-0108: relationships written in the SysML block, repeated as YAML properties so a person or an AI can read them without the symbols */ rels: Array<[string, Draft]>; existingPath?: string; pkgPath: string[]; members: string[]; verifies: string[];
 }
 
 const LEDGER_ORDER = ["t_package", "t_object", "t_connector"];
@@ -188,7 +188,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       if (!cls || !o.classes[cls.type]) { set(r, "error", "", "NO_CLASS_FOR_FAMILY"); problems.push(`element ${e.id} ${key}: no MDSE class`); return; }
       const kw = en.native_kind ? (en.native_kind === "InterfaceDefinition" ? "port def" : DEFINITION_KINDS[en.native_kind] ?? null) : null;   // IMP-104: an EA interface Class is what ports are typed by, so it is a port def
       const title = e.name.trim() || e.alias.trim() || `Unnamed ${e.id}`;
-      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(spellOut(title)), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], links: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
+      const d: Draft = { key: `o:${e.id}`, o: e, family: key, entry: en, type: cls.type, subtype: cls.subtype, evidence: cls.evidence, title, uid: "", id: "", baseName: "", path: "", ownDir: null, parent: null, children: [], keyword: kw && o.emitNative ? kw : null, pkg: "", ident: sysmlIdent(spellOut(title)), symbol: "", specializes: [], usages: [], flags: [], sourceLines: [], describes: [], links: [], rels: [], pkgPath: pkgPath(e.packageId), members: [], verifies: [] };
       for (const c of en.conditional_evidence) d.evidence.push("REVIEW:" + c);
       drafts.push(d); byObj.set(e.id, d); return;
     }
@@ -253,13 +253,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   // D-0099: findings of one kind on one note are one callout that lists them, not one callout each. The items stay in the ledger one row each.
   const GROUPS = { untyped: ["written without a type", "These EA elements have no resolvable type of the right kind. Each is written without one:"], added: ["added from an assembly", "These EA Ports sit on a Part of this block and no port on the block matches them (no PDATA3 target, no unique same name). Each is written on the block as its own port. Review them:"], unmapped: ["not written to SysML", "These EA elements could not be written to SysML. Each has a ledger row with the reason:"] } as const;
   const grouped = new Map<Draft, Map<keyof typeof GROUPS, string[]>>();
-  const flagGroup = (d: Draft, kind: keyof typeof GROUPS, line: string): void => { const m = grouped.get(d) ?? grouped.set(d, new Map()).get(d)!; (m.get(kind) ?? m.set(kind, []).get(kind)!).push(line); };
-  const flushGroups = (): void => {
-    for (const [d, m] of grouped) for (const [kind, lines] of m) {
-      const [what, intro] = GROUPS[kind], n = lines.length;
-      d.flags.push(flagCallout("flagLink", `${n} ${kind === "added" ? `port${n === 1 ? "" : "s"}` : kind === "unmapped" ? `element${n === 1 ? "" : "s"}` : `usage${n === 1 ? "" : "s"}`} ${what}`, sourceLink, [intro, ...lines]));
-    }
-  };
+  // D-0106: nothing about a part or port that could not be written exactly is a flag; it is a line in the note's EA section, right above the SysML block.
+  const flagGroup = (d: Draft, kind: keyof typeof GROUPS, line: string): void => { if (kind === "unmapped") return; if (!d.sourceLines.includes(line)) d.sourceLines.push(line); };
+  const flushGroups = (): void => { /* D-0106: lines are written as they are found; no callouts */ };
   const ownerKeyword: Record<string, string[]> = { PartUsage: ["part def"], PortUsage: ["part def"], ActionUsage: ["action def", "verification def", "state def"], StateUsage: ["state def"], SyncNode: ["action def", "verification def", "state def"] };   // a verification case is an action; a state owns actions (entry, do, exit)
   // IMP-105: PDATA1/2/3 hold the GUID of another element ({...}); a plain number is accepted too.
   const byGuid = new Map<string, EaObject>(g.objects.map((x) => [x.guid.toLowerCase(), x] as const));
@@ -269,6 +265,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const phase = (u: { o: EaObject; entry: ElementEntry }): number => (u.entry.native_kind === "ItemUsage" ? 3 : u.entry.native_kind === "PortUsage" ? (isInstancePort(u.o) ? 2 : 1) : 0);
   usageObjs.sort((a, b) => phase(a) - phase(b) || a.o.id - b.o.id);
   const usageByObj = new Map<number, { owner: Draft; ref: UsageRef }>();
+  const flowNameOf = new Map<number, string>();                       // D-0106: an unnamed, untyped port or part takes the name of the first flow item under it
+  for (const x of usageObjs) if (x.entry.native_kind === "ItemUsage" && x.o.name.trim() && !flowNameOf.has(x.o.parentId)) flowNameOf.set(x.o.parentId, x.o.name.trim());
   const tagDispOf = new Map(o.tags.tags.map((t) => [t.tag, t.disposition] as const));
   const carrierOf = new Map<number, number>();                      // instance port (EA Port under a Part) -> that Part
   const partIndex = new Map<string, number>();
@@ -289,7 +287,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     ownerDef.usages.push(ref); usageByObj.set(e.id, { owner: ownerDef, ref });
     set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the PDATA1 type to the Signal this flow carries");
     u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
-    if (!typed) flagGroup(ownerDef, "untyped", `- flow item \`${name}\`: the EA FlowProperty \`${e.name}\` has no Signal as its type`);
+    if (!typed) flagGroup(ownerDef, "untyped", `- Item flow ${name} (EA FlowProperty "${e.name}") has no Signal as its type`);
   };
   // IMP-106 (V1 W-114): a Port under a Part is the Part's block's own port. Merge it by PDATA3, else by a unique same name, else add it to the block.
   const instancePort = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
@@ -313,7 +311,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         const name = scopeOf(block).take(usageIdent(/^\d+$/.test(eaName) && typePort ? `${typePort.title} ${eaName}` : eaName || typePort?.title || "", `port${e.id}`), typePort?.title ?? "");
         ref = { kind: "port", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
         block.usages.push(ref); if (eaName) addedPorts.set(key, ref); added = true; how = "ADDED";
-        flagGroup(block, "added", `- port \`${name}\` (EA Port \`${eaName || "(unnamed)"}\`)`);
+        flagGroup(block, "added", `- Port ${name} (EA Port "${eaName || "(unnamed)"}") was added from an assembly; no port on this block matches it`);
       }
     }
     if (typePort) { if (!ref.typeDraft) { ref.typeDraft = typePort; ref.typedBy = typePort.title; } else if (ref.typeDraft !== typePort) block.sourceLines.push(`- Port ${ref.name} is also typed ${lk(typePort)} on a Part`); }
@@ -361,8 +359,8 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       else { diag = kind === "PartUsage" ? "UNRESOLVED_PART_TYPE" : kind === "PortUsage" ? "UNRESOLVED_PORT_TYPE" : "UNRESOLVED_ACTION_TYPE"; if (target) diag += `:TARGET_IS_${(target.keyword ?? "NOTE").replace(" ", "_").toUpperCase()}`; }
     }
     // IMP-110: a usage with no name of its own takes the name of its typed element (EA created these when the element was added as a part)
-    const rawName = (e.name || e.alias || "").trim(), wantRaw = /^\d+$/.test(rawName) && ref.typeDraft ? `${ref.typeDraft.title} ${rawName}` : rawName || ref.typeDraft?.title || "";   // IMP-124: a bare number is named after its type (`wire1`), not `_1`
-    let wantId = usageIdent(wantRaw, `${kind.replace("Usage", "").toLowerCase()}${e.id}`);
+    const rawName = (e.name || e.alias || "").trim(), wantRaw = /^\d+$/.test(rawName) && ref.typeDraft ? `${ref.typeDraft.title} ${rawName}` : rawName || ref.typeDraft?.title || flowNameOf.get(e.id) || "";   // D-0106: a name, else its type, else the first flow it carries, else just "port" or "part"   // IMP-124: a bare number is named after its type (`wire1`), not `_1`
+    let wantId = usageIdent(wantRaw, kind.replace("Usage", "").toLowerCase());
     if (kind === "PartUsage" && !rawName && ref.typeDraft) { const key = `${owner.key}|${ref.typeDraft.key}`, n = (partIndex.get(key) ?? 0) + 1; partIndex.set(key, n); wantId = usageIdent(ref.typeDraft.title, "part") + n; }   // IMP-127: a part with no role name of its own is its type and an index: `wire1`, `wire2`
     const name = scopeOf(owner).take(wantId, ref.typeDraft?.title ?? "");
     ref.name = name;
@@ -380,7 +378,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag ?? "", diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
     if (pushedFrom) { owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} sat in the Part ${pushedFrom.name.trim() ? "\"" + pushedFrom.name.trim() + "\"" : "(unnamed)"} in EA; it is written here, on the block that Part points at (D-0100)`); u.row.evidence = [u.row.evidence, `merged into ${owner.title} (pushed up from the Part usage ${pushedFrom.name.trim() || pushedFrom.id})`].filter(Boolean).join("; "); if (!u.row.diagnostic_code) u.row.diagnostic_code = "PUSHED_UP_TO_BLOCK"; }
-    if (diag.startsWith("UNRESOLVED")) flagGroup(owner, "untyped", `- ${ref.kind} \`${name}\`: the EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag})`);
+    if (diag.startsWith("UNRESOLVED")) flagGroup(owner, "untyped", `- ${ref.kind[0]!.toUpperCase()}${ref.kind.slice(1)} ${name} (EA ${u.o.type}${e.name.trim() ? ` "${e.name.trim()}"` : ""}) is written without a type: no definition of the right kind (${diag})`);
   });
 
   for (const t of triggerObjs) guard("trigger", "t_object", t.o, () => {
@@ -411,7 +409,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const deferredLinks: Array<{ c: EaConnector; code: string; family: string }> = [];
   const hostlessLinks: Array<{ c: EaConnector; code: string; family: string; row: LedgerRow }> = [];
   // IMP-096: what the SysML block says is not repeated in Source: EA. `line` is kept only where it carries something SysML does not (a guard or trigger text).
-  const addStmt = (d: Draft, text: string, line = ""): void => { if (!d.members.includes(text)) d.members.push(text); if (/^- (Succession|Transition) /.test(line) && !d.sourceLines.includes(line)) d.sourceLines.push(line); };
+  const addStmt = (d: Draft, text: string, line = "", rel?: [string, Draft]): void => { if (!d.members.includes(text)) d.members.push(text); if (rel && !d.rels.some(([k, t]) => k === rel[0] && t === rel[1])) d.rels.push(rel); if (/^- (Succession|Transition) /.test(line) && !d.sourceLines.includes(line)) d.sourceLines.push(line); };
   const DEP_WORD: Record<string, string> = { "Dependency:refine": "refines", "Abstraction:Refine": "refines", "Realisation:refine": "refines", "Dependency:trace": "trace", "Abstraction:trace": "trace", Dependency: "dependsOn", Usage: "uses" };
   const DERIVE = new Set(["Realisation:deriveReqt", "Dependency:deriveReqt", "Dependency:RecoveryRequirement", "Abstraction:Derive"]);
   const ALLOCATE = new Set(["Abstraction:allocate", "Usage:Responsibility"]);
@@ -547,7 +545,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "Dependency:satisfy") {
       const req = [src, dst].find((d) => kw(d) === "requirement def"), by = req === src ? dst : src;
       if (!req || !by || !["part def", "action def", "state def"].includes(kw(by))) { if (noteLink()) return; defer("SATISFY_ENDPOINT_KIND"); return; }
-      addStmt(by, `satisfy ${req.symbol};`, srcLine("Satisfies", req)); done(by, "SatisfyRequirementUsage"); return;
+      addStmt(by, `satisfy ${req.symbol};`, srcLine("Satisfies", req), ["satisfies", req]); done(by, "SatisfyRequirementUsage"); return;
     }
     if (key === "Dependency:verify") {
       const ver = [src, dst].find((d) => kw(d) === "verification def"), req = [src, dst].find((d) => kw(d) === "requirement def");
@@ -557,27 +555,27 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     if (ALLOCATE.has(key)) {
       if (!src || !dst || !src.keyword || !dst.keyword) { if (noteLink()) return; defer("ALLOCATE_ENDPOINT_KIND"); return; }
-      addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Allocated to", dst)); done(src, "AllocationUsage"); return;
+      addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Allocated to", dst), ["allocatedTo", dst]); done(src, "AllocationUsage"); return;
     }
     if (key === "Realisation") {
       // IMP-117: the part is found by element type, not by arrow direction (Test_Vault_ Object/Requirement realization decision)
       const pd = src?.keyword === "part def" ? src : dst?.keyword === "part def" ? dst : undefined, other = pd === src ? dst : src;
       if (pd && other?.keyword === "action def") {
         const nm = scopeOf(pd).take(usageIdent(other.title, `action${other.o.id}`));
-        addStmt(pd, `perform action ${nm} : ${other.symbol};`, srcLine("Performs", other)); done(pd, "PerformActionUsage"); return;
+        addStmt(pd, `perform action ${nm} : ${other.symbol};`, srcLine("Performs", other), ["performs", other]); done(pd, "PerformActionUsage"); return;
       }
-      if (pd && other?.keyword === "requirement def") { addStmt(pd, `allocate ${other.symbol} to ${pd.symbol};`, srcLine("Realises", other)); done(pd, "AllocationUsage"); return; }
-      if (src?.keyword === "part def" && dst?.keyword === "part def") { addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Realises", dst)); done(src, "AllocationUsage"); return; }
+      if (pd && other?.keyword === "requirement def") { addStmt(pd, `allocate ${other.symbol} to ${pd.symbol};`, srcLine("Realises", other), ["allocatedTo", pd]); done(pd, "AllocationUsage"); return; }
+      if (src?.keyword === "part def" && dst?.keyword === "part def") { addStmt(src, `allocate ${src.symbol} to ${dst.symbol};`, srcLine("Realises", dst), ["allocatedTo", dst]); done(src, "AllocationUsage"); return; }
       if (noteLink()) return;
       defer("REALISATION_ENDPOINT_KIND"); return;
     }
     if (DERIVE.has(key)) {
       if (src?.keyword !== "requirement def" || dst?.keyword !== "requirement def") { if (noteLink()) return; defer("DERIVE_ENDPOINT_KIND"); return; }
-      addStmt(src, `#derivation connection derive_${dst.symbol.replace(/[^A-Za-z0-9_]/g, "_")} {\n            end #original ::> ${dst.symbol};\n            end #derive ::> ${src.symbol};\n        }`, srcLine("Derived from", dst)); done(src, "Dependency"); return;
+      addStmt(src, `#derivation connection derive_${dst.symbol.replace(/[^A-Za-z0-9_]/g, "_")} {\n            end #original ::> ${dst.symbol};\n            end #derive ::> ${src.symbol};\n        }`, srcLine("Derived from", dst), ["derivedFrom", dst]); done(src, "Dependency"); return;
     }
     if (DEP_WORD[key]) {
       if (!src?.keyword || !dst?.keyword) { if (noteLink()) return; defer("DEPENDENCY_ENDPOINT_KIND"); return; }
-      addStmt(src, DEP_WORD[key] === "refines" ? `#refinement dependency from ${src.symbol} to ${dst.symbol};` : `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst)); done(src, "Dependency"); return;
+      addStmt(src, DEP_WORD[key] === "refines" ? `#refinement dependency from ${src.symbol} to ${dst.symbol};` : `dependency from ${src.symbol} to ${dst.symbol}; // ${DEP_WORD[key]}`, srcLine(`Dependency (${DEP_WORD[key]})`, dst), [DEP_WORD[key]!, dst]); done(src, "Dependency"); return;
     }
     if (key === "Association") {
       // IMP-118: an Actor or Object associated with a Use Case takes part in it. An Actor is an `actor` of the use case (native); another Object goes to the `participants` link. Anything else is not proven to connect.
@@ -660,12 +658,12 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (key === "UseCase:include") {
       if (src?.keyword !== "use case def" || dst?.keyword !== "use case def") { defer("INCLUDE_ENDPOINT_KIND"); return; }
       const nm = scopeOf(src).take(usageIdent(dst.title, `include${dst.o.id}`));
-      addStmt(src, `include use case ${nm} : ${dst.symbol};`, srcLine("Includes", dst)); done(src, "IncludeUseCaseUsage"); return;
+      addStmt(src, `include use case ${nm} : ${dst.symbol};`, srcLine("Includes", dst), ["includes", dst]); done(src, "IncludeUseCaseUsage"); return;
     }
     if (key === "UseCase:extend") {                                  // extension (source) is an optional case of the base (destination)
       if (src?.keyword !== "use case def" || dst?.keyword !== "use case def") { defer("EXTEND_ENDPOINT_KIND"); return; }
       const nm = scopeOf(dst).take(usageIdent(src.title, `extension${src.o.id}`));
-      addStmt(dst, `use case ${nm} : ${src.symbol}[0..1];`, srcLine("Extended by", src)); done(dst, "OptionalUseCaseUsage"); return;
+      addStmt(dst, `use case ${nm} : ${src.symbol}[0..1];`, srcLine("Extended by", src), ["extendedBy", src]); done(dst, "OptionalUseCaseUsage"); return;
     }
     defer(`NATIVE_EMISSION_NOT_IMPLEMENTED:${key}`, `Needs: ${en.required_evidence.join(", ")}`);
   });
@@ -675,6 +673,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   // on a single modelCheck holding note (MOD-056) so nothing is only in the CSV.
   const generated = new Map<string, { path: string; text: string; guid: string; draft: Draft }>();
   const hostlessEls: Array<{ e: EaObject; r: LedgerRow }> = [];
+  const mergeCands: Array<{ d: Draft; reason: string; sig: string }> = [];
   let holdingFlags = 0;
   for (const e of g.objects) {
     const r = objRow.get(e.id); if (!r || r.disposition !== "deferred_review") continue;
@@ -682,7 +681,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     while (!host && cur && !seen.has(cur.id)) { seen.add(cur.id); host = byObj.get(cur.parentId) ?? usageByObj.get(cur.parentId)?.owner; cur = g.objectsById.get(cur.parentId); }
     if (!host) { hostlessEls.push({ e, r }); continue; }
     const label = `${e.type}${e.stereotype ? ":" + e.stereotype : ""}`, nm = e.name.trim() || e.alias.trim() || `object ${e.id}`;
-    host.sourceLines.push(`- Element ${label} \`${nm}\` not written (${r.diagnostic_code})`);
+    host.sourceLines.push(`- Element ${label} \`${nm}\` not written (${r.diagnostic_code}): ${(r.operator_action || "see the ledger row").replace(/\.$/, "")}; EA GUID ${e.guid}`);
     flagGroup(host, "unmapped", `- ${label} \`${nm}\` (${r.diagnostic_code}): ${(r.operator_action || "see the ledger row").replace(/\.$/, "")}; EA GUID ${e.guid}`);
     r.target_stable_id = host.id; r.target_file = host.path;
   }
@@ -699,9 +698,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const path = known?.path ?? `${claim("Unplaced Review Items")}.md`;
     const lname = (id: number): string => g.objectsById.get(id)?.name || `object ${id}`;
     const linkFlags = hostlessLinks.map(({ c, code, family }) => flagCallout("flagLink", `Unresolved ${family} link from ${lname(c.sourceId)} to ${lname(c.destId)}`, sourceLink, [`No native relationship was written (${code}). Neither end has a note. See the ledger row for EA connector ${c.guid}.`]));
-    const flags = linkFlags.concat(hostlessEls.map(({ e, r }) => flagCallout("flagNote", `${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\``, sourceLink,
+    const flags = linkFlags.concat(/* D-0106: unplaced elements are lines, not flags */ hostlessEls.slice(0, 0).map(({ e, r }) => flagCallout("flagNote", `${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\``, sourceLink,
       [`Not written to SysML (${r.diagnostic_code}). ${(r.operator_action || "See the ledger row").replace(/\.$/, "")}. Package: ${pkgPath(e.packageId).join(" > ") || "(root)"}. EA GUID ${e.guid}.`])));
-    const lines = [`- EA GUID: ${guid}`, ...hostlessLinks.map(({ c, code, family }) => `- Connector ${family} from ${lname(c.sourceId)} to ${lname(c.destId)} (unresolved: ${code})`), ...hostlessEls.map(({ e, r }) => `- ${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\` (${r.diagnostic_code}) — EA package: ${pkgPath(e.packageId).join(" > ") || "(root)"}`)];
+    const lines = [`- EA GUID: ${guid}`, ...hostlessLinks.map(({ c, code, family }) => `- Connector ${family} from ${lname(c.sourceId)} to ${lname(c.destId)} (unresolved: ${code})`), ...hostlessEls.map(({ e, r }) => `- ${e.type}${e.stereotype ? ":" + e.stereotype : ""} \`${e.name.trim() || e.alias.trim() || `object ${e.id}`}\` (${r.diagnostic_code}) — EA package: ${pkgPath(e.packageId).join(" > ") || "(root)"}; ${(r.operator_action || "see the ledger row").replace(/\.$/, "")}; EA GUID ${e.guid}`)];
     generated.set(path, { path, guid, draft: undefined as unknown as Draft, text: renderNote({ type: "modelCheck", subtype: "Review", id, uid, eaType: "Review", title: "Unplaced Review Items", relFields: [], bodyText: "Elements and connectors the importer could not place in any note (no mapping, no owner, or no rule). Each has a flag below and a row in Review - Deferred Elements.csv. Decide each one, then remove its flag.", flags, sourceLines: lines, sysml: null }) });
     holdingFlags = flags.length;
     for (const r of [...hostlessEls.map((x) => x.r), ...hostlessLinks.map((x) => x.row)]) { r.target_stable_id = id; r.target_file = path; }
@@ -712,6 +711,12 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const relFieldsOf = (d: Draft): Array<[string, string[]]> => {
     const f = new Map<string, string[]>(); if (d.describes.length) f.set("describes", [...d.describes]);
     for (const [k, t] of d.links) { const l = f.get(k) ?? []; if (!l.includes(lkRaw(t))) l.push(lkRaw(t)); f.set(k, l); }
+    // D-0108: what the SysML block says about this note, as YAML a person or an AI can read. The names are the Workbench's relationship kinds, so the two are one relationship, not two.
+    const USAGE_FIELD: Record<string, string> = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow" };
+    const add = (k: string, t: Draft): void => { if (t === d) return; const l = f.get(k) ?? []; if (!l.includes(lkRaw(t))) l.push(lkRaw(t)); f.set(k, l); };
+    for (const t of d.specializes) add("specializes", t);
+    for (const u of d.usages) if (u.typeDraft && USAGE_FIELD[u.kind]) add(u.isRef ? "references" : USAGE_FIELD[u.kind]!, u.typeDraft);
+    for (const [k, t] of d.rels) add(k, t);
     return [...f].map(([k, v]) => [k, [...new Set(v)]] as [string, string[]]);
   };
   let blocks = 0, flagCount = holdingFlags;
@@ -757,8 +762,12 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (sysml) blocks++;
     flagCount += d.flags.length;
     const model: NoteModel = { type: d.type, subtype: d.subtype, id: d.id, uid: d.uid, eaType: d.family, title: d.title, ...(e.name.trim() || e.alias.trim() ? { name: d.title } : {}), ...(e.alias.trim() && e.name.trim() && e.alias.trim() !== e.name.trim() ? { aliases: [e.alias.trim()] } : {}), ...(partNumber ? { partNumber } : {}), relFields: relFieldsOf(d),
-      bodyText: [isReq ? "" : e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
+      bodyText: [isReq ? reqText : e.note.trim(), bodyExtra.trim()].filter(Boolean).join("\n\n"), flags: d.flags, sourceLines: src, sysml, ...(sysml ? { sourceRole: "authoritative-model", primarySymbol: d.symbol } : {}) };
     generated.set(d.path, { path: d.path, text: renderNote(model), guid: e.guid, draft: d });
+    // D-0108: notes that say the same thing are listed for merging (Review - Possible Merges.csv); nothing is flagged or merged here
+    { const norm = (x: string): string => x.toLowerCase().replace(/\s+/g, " ").trim(), own = new RegExp(d.pkg.replace(/[^A-Za-z0-9_]/g, "."), "g"), body = norm(model.bodyText);
+      if (isReq && reqText.trim()) mergeCands.push({ d, reason: "same requirement text", sig: `req|${norm(reqText)}` });
+      if (d.keyword || sysml) mergeCands.push({ d, reason: "same type, name, text and SysML", sig: `all|${d.type}|${d.subtype}|${norm(d.title)}|${body}|${norm((sysml ?? "").replace(own, "SELF"))}` }); }
     const r = objRow.get(e.id)!;
     set(r, "native", d.keyword ? d.entry.native_kind! : `MdseNote:${d.type}`, d.evidence[0] ?? ""); r.target_stable_id = d.id; r.target_file = d.path; r.evidence = d.evidence.join(";");
   });
@@ -795,6 +804,11 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const linksCsv = csv(["ea_guid", "family", "source_name", "source_guid", "target_name", "target_guid", "direction", "connector_name", "diagnostic_code", "source_type", "target_type", "source_parent", "target_parent"],
     deferredLinks.map(({ c, code, family }) => { const a = ctx(c.sourceId), b = ctx(c.destId), pa = ctx(g.objectsById.get(c.sourceId)?.parentId ?? 0), pb = ctx(g.objectsById.get(c.destId)?.parentId ?? 0);
       return [c.guid, family, named(c.sourceId), a.guid, named(c.destId), b.guid, c.direction, c.name, code, a.type, b.type, pa.name ? `${pa.name} (${pa.type})` : "", pb.name ? `${pb.name} (${pb.type})` : ""]; }));
+  const mergeGroups = new Map<string, Draft[]>();
+  for (const c of mergeCands) { const k = c.reason + "\u0000" + c.sig; (mergeGroups.get(k) ?? mergeGroups.set(k, []).get(k)!).push(c.d); }
+  const mergeRows: string[][] = []; let mg = 0;
+  for (const [k, list] of [...mergeGroups].filter(([, l]) => l.length > 1).sort((a, b) => a[0] < b[0] ? -1 : 1)) { mg++; for (const m of list) mergeRows.push([`M${String(mg).padStart(4, "0")}`, k.split("\u0000")[0]!, m.id, m.path, m.title, m.type, m.subtype, m.o.guid]); }
+  const mergesCsv = csv(["group", "why", "id", "path", "name", "type", "subtype", "ea_guid"], mergeRows);
   const manifest = { schema: "mdse-run-manifest/0.1", runDate: o.runDate, source: { name: o.sourceName, lineage: o.lineage, sha256: o.fingerprint }, importerRelease: o.releaseVersion, mappingSchema: resolver.version,
     counts: { t_package: g.counts.t_package, t_object: g.counts.t_object, t_connector: g.counts.t_connector, t_objectproperties: g.counts.t_objectproperties }, dispositions, notes: generated.size, sysmlBlocks: blocks, flags: flagCount, problems, errors: errors.length, attachments: attachRows, translation: "Translation Table.md",
     nativeEmission: o.emitNative ? "ON (owner override of emission_enabled=false, D-0016); blocks not parser-checked" : "OFF", diagrams: "never read (ADR-V2-05)" };
@@ -806,7 +820,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const sysFiles: OutFile[] = [];
   if (plan.changed || !existing) {
     sysFiles.push(sys("Ledger.csv", csv([...LEDGER_COLUMNS], ledger.map((l) => LEDGER_COLUMNS.map((k) => l[k])))), sys("Run Manifest.json", JSON.stringify(manifest, null, 2) + "\n"),
-      sys("Review - Deferred Elements.csv", elementsCsv), sys("Review - Deferred Links.csv", linksCsv),
+      sys("Review - Deferred Elements.csv", elementsCsv), sys("Review - Deferred Links.csv", linksCsv), sys("Review - Possible Merges.csv", mergesCsv),
       sys("Parser Check.md", `# Parser Check\n\nStatus: **NOT RUN**. ${blocks} SysML v2 block(s) were generated in this run and none has been checked by the pinned parser.\nThe parser gate runs in CI or on a maintainer's machine, not in the importer page (MOD-139). Workbench must show these blocks as unchecked.\n`));
     if (!existing) sysFiles.push(sys("Translation Table.md", renderTranslationDoc(o.mapping)));
     if (!existing) sysFiles.push(sys(`Import Run ${runLabel}.md`, runNote(o, g, dispositions, blocks, flagCount, problems, generated.size, warnings)));
