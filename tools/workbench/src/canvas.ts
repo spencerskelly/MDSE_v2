@@ -4,7 +4,7 @@
 import type { Edge, EdgeRef, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
 import type { Profile, ViewSpec } from "./views.ts";
-import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault } from "./views.ts";
+import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault, internalStructure } from "./views.ts";
 
 /** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
 export const EDGE_REF_SEP = "~r~";
@@ -14,9 +14,9 @@ export function edgeRefOfId(id: string): EdgeRef | null {
   try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r as EdgeRef : null; } catch { return null; }
 }
 export interface CanvasNode { id: string; type: "file" | "text" | "group"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string; label?: string }
-export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow"; label?: string; color?: string }
+export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow" | "none"; label?: string; color?: string }
 export interface CanvasDoc { nodes: CanvasNode[]; edges: CanvasEdge[] }
-export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number }
+export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number; /** the folder a Save offers first: the folder of the note the canvas is about (D-0097) */ saveFolder?: string; /** ports drawn only because the definition has none (D-0097) */ placeholders?: number }
 
 /** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
 export const PREVIEW_DIR = "99_System/22_Views";
@@ -50,6 +50,8 @@ export function cardName(n: { title: string; id: string; meta: Record<string, un
 }
 /** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
 export const RETIRED_COLOR = "1";
+/** The cards and lines of an internal-structure canvas (D-0097) have ids that start `ic`, `ip` or `iw`. Refresh, Auto-layout, Collapse and Add to canvas leave them alone: their place and text are the picture. */
+export const isInternalId = (id: string): boolean => /^i[cpw]\d+$/.test(id);
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
   const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
@@ -189,7 +191,7 @@ const LAYER: Record<string, number | undefined> = { "Use Case": 0, Requirement: 
 export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | null, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map<string, CanvasNode>();
-  for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
+  for (const n of out.nodes) { if (isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
   const fresh = [...new Set(paths)].filter((p) => ix.notes.has(p) && !onCanvas.has(p)), present = new Set(paths.filter((p) => onCanvas.has(p))).size;
   if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
   const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
@@ -267,7 +269,7 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
 /** Puts notes on a canvas as one row directly below a parent's card (D-0090), nearest the parent's centre first, each joined by a line from the bottom of the parent to its top. A card that is already on the canvas stays where it is and only gets its line. A slot that another card holds is skipped along the same row. The parent is added first when it is not there. */
 export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, paths: string[], opts: { relations?: boolean } = {}): { doc: CanvasDoc; added: number; present: number; lineIds: string[] } {
   let cur: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) }, extra = 0;
-  const find = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+  const find = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && !isInternalId(n.id) && cardNotePath(n) === p);
   if (!ix.notes.has(parent)) return { doc: cur, added: 0, present: 0, lineIds: [] };
   if (!find(cur, parent)) { const r = addToCanvas(cur, ix, null, [parent], { relations: false }); cur = r.doc; extra = r.added; }
   const pc = find(cur, parent)!, kids = [...new Set(paths)].filter((p) => p !== parent && ix.notes.has(p)).sort((a, b) => ix.notes.get(a)!.title.localeCompare(ix.notes.get(b)!.title) || a.localeCompare(b));
@@ -311,7 +313,7 @@ const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
 export const isCollapsed = (n: CanvasNode | undefined): boolean => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
 const cvMark = (n: CanvasNode, count: number): void => { n.text = (n.text ?? "").replace(CV_COLLAPSE_RE, ""); if (count > 0) { n.text += `<br><small>▸ +${count} hidden</small>`; n.height = Math.max(n.height, H + 24); } };
 const cvParts = (ix: ModelIndex, p: string): string[] => [...new Set(ix.edges.filter((e) => e.kind === "hasPart" && e.to && !e.reverse && e.from === p && e.to !== p && ix.notes.has(e.to)).map((e) => e.to!))];
-const cvFind = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+const cvFind = (d: CanvasDoc, p: string): CanvasNode | undefined => d.nodes.find((n) => n.type !== "group" && !isInternalId(n.id) && cardNotePath(n) === p);
 
 /** Removes cards from a canvas with their lines (D-0095). A card in `gone` stays, with everything that hangs only below it, when a line joins it to a card that is neither in `gone` nor in `owners` (the cards whose part lines may go with it): another shown assembly, a line the person drew. Returns how many cards were removed. */
 function cvPrune(out: CanvasDoc, gone: Set<string>, owners: Set<string>): number {
@@ -413,7 +415,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
   let redrawn = 0, missing = 0;
   const cardOf = new Map<string, CanvasNode>();
   for (const n of out.nodes) {
-    if (n.type === "group") continue;
+    if (n.type === "group" || isInternalId(n.id)) continue;
     const p = cardNotePath(n); if (!p) continue;
     if (!ix.notes.has(p)) {
       if (n.type === "text" && n.color !== RETIRED_COLOR) { n.color = RETIRED_COLOR; redrawn++; }
@@ -461,7 +463,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
 export function autoLayout(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; moved: number; kept: number } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const node = new Map<string, CanvasNode>();
-  for (const n of out.nodes) { if (n.type === "group") continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
+  for (const n of out.nodes) { if (n.type === "group" || isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
   const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
   if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
   const title = (p: string): string => ix.notes.get(p)!.title, typeOf = (p: string): string => ix.notes.get(p)!.type;
@@ -516,6 +518,72 @@ export function autoLayout(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; mo
   const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
   for (const e of out.edges) { const a = byId.get(e.fromNode), b = byId.get(e.toNode); if (a && b && done.has(a.id) && done.has(b.id)) Object.assign(e, sideOf(a, b)); }
   return { doc: out, moved, kept: out.nodes.length - node.size };
+}
+
+/** The internal structure of one definition as a canvas (D-0097). The note is one large card; each part is a card inside it; each port is a small card on the edge of the card that owns it, half in and half out. Every object has at least one port: where a definition or a part's type has none, a placeholder "no port" card is drawn so there is always an edge to connect to, and nothing is written to the vault. Wires (connect, bind, flow) are lines between port cards. Parts that a wire joins sit a related gap apart, others the unrelated gap (D-0096). Cards are laid out once; the person moves them by hand afterwards, and Refresh, Auto-layout and Collapse leave them where they are. At most MAX_PARTS parts. */
+export const MAX_PARTS = 60;
+export function internalCanvas(ix: ModelIndex, path: string): CanvasResult {
+  const note = ix.notes.get(path);
+  if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
+  const r = internalStructure(ix, path), PW = 360, PORT_W = 180, PORT_H = 40, STEP = PORT_H + 16, TOP = 72, PAD_X = 260, PAD_TOP = 120, PAD_BOTTOM = 80;
+  const clip = (t: string): string => t.replace(/[|[\]\n]/g, " ").replace(/\s+/g, " ").trim();
+  const link = (p: string | null, label: string): string => (p ? `[[${p.replace(/\.md$/i, "")}|${clip(label)}]]` : clip(label));
+  const parts = r.parts.slice(0, MAX_PARTS), capped = r.parts.length > MAX_PARTS;
+  type PortSpec = { label: string; path: string | null; none: boolean };
+  const portText = (q: { name: string; type: string; path: string | null; conj: boolean }): PortSpec => ({ label: `${q.name}${q.type ? " : " + (q.conj ? "~" : "") + (ix.notes.get(q.path ?? "")?.title ?? q.type) : ""}`, path: q.path, none: false });
+  const placeholder: PortSpec = { label: "no port", path: null, none: true };
+  let placeholders = 0, unresolved = 0;
+  const specsOf = (list: Array<{ name: string; type: string; path: string | null; conj: boolean }>): PortSpec[] => { if (list.length) return list.map(portText); placeholders++; return [placeholder]; };
+  const sideCount = (n: number): number => Math.ceil(n / 2);
+  const heightFor = (ports: number, min: number): number => Math.max(min, TOP + sideCount(ports) * STEP + 10);
+  // parts: size, and which parts a wire joins
+  const partNames = new Set(parts.map((x) => x.name)), joined = new Set<string>();
+  const partOfEnd = (e: string): string => e.split(".")[0]!;
+  for (const l of r.links) { const a = partOfEnd(l.a.text), b = partOfEnd(l.b.text); if (a !== b && partNames.has(a) && partNames.has(b)) { joined.add(`${a}|${b}`); joined.add(`${b}|${a}`); } }
+  const partPorts = parts.map((x) => specsOf(x.ports)), partH = parts.map((_, i) => heightFor(partPorts[i]!.length, 120));
+  const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(parts.length)))), at: Array<{ x: number; y: number }> = [];
+  let y = PAD_TOP, right = 0, prevNames: string[] = [], prevH = 0;
+  for (let i = 0; i < parts.length; i += cols) {
+    const idx = parts.slice(i, i + cols).map((_, j) => i + j), names = idx.map((k) => parts[k]!.name), rowH = Math.max(...idx.map((k) => partH[k]!));
+    if (prevNames.length) y += prevH + (names.some((a) => prevNames.some((b) => joined.has(`${a}|${b}`))) ? GY : GYU);
+    let x = PAD_X;
+    idx.forEach((k, j) => { if (j) x += PW + (joined.has(`${parts[k - 1]!.name}|${parts[k]!.name}`) ? GX : GXU); at[k] = { x, y }; right = Math.max(right, x + PW); });
+    prevNames = names; prevH = rowH;
+  }
+  const bports = specsOf(r.boundary), cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
+  const nodes: CanvasNode[] = [], edges: CanvasEdge[] = [], portAt = new Map<string, CanvasNode>(), partAt = new Map<string, CanvasNode>();
+  const typeColor = TYPE_COLOR[note.type];
+  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}</small>`, ...(typeColor ? { color: typeColor } : {}) });
+  let k = 1;
+  parts.forEach((x, i) => {
+    const tn = ix.notes.get(x.path ?? ""), color = tn ? TYPE_COLOR[tn.type] : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const c: CanvasNode = { id: `ic${k++}`, type: "text", x: at[i]!.x, y: at[i]!.y, width: PW, height: partH[i]!, text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>`, ...(color ? { color } : {}) };
+    nodes.push(c); partAt.set(x.name, c);
+  });
+  let pk = 1;
+  const putPorts = (owner: CanvasNode, specs: PortSpec[], keyOf: (s: PortSpec) => string, top: number): void => {
+    const used = [0, 0];                                                                             // ports alternate left and right, each down its own edge
+    specs.forEach((sp, i) => {
+      const side = i % 2, row = used[side]!++, px = side === 0 ? owner.x - PORT_W / 2 : owner.x + owner.width - PORT_W / 2;
+      const c: CanvasNode = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label), ...(sp.none ? {} : { color: "5" }) };
+      nodes.push(c); if (!sp.none) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
+    });
+  };
+  parts.forEach((x, i) => putPorts(partAt.get(x.name)!, partPorts[i]!, (s) => `${x.name}.${s.none ? "" : s.label.split(" :")[0]}`, TOP));
+  putPorts(nodes[0]!, bports, (s) => (s.none ? "" : s.label.split(" :")[0]!), PAD_TOP - 20);
+  const cardOfEnd = (e: string): CanvasNode | undefined => {
+    const segs = e.split(".");
+    if (segs.length === 1) return portAt.get(segs[0]!) ?? partAt.get(segs[0]!);
+    return segs.length === 2 ? portAt.get(`${segs[0]}.${segs[1]}`) : undefined;
+  };
+  let w = 0;
+  for (const l of r.links) {
+    const a = cardOfEnd(l.a.text), b = cardOfEnd(l.b.text);
+    if (!a || !b || a === b) { unresolved++; continue; }
+    edges.push({ id: `iw${w++}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: l.kind === "flow" ? "arrow" : "none", label: [l.kind === "connect" ? "" : l.kind, l.name || (l.viaPath ? ix.notes.get(l.viaPath)?.title ?? l.via : l.via)].filter(Boolean).join(" ").slice(0, 60) });
+  }
+  const folder = note.path.includes("/") ? note.path.slice(0, note.path.lastIndexOf("/")) : "";
+  return { doc: { nodes, edges }, notes: 1 + parts.length, unresolved, capped, fileName: `Internal - ${safe(note.title)}.canvas`, groups: 0, hidden: 0, saveFolder: folder, placeholders };
 }
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */

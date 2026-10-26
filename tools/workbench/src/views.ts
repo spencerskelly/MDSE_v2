@@ -405,19 +405,28 @@ export function reviewQueue(ix: ModelIndex): ReviewItem[] {
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
     for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }
+  const np = objectsWithoutPort(ix);
+  if (np) out.push({ severity: "low", category: "objects-without-port", path: "", message: `${np} object${np === 1 ? " has" : "s have"} no port; the internal structure canvas shows a placeholder port for each (nothing is written to the vault)` });
   for (const d of ix.duplicates) out.push({ severity: "high", category: "duplicate-id", path: "", message: d });
   const rank = { high: 0, medium: 1, low: 2 };
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || a.category.localeCompare(b.category) || a.path.localeCompare(b.path));
 }
 
-export interface Dashboard { notes: number; blocks: number; byType: Array<[string, number]>; byStatus: Array<[string, number]>; flags: Array<[string, number]>; edgeKinds: Array<[string, number]>; dangling: number; orphans: number; warnings: number; parser: string; skipped: number; requirements: { total: number; satisfied: number; verified: number } }
+/** D-0097: Object notes (definitions) with no port of their own. Counted, never an error; the internal canvas draws a placeholder port for each. */
+export function objectsWithoutPort(ix: ModelIndex): number {
+  let k = 0;
+  for (const n of ix.notes.values()) if (n.type === "Object" && !n.meta.mergedInto && !outgoing(ix, n.path).some((e) => e.kind === "hasPort")) k++;
+  return k;
+}
+
+export interface Dashboard { notes: number; blocks: number; byType: Array<[string, number]>; byStatus: Array<[string, number]>; flags: Array<[string, number]>; edgeKinds: Array<[string, number]>; dangling: number; orphans: number; noPort: number; warnings: number; parser: string; skipped: number; requirements: { total: number; satisfied: number; verified: number } }
 export function dashboard(ix: ModelIndex): Dashboard {
   const count = (f: (n: Note) => string[]): Array<[string, number]> => { const m = new Map<string, number>(); for (const n of ix.notes.values()) for (const k of f(n)) m.set(k, (m.get(k) ?? 0) + 1); return [...m].sort((a, b) => b[1] - a[1]); };
   const t = traceMatrix(ix);
   let orphans = 0, warnings = 0;
   for (const n of ix.notes.values()) { if (!outgoing(ix, n.path).length && !incoming(ix, n.path).length) orphans++; warnings += n.warnings.length; }
   return { notes: ix.notes.size, blocks: [...ix.notes.values()].filter((n) => n.block).length, byType: count((n) => [n.type]), byStatus: count((n) => [n.status || "(none)"]), flags: count((n) => n.flags.map((f) => f.type)),
-    edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
+    edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, noPort: objectsWithoutPort(ix), warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
 }
 
 export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
@@ -482,7 +491,7 @@ export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
-export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
+export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
 export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }

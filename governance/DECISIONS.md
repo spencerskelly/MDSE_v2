@@ -1125,3 +1125,15 @@ Rules: WKB-044 (Active).
 5. **Limits.** Only notes count. Cards that are not notes (free text, groups, "not in vault") are kept one width or height from everything. A canvas already saved keeps its layout until Auto-layout is run on it. "Related" counts only relationships in the vault, not lines the person drew on the canvas. The constants are `SPACING` (3) and `SPACING_UNRELATED` (1) in `canvas.ts`; there is still no setting in the panel.
 
 Rules: WKB-030 (changed).
+
+## D-0097 — Internal structure canvas: parts inside the note, ports on its edge, one saved view per object
+
+2026-10-25 · Spencer · Accepted (owner, chat: "For any object, we should have at least one port. A port should appear on the edge of a note in the canvas. A part should appear inside the note in the canvas. Internal views will need to be modified after autoplacement, so each one might be saved, default to the same folder as the object"; at-least-one-port answered "Draw a placeholder port")
+
+1. **Picture.** The Internal structure lens has a canvas. The selected note is one large card (its link, "internal structure · N parts"); each part is a card inside it, typed parts linking their type's note. Each port is a small card centred on the left or right edge of the card that owns it, so it is half in and half out. Ports of the note itself sit on the large card's edge. Wires (connect, bind: no arrowhead; flow: arrowhead) run between port cards. A wire whose end does not resolve is counted and not drawn.
+2. **At least one port.** An object (the note, or a part's type) with no port gets a placeholder port card, "_no port_", with no colour. Nothing is written to the vault; the placeholder is a picture. The Dashboard shows "objects without a port" and Review lists one low-severity line with the count; it is not an error. A port definition is an Object, so it counts too.
+3. **Layout.** Parts joined by a wire are three card widths apart; other parts one (D-0096). Rows follow the same rule. At most 60 parts are drawn and the canvas says when it is capped.
+4. **Editing and saving.** The result is meant to be rearranged by the person after autoplacement. Refresh canvas, Auto-layout and Collapse/Expand leave its cards (ids `ic*`, `ip*`, `iw*`) alone, and Add to canvas does not treat them as notes. Save canvas offers the object's own folder first, then the usual default and last folders; each save is a separate file `Internal - <name>.canvas` and never overwrites (a counter is added).
+5. **Limits.** Not yet run in real Obsidian; how the straddling port cards look over card text is unverified. Ports of a part come from its type's definition; a part usage with no type shows the placeholder. Moving a card does not write anything back to the model.
+
+Rules: WKB-045, WKB-046 (new).

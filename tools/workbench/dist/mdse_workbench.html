@@ -1242,19 +1242,28 @@ function reviewQueue(ix            )               {
     for (const i of n.issues) out.push({ severity: "high", category: "format:" + i, path: n.path, message: i });
     for (const e of outgoing(ix, n.path)) if (!e.to && e.via === "sysml") out.push({ severity: "medium", category: "unresolved-reference", path: n.path, message: e.reverse ? `${e.kind} from ${e.toSymbol} (source not in vault)` : `${e.kind} → ${e.toSymbol}` });
   }
+  const np = objectsWithoutPort(ix);
+  if (np) out.push({ severity: "low", category: "objects-without-port", path: "", message: `${np} object${np === 1 ? " has" : "s have"} no port; the internal structure canvas shows a placeholder port for each (nothing is written to the vault)` });
   for (const d of ix.duplicates) out.push({ severity: "high", category: "duplicate-id", path: "", message: d });
   const rank = { high: 0, medium: 1, low: 2 };
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || a.category.localeCompare(b.category) || a.path.localeCompare(b.path));
 }
 
-                                                                                                                                                                                                                                                                                                                                                         
+/** D-0097: Object notes (definitions) with no port of their own. Counted, never an error; the internal canvas draws a placeholder port for each. */
+function objectsWithoutPort(ix            )         {
+  let k = 0;
+  for (const n of ix.notes.values()) if (n.type === "Object" && !n.meta.mergedInto && !outgoing(ix, n.path).some((e) => e.kind === "hasPort")) k++;
+  return k;
+}
+
+                                                                                                                                                                                                                                                                                                                                                                         
 function dashboard(ix            )            {
   const count = (f                       )                          => { const m = new Map                (); for (const n of ix.notes.values()) for (const k of f(n)) m.set(k, (m.get(k) ?? 0) + 1); return [...m].sort((a, b) => b[1] - a[1]); };
   const t = traceMatrix(ix);
   let orphans = 0, warnings = 0;
   for (const n of ix.notes.values()) { if (!outgoing(ix, n.path).length && !incoming(ix, n.path).length) orphans++; warnings += n.warnings.length; }
   return { notes: ix.notes.size, blocks: [...ix.notes.values()].filter((n) => n.block).length, byType: count((n) => [n.type]), byStatus: count((n) => [n.status || "(none)"]), flags: count((n) => n.flags.map((f) => f.type)),
-    edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
+    edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, noPort: objectsWithoutPort(ix), warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
 }
 
 function search(ix            , q        , limit = 50)         {
@@ -1319,7 +1328,7 @@ const LENS_GROUPS                                                               
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
-const lensHasCanvas = (l      )          => l === "structure" || l === "functional" || l === "requirements" || l === "tables";
+const lensHasCanvas = (l      )          => l === "structure" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
 const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
                                                                                                                                                    
@@ -1429,9 +1438,9 @@ function edgeRefOfId(id        )                 {
   try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r            : null; } catch { return null; }
 }
                                                                                                                                                                                        
-                                                                                                                                                                                                                 
+                                                                                                                                                                                                                          
                                                                 
-                                                                                                                                               
+                                                                                                                                                                                                                                                                                                                                                       
 
 /** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
 const PREVIEW_DIR = "99_System/22_Views";
@@ -1465,6 +1474,8 @@ function cardName(n                                                             
 }
 /** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
 const RETIRED_COLOR = "1";
+/** The cards and lines of an internal-structure canvas (D-0097) have ids that start `ic`, `ip` or `iw`. Refresh, Auto-layout, Collapse and Add to canvas leave them alone: their place and text are the picture. */
+const isInternalId = (id        )          => /^i[cpw]\d+$/.test(id);
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix            , path        , key        )             {
   const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
@@ -1604,7 +1615,7 @@ const LAYER                                     = { "Use Case": 0, Requirement: 
 function addToCanvas(doc           , ix            , anchor               , paths          , opts                          = {})                                                                        {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const onCanvas = new Map                    ();
-  for (const n of out.nodes) { const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
+  for (const n of out.nodes) { if (isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && !onCanvas.has(p)) onCanvas.set(p, n); }
   const fresh = [...new Set(paths)].filter((p) => ix.notes.has(p) && !onCanvas.has(p)), present = new Set(paths.filter((p) => onCanvas.has(p))).size;
   if (!fresh.length) return { doc: out, added: 0, present, lineIds: [] };
   const taken = new Set(out.nodes.map((n) => n.id)); let k = 0;
@@ -1682,7 +1693,7 @@ function addToCanvas(doc           , ix            , anchor               , path
 /** Puts notes on a canvas as one row directly below a parent's card (D-0090), nearest the parent's centre first, each joined by a line from the bottom of the parent to its top. A card that is already on the canvas stays where it is and only gets its line. A slot that another card holds is skipped along the same row. The parent is added first when it is not there. */
 function addChildren(doc           , ix            , parent        , paths          , opts                          = {})                                                                        {
   let cur            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) }, extra = 0;
-  const find = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+  const find = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && !isInternalId(n.id) && cardNotePath(n) === p);
   if (!ix.notes.has(parent)) return { doc: cur, added: 0, present: 0, lineIds: [] };
   if (!find(cur, parent)) { const r = addToCanvas(cur, ix, null, [parent], { relations: false }); cur = r.doc; extra = r.added; }
   const pc = find(cur, parent) , kids = [...new Set(paths)].filter((p) => p !== parent && ix.notes.has(p)).sort((a, b) => ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
@@ -1726,7 +1737,7 @@ const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
 const isCollapsed = (n                        )          => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
 const cvMark = (n            , count        )       => { n.text = (n.text ?? "").replace(CV_COLLAPSE_RE, ""); if (count > 0) { n.text += `<br><small>▸ +${count} hidden</small>`; n.height = Math.max(n.height, H + 24); } };
 const cvParts = (ix            , p        )           => [...new Set(ix.edges.filter((e) => e.kind === "hasPart" && e.to && !e.reverse && e.from === p && e.to !== p && ix.notes.has(e.to)).map((e) => e.to ))];
-const cvFind = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && cardNotePath(n) === p);
+const cvFind = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && !isInternalId(n.id) && cardNotePath(n) === p);
 
 /** Removes cards from a canvas with their lines (D-0095). A card in `gone` stays, with everything that hangs only below it, when a line joins it to a card that is neither in `gone` nor in `owners` (the cards whose part lines may go with it): another shown assembly, a line the person drew. Returns how many cards were removed. */
 function cvPrune(out           , gone             , owners             )         {
@@ -1828,7 +1839,7 @@ function refreshCanvas(doc           , ix            )                          
   let redrawn = 0, missing = 0;
   const cardOf = new Map                    ();
   for (const n of out.nodes) {
-    if (n.type === "group") continue;
+    if (n.type === "group" || isInternalId(n.id)) continue;
     const p = cardNotePath(n); if (!p) continue;
     if (!ix.notes.has(p)) {
       if (n.type === "text" && n.color !== RETIRED_COLOR) { n.color = RETIRED_COLOR; redrawn++; }
@@ -1876,7 +1887,7 @@ function refreshCanvas(doc           , ix            )                          
 function autoLayout(doc           , ix            )                                                  {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const node = new Map                    ();
-  for (const n of out.nodes) { if (n.type === "group") continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
+  for (const n of out.nodes) { if (n.type === "group" || isInternalId(n.id)) continue; const p = cardNotePath(n); if (p && ix.notes.has(p) && !node.has(p)) node.set(p, n); }
   const paths = [...node.keys()], inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
   if (!paths.length) return { doc: out, moved: 0, kept: out.nodes.length };
   const title = (p        )         => ix.notes.get(p) .title, typeOf = (p        )         => ix.notes.get(p) .type;
@@ -1931,6 +1942,72 @@ function autoLayout(doc           , ix            )                             
   const byId = new Map(out.nodes.map((n) => [n.id, n])), done = new Set([...node.values()].map((n) => n.id));
   for (const e of out.edges) { const a = byId.get(e.fromNode), b = byId.get(e.toNode); if (a && b && done.has(a.id) && done.has(b.id)) Object.assign(e, sideOf(a, b)); }
   return { doc: out, moved, kept: out.nodes.length - node.size };
+}
+
+/** The internal structure of one definition as a canvas (D-0097). The note is one large card; each part is a card inside it; each port is a small card on the edge of the card that owns it, half in and half out. Every object has at least one port: where a definition or a part's type has none, a placeholder "no port" card is drawn so there is always an edge to connect to, and nothing is written to the vault. Wires (connect, bind, flow) are lines between port cards. Parts that a wire joins sit a related gap apart, others the unrelated gap (D-0096). Cards are laid out once; the person moves them by hand afterwards, and Refresh, Auto-layout and Collapse leave them where they are. At most MAX_PARTS parts. */
+const MAX_PARTS = 60;
+function internalCanvas(ix            , path        )               {
+  const note = ix.notes.get(path);
+  if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
+  const r = internalStructure(ix, path), PW = 360, PORT_W = 180, PORT_H = 40, STEP = PORT_H + 16, TOP = 72, PAD_X = 260, PAD_TOP = 120, PAD_BOTTOM = 80;
+  const clip = (t        )         => t.replace(/[|[\]\n]/g, " ").replace(/\s+/g, " ").trim();
+  const link = (p               , label        )         => (p ? `[[${p.replace(/\.md$/i, "")}|${clip(label)}]]` : clip(label));
+  const parts = r.parts.slice(0, MAX_PARTS), capped = r.parts.length > MAX_PARTS;
+                                                                        
+  const portText = (q                                                                    )           => ({ label: `${q.name}${q.type ? " : " + (q.conj ? "~" : "") + (ix.notes.get(q.path ?? "")?.title ?? q.type) : ""}`, path: q.path, none: false });
+  const placeholder           = { label: "no port", path: null, none: true };
+  let placeholders = 0, unresolved = 0;
+  const specsOf = (list                                                                           )             => { if (list.length) return list.map(portText); placeholders++; return [placeholder]; };
+  const sideCount = (n        )         => Math.ceil(n / 2);
+  const heightFor = (ports        , min        )         => Math.max(min, TOP + sideCount(ports) * STEP + 10);
+  // parts: size, and which parts a wire joins
+  const partNames = new Set(parts.map((x) => x.name)), joined = new Set        ();
+  const partOfEnd = (e        )         => e.split(".")[0] ;
+  for (const l of r.links) { const a = partOfEnd(l.a.text), b = partOfEnd(l.b.text); if (a !== b && partNames.has(a) && partNames.has(b)) { joined.add(`${a}|${b}`); joined.add(`${b}|${a}`); } }
+  const partPorts = parts.map((x) => specsOf(x.ports)), partH = parts.map((_, i) => heightFor(partPorts[i] .length, 120));
+  const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(parts.length)))), at                                  = [];
+  let y = PAD_TOP, right = 0, prevNames           = [], prevH = 0;
+  for (let i = 0; i < parts.length; i += cols) {
+    const idx = parts.slice(i, i + cols).map((_, j) => i + j), names = idx.map((k) => parts[k] .name), rowH = Math.max(...idx.map((k) => partH[k] ));
+    if (prevNames.length) y += prevH + (names.some((a) => prevNames.some((b) => joined.has(`${a}|${b}`))) ? GY : GYU);
+    let x = PAD_X;
+    idx.forEach((k, j) => { if (j) x += PW + (joined.has(`${parts[k - 1] .name}|${parts[k] .name}`) ? GX : GXU); at[k] = { x, y }; right = Math.max(right, x + PW); });
+    prevNames = names; prevH = rowH;
+  }
+  const bports = specsOf(r.boundary), cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
+  const nodes               = [], edges               = [], portAt = new Map                    (), partAt = new Map                    ();
+  const typeColor = TYPE_COLOR[note.type];
+  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}</small>`, ...(typeColor ? { color: typeColor } : {}) });
+  let k = 1;
+  parts.forEach((x, i) => {
+    const tn = ix.notes.get(x.path ?? ""), color = tn ? TYPE_COLOR[tn.type] : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const c             = { id: `ic${k++}`, type: "text", x: at[i] .x, y: at[i] .y, width: PW, height: partH[i] , text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>`, ...(color ? { color } : {}) };
+    nodes.push(c); partAt.set(x.name, c);
+  });
+  let pk = 1;
+  const putPorts = (owner            , specs            , keyOf                         , top        )       => {
+    const used = [0, 0];                                                                             // ports alternate left and right, each down its own edge
+    specs.forEach((sp, i) => {
+      const side = i % 2, row = used[side] ++, px = side === 0 ? owner.x - PORT_W / 2 : owner.x + owner.width - PORT_W / 2;
+      const c             = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label), ...(sp.none ? {} : { color: "5" }) };
+      nodes.push(c); if (!sp.none) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
+    });
+  };
+  parts.forEach((x, i) => putPorts(partAt.get(x.name) , partPorts[i] , (s) => `${x.name}.${s.none ? "" : s.label.split(" :")[0]}`, TOP));
+  putPorts(nodes[0] , bports, (s) => (s.none ? "" : s.label.split(" :")[0] ), PAD_TOP - 20);
+  const cardOfEnd = (e        )                         => {
+    const segs = e.split(".");
+    if (segs.length === 1) return portAt.get(segs[0] ) ?? partAt.get(segs[0] );
+    return segs.length === 2 ? portAt.get(`${segs[0]}.${segs[1]}`) : undefined;
+  };
+  let w = 0;
+  for (const l of r.links) {
+    const a = cardOfEnd(l.a.text), b = cardOfEnd(l.b.text);
+    if (!a || !b || a === b) { unresolved++; continue; }
+    edges.push({ id: `iw${w++}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: l.kind === "flow" ? "arrow" : "none", label: [l.kind === "connect" ? "" : l.kind, l.name || (l.viaPath ? ix.notes.get(l.viaPath)?.title ?? l.via : l.via)].filter(Boolean).join(" ").slice(0, 60) });
+  }
+  const folder = note.path.includes("/") ? note.path.slice(0, note.path.lastIndexOf("/")) : "";
+  return { doc: { nodes, edges }, notes: 1 + parts.length, unresolved, capped, fileName: `Internal - ${safe(note.title)}.canvas`, groups: 0, hidden: 0, saveFolder: folder, placeholders };
 }
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
@@ -3504,7 +3581,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, internalStructure, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, internalStructure, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -3666,7 +3743,7 @@ function mountWorkbench(root             , host       = {})      {
     const d = V.dashboard(ix ), pane = h("div", { class: "pane" }, h("h2", {}, "Vault overview"));
     const card = (label        , v                 , cls = "")              => h("div", { class: "card" }, h("b", { class: cls }, String(v)), h("span", { class: "mut" }, label));
     pane.append(h("div", { class: "cards" }, card("notes", d.notes), card("with SysML v2 block", d.blocks), card("relationships", ix .edges.length), card("flags", d.flags.reduce((a, x) => a + x[1], 0), d.flags.length ? "gap" : ""),
-      card("unresolved references", d.dangling, d.dangling ? "gap" : ""), card("not-recognized statements", d.warnings, d.warnings ? "gap" : ""), card("isolated notes", d.orphans), card("parser check", d.parser === "passed" ? "passed" : d.parser === "failed" ? "FAILED" : "not run", d.parser === "passed" ? "okc" : "gap")));
+      card("unresolved references", d.dangling, d.dangling ? "gap" : ""), card("not-recognized statements", d.warnings, d.warnings ? "gap" : ""), card("isolated notes", d.orphans), card("objects without a port", d.noPort), card("parser check", d.parser === "passed" ? "passed" : d.parser === "failed" ? "FAILED" : "not run", d.parser === "passed" ? "okc" : "gap")));
     const bars = (title        , rows                         , click                      )              => {
       const max = Math.max(1, ...rows.map((r) => r[1]));
       return h("div", {}, h("h3", {}, title), tableOf([["k", ""], ["bar", ""], ["n", "", true]], rows.map(([k, n]) => [click ? h("a", { class: "lnk", href: "#", onclick: (e       ) => { e.preventDefault(); click(k); } }, k) : k, h("div", { class: "bar" }, h("i", { style: `width:${(100 * n) / max}%` })), String(n)])));
@@ -4670,7 +4747,7 @@ function mountPanel(root             , host           , opt                     
     const card = (k        , v        , sub = "")              => h("div", { class: "card" }, h("b", {}, v), h("span", { class: "mut" }, k), sub ? h("div", { class: "mut", style: "font-size:11px" }, sub) : null);
     const bars = (title        , rows                         )              => { const max = Math.max(1, ...rows.map((r) => r[1])); return h("div", {}, h("h3", {}, title), ...rows.slice(0, compact ? 8 : 20).map(([k, n]) => h("div", { style: "display:grid;grid-template-columns:minmax(80px,1fr) 2fr 36px;gap:6px;align-items:center;font-size:12.5px" }, h("span", {}, k), h("div", { class: "bar" }, h("i", { style: `width:${(100 * n) / max}%` })), h("span", { style: "text-align:right" }, String(n))))); };
     return h("div", {}, h("div", { class: "cards" }, card("notes", String(d.notes), `${d.blocks} with SysML`), card("requirements satisfied", pct(d.requirements.satisfied, d.requirements.total), `${d.requirements.satisfied} of ${d.requirements.total}`), card("requirements verified", pct(d.requirements.verified, d.requirements.total), `${d.requirements.verified} of ${d.requirements.total}`),
-      card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
+      card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("objects without a port", String(d.noPort)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
       bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
   }
   function noteView()              {
@@ -4871,7 +4948,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 </script>
 <script>

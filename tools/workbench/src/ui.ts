@@ -167,7 +167,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const d = V.dashboard(ix!), pane = h("div", { class: "pane" }, h("h2", {}, "Vault overview"));
     const card = (label: string, v: string | number, cls = ""): HTMLElement => h("div", { class: "card" }, h("b", { class: cls }, String(v)), h("span", { class: "mut" }, label));
     pane.append(h("div", { class: "cards" }, card("notes", d.notes), card("with SysML v2 block", d.blocks), card("relationships", ix!.edges.length), card("flags", d.flags.reduce((a, x) => a + x[1], 0), d.flags.length ? "gap" : ""),
-      card("unresolved references", d.dangling, d.dangling ? "gap" : ""), card("not-recognized statements", d.warnings, d.warnings ? "gap" : ""), card("isolated notes", d.orphans), card("parser check", d.parser === "passed" ? "passed" : d.parser === "failed" ? "FAILED" : "not run", d.parser === "passed" ? "okc" : "gap")));
+      card("unresolved references", d.dangling, d.dangling ? "gap" : ""), card("not-recognized statements", d.warnings, d.warnings ? "gap" : ""), card("isolated notes", d.orphans), card("objects without a port", d.noPort), card("parser check", d.parser === "passed" ? "passed" : d.parser === "failed" ? "FAILED" : "not run", d.parser === "passed" ? "okc" : "gap")));
     const bars = (title: string, rows: Array<[string, number]>, click?: (k: string) => void): HTMLElement => {
       const max = Math.max(1, ...rows.map((r) => r[1]));
       return h("div", {}, h("h3", {}, title), tableOf([["k", ""], ["bar", ""], ["n", "", true]], rows.map(([k, n]) => [click ? h("a", { class: "lnk", href: "#", onclick: (e: Event) => { e.preventDefault(); click(k); } }, k) : k, h("div", { class: "bar" }, h("i", { style: `width:${(100 * n) / max}%` })), String(n)])));

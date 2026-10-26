@@ -29,6 +29,7 @@ declare const WB: {
   cdWhyNot: (ix: any, files: Map<string, string>, from: string, to: string) => string; cdOtherWay: (ix: any, files: Map<string, string>, from: string, to: string) => string[]; cdDropLine: (text: string, id: string) => string | null; cdLabelLine: (text: string, id: string, label: string) => string | null;
   planAddRelationship: (ix: any, files: Map<string, string>, o: any) => any; edDiff: (before: string | null, after: string) => { removed: string[]; added: string[] };
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
+  internalCanvas: (ix: any, path: string) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number };
 };
 const obsidian = require("obsidian");
 const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
@@ -63,13 +64,13 @@ const parseDoc = (text: string): any => { try { const d = JSON.parse(text); retu
 const removePreview = async (app: any): Promise<void> => { const f = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH); if (f) await app.vault.delete(f); };
 
 /** Writes the preview (one scratch file, overwritten each time) and shows it in the main window. Nothing is kept until the person saves. */
-async function writePreview(plugin: any, r: { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number }): Promise<string> {
+async function writePreview(plugin: any, r: { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number }): Promise<string> {
   const app = plugin.app, path = WB.PREVIEW_PATH;
   await ensureFolder(app, path.slice(0, path.lastIndexOf("/")));
   const text = JSON.stringify(r.doc, null, 2);
   let file = app.vault.getAbstractFileByPath(path);
   if (file) await app.vault.modify(file, text); else file = await app.vault.create(path, text);
-  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc) };       // lines the Workbench drew; any other line on the canvas was drawn by the person
+  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   const open = app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === path);
   if (open) app.workspace.revealLeaf(open); else await mainLeaf(app).openFile(file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
@@ -213,7 +214,7 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
-  preview: { fileName: string; edgeIds: Set<string> } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
+  preview: { fileName: string; edgeIds: Set<string>; saveFolder?: string } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -339,6 +340,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openCanvas(lens: string, spec: unknown): Promise<string> {
     await this.ensureIndex();
     if (!this.selected || !this.ix.notes.has(this.selected)) throw new Error("Open a model note first.");
+    if (lens === "internal") return writePreview(this, WB.internalCanvas(this.ix, this.selected));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
     const prof = WB.PROFILES.find((p) => p.name === WB.LENS_PROFILE[lens]);
     if (!prof) throw new Error("No canvas for this view.");
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
@@ -461,7 +463,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   folderChoices(): string[] {
     const def = this.settings.defaultFolder || WB.SAVED_DIR, skip = (f: string) => f === "" || f === "/" || f.startsWith(".") || f === WB.PREVIEW_DIR || f.startsWith(WB.PREVIEW_DIR + "/");
     const all = this.app.vault.getAllLoadedFiles().filter((f: any) => f.children !== undefined).map((f: any) => String(f.path)).filter((f: string) => !skip(f)).sort();
-    return [...new Set([def, ...(this.settings.lastFolder ? [this.settings.lastFolder] : []), ...all])];
+    return [...new Set([...(this.preview?.saveFolder ? [this.preview.saveFolder] : []), def, ...(this.settings.lastFolder ? [this.settings.lastFolder] : []), ...all])];
   }
   saveWithPicker(): Promise<string> {
     return new Promise((resolve, reject) => {

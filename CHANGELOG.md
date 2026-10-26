@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Workbench Internal structure canvas: the note is one large card with its parts inside it and its ports on the edge of each card; wires join port cards. An object with no port shows a placeholder port (nothing written); the Dashboard and Review count objects without a port. Cards are skipped by Refresh and Auto-layout so they can be moved by hand, and Save canvas offers the object's own folder first. WKB-045, WKB-046, D-0097
 - Workbench canvas spacing: cards of related notes stay three card widths or heights apart; cards of unrelated notes are one apart (a row of parts is tight, the row sits three heights under its assembly). Applies to every canvas view, Pick notes, Add to canvas, Add children and Auto-layout. WKB-030, D-0096
 - Workbench canvas: Collapse layer, Expand layer, Collapse all and Expand all for the chosen cards (panel buttons and commands). Expand all stops at 200 cards on the canvas. WKB-044, D-0095
 - Workbench canvas: collapse and expand note cards. A collapsed card hides its parts (and their parts) and shows "▸ +N hidden"; expand puts the direct parts back one layer at a time. Panel button and command "Collapse or expand the selected canvas cards". WKB-043, D-0094
