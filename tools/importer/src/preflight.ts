@@ -50,7 +50,7 @@ export interface Preflight {
 export const NON_STANDARD = /^(SUBTYPE_DEFAULTED_|AUTHOR_FALLBACK|UNRESOLVED_|MULTIPLICITY_UNPARSED|PROVISIONAL_LINK|REVIEW$|PORT_ADDED_TO_BLOCK|DIRECTION_)/;
 const FLAG = /^> \[!(flag\w+)\] (.*)$/gm;
 /** The same kind of flag with a different name in it is one group: names in backticks and numbers are blanked. */
-export const flagShape = (title: string): string => title.replace(/`[^`]*`/g, "`…`").replace(/^(Unresolved \S+ link) to .*$/, "$1").replace(/\d+/g, "#").trim();
+export const flagShape = (title: string): string => title.replace(/`[^`]*`/g, "`…`").replace(/^(Unresolved \S+ link) to .*$/, "$1").replace(/\d+/g, "#").replace(/^# (ports?|usages?|elements?) /, "# $1 ").replace(/^# (port|usage|element) /, "# $1s ").trim();
 
 /** Paths are relative to the vault, so the real length is longer by the vault's own location. */
 export function layoutOf(files: OutFile[]): Layout {

@@ -1150,3 +1150,15 @@ Rules: WKB-045, WKB-046 (new).
 6. **Limits.** The existing test vault keeps its flags until it is re-imported or cleaned. Reference designators on repeated lines are not merged.
 
 Rules: BOM-012 (changed), BOM-024 (changed), BOM-045 (new).
+
+## D-0099 — EA import: one flag per kind per note, listing the items
+
+2026-10-25 · Spencer · Accepted (owner, chat: "Let's tackle them the best way we can now", on the 3,000 EA flags in the test vault)
+
+1. **Cause.** Of the 3,000 `flagLink` flags in the test vault, 1,819 were one callout per item on a few notes: 861 untyped usages on 242 notes, 396 ports added from an assembly on 90 notes, 562 unmapped elements on 83 notes (up to 64 on one note). The review unit is the note, not the item.
+2. **Rule.** On a note, those three kinds become one callout each, listing every item with its reason. The ledger and the deferred-elements file are unchanged. (IMP-132)
+3. **Effect.** Expected 1,819 → 415 flags on the test vault (measured by counting notes per kind). The number of items to look at is the same; they are easier to work through. Resolving a callout resolves its whole list.
+4. **Left as they are.** The 1,181 unresolved connector links (one per EA connector, 716 notes) and the causes behind the lists: 327 Parts, 96 Ports and 81 Actions inside something that is not a definition note (a Part inside a Part, an ActivityPartition); 137 port connections with no common assembly; 28 + 14 bindings between ports of different types. Writing a Part nested in a Part into its block is a modeling choice (it would make a usage-specific part part of the shared block) and is not made here.
+5. **Limits.** Not run on the real EA export; the counts come from the notes of the 15.24 import. `Unplaced Review Items` is unchanged.
+
+Rules: IMP-132 (new).

@@ -289,6 +289,19 @@ test("parts and ports are typed from PDATA1, which holds a GUID (IMP-104, IMP-10
   assert.equal(res.ledger.filter((l) => l.ea_type === "Port" && l.disposition === "deferred_review").length, 0);
 });
 
+test("D-0099: untyped, added and unmapped findings are one callout per kind on a note, listing each item", async () => {
+  const res = await run();
+  let lists = 0;
+  for (const f of res.files) {
+    if (f.bytes || !/\.md$/i.test(f.path)) continue;
+    const titles = [...f.content.matchAll(/^> \[!flagLink\] (.*)$/gm)].map((m) => m[1]!);
+    assert.ok(!titles.some((t) => /^(Untyped|Unmapped) |^Port `.*` added from/.test(t)), `${f.path}: old one-per-item title`);
+    for (const k of ["written without a type", "added from an assembly", "not written to SysML"]) assert.ok(titles.filter((t) => t.endsWith(k)).length <= 1, `${f.path}: ${k} twice`);
+    for (const m of f.content.matchAll(/^> \[!flagLink\] (\d+) \w+ (?:written without a type|added from an assembly|not written to SysML)\n((?:> .*\n?)*)/gm)) { lists++; assert.equal((m[2]!.match(/^> - /gm) ?? []).length, +m[1]!, "the number in the title is the number of items listed"); }
+  }
+  assert.ok(lists > 0, "the fixture has at least one");
+});
+
 test("a Port under a Part is the block's own port: PDATA3, same name, or added (IMP-106)", async () => {
   const res = await run();
   const ctl = blockOf(res, "Controller~2");
@@ -298,7 +311,7 @@ test("a Port under a Part is the block's own port: PDATA3, same name, or added (
   const ev = res.ledger.filter((l) => l.ea_type === "Port").map((l) => l.evidence).join("|");
   assert.match(ev, /merged into Controller\.ctrlIn by PDATA3/); assert.match(ev, /merged into Controller\.ctrlOut by SAME_NAME/); assert.match(ev, /Controller\.spare by ADDED/);
   const note = named(res, "Controller", 1).content;
-  assert.match(note, /Port `spare` added from an assembly/);
+  assert.match(note, /\[!flagLink\] 1 port added from an assembly/); assert.match(note, /- port `spare`/);
 });
 
 test("connectors on Parts act on the Part's block and connect through the Parts (IMP-108, IMP-109)", async () => {

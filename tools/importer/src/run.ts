@@ -250,6 +250,16 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   const scopes = new Map<Draft, IdentScope>();
   const scopeOf = (d: Draft): IdentScope => scopes.get(d) ?? (scopes.set(d, new IdentScope()), scopes.get(d)!);
   const flagLink = (d: Draft, title: string, detail: string[]): void => { d.flags.push(flagCallout("flagLink", title, sourceLink, detail)); };
+  // D-0099: findings of one kind on one note are one callout that lists them, not one callout each. The items stay in the ledger one row each.
+  const GROUPS = { untyped: ["written without a type", "These EA elements have no resolvable type of the right kind. Each is written without one:"], added: ["added from an assembly", "These EA Ports sit on a Part of this block and no port on the block matches them (no PDATA3 target, no unique same name). Each is written on the block as its own port. Review them:"], unmapped: ["not written to SysML", "These EA elements could not be written to SysML. Each has a ledger row with the reason:"] } as const;
+  const grouped = new Map<Draft, Map<keyof typeof GROUPS, string[]>>();
+  const flagGroup = (d: Draft, kind: keyof typeof GROUPS, line: string): void => { const m = grouped.get(d) ?? grouped.set(d, new Map()).get(d)!; (m.get(kind) ?? m.set(kind, []).get(kind)!).push(line); };
+  const flushGroups = (): void => {
+    for (const [d, m] of grouped) for (const [kind, lines] of m) {
+      const [what, intro] = GROUPS[kind], n = lines.length;
+      d.flags.push(flagCallout("flagLink", `${n} ${kind === "added" ? `port${n === 1 ? "" : "s"}` : kind === "unmapped" ? `element${n === 1 ? "" : "s"}` : `usage${n === 1 ? "" : "s"}`} ${what}`, sourceLink, [intro, ...lines]));
+    }
+  };
   const ownerKeyword: Record<string, string[]> = { PartUsage: ["part def"], PortUsage: ["part def"], ActionUsage: ["action def", "verification def", "state def"], StateUsage: ["state def"], SyncNode: ["action def", "verification def", "state def"] };   // a verification case is an action; a state owns actions (entry, do, exit)
   // IMP-105: PDATA1/2/3 hold the GUID of another element ({...}); a plain number is accepted too.
   const byGuid = new Map<string, EaObject>(g.objects.map((x) => [x.guid.toLowerCase(), x] as const));
@@ -279,7 +289,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     ownerDef.usages.push(ref); usageByObj.set(e.id, { owner: ownerDef, ref });
     set(u.row, "native", "ItemUsage", typed ? "" : "UNRESOLVED_FLOW_TYPE", typed ? "" : "Set the PDATA1 type to the Signal this flow carries");
     u.row.target_stable_id = ownerDef.id; u.row.target_file = ownerDef.path;
-    if (!typed) flagLink(ownerDef, `Untyped flow item \`${name}\``, [`The EA FlowProperty \`${e.name}\` has no Signal as its type. It is written without a type.`]);
+    if (!typed) flagGroup(ownerDef, "untyped", `- flow item \`${name}\`: the EA FlowProperty \`${e.name}\` has no Signal as its type`);
   };
   // IMP-106 (V1 W-114): a Port under a Part is the Part's block's own port. Merge it by PDATA3, else by a unique same name, else add it to the block.
   const instancePort = (u: { o: EaObject; entry: ElementEntry; row: LedgerRow }): void => {
@@ -303,7 +313,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
         const name = scopeOf(block).take(usageIdent(/^\d+$/.test(eaName) && typePort ? `${typePort.title} ${eaName}` : eaName || typePort?.title || "", `port${e.id}`), typePort?.title ?? "");
         ref = { kind: "port", name, typeDraft: null, objGuid: e.guid, typedBy: "" };
         block.usages.push(ref); if (eaName) addedPorts.set(key, ref); added = true; how = "ADDED";
-        flagLink(block, `Port \`${name}\` added from an assembly`, [`The EA Port \`${eaName || "(unnamed)"}\` sits on a Part of this block and no port on the block matches it (no PDATA3 target, no unique same name). It is written on the block as its own port. Review it.`]);
+        flagGroup(block, "added", `- port \`${name}\` (EA Port \`${eaName || "(unnamed)"}\`)`);
       }
     }
     if (typePort) { if (!ref.typeDraft) { ref.typeDraft = typePort; ref.typedBy = typePort.title; } else if (ref.typeDraft !== typePort) block.sourceLines.push(`- Port ${ref.name} is also typed ${lk(typePort)} on a Part`); }
@@ -367,7 +377,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     }
     set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
-    if (diag.startsWith("UNRESOLVED")) flagLink(owner, `Untyped ${ref.kind} usage \`${name}\``, [`The EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag}). It is written without a type.`]);
+    if (diag.startsWith("UNRESOLVED")) flagGroup(owner, "untyped", `- ${ref.kind} \`${name}\`: the EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag})`);
   });
 
   for (const t of triggerObjs) guard("trigger", "t_object", t.o, () => {
@@ -670,9 +680,10 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     if (!host) { hostlessEls.push({ e, r }); continue; }
     const label = `${e.type}${e.stereotype ? ":" + e.stereotype : ""}`, nm = e.name.trim() || e.alias.trim() || `object ${e.id}`;
     host.sourceLines.push(`- Element ${label} \`${nm}\` not written (${r.diagnostic_code})`);
-    flagLink(host, `Unmapped ${label} \`${nm}\``, [`Not written to SysML (${r.diagnostic_code}). ${(r.operator_action || "See the ledger row").replace(/\.$/, "")}. EA GUID ${e.guid}.`]);
+    flagGroup(host, "unmapped", `- ${label} \`${nm}\` (${r.diagnostic_code}): ${(r.operator_action || "see the ledger row").replace(/\.$/, "")}; EA GUID ${e.guid}`);
     r.target_stable_id = host.id; r.target_file = host.path;
   }
+  flushGroups();
   if (hostlessEls.length || hostlessLinks.length) {
     const guid = "review-unplaced", known = idx?.byGuid.get(guid), created = [...hostlessEls.map((x) => x.e.created)].sort()[0] ?? "";
     let uid = known?.uid ?? "", id = known?.id ?? "";
