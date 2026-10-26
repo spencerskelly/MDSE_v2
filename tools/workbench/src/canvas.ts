@@ -4,6 +4,8 @@
 import type { Edge, EdgeRef, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
 import type { Profile, ViewSpec, InheritFrom, InheritedMember } from "./views.ts";
+import { uniqueParts, type UniqueNode } from "./compare.ts";
+import { RETIRED_COLOR, MISSING_COLOR, PORT_COLOR, typeColor, muted } from "./views.ts";
 import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault, internalStructure, inheritedMembers, portsOfType } from "./views.ts";
 
 /** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
@@ -49,12 +51,11 @@ export function cardName(n: { title: string; id: string; meta: Record<string, un
   return { name, sub: sub && sub !== name ? sub : "" };
 }
 /** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
-export const RETIRED_COLOR = "1";
 /** The cards and lines of an internal-structure canvas (D-0097) have ids that start `ic`, `ip` or `iw`. Refresh, Auto-layout, Collapse and Add to canvas leave them alone: their place and text are the picture. */
 export const isInternalId = (id: string): boolean => /^i[cpw]\d+$/.test(id);
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix: ModelIndex, path: string, key: string): CanvasNode {
-  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path)!, retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : typeColor(n.type, n.subtype), { name, sub } = cardName(n);
   const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, into = retired ? String(n.meta.mergedInto).match(/\[\[([^\]|#]+)/)?.[1]?.trim() ?? "" : "", small0 = retired ? `retired${into ? ` → ${into}` : ""}` : sub, small = small0 ? `<br><small>${small0.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
   if (isRequirement(n)) {
     const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
@@ -141,7 +142,7 @@ export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: b
     for (const [t, list] of [...byType].sort((a, b) => (layoutTier(a[0], "") ?? 9) - (layoutTier(b[0], "") ?? 9) || a[0].localeCompare(b[0]))) {   // D-0102: boxes top to bottom in tier order
       list.sort((a, b) => ix.notes.get(a)!.subtype.localeCompare(ix.notes.get(b)!.subtype) || ix.notes.get(a)!.title.localeCompare(ix.notes.get(b)!.title) || a.localeCompare(b));
       if (before.length) y += list.some((a) => before.some((b) => related.has(`${a}|${b}`))) ? GY : GYU;   // boxes of notes that are related sit a related gap apart
-      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
+      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = typeColor(t);
       nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: g.right + GROUP_PAD, height: g.bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
       y = g.bottom + GROUP_PAD; key += list.length; before = list;
     }
@@ -429,7 +430,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
       n.text = fresh.text; n.height = fresh.height; if (was) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); if (fresh.color) n.color = fresh.color; else delete n.color;
       if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
     } else {
-      const want = ix.notes.get(p)!.meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p)!.type];
+      const want = ix.notes.get(p)!.meta.mergedInto ? RETIRED_COLOR : typeColor(ix.notes.get(p)!.type, ix.notes.get(p)!.subtype);
       if (want && n.color !== want) { n.color = want; redrawn++; }
     }
   }
@@ -582,12 +583,12 @@ export function internalCanvas(ix: ModelIndex, path: string, inherit: readonly I
   }
   const bports = [...(r.boundary.length || inhPorts.length ? r.boundary.map(portText) : specsOf([])), ...inhPorts.map((m): PortSpec => ({ ...portText({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, conj: m.conj }), tag: tagOf(m) }))], cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
   const nodes: CanvasNode[] = [], edges: CanvasEdge[] = [], portAt = new Map<string, CanvasNode>(), partAt = new Map<string, CanvasNode>();
-  const typeColor = TYPE_COLOR[note.type];
-  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}${inh.length ? ` · ${inh.length} inherited` : ""}</small>`, ...(typeColor ? { color: typeColor } : {}) });
+  const noteColor = typeColor(note.type, note.subtype);
+  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}${inh.length ? ` · ${inh.length} inherited` : ""}</small>`, ...(noteColor ? { color: noteColor } : {}) });
   let k = 1;
   parts.forEach((x, i) => {
-    const tn = ix.notes.get(x.path ?? ""), color = tn ? TYPE_COLOR[tn.type] : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const c: CanvasNode = { id: `ic${k++}`, type: "text", x: at[i]!.x, y: at[i]!.y, width: PW, height: partH[i]!, text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>${x.tag ? `<br><small>${x.tag}</small>` : ""}`, ...(x.tag ? { color: "6" } : color ? { color } : {}) };
+    const tn = ix.notes.get(x.path ?? ""), color = tn ? typeColor(tn.type, tn.subtype) : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const c: CanvasNode = { id: `ic${k++}`, type: "text", x: at[i]!.x, y: at[i]!.y, width: PW, height: partH[i]!, text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>${x.tag ? `<br><small>${x.tag}</small>` : ""}`, ...(x.tag ? { color: muted(color ?? PORT_COLOR) } : color ? { color } : {}) };
     nodes.push(c); partAt.set(x.key, c);
   });
   let pk = 1;
@@ -595,7 +596,7 @@ export function internalCanvas(ix: ModelIndex, path: string, inherit: readonly I
     const used = [0, 0];                                                                             // ports alternate left and right, each down its own edge
     specs.forEach((sp, i) => {
       const side = i % 2, row = used[side]!++, px = side === 0 ? owner.x - PORT_W / 2 : owner.x + owner.width - PORT_W / 2;
-      const c: CanvasNode = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label) + (sp.tag ? `<br><small>${sp.tag}</small>` : ""), ...(sp.none ? {} : { color: sp.tag ? "6" : "5" }) };
+      const c: CanvasNode = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label) + (sp.tag ? `<br><small>${sp.tag}</small>` : ""), ...(sp.none ? {} : { color: sp.tag ? muted(PORT_COLOR) : PORT_COLOR }) };
       nodes.push(c); if (!sp.none && !sp.tag) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
     });
   };
@@ -643,11 +644,11 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
     const base = { id: it.key, x: 0, y: 0, width: W, height: H };
     const grp = it.path ? g.groups.get(it.path) : undefined;
     if (grp) {
-      const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m)!.title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
+      const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m)!.title.replace(/[|\]]/g, " ")}]]`), color = typeColor(grp.type);
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
     }
     if (it.path) return noteCard(ix, it.path, it.key);
-    return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
+    return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: MISSING_COLOR };
   };
   const cardOf = new Map<string, CanvasNode>(g.nodes.map((n) => [n.path, make({ key: id.get(n.path)!, path: n.path })] as const));
   const pos = layoutRows(ix, g.nodes.map((n) => n.path), (p) => cardOf.get(p)!.height, 0, 0);
@@ -667,4 +668,32 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
   for (const x of ghosts) { const anchor = id.get(x.anchor)!; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
 
   return { doc: { nodes, edges }, notes: g.nodes.length, unresolved, capped: g.capped || unresolved > ghosts.length, fileName: `${safe(note.title)} - ${safe(profile.name)}${specIsDefault(spec, profile) ? "" : " [" + hash(JSON.stringify(sp)) + "]"}.canvas`, groups: g.groups.size, hidden: g.hidden };
+}
+
+/** A canvas of two assemblies side by side, each with only the path down to the parts the other does not have (D-0104). Unique parts keep their type color; a shared assembly kept for the path is plain with "shared · path" under it. Cards and lines use the internal ids, so Refresh and Auto-layout leave the picture as drawn. */
+export function uniqueCanvas(ix: ModelIndex, pa: string, pb: string): CanvasResult {
+  const r = uniqueParts(ix, pa, pb), empty = { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Unique parts.canvas", groups: 0, hidden: 0 };
+  if (!r) return empty;
+  const nodes: CanvasNode[] = [], edges: CanvasEdge[] = [];
+  let k = 0, w = 0, left = 0;
+  const place = (t: UniqueNode, depth: number, parent: CanvasNode | null): CanvasNode => {
+    const card = noteCard(ix, t.path, `ic${k++}`), tag = depth === 0 ? "assembly" : t.unique ? "unique" : "shared · path";
+    const n = ix.notes.get(t.path)!;
+    card.text += `<br><small>${tag}${t.qty && depth ? " · qty " + t.qty : ""}</small>`; card.height += 22;
+    if (depth > 0 && !t.unique) delete card.color; else if (depth === 0) card.color = typeColor(n.type, n.subtype) ?? card.color;
+    card.y = depth * (H + 22 + 3 * 40);
+    const kids = t.children.map((c) => place(c, depth + 1, card));
+    if (kids.length) { const a = kids[0]!, z = kids[kids.length - 1]!; card.x = Math.round((a.x + z.x) / 2); }
+    else { card.x = left; left += W + 40; }
+    nodes.push(card);
+    if (parent) edges.push({ id: `iw${w++}`, fromNode: parent.id, toNode: card.id, fromSide: "bottom", toSide: "top", toEnd: "none" });
+    return card;
+  };
+  const edgeFix = (): void => { for (const e of edges) { const a = nodes.find((x) => x.id === e.fromNode)!, b = nodes.find((x) => x.id === e.toNode)!; Object.assign(e, sideOf(a, b)); } };
+  place(r.a, 0, null);
+  left += W;                                                                                           // a card-wide gap between the two assemblies
+  place(r.b, 0, null);
+  edgeFix();
+  const a = ix.notes.get(pa)!, b = ix.notes.get(pb)!;
+  return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped: false, fileName: `Unique - ${safe(a.title)} vs ${safe(b.title)}.canvas`, groups: 0, hidden: 0, saveFolder: undefined };
 }

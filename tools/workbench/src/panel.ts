@@ -340,7 +340,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         } }, "All connections canvas"));
       acts.append(allControls);
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
-      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
+      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : lens === "compare" ? ({ ...spec, other: cmpOther } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;

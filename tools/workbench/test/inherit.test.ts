@@ -1,3 +1,4 @@
+import { muted, PORT_COLOR } from "../src/views.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex } from "../src/index.ts";
@@ -54,12 +55,12 @@ import { lensTables } from "../src/views.ts";
 
 test("the internal canvas draws inherited ports on the note's edge and inherited parts inside it, marked with their direction (D-0101)", () => {
   const plain = internalCanvas(ix, "M/Special.md").doc.nodes;
-  assert.ok(!plain.some((n) => n.color === "6"), "nothing is inherited unless asked");
+  assert.ok(!plain.some((n) => /↑ from/.test(n.text ?? "")), "nothing is inherited unless asked");
   const d = internalCanvas(ix, "M/Special.md", ["general", "parent"]).doc.nodes, box = d[0]!;
   assert.match(box.text!, /· \d+ inherited/);
-  const gp = d.find((n) => n.id.startsWith("ip") && /gp : Port.*from general/.test(n.text!))!; assert.equal(gp.color, "6"); assert.match(gp.text!, /↑ from general · \[\[M\/General\|General\]\]/);
+  const gp = d.find((n) => n.id.startsWith("ip") && /gp : Port.*from general/.test(n.text!))!; assert.equal(gp.color, muted(PORT_COLOR)); assert.match(gp.text!, /↑ from general · \[\[M\/General\|General\]\]/);
   assert.ok(Math.abs(gp.x + gp.width / 2 - box.x) < 1 || Math.abs(gp.x + gp.width / 2 - (box.x + box.width)) < 1, "on the edge of the note's card");
-  const gpart = d.find((n) => n.id.startsWith("ic") && n !== box && /gpart/.test(n.text!))!; assert.equal(gpart.color, "6");
+  const gpart = d.find((n) => n.id.startsWith("ic") && n !== box && /gpart/.test(n.text!))!; assert.ok(gpart.color && gpart.color !== PORT_COLOR && /^#/.test(gpart.color));
   assert.ok(gpart.x >= box.x && gpart.y >= box.y && gpart.x + gpart.width <= box.x + box.width && gpart.y + gpart.height <= box.y + box.height, "inside the note's card");
   assert.ok(d.some((n) => /↑ from parent assembly · \[\[M\/Asm\|Asm\]\]/.test(n.text!)), "assembly members are marked as such");
   assert.ok(!d.some((n) => n.text === "_no port_" && n.x < box.x + 1 && n.y < box.y + 1), "no placeholder when ports are inherited");

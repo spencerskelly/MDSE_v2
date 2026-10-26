@@ -435,7 +435,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       if (!n) continue;
       const title = n.title.length > 22 ? n.title.slice(0, 21) + "…" : n.title;
       const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8 }),
-        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
+        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.typeColor(n.type, n.subtype) ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
       grp.addEventListener("click", () => select(p.path, "graph"));
       svg.append(grp);
     }

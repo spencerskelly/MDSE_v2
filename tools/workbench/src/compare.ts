@@ -96,3 +96,41 @@ export function compareNotes(ix: ModelIndex, pa: string, pb: string): CmpResult 
   const differing = p.props.length + p.members.length + p.links.length + structure.length;
   return { ...p, structure, same: differing === 0, differing };
 }
+
+/* ---- Unique parts (D-0104) ------------------------------------------------------------------------------------- */
+/** One note in the path from an assembly down to a part the other assembly does not have anywhere in its structure. `unique` is true for the part or assembly that is itself missing from the other side; false for a shared assembly kept only because something unique is below it. */
+export interface UniqueNode { path: string; label: string; qty: string; unique: boolean; children: UniqueNode[] }
+export interface UniqueResult { a: UniqueNode; b: UniqueNode; uniqueA: number; uniqueB: number }
+
+interface Seen { paths: Set<string>; pns: Set<string>; titles: Set<string> }
+function seenIn(ix: ModelIndex, root: string): Seen {
+  const s: Seen = { paths: new Set(), pns: new Set(), titles: new Set() };
+  const walk = (p: string, depth: number): void => {
+    if (s.paths.has(p) || depth > 12) return;
+    const n = ix.notes.get(p); if (!n) return;
+    s.paths.add(p); const pn = pnOf(n).toLowerCase(); if (pn) s.pns.add(pn); const t = titleKey(n); if (t) s.titles.add(t);
+    for (const k of kidsOf(ix, p)) walk(k.path, depth + 1);
+  };
+  walk(root, 0);
+  return s;
+}
+const inSeen = (ix: ModelIndex, p: string, s: Seen): boolean => { const n = ix.notes.get(p)!, pn = pnOf(n).toLowerCase(), t = titleKey(n); return s.paths.has(p) || (!!pn && s.pns.has(pn)) || (!pn && !!t && s.titles.has(t)); };
+
+/** The parts and assemblies under `root` that do not occur anywhere under `other`, as a tree that keeps only the path down to each one. A part is the same part when it is the same note, else has the same part number, else (no part number) the same name. The roots themselves are not tested. Quantities are not compared (Compare notes shows those). */
+function uniqueTree(ix: ModelIndex, root: string, other: Seen): { node: UniqueNode; count: number } {
+  let count = 0;
+  const walk = (p: string, k: Kid | null, stack: string[]): UniqueNode | null => {
+    const uniq = k ? !inSeen(ix, p, other) : false, kids: UniqueNode[] = [];
+    if (stack.length < 12 && !stack.includes(p)) for (const c of kidsOf(ix, p)) { const x = walk(c.path, c, [...stack, p]); if (x) kids.push(x); }
+    if (!uniq && !kids.length && k) return null;
+    if (uniq) count++;
+    return { path: p, label: ix.notes.get(p)!.title, qty: k ? qtyText(k) : "", unique: uniq, children: kids };
+  };
+  return { node: walk(root, null, [])!, count };
+}
+
+export function uniqueParts(ix: ModelIndex, pa: string, pb: string): UniqueResult | null {
+  if (!ix.notes.has(pa) || !ix.notes.has(pb)) return null;
+  const a = uniqueTree(ix, pa, seenIn(ix, pb)), b = uniqueTree(ix, pb, seenIn(ix, pa));
+  return { a: a.node, b: b.node, uniqueA: a.count, uniqueB: b.count };
+}

@@ -1130,7 +1130,19 @@ function interfaces(ix            , path        )                  {
   };
 }
 
-const TYPE_COLOR                         = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
+/** One color for each kind of note (D-0103), hex everywhere so a card looks the same in every theme and on every surface. No two kinds share a color; the function kinds are shades of green. */
+const TYPE_COLOR                         = {
+  Actor: "#be185d", "Use Case": "#ca8a04", Requirement: "#ea580c",
+  Behavior: "#15803d", "Functional Flow": "#65a30d", Procedure: "#4d7c0f", Result: "#a3a33a", Setup: "#78716c", Condition: "#6d28d9", Verification: "#a21caf",
+  Object: "#2557d6", "Item Flow": "#64748b", Issue: "#b45309", Info: "#8a8f98", Document: "#a8a29e", Artifact: "#57534e", Diagram: "#0ea5e9", "Failure Mode": "#7f1d1d", modelCheck: "#475569",
+};
+/** Shades inside a kind (D-0103): an interface object is a darker blue than a part. */
+const SUBTYPE_COLOR                         = { "Object/interface": "#1e3a8a" };
+/** Colors that mean one thing and belong to no kind: a port, a retired note, a link to a note that is not in the vault. */
+const PORT_COLOR = "#0f766e", RETIRED_COLOR = "#dc2626", MISSING_COLOR = "#f43f5e";
+const typeColor = (type        , subtype = "")                     => SUBTYPE_COLOR[`${type}/${subtype}`] ?? TYPE_COLOR[type];
+/** A lighter mix of a hex color, for things shown only by inheritance. */
+const muted = (hex        )         => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const [r, g, b] = [1, 2, 3].map((k) => Math.round(parseInt(m[k] , 16) * 0.45 + 255 * 0.55)); return "#" + [r, g, b].map((v) => v .toString(16).padStart(2, "0")).join(""); };
 
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
                                                   
@@ -1379,7 +1391,7 @@ const LENS_GROUPS                                                               
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
-const lensHasCanvas = (l      )          => l === "structure" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
+const lensHasCanvas = (l      )          => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
 const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
                                                                                                                                                    
@@ -1416,6 +1428,9 @@ function lensTables(ix            , lens      , sel        , o              = {}
     const plainRows = (l                                               )                                   => l.map((x) => ({ what: x.what, a: x.a, b: x.b }));
     const cols = (w        )                       => [{ key: "what", label: w }, { key: "a", label: A, wide: true }, { key: "b", label: B, wide: true }];
     out.push({ id: "compare-sum", title: `${A} and ${B}`, columns: [], rows: [], empty: r.same ? "No differences found in properties, members, relationships or structure." : `${r.differing} difference${r.differing === 1 ? "" : "s"}: ${r.props.length} propert${r.props.length === 1 ? "y" : "ies"}, ${r.members.length} other member${r.members.length === 1 ? "" : "s"}, ${r.links.length} relationship${r.links.length === 1 ? "" : "s"}, ${r.structure.length} structure row${r.structure.length === 1 ? "" : "s"}.` });
+    const u = uniqueParts(ix, n.path, o2.path) , flat = (t                                   , side        )                                   => { const rows                                   = []; const go = (x                                   , l        )       => { rows.push({ side, part: { text: ind(l) + x.label, path: x.path }, qty: x.qty, status: l === 0 ? "assembly" : x.unique ? "unique" : "path to a unique part" }); x.children.forEach((c) => go(c, l + 1)); }; go(t, 0); return rows; };
+    out.push({ id: "compare-unique", title: "Parts and assemblies that only one side has (D-0104)", columns: [{ key: "side", label: "Side" }, { key: "part", label: "Part or assembly", wide: true }, { key: "qty", label: "Qty" }, { key: "status", label: "" }],
+      rows: [...flat(u.a, A), ...flat(u.b, B)], empty: "", note: `${u.uniqueA} unique under ${A}, ${u.uniqueB} unique under ${B}. A part is the same part by note, else part number, else name, anywhere in the other structure. Indented rows are the path down; "unique" rows are missing from the other side.` });
     out.push({ id: "compare-props", title: "Properties that differ", columns: cols("Property"), rows: plainRows(r.props), empty: "No property differs." });
     out.push({ id: "compare-structure", title: "Structure, down to the parts that differ", columns: [{ key: "a", label: A }, { key: "b", label: B }, { key: "diff", label: "Difference", wide: true }],
       rows: r.structure.map((x) => ({ a: x.pathA ? { text: ind(x.level) + x.a , path: x.pathA } : "", b: x.pathB ? { text: ind(x.level) + x.b , path: x.pathB } : "", diff: x.diff })), empty: "The parts match: same parts, quantities and revisions at every level." });
@@ -1491,6 +1506,8 @@ function lensTables(ix            , lens      , sel        , o              = {}
 
 
 
+
+
 /** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
 const EDGE_REF_SEP = "~r~";
 function edgeRefOfId(id        )                 {
@@ -1534,12 +1551,11 @@ function cardName(n                                                             
   return { name, sub: sub && sub !== name ? sub : "" };
 }
 /** A retired note (merged into another, D-0091) is drawn red, with the note it went into beside the name. */
-const RETIRED_COLOR = "1";
 /** The cards and lines of an internal-structure canvas (D-0097) have ids that start `ic`, `ip` or `iw`. Refresh, Auto-layout, Collapse and Add to canvas leave them alone: their place and text are the picture. */
 const isInternalId = (id        )          => /^i[cpw]\d+$/.test(id);
 /** The card for one note: a text card whose first line is the note's link, shown by name or description with the part number or id small beneath; a requirement also carries its subtype and wording (IMP-097). Position is set by the caller. */
 function noteCard(ix            , path        , key        )             {
-  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : TYPE_COLOR[n.type], { name, sub } = cardName(n);
+  const base = { id: key, x: 0, y: 0, width: W, height: H }, n = ix.notes.get(path) , retired = !!n.meta.mergedInto, color = retired ? RETIRED_COLOR : typeColor(n.type, n.subtype), { name, sub } = cardName(n);
   const link = `**[[${n.path.replace(/\.md$/i, "")}|${name}]]**`, into = retired ? String(n.meta.mergedInto).match(/\[\[([^\]|#]+)/)?.[1]?.trim() ?? "" : "", small0 = retired ? `retired${into ? ` → ${into}` : ""}` : sub, small = small0 ? `<br><small>${small0.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</small>` : "";
   if (isRequirement(n)) {
     const txt = requirementText(n), clip = txt.length > 600 ? txt.slice(0, 600).trimEnd() + " …" : txt;
@@ -1626,7 +1642,7 @@ function pickCanvas(ix            , paths          , opts                       
     for (const [t, list] of [...byType].sort((a, b) => (layoutTier(a[0], "") ?? 9) - (layoutTier(b[0], "") ?? 9) || a[0].localeCompare(b[0]))) {   // D-0102: boxes top to bottom in tier order
       list.sort((a, b) => ix.notes.get(a) .subtype.localeCompare(ix.notes.get(b) .subtype) || ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
       if (before.length) y += list.some((a) => before.some((b) => related.has(`${a}|${b}`))) ? GY : GYU;   // boxes of notes that are related sit a related gap apart
-      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = TYPE_COLOR[t];
+      const cols = Math.min(GROUP_COLS, Math.max(1, Math.ceil(Math.sqrt(list.length)))), g = grid(list, cols, GROUP_PAD, y + GROUP_PAD, key), color = typeColor(t);
       nodes.push({ id: `g${groups++}`, type: "group", x: 0, y, width: g.right + GROUP_PAD, height: g.bottom + GROUP_PAD - y, label: `${t} (${list.length})`, ...(color ? { color } : {}) });
       y = g.bottom + GROUP_PAD; key += list.length; before = list;
     }
@@ -1914,7 +1930,7 @@ function refreshCanvas(doc           , ix            )                          
       n.text = fresh.text; n.height = fresh.height; if (was) cvMark(n, cvParts(ix, p).filter((q) => !cvFind(out, q)).length); if (fresh.color) n.color = fresh.color; else delete n.color;
       if (JSON.stringify([n.text, n.color, n.height]) !== before) redrawn++;
     } else {
-      const want = ix.notes.get(p) .meta.mergedInto ? RETIRED_COLOR : TYPE_COLOR[ix.notes.get(p) .type];
+      const want = ix.notes.get(p) .meta.mergedInto ? RETIRED_COLOR : typeColor(ix.notes.get(p) .type, ix.notes.get(p) .subtype);
       if (want && n.color !== want) { n.color = want; redrawn++; }
     }
   }
@@ -2067,12 +2083,12 @@ function internalCanvas(ix            , path        , inherit                   
   }
   const bports = [...(r.boundary.length || inhPorts.length ? r.boundary.map(portText) : specsOf([])), ...inhPorts.map((m)           => ({ ...portText({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, conj: m.conj }), tag: tagOf(m) }))], cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
   const nodes               = [], edges               = [], portAt = new Map                    (), partAt = new Map                    ();
-  const typeColor = TYPE_COLOR[note.type];
-  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}${inh.length ? ` · ${inh.length} inherited` : ""}</small>`, ...(typeColor ? { color: typeColor } : {}) });
+  const noteColor = typeColor(note.type, note.subtype);
+  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}${inh.length ? ` · ${inh.length} inherited` : ""}</small>`, ...(noteColor ? { color: noteColor } : {}) });
   let k = 1;
   parts.forEach((x, i) => {
-    const tn = ix.notes.get(x.path ?? ""), color = tn ? TYPE_COLOR[tn.type] : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const c             = { id: `ic${k++}`, type: "text", x: at[i] .x, y: at[i] .y, width: PW, height: partH[i] , text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>${x.tag ? `<br><small>${x.tag}</small>` : ""}`, ...(x.tag ? { color: "6" } : color ? { color } : {}) };
+    const tn = ix.notes.get(x.path ?? ""), color = tn ? typeColor(tn.type, tn.subtype) : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const c             = { id: `ic${k++}`, type: "text", x: at[i] .x, y: at[i] .y, width: PW, height: partH[i] , text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>${x.tag ? `<br><small>${x.tag}</small>` : ""}`, ...(x.tag ? { color: muted(color ?? PORT_COLOR) } : color ? { color } : {}) };
     nodes.push(c); partAt.set(x.key, c);
   });
   let pk = 1;
@@ -2080,7 +2096,7 @@ function internalCanvas(ix            , path        , inherit                   
     const used = [0, 0];                                                                             // ports alternate left and right, each down its own edge
     specs.forEach((sp, i) => {
       const side = i % 2, row = used[side] ++, px = side === 0 ? owner.x - PORT_W / 2 : owner.x + owner.width - PORT_W / 2;
-      const c             = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label) + (sp.tag ? `<br><small>${sp.tag}</small>` : ""), ...(sp.none ? {} : { color: sp.tag ? "6" : "5" }) };
+      const c             = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label) + (sp.tag ? `<br><small>${sp.tag}</small>` : ""), ...(sp.none ? {} : { color: sp.tag ? muted(PORT_COLOR) : PORT_COLOR }) };
       nodes.push(c); if (!sp.none && !sp.tag) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
     });
   };
@@ -2128,11 +2144,11 @@ function toCanvas(ix            , start        , profile         , spec         
     const base = { id: it.key, x: 0, y: 0, width: W, height: H };
     const grp = it.path ? g.groups.get(it.path) : undefined;
     if (grp) {
-      const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m) .title.replace(/[|\]]/g, " ")}]]`), color = TYPE_COLOR[grp.type];
+      const shown = grp.members.slice(0, 12).map((m) => `- [[${m.replace(/\.md$/i, "")}|${ix.notes.get(m) .title.replace(/[|\]]/g, " ")}]]`), color = typeColor(grp.type);
       return { ...base, type: "text", height: 70 + shown.length * 26 + (grp.members.length > 12 ? 26 : 0), text: `**${grp.label} ×${grp.members.length}**\n\n${shown.join("\n")}${grp.members.length > 12 ? `\n- … ${grp.members.length - 12} more` : ""}`, ...(color ? { color } : {}) };
     }
     if (it.path) return noteCard(ix, it.path, it.key);
-    return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: "1" };
+    return { ...base, type: "text", text: `${it.text}\n\n_not in vault_`, color: MISSING_COLOR };
   };
   const cardOf = new Map                    (g.nodes.map((n) => [n.path, make({ key: id.get(n.path) , path: n.path })]         ));
   const pos = layoutRows(ix, g.nodes.map((n) => n.path), (p) => cardOf.get(p) .height, 0, 0);
@@ -2152,6 +2168,34 @@ function toCanvas(ix            , start        , profile         , spec         
   for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
 
   return { doc: { nodes, edges }, notes: g.nodes.length, unresolved, capped: g.capped || unresolved > ghosts.length, fileName: `${safe(note.title)} - ${safe(profile.name)}${specIsDefault(spec, profile) ? "" : " [" + hash(JSON.stringify(sp)) + "]"}.canvas`, groups: g.groups.size, hidden: g.hidden };
+}
+
+/** A canvas of two assemblies side by side, each with only the path down to the parts the other does not have (D-0104). Unique parts keep their type color; a shared assembly kept for the path is plain with "shared · path" under it. Cards and lines use the internal ids, so Refresh and Auto-layout leave the picture as drawn. */
+function uniqueCanvas(ix            , pa        , pb        )               {
+  const r = uniqueParts(ix, pa, pb), empty = { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Unique parts.canvas", groups: 0, hidden: 0 };
+  if (!r) return empty;
+  const nodes               = [], edges               = [];
+  let k = 0, w = 0, left = 0;
+  const place = (t            , depth        , parent                   )             => {
+    const card = noteCard(ix, t.path, `ic${k++}`), tag = depth === 0 ? "assembly" : t.unique ? "unique" : "shared · path";
+    const n = ix.notes.get(t.path) ;
+    card.text += `<br><small>${tag}${t.qty && depth ? " · qty " + t.qty : ""}</small>`; card.height += 22;
+    if (depth > 0 && !t.unique) delete card.color; else if (depth === 0) card.color = typeColor(n.type, n.subtype) ?? card.color;
+    card.y = depth * (H + 22 + 3 * 40);
+    const kids = t.children.map((c) => place(c, depth + 1, card));
+    if (kids.length) { const a = kids[0] , z = kids[kids.length - 1] ; card.x = Math.round((a.x + z.x) / 2); }
+    else { card.x = left; left += W + 40; }
+    nodes.push(card);
+    if (parent) edges.push({ id: `iw${w++}`, fromNode: parent.id, toNode: card.id, fromSide: "bottom", toSide: "top", toEnd: "none" });
+    return card;
+  };
+  const edgeFix = ()       => { for (const e of edges) { const a = nodes.find((x) => x.id === e.fromNode) , b = nodes.find((x) => x.id === e.toNode) ; Object.assign(e, sideOf(a, b)); } };
+  place(r.a, 0, null);
+  left += W;                                                                                           // a card-wide gap between the two assemblies
+  place(r.b, 0, null);
+  edgeFix();
+  const a = ix.notes.get(pa) , b = ix.notes.get(pb) ;
+  return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped: false, fileName: `Unique - ${safe(a.title)} vs ${safe(b.title)}.canvas`, groups: 0, hidden: 0, saveFolder: undefined };
 }
 
 /* edit.ts */
@@ -3555,6 +3599,44 @@ function compareNotes(ix            , pa        , pb        )                   
   return { ...p, structure, same: differing === 0, differing };
 }
 
+/* ---- Unique parts (D-0104) ------------------------------------------------------------------------------------- */
+/** One note in the path from an assembly down to a part the other assembly does not have anywhere in its structure. `unique` is true for the part or assembly that is itself missing from the other side; false for a shared assembly kept only because something unique is below it. */
+                                                                                                          
+                                                                                         
+
+                                                                            
+function seenIn(ix            , root        )       {
+  const s       = { paths: new Set(), pns: new Set(), titles: new Set() };
+  const walk = (p        , depth        )       => {
+    if (s.paths.has(p) || depth > 12) return;
+    const n = ix.notes.get(p); if (!n) return;
+    s.paths.add(p); const pn = pnOf(n).toLowerCase(); if (pn) s.pns.add(pn); const t = titleKey(n); if (t) s.titles.add(t);
+    for (const k of kidsOf(ix, p)) walk(k.path, depth + 1);
+  };
+  walk(root, 0);
+  return s;
+}
+const inSeen = (ix            , p        , s      )          => { const n = ix.notes.get(p) , pn = pnOf(n).toLowerCase(), t = titleKey(n); return s.paths.has(p) || (!!pn && s.pns.has(pn)) || (!pn && !!t && s.titles.has(t)); };
+
+/** The parts and assemblies under `root` that do not occur anywhere under `other`, as a tree that keeps only the path down to each one. A part is the same part when it is the same note, else has the same part number, else (no part number) the same name. The roots themselves are not tested. Quantities are not compared (Compare notes shows those). */
+function uniqueTree(ix            , root        , other      )                                      {
+  let count = 0;
+  const walk = (p        , k            , stack          )                    => {
+    const uniq = k ? !inSeen(ix, p, other) : false, kids               = [];
+    if (stack.length < 12 && !stack.includes(p)) for (const c of kidsOf(ix, p)) { const x = walk(c.path, c, [...stack, p]); if (x) kids.push(x); }
+    if (!uniq && !kids.length && k) return null;
+    if (uniq) count++;
+    return { path: p, label: ix.notes.get(p) .title, qty: k ? qtyText(k) : "", unique: uniq, children: kids };
+  };
+  return { node: walk(root, null, []) , count };
+}
+
+function uniqueParts(ix            , pa        , pb        )                      {
+  if (!ix.notes.has(pa) || !ix.notes.has(pb)) return null;
+  const a = uniqueTree(ix, pa, seenIn(ix, pb)), b = uniqueTree(ix, pb, seenIn(ix, pa));
+  return { a: a.node, b: b.node, uniqueA: a.count, uniqueB: b.count };
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -3670,7 +3752,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -4100,7 +4182,7 @@ function mountWorkbench(root             , host       = {})      {
       if (!n) continue;
       const title = n.title.length > 22 ? n.title.slice(0, 21) + "…" : n.title;
       const grp = s("g", { style: "cursor:pointer" }, s("rect", { class: "box" + (p.depth === 0 ? " c" : ""), x: p.x - 70, y: p.y - 18, width: 140, height: 36, rx: 8 }),
-        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.TYPE_COLOR[n.type] ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
+        s("rect", { x: p.x - 70, y: p.y - 18, width: 5, height: 36, fill: V.typeColor(n.type, n.subtype) ?? "#888", rx: 2 }), s("text", { x: p.x - 60, y: p.y - 3 }, title), s("text", { class: "elabel", x: p.x - 60, y: p.y + 11 }, n.id));
       grp.addEventListener("click", () => select(p.path, "graph"));
       svg.append(grp);
     }
@@ -4993,7 +5075,7 @@ function mountPanel(root             , host           , opt                     
         } }, "All connections canvas"));
       acts.append(allControls);
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
-      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit }                       ) : spec))); acts.append(b); }
+      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit }                       ) : lens === "compare" ? ({ ...spec, other: cmpOther }                       ) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo ; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e         )?.message ?? e); } draw(); } }, "Undo") : null) : null;
@@ -5038,7 +5120,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 </script>
 <script>

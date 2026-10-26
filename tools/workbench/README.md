@@ -89,3 +89,5 @@ Ported (as concepts, rewritten for SysML text): view profiles, staged startup, w
 ## Not done
 
 Editing (Phase 3), saved views, real-Obsidian testing, parser-backed conformance in the viewer, canvas for a whole folder or query.
+- **Colors (D-0103):** each kind of note has one color (hex) used on every canvas, the graph and the page; ports, retired notes and missing links have their own.
+- **Unique parts (D-0104):** Compare notes, choose two assemblies; the table and "Canvas of unique parts" show only the path down to the parts the other assembly lacks.

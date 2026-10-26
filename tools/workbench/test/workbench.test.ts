@@ -723,12 +723,12 @@ test("a retired note is a red card that names the note it went into, and Refresh
   const r = refreshCanvas(doc, v2), at = (t: string) => r.doc.nodes.find((n) => cdNotePath(n as never) === `${t}.md`)!;
   assert.equal(JSON.stringify(r.doc.nodes.map((n) => [n.id, n.x, n.y])), pos, "nothing moved");
   assert.match(at("Cable").text!, /Power cable/);
-  assert.equal(at("Plug").color, "1"); assert.match(at("Plug").text!, /retired → Cable/);
+  assert.equal(at("Plug").color, "#dc2626"); assert.match(at("Plug").text!, /retired → Cable/);
   assert.equal(r.linesRemoved, 1, "the Charger to Plug line is gone"); assert.equal(r.doc.edges.length, 2, "Charger to Cable stays, Plug to Cable is new");
   assert.ok(r.linesAdded >= 1, "the new relationship from Plug to Cable is drawn");
   // a note that is not in the vault any more
   const gone = refreshCanvas(doc, buildIndex(new Map([f("OBJ-00001", "Charger")]), { classes }));
-  assert.equal(gone.missing, 2); assert.ok(gone.doc.nodes.filter((n) => n.color === "1").length === 2);
+  assert.equal(gone.missing, 2); assert.ok(gone.doc.nodes.filter((n) => n.color === "#dc2626").length === 2);
   // a line the person drew is never touched
   const mine = { nodes: doc.nodes, edges: [...doc.edges, { id: "9f3ab2c4d5e6f7a8", fromNode: doc.nodes[1]!.id, toNode: doc.nodes[2]!.id, fromSide: "right" as const, toSide: "left" as const, toEnd: "arrow" as const }] };
   assert.ok(refreshCanvas(mine, v2).doc.edges.some((e) => e.id === "9f3ab2c4d5e6f7a8"));

@@ -4,7 +4,7 @@
  * from the SysML v2 text, not from YAML fields. */
 import type { Edge, EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
-import { compareNotes } from "./compare.ts";
+import { compareNotes, uniqueParts } from "./compare.ts";
 
 export interface TreeNode { path: string | null; label: string; detail: string; kind: string; qty: number; children: TreeNode[]; cycle?: boolean; more?: number }
 const node = (path: string | null, label: string, kind = "", detail = "", qty = 1): TreeNode => ({ path, label, detail, kind, qty, children: [] });
@@ -293,7 +293,19 @@ export function interfaces(ix: ModelIndex, path: string): InterfaceResult {
   };
 }
 
-export const TYPE_COLOR: Record<string, string> = { Object: "#2557d6", Requirement: "#b25e00", Behavior: "#1b7a3a", Condition: "#7b3fb0", "Use Case": "#0e7490", Verification: "#a21caf", "Item Flow": "#64748b", Info: "#8a8f98", Actor: "#0e7490", Artifact: "#8a8f98" };
+/** One color for each kind of note (D-0103), hex everywhere so a card looks the same in every theme and on every surface. No two kinds share a color; the function kinds are shades of green. */
+export const TYPE_COLOR: Record<string, string> = {
+  Actor: "#be185d", "Use Case": "#ca8a04", Requirement: "#ea580c",
+  Behavior: "#15803d", "Functional Flow": "#65a30d", Procedure: "#4d7c0f", Result: "#a3a33a", Setup: "#78716c", Condition: "#6d28d9", Verification: "#a21caf",
+  Object: "#2557d6", "Item Flow": "#64748b", Issue: "#b45309", Info: "#8a8f98", Document: "#a8a29e", Artifact: "#57534e", Diagram: "#0ea5e9", "Failure Mode": "#7f1d1d", modelCheck: "#475569",
+};
+/** Shades inside a kind (D-0103): an interface object is a darker blue than a part. */
+export const SUBTYPE_COLOR: Record<string, string> = { "Object/interface": "#1e3a8a" };
+/** Colors that mean one thing and belong to no kind: a port, a retired note, a link to a note that is not in the vault. */
+export const PORT_COLOR = "#0f766e", RETIRED_COLOR = "#dc2626", MISSING_COLOR = "#f43f5e";
+export const typeColor = (type: string, subtype = ""): string | undefined => SUBTYPE_COLOR[`${type}/${subtype}`] ?? TYPE_COLOR[type];
+/** A lighter mix of a hex color, for things shown only by inheritance. */
+export const muted = (hex: string): string => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const [r, g, b] = [1, 2, 3].map((k) => Math.round(parseInt(m[k]!, 16) * 0.45 + 255 * 0.55)); return "#" + [r, g, b].map((v) => v!.toString(16).padStart(2, "0")).join(""); };
 
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
 export interface Step { kind: string; dir: "out" | "in" }
@@ -542,7 +554,7 @@ export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything" };
-export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
+export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
 export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge";
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
@@ -579,6 +591,9 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const plainRows = (l: Array<{ what: string; a: string; b: string }>): Array<Record<string, TableCell>> => l.map((x) => ({ what: x.what, a: x.a, b: x.b }));
     const cols = (w: string): TableData["columns"] => [{ key: "what", label: w }, { key: "a", label: A, wide: true }, { key: "b", label: B, wide: true }];
     out.push({ id: "compare-sum", title: `${A} and ${B}`, columns: [], rows: [], empty: r.same ? "No differences found in properties, members, relationships or structure." : `${r.differing} difference${r.differing === 1 ? "" : "s"}: ${r.props.length} propert${r.props.length === 1 ? "y" : "ies"}, ${r.members.length} other member${r.members.length === 1 ? "" : "s"}, ${r.links.length} relationship${r.links.length === 1 ? "" : "s"}, ${r.structure.length} structure row${r.structure.length === 1 ? "" : "s"}.` });
+    const u = uniqueParts(ix, n.path, o2.path)!, flat = (t: import("./compare.ts").UniqueNode, side: string): Array<Record<string, TableCell>> => { const rows: Array<Record<string, TableCell>> = []; const go = (x: import("./compare.ts").UniqueNode, l: number): void => { rows.push({ side, part: { text: ind(l) + x.label, path: x.path }, qty: x.qty, status: l === 0 ? "assembly" : x.unique ? "unique" : "path to a unique part" }); x.children.forEach((c) => go(c, l + 1)); }; go(t, 0); return rows; };
+    out.push({ id: "compare-unique", title: "Parts and assemblies that only one side has (D-0104)", columns: [{ key: "side", label: "Side" }, { key: "part", label: "Part or assembly", wide: true }, { key: "qty", label: "Qty" }, { key: "status", label: "" }],
+      rows: [...flat(u.a, A), ...flat(u.b, B)], empty: "", note: `${u.uniqueA} unique under ${A}, ${u.uniqueB} unique under ${B}. A part is the same part by note, else part number, else name, anywhere in the other structure. Indented rows are the path down; "unique" rows are missing from the other side.` });
     out.push({ id: "compare-props", title: "Properties that differ", columns: cols("Property"), rows: plainRows(r.props), empty: "No property differs." });
     out.push({ id: "compare-structure", title: "Structure, down to the parts that differ", columns: [{ key: "a", label: A }, { key: "b", label: B }, { key: "diff", label: "Difference", wide: true }],
       rows: r.structure.map((x) => ({ a: x.pathA ? { text: ind(x.level) + x.a!, path: x.pathA } : "", b: x.pathB ? { text: ind(x.level) + x.b!, path: x.pathB } : "", diff: x.diff })), empty: "The parts match: same parts, quantities and revisions at every level." });

@@ -1199,3 +1199,28 @@ Rules: WKB-047, WKB-048 (new).
 5. **Not run in real Obsidian.**
 
 Rules: WKB-049 (new); WKB-038 (changed).
+
+## D-0103 — Standard colors for kinds of note
+
+2026-10-25 · Spencer · Accepted (owner, chat: "agreed" to the palette proposal)
+
+1. **One table.** Each kind of note has one hex color, shared by canvases, the graph and the offline page. No two kinds share a color. Function kinds are shades of green; an interface object is a darker blue than other objects. (rule WKB-050)
+2. **Hex only.** Presets (1, 5, 6) are no longer used, so a card looks the same in every Obsidian theme.
+3. **Reserved colors.** Port cards teal, retired notes red, a link to a note not in the vault rose. No kind uses them.
+4. **Inherited cards** (D-0101) are a lighter mix of their own color with the "↑ from" line, no longer purple.
+5. **Existing canvases.** Refresh recolors cards to the table; cards drawn earlier with presets keep them until refreshed (internal canvases: until re-created).
+6. **Not done.** A vault-level override file and a legend card; ask if wanted.
+
+Rules: WKB-050 (new).
+
+## D-0104 — Unique parts of two assemblies
+
+2026-10-25 · Spencer · Accepted (owner, chat: "a function to take two assemblies and show unique parts and assemblies underneath … the path down to the lowest unique part")
+
+1. **Where.** Compare notes: a table section, and a button "Canvas of unique parts". (rule WKB-051)
+2. **Unique.** A part or assembly under one assembly is unique when the other assembly has nothing like it at any depth. Same part = same note, else same part number, else (no part number) same name.
+3. **Shape.** Under each selected note, only the path down to each unique part: a shared assembly stays when something unique is below it ("shared · path"); a shared part with nothing unique below is left out. The canvas has the two assemblies side by side, one row per level, lines parent to child.
+4. **Not compared.** Quantities and revisions (Compare notes' structure section shows those). Depth stops at 12.
+5. **Canvas cards** use the internal ids, so Refresh and Auto-layout leave the picture as drawn.
+
+Rules: WKB-051 (new).
