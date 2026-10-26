@@ -214,7 +214,7 @@ test("the owner table has seven areas and recommends keeping both in every area 
   assert.deepEqual(rowsDup.map((r) => r.id), ["facts", "structure", "properties", "interfaces", "behavior", "requirements", "relationships"]);
   const by = Object.fromEntries(rowsDup.map((r) => [r.id, r])) as Record<string, M.MgAreaRow>;
   for (const r of rowsDup) assert.equal(r.recommended, "both", r.id);
-  assert.ok(by.interfaces!.absorbed >= 5 && by.interfaces!.survivor === 0); assert.equal(by.structure!.absorbed, 1);
+  assert.ok(by.interfaces!.absorbed >= 5 && by.interfaces!.survivor === 0); assert.equal(by.structure!.absorbed, 2);   // the controller part and the filterBank pushed up into the block (D-0100)
 });
 
 test("with the default owners every part, port and relationship of the EA note is in the surviving note's block (D-0087)", () => {

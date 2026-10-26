@@ -1162,3 +1162,16 @@ Rules: BOM-012 (changed), BOM-024 (changed), BOM-045 (new).
 5. **Limits.** Not run on the real EA export; the counts come from the notes of the 15.24 import. `Unplaced Review Items` is unchanged.
 
 Rules: IMP-132 (new).
+
+## D-0100 — EA import: parts and ports inside a Part usage are pushed up to the shared note
+
+2026-10-25 · Spencer · Accepted (owner, chat: "parts and ports within a part should be pushed up the the shared note. no ports or parts should be held only by a usage. duplicate ports due to this is fine, we can trim later")
+
+1. **Rule.** A Part or Port nested in an EA Part usage is written as a usage on the block that Part points at (PDATA1). It is no longer deferred as `USAGE_WITHOUT_NOTE_OWNER`. (IMP-133)
+2. **Ports on a Part** were already merged onto the block (IMP-106, flagged when added). That stays, grouped by D-0099.
+3. **Duplicates.** A part or port may appear twice on a block; names are kept unique on the block. Trimming is later work.
+4. **Still deferred.** A nested element whose Part has no block in PDATA1 (54 Ports and some Parts in the test vault), and elements inside an ActivityPartition, a Port or nothing: no shared note exists to hold them.
+5. **Expected effect on the test vault (not re-imported).** Of the 327 Parts, 96 Ports and 81 Actions with `USAGE_WITHOUT_NOTE_OWNER`, 283 Parts with a Part parent are candidates, and the port connections that had no common assembly can resolve once their parts exist. The real number is known after the next import.
+6. **Limits.** A nested Part's multiplicity and tags are kept as for any usage; a Part nested twice (Part in Part in Part) is pushed to the block of its immediate parent Part only.
+
+Rules: IMP-133 (new).

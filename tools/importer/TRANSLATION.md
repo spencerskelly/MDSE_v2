@@ -159,6 +159,7 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `USAGE_OWNER_KIND_MISMATCH` | Usage kind does not fit its owner (e.g. a state in a part def). | Check the parent in EA. |
 | `UNRESOLVED_PART_TYPE` | Part usage has no resolvable block in PDATA1. | Usage is written untyped with a flagLink. |
 | `UNRESOLVED_PORT_TYPE` | Port has no interface/port definition as its PDATA1 type. | Usage is written untyped with a flagLink. |
+| `PUSHED_UP_TO_BLOCK` | A Part or Port inside a Part usage was written on the block that Part points at, so the shared note holds it (D-0100). | None. A duplicate of a part or port already on the block can be trimmed later. |
 | `MERGED_INTO_BLOCK_PORT` | A Port under a Part is the same port as one on the Part's block. | None; connectors use the block port. |
 | `PORT_ADDED_TO_BLOCK` | A Port under a Part matched no port on its block (no PDATA3 target, no unique same name). | Review the port added to the block. |
 | `UNRESOLVED_ACTION_TYPE` | Action has no action definition as Classifier. | Usage is written untyped with a flagLink. |

@@ -302,6 +302,15 @@ test("D-0099: untyped, added and unmapped findings are one callout per kind on a
   assert.ok(lists > 0, "the fixture has at least one");
 });
 
+test("D-0100: a Part inside a Part usage is written on the block that Part points at, not held by the usage", async () => {
+  const res = await run();
+  assert.match(blockOf(res, "Controller~2"), /part filterBank : OBJ_\d+::PowerModule;/);
+  const row = res.ledger.find((l) => l.ea_type === "Part" && l.diagnostic_code === "PUSHED_UP_TO_BLOCK");
+  assert.ok(row && row.disposition === "native" && /pushed up from the Part usage/.test(row.evidence));
+  assert.ok(!res.ledger.some((l) => l.ea_type === "Part" && l.diagnostic_code === "USAGE_WITHOUT_NOTE_OWNER" && /filterBank/.test(l.evidence ?? "")));
+  assert.match(named(res, "Controller", 1).content, /Part filterBank sat in the Part "controller" in EA/);
+});
+
 test("a Port under a Part is the block's own port: PDATA3, same name, or added (IMP-106)", async () => {
   const res = await run();
   const ctl = blockOf(res, "Controller~2");

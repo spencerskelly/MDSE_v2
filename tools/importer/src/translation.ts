@@ -91,6 +91,7 @@ export const CODES: Record<string, { meaning: string; action: string }> = {
   USAGE_OWNER_KIND_MISMATCH: { meaning: "Usage kind does not fit its owner (e.g. a state in a part def).", action: "Check the parent in EA." },
   UNRESOLVED_PART_TYPE: { meaning: "Part usage has no resolvable block in PDATA1.", action: "Usage is written untyped with a flagLink." },
   UNRESOLVED_PORT_TYPE: { meaning: "Port has no interface/port definition as its PDATA1 type.", action: "Usage is written untyped with a flagLink." },
+  PUSHED_UP_TO_BLOCK: { meaning: "A Part or Port inside a Part usage was written on the block that Part points at, so the shared note holds it (D-0100).", action: "None. A duplicate of a part or port already on the block can be trimmed later." },
   MERGED_INTO_BLOCK_PORT: { meaning: "A Port under a Part is the same port as one on the Part's block.", action: "None; connectors use the block port." },
   PORT_ADDED_TO_BLOCK: { meaning: "A Port under a Part matched no port on its block (no PDATA3 target, no unique same name).", action: "Review the port added to the block." },
   UNRESOLVED_ACTION_TYPE: { meaning: "Action has no action definition as Classifier.", action: "Usage is written untyped with a flagLink." },

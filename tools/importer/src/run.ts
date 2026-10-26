@@ -327,7 +327,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     let kind = u.entry.native_kind ?? "SyncNode";
     if (kind === "ItemUsage") { flowItem(u); return; }
     if (kind === "PortUsage" && isInstancePort(e)) { instancePort(u); return; }
-    const owner = byObj.get(e.parentId);
+    let owner = byObj.get(e.parentId), pushedFrom: EaObject | null = null;
+    // D-0100: a Part (or Port) inside a Part usage is written on the shared note, the block that Part points at (PDATA1), never held by the usage alone.
+    if ((!owner || !owner.keyword) && (kind === "PartUsage" || kind === "PortUsage")) { const pe = g.objectsById.get(e.parentId), blk = pe?.type === "Part" ? refDraft(pe.pdata1) : null; if (pe && blk?.keyword === "part def") { owner = blk; pushedFrom = pe; } }
     if (!owner || !owner.keyword) { set(u.row, "deferred_review", kind, "USAGE_WITHOUT_NOTE_OWNER", "Owner is not a definition note"); return; }
     // IMP-107 (V1 W-137): a Part inside an action or state definition that points at another action or state is that action or state used there
     const partTarget = kind === "PartUsage" ? refDraft(e.pdata1) : null;
@@ -375,8 +377,9 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       const onUse = (g.tags.get(e.id) ?? []).filter(([k, v]) => !isPlaceholder(v) && tagDispOf.get(k) === "body");
       if (onUse.length) owner.sourceLines.push(`- On ${ref.kind} ${name}: ${onUse.map(([k, v]) => `${k}: ${v.replace(/\s*\n\s*/g, " ")}`).join("; ")}`);
     }
-    set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag, diag ? "Review: usage written without a type" : "");
+    set(u.row, "native", kind, diag.split(";").find((x) => x.startsWith("UNRESOLVED")) ?? diag ?? "", diag ? "Review: usage written without a type" : "");
     u.row.target_stable_id = owner.id; u.row.target_file = owner.path; if (diag) u.row.evidence = diag;
+    if (pushedFrom) { owner.sourceLines.push(`- ${ref.kind === "port" ? "Port" : "Part"} ${name} sat in the Part ${pushedFrom.name.trim() ? "\"" + pushedFrom.name.trim() + "\"" : "(unnamed)"} in EA; it is written here, on the block that Part points at (D-0100)`); u.row.evidence = [u.row.evidence, `merged into ${owner.title} (pushed up from the Part usage ${pushedFrom.name.trim() || pushedFrom.id})`].filter(Boolean).join("; "); if (!u.row.diagnostic_code) u.row.diagnostic_code = "PUSHED_UP_TO_BLOCK"; }
     if (diag.startsWith("UNRESOLVED")) flagGroup(owner, "untyped", `- ${ref.kind} \`${name}\`: the EA ${u.o.type} \`${e.name}\` has no resolvable definition of the right kind (${diag})`);
   });
 

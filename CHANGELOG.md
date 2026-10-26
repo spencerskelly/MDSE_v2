@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- EA import: a Part or Port inside a Part usage is written on the block that Part points at, so no part or port is held only by a usage (`PUSHED_UP_TO_BLOCK`). IMP-133, D-0100
 - EA import: untyped usages, ports added from an assembly and unmapped elements are one flag per kind per note, listing each item (was one flag each). Expected 1,819 → 415 flags on the test vault; every item keeps its ledger row. IMP-132, D-0099
 - BOM import: identical repeated lines are dropped and counted; effectivity dates are not imported (an update can bring them back); a used part's revision property is its latest revision, older revisions in use are listed in the assembly body and raise no flag. Expected to remove about 21,000 of 24,453 flags on the test vault. BOM-012, BOM-024, BOM-045, D-0098
 - Workbench internal canvas: port cards are larger (260×56, was 180×40) so port name and type fit. D-0097

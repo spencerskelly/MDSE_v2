@@ -33,7 +33,7 @@ test("structure tree and rolled-up parts list for the Charger", () => {
   assert.ok(s.untyped.some((u) => u.includes("mystery")));
   const b = V.bom(ix, c);
   const pm = b.find((x) => x.title === "Power Module")!;
-  assert.equal(pm.qty, 3);
+  assert.equal(pm.qty, 4, "3 modules plus the filterBank pushed up into the Controller block (D-0100)");
   assert.equal(b.find((x) => x.title === "Contactor")!.qty, 3, "2 named contactors plus one unnamed usage that took the type name (IMP-110)");
 });
 

@@ -198,6 +198,7 @@ export function buildSyntheticQeax(file, { scale = 0 } = {}) {
   obj("Requirement", "EU Directive 12", reqs, { stereotype: "Regulatory Requirement" });
   obj("Port", "proxyOut", prod, { parent: controller, stereotype: "ProxyPort", pdata1: G(gpi), pdata2: G(portA) });   // redefinition is recorded, not applied
   obj("Part", "spareCtrl", prod, { parent: twinA, pdata1: G(controller), tags: { isReference: "-1" } });            // a reference part
+  obj("Part", "filterBank", prod, { parent: ctlUse, pdata1: G(pm) });                                            // a Part inside a Part usage: pushed up to the Controller block (D-0100)
   con("Connector", portA, portB, { stereotype: "BindingConnector" });                         // same type: bind
   con("Connector", portA, portAux, { stereotype: "BindingConnector" });                       // conjugated against not: review
   con("InformationFlow", portA, portC, { stereotype: "itemFlow" });                           // flow through the assembly
