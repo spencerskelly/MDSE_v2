@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: identical repeated lines are dropped and counted; effectivity dates are not imported (an update can bring them back); a used part's revision property is its latest revision, older revisions in use are listed in the assembly body and raise no flag. Expected to remove about 21,000 of 24,453 flags on the test vault. BOM-012, BOM-024, BOM-045, D-0098
 - Workbench internal canvas: port cards are larger (260×56, was 180×40) so port name and type fit. D-0097
 - Workbench fix: a table (or panel) opened after the vault index was built stayed on "Reading notes…" until the next rebuild. A view is now handed the index when it opens, and a failed read shows the reason. Regression check added to the plugin test.
 - Workbench Internal structure canvas: the note is one large card with its parts inside it and its ports on the edge of each card; wires join port cards. An object with no port shows a placeholder port (nothing written); the Dashboard and Review count objects without a port. Cards are skipped by Refresh and Auto-layout so they can be moved by hand, and Save canvas offers the object's own folder first. WKB-045, WKB-046, D-0097

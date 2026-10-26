@@ -14,7 +14,7 @@ const row = (r: R): string => `${r.p}\t${(r.pr ?? "-A99").slice(0, 2)}\t${(r.pr 
 const bom = (rows: R[]): string => [HEAD, ...rows.map(row)].join("\n");
 const V1: R[] = [{ p: "A-100", line: "1", c: "B-200", q: "2" }, { p: "A-100", line: "2", c: "C-300" }, { p: "A-100", line: "3", c: "D-400", q: "5", u: "m" }];
 const opts = (existing: Map<string, string> | null, extra: object = {}) => ({ sourceName: "bom.tsv", fingerprint: "a".repeat(64), runDate: "2026-10-20T10:00:00", authorCode: "skellyspencer", classes, existing: existing ? { hasVault: true, files: existing } : null, pending: [] as Array<[string, string]>, ...extra });
-function vaultFrom(text: string): Map<string, string> { const r = buildBom(parseDelimited(text), opts(null)); return new Map(r.files.filter((f) => f.path.startsWith("BOM/")).map((f) => [f.path, f.content])); }
+function vaultFrom(text: string): Map<string, string> { const r = buildBom(parseDelimited(text), { ...opts(null), dates: true }); return new Map(r.files.filter((f) => f.path.startsWith("BOM/")).map((f) => [f.path, f.content])); }
 const scan = (v: Map<string, string>, rows: R[], extra: object = {}) => scanBomUpdate(parseDelimited(bom(rows)), opts(v, { sourceName: "bom2.tsv", runDate: "2026-11-01T09:00:00", ...extra }));
 const cats = (s: ReturnType<typeof scan>) => s.items.map((i) => i.category).sort();
 

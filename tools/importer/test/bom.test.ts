@@ -54,10 +54,11 @@ test("flat BOM: one note per part number, parent-owned usages, pinned revision, 
 test("pinned child revision that is not the child's latest: flagConflict on the parent, older users listed on the child (BOM-011/012)", () => {
   const r = buildBom(parseDelimited(flatText), baseOpts);
   const parent = byTitle(r.files, "04270-001").content, child = byTitle(r.files, "04766").content;
-  assert.match(parent, /\[!flagConflict\] Current revision of 04766 not established/); assert.match(parent, /"-B99"/); assert.match(parent, /"-C99"/);
+  assert.doesNotMatch(parent, /\[!flag/, "D-0098: no flag; the latest revision is always the one the property shows");
+  assert.match(parent, /attribute childRevision = "-C99";/); assert.match(parent, /\*\*Older revision usages\*\*/); assert.match(parent, /pinned at "-B99"/);
   assert.doesNotMatch(child, /older revision|04270-001/, "a child note names no assembly above it (D-0063)");
   assert.match(child, /attribute revision = "-C99";/);                                    // latest wins the properties (BOM-007)
-  assert.equal(r.summary.conflicts, 1);
+  assert.equal(r.summary.conflicts, 0);
 });
 
 test("explicit BOM CURRENT designation selects authoritative revision and consolidates pinned usage", () => {
@@ -80,7 +81,7 @@ test("the latest revision is the highest by revision order, and the part is impo
   const t = byTitle(r.files, "05274").content;
   assert.match(t, /attribute revision = "A01";/);                                           // the placeholder -099 ranks below a real revision
   assert.match(t, /Revisions in the BOM: "-099", "A01"; the latest is "A01"/);
-  assert.match(byTitle(r.files, "01653").content, /Current revision of 05274 not established/);       // the assembly that pins the placeholder says so
+  assert.match(byTitle(r.files, "01653").content, /pinned at "-099"/);       // the assembly that pins the placeholder lists it as an older revision (D-0098)
   assert.ok(r.findings.some((f) => f.code === "REV_SELECTION" && f.message.startsWith("05274")));
   assert.equal(r.summary.skippedParts, 0);
   assert.deepEqual([["-099", "A01"], ["A01", "B02"], ["-V01", "-V02"], ["A02", "A10"], ["Z99", "A01"]].map(([a, b]) => bomRevCompare(a!, b!)), [-1, -1, -1, -1, -1]);
@@ -93,7 +94,8 @@ test("units are standard, ZST is dropped, dates are YYYY-MM-dd text, states are 
   const a = byTitle(buildBom(parseDelimited(flatText), baseOpts).files, "01141-002").content;
   assert.doesNotMatch(a, /lifecycleState|PRODUCTIONPREPARATION/);
   assert.match(a, /^description: CABLE ASSY THERMISTOR 10\.00IN PWRSTN$/m);
-  assert.match(a, /attribute effectiveFrom = "2019-01-02";/);
+  assert.doesNotMatch(a, /effectiveFrom|effectiveTo/, "D-0098: dates are not imported by default");
+  assert.match(byTitle(buildBom(parseDelimited(flatText), { ...baseOpts, dates: true }).files, "01141-002").content, /attribute effectiveFrom = "2019-01-02";/, "...but are when asked for");
 });
 
 test("a line that appears twice in one assembly keeps the first and flags the other with flagValue (D-0047)", () => {
@@ -105,6 +107,24 @@ test("a line that appears twice in one assembly keeps the first and flags the ot
   assert.ok(r.findings.some((f) => f.code === "DUP_LINE" && f.level === "warn"));
   const same = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, FLAT_ROWS[2]!].join("\n")), baseOpts);
   assert.ok(!same.findings.some((f) => f.code === "DUP_LINE"), "an identical repeat is dropped silently");
+});
+
+test("D-0098: an exact repeat of a line is dropped even when its dates differ; the same child at another revision is history, not a flag", () => {
+  const dup = FLAT_ROWS[2]!.replace("2/Jan/19", "5/Mar/20");                                    // same child, revision, quantity, unit: only the date differs
+  const r1 = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, dup].join("\n")), baseOpts);
+  assert.ok(!r1.findings.some((f) => f.code === "DUP_LINE"));
+  assert.ok(r1.findings.some((f) => f.code === "DUP_LINE_IDENTICAL" && /^1 repeated line/.test(f.message)));
+  assert.doesNotMatch(byTitle(r1.files, "01141-002").content, /\[!flag/);
+  // 04270-001 line 1 uses 04766 at -B99 and again at -A99 with other dates; 04766's latest is -C99
+  const hist = FLAT_ROWS[5]!.replace("\t-B\t99\t", "\t-A\t99\t").replace("2/Jan/19", "1/Jan/18");
+  const r2 = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, hist].join("\n")), baseOpts), p = byTitle(r2.files, "04270-001").content;
+  assert.ok(!r2.findings.some((f) => f.code === "DUP_LINE")); assert.ok(r2.findings.some((f) => f.code === "DUP_LINE_REVISIONS"));
+  assert.doesNotMatch(p, /\[!flag/, "no flag");
+  assert.equal(p.match(/attribute childRevision = /g)!.length, 1); assert.match(p, /attribute childRevision = "-C99";/, "the property is the latest revision");
+  assert.match(p, /pinned at "-B99"/); assert.match(p, /pinned at "-A99"/);                    // older revisions in use are listed in the assembly's body
+  // quantity differing is still a real conflict, and the callout no longer shows dates
+  const q = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, FLAT_ROWS[2]!.replace("\t0.559\t", "\t0.700\t")].join("\n")), baseOpts);
+  assert.match(byTitle(q.files, "01141-002").content, /\[!flagValue\]/); assert.doesNotMatch(byTitle(q.files, "01141-002").content, /, from /);
 });
 
 test("blank part number + manufacturer part number is an alternate of the line above, not a part (BOM-003/013)", () => {
@@ -220,7 +240,7 @@ test("the stored importer fingerprint helper is available to the BOM path", () =
 
 import { scanSysml } from "../../workbench/src/sysml_scan.ts";
 test("the Workbench scanner reads a BOM block: usages with pinned revision, quantity and unit as properties", () => {
-  const note = byTitle(buildBom(parseDelimited(flatText), baseOpts).files, "01141-002").content;
+  const note = byTitle(buildBom(parseDelimited(flatText), { ...baseOpts, dates: true }).files, "01141-002").content;
   const block = /```sysml\n([\s\S]*?)```/.exec(note)![1]!, s = scanSysml(block);
   assert.deepEqual(s.warnings ?? [], []);
   const def = s.defs[0]!; assert.equal(def.name, "P_01141_002"); assert.equal(def.usages.length, 5);   // four parts and the drawing reference

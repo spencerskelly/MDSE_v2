@@ -221,6 +221,8 @@ export interface BomOptions {
   update?: boolean;
   /** D-0056: what to do with the lines a file gives for an assembly at a revision older than its latest. "keep" (the default) writes them into the note body; "drop" skips them and says how many. */
   earlierRevisions?: "keep" | "drop";
+  /** D-0098: effectivity dates (from, to) are not imported unless asked for; they play no part in comparing repeated lines. */
+  dates?: boolean;
 }
 export interface BomResult {
   status: "WRITE_READY" | "FAILED"; files: OutFile[]; findings: Finding[]; problems: string[];
@@ -242,10 +244,11 @@ function bomLinesOfNote(text: string): Map<string, string> {
   return out;
 }
 /** What differs between two rows for the same line of the same assembly, in words; "" when they agree. */
-function bomUsageDiff(a: Usage, b: Usage): string {
-  const f: Array<[string, string, string]> = [["child", a.child, b.child], ["child revision", a.childRev, b.childRev], ["quantity", a.amount, b.amount], ["unit", a.unit, b.unit], ["reference designator", a.refDes, b.refDes], ["from", a.from, b.from], ["to", a.to, b.to]];
-  return f.filter(([, x, y]) => x !== y).map(([n, x, y]) => `${n} ${JSON.stringify(x)} kept, ${JSON.stringify(y)} other`).join("; ");
+function bomUsageDiffs(a: Usage, b: Usage, dates: boolean): Array<[string, string, string]> {
+  const f: Array<[string, string, string]> = [["child", a.child, b.child], ["child revision", a.childRev, b.childRev], ["quantity", a.amount, b.amount], ["unit", a.unit, b.unit], ["reference designator", a.refDes, b.refDes], ...(dates ? [["from", a.from, b.from], ["to", a.to, b.to]] as Array<[string, string, string]> : [])];
+  return f.filter(([, x, y]) => x !== y);
 }
+const bomUsageDiff = (a: Usage, b: Usage, dates: boolean): string => bomUsageDiffs(a, b, dates).map(([n, x, y]) => `${n} ${JSON.stringify(x)} kept, ${JSON.stringify(y)} other`).join("; ");
 const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0 ? (+u.amount === 1 ? "1" : u.amount) : u.amount ? u.amount + " " + u.unit : "1"}`.trim();
 
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
@@ -293,7 +296,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const designated = [...observed.values()].filter((v) => /^current$/i.test(v.state.trim())).map((v) => v.rev);
     const uniqueDesignated = [...new Set(designated)];
     const top = uniqueDesignated.length === 1 ? uniqueDesignated[0]! : revs[revs.length - 1]!;
-    if (uniqueDesignated.length === 1 || observed.size === 1) revisionAuthority.add(pn);
+    if (uniqueDesignated.length <= 1) revisionAuthority.add(pn);   // D-0098: the latest revision (CURRENT if one is marked, else by BOM-018 order) is always the one the property shows; only two CURRENT marks leave it open
     if (uniqueDesignated.length > 1) findings.push({ level: "warn", code: "REV_CURRENT_CONFLICT", message: `${pn}: multiple revisions explicitly designated CURRENT; no revision-pin conflicts suppressed.` });
     else if (!uniqueDesignated.length && observed.size > 1) findings.push({ level: "warn", code: "REV_CURRENT_UNKNOWN", message: `${pn}: multiple revisions without an explicit CURRENT designation; ordering is provisional and pinned-revision differences require review.` });
     const base = (pr ?? cr)!.get(top)!, name = base.name || cr?.get(top)?.name || pr?.get(top)?.name || "";
@@ -318,6 +321,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (!o.update && existingBy.has(s.pn)) continue;
     findings.push({ level: "warn", code: "NAME_CONFLICT", message: `${s.pn} revision ${JSON.stringify(s.rev)} is named ${JSON.stringify(s.first)}${s.firstRow ? ` (row ${s.firstRow})` : ""} and also ${[...s.others].map(([n, c]) => `${JSON.stringify(n)} (${c} more row${c === 1 ? "" : "s"})`).join(", ")} as a ${s.side}; the first name was used. Review which is right.` });
   }
+  const withDates = o.dates === true, otherPins = new Map<Usage, Array<{ rev: string; row: number }>>(); let sameRows = 0, revRows = 0;   // D-0098
   const earlierOf = new Map<string, Usage[]>();   // D-0056 (BOM-038): lines of an assembly at a revision older than its latest
   // usages that can be written: parent and child both determined, no duplicate (parent, line)
   const okUsage: Usage[] = [], seenLine = new Set<string>(), firstOf = new Map<string, Usage>(), existingUsages = new Map<string, Usage[]>(), otherRev = new Set<string>(), dupes = new Map<string, Array<{ kept: Usage; other: Usage; diff: string }>>(); let alternates = 0;
@@ -333,11 +337,21 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
       if (!bomIsDrawing(u) && !(u.line && seenLine.has(k))) { seenLine.add(k); (existingUsages.get(u.parent) ?? existingUsages.set(u.parent, []).get(u.parent)!).push(u); }
       continue;
     }
-    if (u.line && seenLine.has(k)) { const first = firstOf.get(k)!; const diff = bomUsageDiff(first, u); if (diff) { (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff }); findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` }); } continue; }
+    if (u.line && seenLine.has(k)) {
+      const first = firstOf.get(k)!, ds = bomUsageDiffs(first, u, withDates);
+      if (!ds.length) { sameRows++; continue; }                                            // D-0098: an exact repeat is dropped and counted
+      if (ds.every(([n]) => n === "child revision")) { (otherPins.get(first) ?? otherPins.set(first, []).get(first)!).push({ rev: u.childRev, row: u.row }); revRows++; continue; }   // D-0098: the same child at another revision is revision history, not a conflict
+      const diff = bomUsageDiff(first, u, withDates);
+      (dupes.get(u.parent) ?? dupes.set(u.parent, []).get(u.parent)!).push({ kept: first, other: u, diff });
+      findings.push({ level: "warn", code: "DUP_LINE", message: `Row ${u.row}: parent ${u.parent} line ${u.line} appears again with different values (${diff}); the first (row ${first.row}) was kept and the other flagged in the note (D-0047).` });
+      continue;
+    }
     seenLine.add(k); firstOf.set(k, u); okUsage.push(u); alternates += u.alternates.length + u.altParts.length;
     if (!u.line) findings.push({ level: "warn", code: "NO_LINE", message: `Row ${u.row}: no line number for ${u.child} under ${u.parent}; the usage cannot be identified by line (BOM-008).` });
   }
 
+  if (sameRows) findings.push({ level: "info", code: "DUP_LINE_IDENTICAL", message: `${sameRows} repeated line${sameRows === 1 ? "" : "s"} identical to one already read (child, revision, quantity, unit, reference designator) ${sameRows === 1 ? "was" : "were"} dropped (D-0098).` });
+  if (revRows) findings.push({ level: "info", code: "DUP_LINE_REVISIONS", message: `${revRows} repeated line${revRows === 1 ? "" : "s"} differed only in the child's revision. They are not conflicts: the property takes the child's latest revision and the older ones are listed in the assembly note (D-0098).` });
   // identity: ids continue after the highest in the vault and in the pending EA files; uids avoid every uid there
   const highest = new Map<string, number>(), taken = new Set<string>();
   for (const [, t] of [...(o.existing?.files ?? []), ...o.pending]) {
@@ -415,19 +429,22 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
         usageCount++;
         const cinf = info.get(u.child), name = scope.take(bomIdent(u.childName, u.child)), discrete = BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0;
         const props: string[] = [];
-        if (u.line) props.push(bomAttr("line", u.line)); props.push(bomAttr("childRevision", u.childRev));
+        const lcv = latest.get(u.child), shownRev = lcv && lcv.rev && revisionAuthority.has(u.child) && !bomIsDrawing(u) ? lcv.rev : u.childRev;   // D-0098: the property always says the latest revision; the older ones are listed in the body
+        if (u.line) props.push(bomAttr("line", u.line)); props.push(bomAttr("childRevision", shownRev));
         if (!discrete && u.amount) { props.push(bomAttr("quantity", u.amount)); if (u.unit) props.push(bomAttr("unit", u.unit)); else if (!/^\d+$/.test(u.amount)) findings.push({ level: "warn", code: "QTY_NO_UNIT", message: `Row ${u.row}: quantity ${u.amount} for ${u.child} has no unit; none was assumed.` }); }
         if (!discrete && u.amount === "0") findings.push({ level: "warn", code: "QTY_ZERO", message: `Row ${u.row}: ${u.child} under ${u.parent} has quantity 0 and is not a drawing line.` });
         // D-0074: the redline layout has no effectivity columns, so a blank there is not a removal: the dates the vault already holds for this line stay
-        const kept = parsed.layout === "redline" && o.update && !u.from && !u.to ? keptDates(pn, u.line) : { from: "", to: "" };
-        if (u.refDes) props.push(bomAttr("refDes", u.refDes)); if (u.from || kept.from) props.push(bomAttr("effectiveFrom", u.from || kept.from)); if (u.to || kept.to) props.push(bomAttr("effectiveTo", u.to || kept.to));
+        const kept = o.update && !withDates ? keptDates(pn, u.line) : parsed.layout === "redline" && o.update && !u.from && !u.to ? keptDates(pn, u.line) : { from: "", to: "" };   // D-0098: no dates unless asked for; an update keeps the ones a note already has
+        if (u.refDes) props.push(bomAttr("refDes", u.refDes)); const dFrom = withDates ? u.from || kept.from : kept.from, dTo = withDates ? u.to || kept.to : kept.to; if (dFrom) props.push(bomAttr("effectiveFrom", dFrom)); if (dTo) props.push(bomAttr("effectiveTo", dTo));
         if (u.ssc) props.push(bomAttr("ssc", u.ssc)); if (u.notes) props.push(bomAttr("notes", u.notes));
         const mult = discrete && u.amount !== "1" ? ` [${u.amount}]` : "";
         decl.push(`        part ${name} : ${cinf ? bomSymOf(cinf.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_")}${mult} {`, ...props.map((p) => `            ${p}`), "        }");
         const lc = latest.get(u.child);
-        if (lc && lc.rev !== u.childRev) {
-          if (revisionAuthority.has(u.child)) revisionReview.push({ parent: pn, line: u.line, child: u.child, pinned: u.childRev, selected: lc.rev, row: u.row });
-          else flags.push(flagCallout("flagConflict", `Current revision of ${u.child} not established`, link, [`Line ${u.line || "?"} pins ${JSON.stringify(u.childRev)}; provisional comparison revision ${JSON.stringify(lc.rev)}. Source has no unambiguous CURRENT designation.`]));
+        if (lc && revisionAuthority.has(u.child)) {
+          const seenPin = new Set<string>();
+          for (const pin of [{ rev: u.childRev, row: u.row }, ...(otherPins.get(u) ?? [])]) if (pin.rev !== lc.rev && !seenPin.has(pin.rev)) { seenPin.add(pin.rev); revisionReview.push({ parent: pn, line: u.line, child: u.child, pinned: pin.rev, selected: lc.rev, row: pin.row }); }
+        } else if (lc && lc.rev !== u.childRev) {
+          flags.push(flagCallout("flagConflict", `Current revision of ${u.child} not established`, link, [`Line ${u.line || "?"} pins ${JSON.stringify(u.childRev)}; provisional comparison revision ${JSON.stringify(lc.rev)}. Source has no unambiguous CURRENT designation.`]));
         }
         if (u.alternates.length || u.altParts.length) srcLines.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${[...u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")), ...u.altParts.map((a) => `part ${a.pn}${a.rev ? " revision " + JSON.stringify(a.rev) : ""}${a.name ? " (" + a.name + ")" : ""}${[a.mfr, a.mpn].some(Boolean) ? ", " + [a.mfr, a.mpn].filter(Boolean).join(" ") : ""}${a.amount ? ", quantity " + a.amount + (a.unit ? " " + a.unit : "") : ""}, line ${a.line}, row ${a.row}`)].join("; ")}`);
         if (u.prevChild) srcLines.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
@@ -448,7 +465,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const older = revisionReview.filter((r) => r.parent === pn);
     if (older.length) body.push("**Older revision usages**", "", ...older.map((r) => `- Line ${r.line || "?"}: ${r.child} pinned at ${JSON.stringify(r.pinned)}, selected definition at ${JSON.stringify(r.selected)}; source row ${r.row}.`), "", "See [[Old Revision Usage]].", "");
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
-    for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}, from ${d.other.from || "-"}, to ${d.other.to || "-"}.`, `Review which applies.`]));
+    for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}${d.kept.refDes ? ", reference " + d.kept.refDes : ""}${withDates ? `, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}` : ""}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}${d.other.refDes ? ", reference " + d.other.refDes : ""}${withDates ? `, from ${d.other.from || "-"}, to ${d.other.to || "-"}` : ""}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
       relFields: older.length ? [["noteReview", ["Old Revision Usage"]]] : [], extraFields: extra, partNumber: pn, ...(!isDoc && replaces.get(pn)?.size ? { aliases: [...replaces.get(pn)!].sort() } : {}), bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
       sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });

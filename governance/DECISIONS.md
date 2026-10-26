@@ -1137,3 +1137,16 @@ Rules: WKB-030 (changed).
 5. **Limits.** Not yet run in real Obsidian; how the straddling port cards look over card text is unverified. Ports of a part come from its type's definition; a part usage with no type shows the placeholder. Moving a card does not write anything back to the model.
 
 Rules: WKB-045, WKB-046 (new).
+
+## D-0098 — BOM import: drop repeats, drop dates, always show the latest revision
+
+2026-10-25 · Spencer · Accepted (owner, chat, after the test-vault flag count: 15,228 "two sets of values" and 5,864 "pins at an older revision" flags of 24,453)
+
+1. **Identical repeats.** A repeated line that matches the first in child, child revision, quantity, unit and reference designator is dropped and counted in the findings (`DUP_LINE_IDENTICAL`). (BOM-024)
+2. **No dates.** Effectivity dates are not imported for now; they are not written and not compared. If they are wanted later, an update run brings them back (option `dates`). An update keeps the dates a note already has. (new rule BOM-045)
+3. **Latest revision.** The YAML/property revision of a used part is always its latest revision (CURRENT if one is marked, else the order of BOM-018). The same child at another revision on a repeated line is revision history, not a conflict. The assembly's body lists the older revisions in use ("Older revision usages"). No `flagConflict` is raised for a pin at an older revision. (BOM-012)
+4. **Still flagged.** A repeated line that differs in child, quantity, unit or reference designator; a part with two CURRENT marks.
+5. **Measured on the test vault (MDSE_v2_1024, scratch, nothing re-imported).** Of the 15,228 "two sets of values" flags, 14,333 differ only in revision and dates and go away; 895 differ in something that the callout does not show (the reference designator or unit by the comparison rules) and remain. The 5,864 older-revision flags go. Expected flags from the BOM: about 895, from 21,092. Unverified until the BOM is imported again.
+6. **Limits.** The existing test vault keeps its flags until it is re-imported or cleaned. Reference designators on repeated lines are not merged.
+
+Rules: BOM-012 (changed), BOM-024 (changed), BOM-045 (new).
