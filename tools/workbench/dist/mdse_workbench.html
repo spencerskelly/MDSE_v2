@@ -1008,21 +1008,23 @@ function designTypes(ix            , root        , maxDepth = 8, cap = 400)     
                                                                                                                     
                     
  
+/** The ports a type offers: its own and those of the notes it specializes (first parent), nearest first; a name already seen is not repeated. */
+function portsOfType(ix            , p               )                                                                            {
+  const res = (s         )                => (s ? ix.bySymbol.get(s) ?? null : null), got                                                                            = [], seen = new Set        ();
+  for (let cur                = p, guard = 0; cur && guard < 20 && !seen.has(cur); guard++) {
+    seen.add(cur);
+    for (const u of ix.notes.get(cur)?.def?.usages ?? []) if (u.kind === "port" && !u.end && !got.some((g) => g.name === u.name)) got.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj });
+    cur = outgoing(ix, cur).find((e) => e.kind === "specializes" && e.to)?.to ?? null;
+  }
+  return got;
+}
 /** The definition's parts with the ports each part's type offers (inherited ones included), its own boundary ports, and every
  *  connect, bind and flow with both ends resolved. An end that names a part or port that does not exist is marked, so a broken wire shows. */
 function internalStructure(ix            , path        )                 {
   const d = ix.notes.get(path)?.def, res = (s         )                => (s ? ix.bySymbol.get(s) ?? null : null);
   const out                 = { parts: [], boundary: [], links: [], untyped: [] };
   if (!d) return out;
-  const portsOf = (p               )                                                                            => {
-    const got                                                                            = [], seen = new Set        ();
-    for (let cur                = p, guard = 0; cur && guard < 20 && !seen.has(cur); guard++) {
-      seen.add(cur);
-      for (const u of ix.notes.get(cur)?.def?.usages ?? []) if (u.kind === "port" && !u.end && !got.some((g) => g.name === u.name)) got.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj });
-      cur = outgoing(ix, cur).find((e) => e.kind === "specializes" && e.to)?.to ?? null;
-    }
-    return got;
-  };
+  const portsOf = (p               )                                                                            => portsOfType(ix, p);
   const partUsages = d.usages.filter((u) => u.kind === "part"), own = d.usages.filter((u) => u.kind === "port" && !u.end);
   for (const u of partUsages) { const tp = res(u.type); out.parts.push({ name: u.name, type: u.type ?? "", path: tp, mult: u.mult ?? "", ref: !!u.ref, ports: portsOf(tp) }); if (!u.type) out.untyped.push(`part ${u.name}`); }
   for (const u of own) { out.boundary.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "" }); if (!u.type) out.untyped.push(`port ${u.name}`); }
@@ -1036,6 +1038,55 @@ function internalStructure(ix            , path        )                 {
   for (const s of d.stmts) {
     if (s.kind !== "connect" && s.kind !== "bind" && s.kind !== "flow") continue;
     out.links.push({ kind: s.kind === "connect" ? s.form && s.form !== "plain" ? s.form : "connect" : s.kind, name: s.name ?? "", via: s.type ?? "", viaPath: res(s.type), a: end(s.a ), b: end(s.b ) });
+  }
+  return out;
+}
+
+/* ---- Inherited ports and parts (D-0101) ---------------------------------------------------------------------------- */
+/** Where an inherited member comes from. Specialization: from a general note (the note specializes it) or a specific one (it specializes this note). Assembly: from a parent (an assembly this note is a part of) or a child (a part of this note, rolled up). */
+                                                               
+const INHERIT_FROM                                       = [["general", "Specialization", "from general (the notes this one specializes)"], ["specific", "Specialization", "from specific (the notes that specialize this one)"], ["parent", "Assembly", "from parent (assemblies this note is a part of)"], ["child", "Assembly", "from child (parts of this note, rolled up)"]];
+                                                                                                                                                                                                                                                                                       
+const INHERIT_LIMIT = 400;
+/** The ports and parts a note does not declare itself but takes from other notes, each marked with the direction and the note it comes from. A member whose name the note (or a nearer note) already has is not repeated. Specialization and assembly are separate, and each direction is switched on by the caller. */
+function inheritedMembers(ix            , path        , which                        )                    {
+  const own = ix.notes.get(path)?.def, res = (t         )                => (t ? ix.bySymbol.get(t) ?? null : null);
+  const out                    = [], taken = new Set        ((own?.usages ?? []).filter((u) => (u.kind === "port" || u.kind === "part") && !u.end).map((u) => `${u.kind}|${u.name}`));
+  const add = (from             , source        , route        , depth        , nameTaken             )       => {
+    for (const u of ix.notes.get(source)?.def?.usages ?? []) {
+      if ((u.kind !== "port" && u.kind !== "part") || u.end) continue;
+      const k = `${u.kind}|${route ? route + "." : ""}${u.name}`; if (nameTaken.has(k) || out.length >= INHERIT_LIMIT) continue;
+      nameTaken.add(k);
+      out.push({ kind: u.kind, name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "", from, source, route, depth });
+    }
+  };
+  const reach = (start        , next                         )                                      => {
+    const seen = new Set        ([start]), found                                      = []; let level = [start];
+    for (let depth = 1; level.length && depth <= 12; depth++) { const nxt           = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
+    return found;
+  };
+  const sort = (a        , b        )         => nm(ix, a, a).localeCompare(nm(ix, b, b));
+  const up = (p        )           => outgoing(ix, p).filter((e) => e.kind === "specializes" && e.to).map((e) => e.to ).sort(sort);
+  const down = (p        )           => incoming(ix, p).filter((e) => e.kind === "specializes").map((e) => e.from).sort(sort);
+  const above = (p        )           => [...new Set(incoming(ix, p).filter((e) => e.kind === "hasPart").map((e) => e.from))].sort(sort);
+  const partsOf = (p        )                                      => (ix.notes.get(p)?.def?.usages ?? []).filter((u) => u.kind === "part" && !u.end && res(u.type)).map((u) => ({ name: u.name, to: res(u.type)  }));
+  for (const w of INHERIT_FROM.map(([k]) => k)) {
+    if (!which.includes(w)) continue;
+    const seen = new Set        (taken);                                                                   // nearer notes win by name; the same name from another direction is its own row
+    if (w === "general") for (const { p, depth } of reach(path, up)) add(w, p, "", depth, seen);
+    else if (w === "specific") for (const { p, depth } of reach(path, down)) add(w, p, "", depth, seen);
+    else if (w === "parent") for (const { p, depth } of reach(path, above)) add(w, p, "", depth, seen);
+    else {
+      const walk = (p        , route        , depth        , guard             )       => {
+        for (const part of partsOf(p)) {
+          if (out.length >= INHERIT_LIMIT || depth > 8 || guard.has(part.to)) continue;
+          const r = route ? `${route}.${part.name}` : part.name;
+          add(w, part.to, r, depth, seen);
+          walk(part.to, r, depth + 1, new Set([...guard, part.to]));
+        }
+      };
+      walk(path, "", 1, new Set([path]));
+    }
   }
   return out;
 }
@@ -1336,7 +1387,7 @@ const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && 
                                                                                                                                                                                        
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix            , paths          )         => paths.map((p) => C(ix, p));
-                                                                                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                                                                                                                                                                             
 
 function lensTables(ix            , lens      , sel        , o              = {})              {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)  : null;
@@ -1389,6 +1440,16 @@ function lensTables(ix            , lens      , sel        , o              = {}
     out.push({ id: "links", title: "Connections, bindings and flows", columns: [{ key: "kind", label: "Kind" }, { key: "a", label: "From" }, { key: "b", label: "To" }, { key: "via", label: "Through", wide: true }],
       rows: r.links.map((x) => ({ kind: x.kind, a: endCell(x.a), b: endCell(x.b), via: x.via ? ({ text: x.viaPath ? nm(ix, x.viaPath, x.via) : x.via, path: x.viaPath }        ) : x.name })), empty: "No connections, bindings or flows.",
       note: r.untyped.length ? "Untyped: " + r.untyped.join(", ") : "" });
+    if (o.inherit?.length) {                                                                                   // D-0101: specialization and assembly are separate tables
+      const inh = inheritedMembers(ix, sel, o.inherit), why                              = { general: "from general", specific: "from specific", parent: "from parent assembly", child: "from child part" };
+      for (const [grp, title] of [["Specialization", "Inherited through specialization"], ["Assembly", "Inherited through the assembly"]]         ) {
+        const keys = INHERIT_FROM.filter(([, g]) => g === grp).map(([k]) => k), rows = inh.filter((x) => keys.includes(x.from));
+        if (!keys.some((k) => o.inherit .includes(k))) continue;
+        out.push({ id: grp === "Specialization" ? "inherit-spec" : "inherit-asm", title: `${title} (${rows.length})`, columns: [{ key: "member", label: "Port or part" }, { key: "type", label: "Type" }, { key: "dir", label: "Direction" }, { key: "src", label: "Declared on" }, { key: "depth", label: "Layers" }],
+          rows: rows.map((x) => ({ member: `${x.kind} ${x.route ? x.route + "." : ""}${x.name}${x.mult ? " [" + x.mult + "]" : ""}`, type: typ(x.type, x.path), dir: why[x.from], src: { text: nm(ix, x.source, x.source), path: x.source }        , depth: String(x.depth) })), empty: "Nothing is inherited in the directions chosen.",
+          note: rows.length >= 400 ? "Capped at 400." : "" });
+      }
+    }
   } else if (lens === "states") {
     if (!n) return [{ id: "states", title: "States", columns: [], rows: [], empty: "Select a note in Obsidian to see its states." }];
     const f = behavior(ix, sel, "states");
@@ -1946,14 +2007,19 @@ function autoLayout(doc           , ix            )                             
 
 /** The internal structure of one definition as a canvas (D-0097). The note is one large card; each part is a card inside it; each port is a small card on the edge of the card that owns it, half in and half out. Every object has at least one port: where a definition or a part's type has none, a placeholder "no port" card is drawn so there is always an edge to connect to, and nothing is written to the vault. Wires (connect, bind, flow) are lines between port cards. Parts that a wire joins sit a related gap apart, others the unrelated gap (D-0096). Cards are laid out once; the person moves them by hand afterwards, and Refresh, Auto-layout and Collapse leave them where they are. At most MAX_PARTS parts. */
 const MAX_PARTS = 60;
-function internalCanvas(ix            , path        )               {
+function internalCanvas(ix            , path        , inherit                         = [])               {
   const note = ix.notes.get(path);
   if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
   const r = internalStructure(ix, path), PW = 360, PORT_W = 260, PORT_H = 56, STEP = PORT_H + 16, TOP = 72, PAD_X = 300, PAD_TOP = 120, PAD_BOTTOM = 80;
   const clip = (t        )         => t.replace(/[|[\]\n]/g, " ").replace(/\s+/g, " ").trim();
   const link = (p               , label        )         => (p ? `[[${p.replace(/\.md$/i, "")}|${clip(label)}]]` : clip(label));
-  const parts = r.parts.slice(0, MAX_PARTS), capped = r.parts.length > MAX_PARTS;
-                                                                        
+  // D-0101: ports and parts the note takes from other notes are drawn too, marked with the direction and the note they come from
+  const FROM_TXT                              = { general: "from general", specific: "from specific", parent: "from parent assembly", child: "from child part" };
+  const inh = inherit.length ? inheritedMembers(ix, path, inherit) : [], tagOf = (m                 )         => `↑ ${FROM_TXT[m.from]} · ${link(m.source, ix.notes.get(m.source)?.title ?? m.source)}`;
+                                                                           
+  const ownParts             = r.parts.map((x) => ({ ...x, key: x.name })), inhParts             = inh.filter((m) => m.kind === "part").map((m, i) => ({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, mult: m.mult, ref: false, ports: portsOfType(ix, m.path), key: `inh${i}`, tag: tagOf(m) }));
+  const allParts = [...ownParts, ...inhParts], parts = allParts.slice(0, MAX_PARTS), inhPorts = inh.filter((m) => m.kind === "port").slice(0, MAX_PARTS), capped = allParts.length > MAX_PARTS || inh.filter((m) => m.kind === "port").length > MAX_PARTS;
+                                                                                      
   const portText = (q                                                                    )           => ({ label: `${q.name}${q.type ? " : " + (q.conj ? "~" : "") + (ix.notes.get(q.path ?? "")?.title ?? q.type) : ""}`, path: q.path, none: false });
   const placeholder           = { label: "no port", path: null, none: true };
   let placeholders = 0, unresolved = 0;
@@ -1961,7 +2027,7 @@ function internalCanvas(ix            , path        )               {
   const sideCount = (n        )         => Math.ceil(n / 2);
   const heightFor = (ports        , min        )         => Math.max(min, TOP + sideCount(ports) * STEP + 10);
   // parts: size, and which parts a wire joins
-  const partNames = new Set(parts.map((x) => x.name)), joined = new Set        ();
+  const partNames = new Set(ownParts.map((x) => x.name)), joined = new Set        ();
   const partOfEnd = (e        )         => e.split(".")[0] ;
   for (const l of r.links) { const a = partOfEnd(l.a.text), b = partOfEnd(l.b.text); if (a !== b && partNames.has(a) && partNames.has(b)) { joined.add(`${a}|${b}`); joined.add(`${b}|${a}`); } }
   const partPorts = parts.map((x) => specsOf(x.ports)), partH = parts.map((_, i) => heightFor(partPorts[i] .length, 120));
@@ -1974,26 +2040,26 @@ function internalCanvas(ix            , path        )               {
     idx.forEach((k, j) => { if (j) x += PW + (joined.has(`${parts[k - 1] .name}|${parts[k] .name}`) ? GX : GXU); at[k] = { x, y }; right = Math.max(right, x + PW); });
     prevNames = names; prevH = rowH;
   }
-  const bports = specsOf(r.boundary), cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
+  const bports = [...(r.boundary.length || inhPorts.length ? r.boundary.map(portText) : specsOf([])), ...inhPorts.map((m)           => ({ ...portText({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, conj: m.conj }), tag: tagOf(m) }))], cw = Math.max(parts.length ? right + PAD_X : 0, 2 * PAD_X + 360), ch = Math.max(parts.length ? y + prevH + PAD_BOTTOM : 0, PAD_TOP + sideCount(bports.length) * STEP + PAD_BOTTOM);
   const nodes               = [], edges               = [], portAt = new Map                    (), partAt = new Map                    ();
   const typeColor = TYPE_COLOR[note.type];
-  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}</small>`, ...(typeColor ? { color: typeColor } : {}) });
+  nodes.push({ id: "ic0", type: "text", x: 0, y: 0, width: cw, height: ch, text: `**[[${note.path.replace(/\.md$/i, "")}|${clip(note.title)}]]**<br><small>internal structure · ${r.parts.length} part${r.parts.length === 1 ? "" : "s"}${inh.length ? ` · ${inh.length} inherited` : ""}</small>`, ...(typeColor ? { color: typeColor } : {}) });
   let k = 1;
   parts.forEach((x, i) => {
     const tn = ix.notes.get(x.path ?? ""), color = tn ? TYPE_COLOR[tn.type] : undefined, small = `: ${tn?.title ?? (x.type || "untyped")}${x.mult ? ` [${x.mult}]` : ""}${x.ref ? " · ref" : ""}${x.path ? "" : x.type ? " · not in vault" : ""}`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const c             = { id: `ic${k++}`, type: "text", x: at[i] .x, y: at[i] .y, width: PW, height: partH[i] , text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>`, ...(color ? { color } : {}) };
-    nodes.push(c); partAt.set(x.name, c);
+    const c             = { id: `ic${k++}`, type: "text", x: at[i] .x, y: at[i] .y, width: PW, height: partH[i] , text: `**${x.path ? `[[${x.path.replace(/\.md$/i, "")}|${clip(x.name)}]]` : clip(x.name)}**<br><small>${small}</small>${x.tag ? `<br><small>${x.tag}</small>` : ""}`, ...(x.tag ? { color: "6" } : color ? { color } : {}) };
+    nodes.push(c); partAt.set(x.key, c);
   });
   let pk = 1;
   const putPorts = (owner            , specs            , keyOf                         , top        )       => {
     const used = [0, 0];                                                                             // ports alternate left and right, each down its own edge
     specs.forEach((sp, i) => {
       const side = i % 2, row = used[side] ++, px = side === 0 ? owner.x - PORT_W / 2 : owner.x + owner.width - PORT_W / 2;
-      const c             = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label), ...(sp.none ? {} : { color: "5" }) };
-      nodes.push(c); if (!sp.none) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
+      const c             = { id: `ip${pk++}`, type: "text", x: Math.round(px), y: owner.y + top + row * STEP, width: PORT_W, height: PORT_H, text: sp.none ? "_no port_" : link(sp.path, sp.label) + (sp.tag ? `<br><small>${sp.tag}</small>` : ""), ...(sp.none ? {} : { color: sp.tag ? "6" : "5" }) };
+      nodes.push(c); if (!sp.none && !sp.tag) portAt.set(keyOf(sp), c); else portAt.set(`${keyOf(sp)}`, c);
     });
   };
-  parts.forEach((x, i) => putPorts(partAt.get(x.name) , partPorts[i] , (s) => `${x.name}.${s.none ? "" : s.label.split(" :")[0]}`, TOP));
+  parts.forEach((x, i) => putPorts(partAt.get(x.key) , partPorts[i] , (s) => `${x.key}.${s.none ? "" : s.label.split(" :")[0]}`, TOP));
   putPorts(nodes[0] , bports, (s) => (s.none ? "" : s.label.split(" :")[0] ), PAD_TOP - 20);
   const cardOfEnd = (e        )                         => {
     const segs = e.split(".");
@@ -3581,7 +3647,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, internalStructure, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -4635,7 +4701,7 @@ function mountPanel(root             , host           , opt                     
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix                    = null, sel = "", lens         = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo                                 = null;
-  let scope                     = "selected", table                                       = "relationships", text = "", spec                      = {}, revFilter = "", pinned = false;
+  let scope                     = "selected", table                                       = "relationships", text = "", spec                      = {}, revFilter = "", pinned = false, inherit                  = [];   // D-0101
 
   const note = (p                           )                   => (p ? ix?.notes.get(p) : undefined);
   const link = (p                           , label         , cls = "")       => {
@@ -4775,6 +4841,7 @@ function mountPanel(root             , host           , opt                     
   const chip = (label        , on         , fn                      )              => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e       ) => { fn((e.target                    ).checked); draw(); } }), " " + label);
   function scopeBar()                     {
     if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e       ) => { tree = (e.target                     ).value               ; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
+    if (lens === "internal") return h("div", { class: "chips", style: "flex-wrap:wrap" }, h("span", { class: "mut" }, "Also show ports and parts inherited"), ...V.INHERIT_FROM.map(([k, group, label]) => h("label", { title: `${group}: ${label}` }, h("input", { type: "checkbox", "aria-label": `Inherit ${label}`, checked: inherit.includes(k), onchange: (e       ) => { inherit = (e.target                    ).checked ? [...inherit, k] : inherit.filter((x) => x !== k); draw(); } }), ` ${group === "Assembly" ? (k === "parent" ? "parent assembly" : "child parts") : k === "general" ? "general" : "specific"} `, h("span", { class: "mut" }, group === "Assembly" ? "(assembly)" : "(specialization)"))));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
       lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e       ) => { table = (e.target                     ).value                ; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]]         ).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
@@ -4903,7 +4970,7 @@ function mountPanel(root             , host           , opt                     
         } }, "All connections canvas"));
       acts.append(allControls);
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
-      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, spec))); acts.append(b); }
+      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit }                       ) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo ; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e         )?.message ?? e); } draw(); } }, "Undo") : null) : null;
@@ -4922,7 +4989,7 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
@@ -4948,7 +5015,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
 })();
 </script>
 <script>

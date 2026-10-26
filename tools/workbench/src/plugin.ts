@@ -29,7 +29,7 @@ declare const WB: {
   cdWhyNot: (ix: any, files: Map<string, string>, from: string, to: string) => string; cdOtherWay: (ix: any, files: Map<string, string>, from: string, to: string) => string[]; cdDropLine: (text: string, id: string) => string | null; cdLabelLine: (text: string, id: string, label: string) => string | null;
   planAddRelationship: (ix: any, files: Map<string, string>, o: any) => any; edDiff: (before: string | null, after: string) => { removed: string[]; added: string[] };
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
-  internalCanvas: (ix: any, path: string) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number };
+  internalCanvas: (ix: any, path: string, inherit?: string[]) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number };
 };
 const obsidian = require("obsidian");
 const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
@@ -345,7 +345,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openCanvas(lens: string, spec: unknown): Promise<string> {
     await this.ensureIndex();
     if (!this.selected || !this.ix.notes.has(this.selected)) throw new Error("Open a model note first.");
-    if (lens === "internal") return writePreview(this, WB.internalCanvas(this.ix, this.selected));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
+    if (lens === "internal") return writePreview(this, WB.internalCanvas(this.ix, this.selected, (spec as any)?.inherit ?? []));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
     const prof = WB.PROFILES.find((p) => p.name === WB.LENS_PROFILE[lens]);
     if (!prof) throw new Error("No canvas for this view.");
     return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));

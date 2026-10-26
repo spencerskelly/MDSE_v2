@@ -1175,3 +1175,15 @@ Rules: IMP-132 (new).
 6. **Limits.** A nested Part's multiplicity and tags are kept as for any usage; a Part nested twice (Part in Part in Part) is pushed to the block of its immediate parent Part only.
 
 Rules: IMP-133 (new).
+
+## D-0101 — Inherited ports and parts, by specialization and by assembly, in both directions
+
+2026-10-25 · Spencer · Accepted (owner, chat: "I'd like the ability for notes to inherit ports and parts from parents and children"; asked which, answered "specialization and assembly (shown separately), both ways (identify from parent or child or general or specific)")
+
+1. **Four directions.** General and specific (specialization); parent and child (assembly). Each is a switch on the Internal structure lens, off by default, so a note is not crowded unless asked. (rule WKB-047)
+2. **Separate and identified.** Specialization and assembly are separate tables. Every member says its direction (from general, from specific, from parent assembly, from child part) and the note that declares it. A child's members carry the route through the parts (`controller.can`). (rule WKB-047)
+3. **Canvas.** Inherited ports sit on the edge of the note's card and inherited parts inside it, purple, with an origin line (rule WKB-048). They are not wired.
+4. **Not written.** Inheritance is a view. The vault, the SysML blocks and the importer's output are unchanged; a part's own ports through its type's specialization chain were already shown (first parent) and still are.
+5. **Limits.** Assembly "parent" and "child" go by the parts the SysML blocks declare, so they follow D-0100's pushed-up parts. Layers stop at 12 (specialization, parent) and 8 (child); at most 400 members. Not run in real Obsidian.
+
+Rules: WKB-047, WKB-048 (new).

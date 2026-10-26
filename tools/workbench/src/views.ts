@@ -171,21 +171,23 @@ export interface InternalResult {
   links: Array<{ kind: string; name: string; via: string; viaPath: string | null; a: InternalEnd; b: InternalEnd }>;
   untyped: string[];
 }
+/** The ports a type offers: its own and those of the notes it specializes (first parent), nearest first; a name already seen is not repeated. */
+export function portsOfType(ix: ModelIndex, p: string | null): Array<{ name: string; type: string; path: string | null; conj: boolean }> {
+  const res = (s?: string): string | null => (s ? ix.bySymbol.get(s) ?? null : null), got: Array<{ name: string; type: string; path: string | null; conj: boolean }> = [], seen = new Set<string>();
+  for (let cur: string | null = p, guard = 0; cur && guard < 20 && !seen.has(cur); guard++) {
+    seen.add(cur);
+    for (const u of ix.notes.get(cur)?.def?.usages ?? []) if (u.kind === "port" && !u.end && !got.some((g) => g.name === u.name)) got.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj });
+    cur = outgoing(ix, cur).find((e) => e.kind === "specializes" && e.to)?.to ?? null;
+  }
+  return got;
+}
 /** The definition's parts with the ports each part's type offers (inherited ones included), its own boundary ports, and every
  *  connect, bind and flow with both ends resolved. An end that names a part or port that does not exist is marked, so a broken wire shows. */
 export function internalStructure(ix: ModelIndex, path: string): InternalResult {
   const d = ix.notes.get(path)?.def, res = (s?: string): string | null => (s ? ix.bySymbol.get(s) ?? null : null);
   const out: InternalResult = { parts: [], boundary: [], links: [], untyped: [] };
   if (!d) return out;
-  const portsOf = (p: string | null): Array<{ name: string; type: string; path: string | null; conj: boolean }> => {
-    const got: Array<{ name: string; type: string; path: string | null; conj: boolean }> = [], seen = new Set<string>();
-    for (let cur: string | null = p, guard = 0; cur && guard < 20 && !seen.has(cur); guard++) {
-      seen.add(cur);
-      for (const u of ix.notes.get(cur)?.def?.usages ?? []) if (u.kind === "port" && !u.end && !got.some((g) => g.name === u.name)) got.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj });
-      cur = outgoing(ix, cur).find((e) => e.kind === "specializes" && e.to)?.to ?? null;
-    }
-    return got;
-  };
+  const portsOf = (p: string | null): Array<{ name: string; type: string; path: string | null; conj: boolean }> => portsOfType(ix, p);
   const partUsages = d.usages.filter((u) => u.kind === "part"), own = d.usages.filter((u) => u.kind === "port" && !u.end);
   for (const u of partUsages) { const tp = res(u.type); out.parts.push({ name: u.name, type: u.type ?? "", path: tp, mult: u.mult ?? "", ref: !!u.ref, ports: portsOf(tp) }); if (!u.type) out.untyped.push(`part ${u.name}`); }
   for (const u of own) { out.boundary.push({ name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "" }); if (!u.type) out.untyped.push(`port ${u.name}`); }
@@ -199,6 +201,55 @@ export function internalStructure(ix: ModelIndex, path: string): InternalResult 
   for (const s of d.stmts) {
     if (s.kind !== "connect" && s.kind !== "bind" && s.kind !== "flow") continue;
     out.links.push({ kind: s.kind === "connect" ? s.form && s.form !== "plain" ? s.form : "connect" : s.kind, name: s.name ?? "", via: s.type ?? "", viaPath: res(s.type), a: end(s.a!), b: end(s.b!) });
+  }
+  return out;
+}
+
+/* ---- Inherited ports and parts (D-0101) ---------------------------------------------------------------------------- */
+/** Where an inherited member comes from. Specialization: from a general note (the note specializes it) or a specific one (it specializes this note). Assembly: from a parent (an assembly this note is a part of) or a child (a part of this note, rolled up). */
+export type InheritFrom = "general" | "specific" | "parent" | "child";
+export const INHERIT_FROM: Array<[InheritFrom, string, string]> = [["general", "Specialization", "from general (the notes this one specializes)"], ["specific", "Specialization", "from specific (the notes that specialize this one)"], ["parent", "Assembly", "from parent (assemblies this note is a part of)"], ["child", "Assembly", "from child (parts of this note, rolled up)"]];
+export interface InheritedMember { kind: "port" | "part"; name: string; type: string; path: string | null; conj: boolean; mult: string; from: InheritFrom; /** the note that declares it */ source: string; /** for a child: the parts passed through, `a.b` */ route: string; depth: number }
+const INHERIT_LIMIT = 400;
+/** The ports and parts a note does not declare itself but takes from other notes, each marked with the direction and the note it comes from. A member whose name the note (or a nearer note) already has is not repeated. Specialization and assembly are separate, and each direction is switched on by the caller. */
+export function inheritedMembers(ix: ModelIndex, path: string, which: readonly InheritFrom[]): InheritedMember[] {
+  const own = ix.notes.get(path)?.def, res = (t?: string): string | null => (t ? ix.bySymbol.get(t) ?? null : null);
+  const out: InheritedMember[] = [], taken = new Set<string>((own?.usages ?? []).filter((u) => (u.kind === "port" || u.kind === "part") && !u.end).map((u) => `${u.kind}|${u.name}`));
+  const add = (from: InheritFrom, source: string, route: string, depth: number, nameTaken: Set<string>): void => {
+    for (const u of ix.notes.get(source)?.def?.usages ?? []) {
+      if ((u.kind !== "port" && u.kind !== "part") || u.end) continue;
+      const k = `${u.kind}|${route ? route + "." : ""}${u.name}`; if (nameTaken.has(k) || out.length >= INHERIT_LIMIT) continue;
+      nameTaken.add(k);
+      out.push({ kind: u.kind, name: u.name, type: u.type ?? "", path: res(u.type), conj: !!u.conj, mult: u.mult ?? "", from, source, route, depth });
+    }
+  };
+  const reach = (start: string, next: (p: string) => string[]): Array<{ p: string; depth: number }> => {
+    const seen = new Set<string>([start]), found: Array<{ p: string; depth: number }> = []; let level = [start];
+    for (let depth = 1; level.length && depth <= 12; depth++) { const nxt: string[] = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
+    return found;
+  };
+  const sort = (a: string, b: string): number => nm(ix, a, a).localeCompare(nm(ix, b, b));
+  const up = (p: string): string[] => outgoing(ix, p).filter((e) => e.kind === "specializes" && e.to).map((e) => e.to!).sort(sort);
+  const down = (p: string): string[] => incoming(ix, p).filter((e) => e.kind === "specializes").map((e) => e.from).sort(sort);
+  const above = (p: string): string[] => [...new Set(incoming(ix, p).filter((e) => e.kind === "hasPart").map((e) => e.from))].sort(sort);
+  const partsOf = (p: string): Array<{ name: string; to: string }> => (ix.notes.get(p)?.def?.usages ?? []).filter((u) => u.kind === "part" && !u.end && res(u.type)).map((u) => ({ name: u.name, to: res(u.type)! }));
+  for (const w of INHERIT_FROM.map(([k]) => k)) {
+    if (!which.includes(w)) continue;
+    const seen = new Set<string>(taken);                                                                   // nearer notes win by name; the same name from another direction is its own row
+    if (w === "general") for (const { p, depth } of reach(path, up)) add(w, p, "", depth, seen);
+    else if (w === "specific") for (const { p, depth } of reach(path, down)) add(w, p, "", depth, seen);
+    else if (w === "parent") for (const { p, depth } of reach(path, above)) add(w, p, "", depth, seen);
+    else {
+      const walk = (p: string, route: string, depth: number, guard: Set<string>): void => {
+        for (const part of partsOf(p)) {
+          if (out.length >= INHERIT_LIMIT || depth > 8 || guard.has(part.to)) continue;
+          const r = route ? `${route}.${part.name}` : part.name;
+          add(w, part.to, r, depth, seen);
+          walk(part.to, r, depth + 1, new Set([...guard, part.to]));
+        }
+      };
+      walk(path, "", 1, new Set([path]));
+    }
   }
   return out;
 }
@@ -499,7 +550,7 @@ export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string }
+export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
 
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
@@ -552,6 +603,16 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     out.push({ id: "links", title: "Connections, bindings and flows", columns: [{ key: "kind", label: "Kind" }, { key: "a", label: "From" }, { key: "b", label: "To" }, { key: "via", label: "Through", wide: true }],
       rows: r.links.map((x) => ({ kind: x.kind, a: endCell(x.a), b: endCell(x.b), via: x.via ? ({ text: x.viaPath ? nm(ix, x.viaPath, x.via) : x.via, path: x.viaPath } as Cell) : x.name })), empty: "No connections, bindings or flows.",
       note: r.untyped.length ? "Untyped: " + r.untyped.join(", ") : "" });
+    if (o.inherit?.length) {                                                                                   // D-0101: specialization and assembly are separate tables
+      const inh = inheritedMembers(ix, sel, o.inherit), why: Record<InheritFrom, string> = { general: "from general", specific: "from specific", parent: "from parent assembly", child: "from child part" };
+      for (const [grp, title] of [["Specialization", "Inherited through specialization"], ["Assembly", "Inherited through the assembly"]] as const) {
+        const keys = INHERIT_FROM.filter(([, g]) => g === grp).map(([k]) => k), rows = inh.filter((x) => keys.includes(x.from));
+        if (!keys.some((k) => o.inherit!.includes(k))) continue;
+        out.push({ id: grp === "Specialization" ? "inherit-spec" : "inherit-asm", title: `${title} (${rows.length})`, columns: [{ key: "member", label: "Port or part" }, { key: "type", label: "Type" }, { key: "dir", label: "Direction" }, { key: "src", label: "Declared on" }, { key: "depth", label: "Layers" }],
+          rows: rows.map((x) => ({ member: `${x.kind} ${x.route ? x.route + "." : ""}${x.name}${x.mult ? " [" + x.mult + "]" : ""}`, type: typ(x.type, x.path), dir: why[x.from], src: { text: nm(ix, x.source, x.source), path: x.source } as Cell, depth: String(x.depth) })), empty: "Nothing is inherited in the directions chosen.",
+          note: rows.length >= 400 ? "Capped at 400." : "" });
+      }
+    }
   } else if (lens === "states") {
     if (!n) return [{ id: "states", title: "States", columns: [], rows: [], empty: "Select a note in Obsidian to see its states." }];
     const f = behavior(ix, sel, "states");

@@ -71,7 +71,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
-  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false;
+  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
   const link = (p: string | null | undefined, label?: string, cls = ""): Node => {
@@ -211,6 +211,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
   function scopeBar(): HTMLElement | null {
     if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
+    if (lens === "internal") return h("div", { class: "chips", style: "flex-wrap:wrap" }, h("span", { class: "mut" }, "Also show ports and parts inherited"), ...V.INHERIT_FROM.map(([k, group, label]) => h("label", { title: `${group}: ${label}` }, h("input", { type: "checkbox", "aria-label": `Inherit ${label}`, checked: inherit.includes(k), onchange: (e: Event) => { inherit = (e.target as HTMLInputElement).checked ? [...inherit, k] : inherit.filter((x) => x !== k); draw(); } }), ` ${group === "Assembly" ? (k === "parent" ? "parent assembly" : "child parts") : k === "general" ? "general" : "specific"} `, h("span", { class: "mut" }, group === "Assembly" ? "(assembly)" : "(specialization)"))));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
       lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e: Event) => { table = (e.target as HTMLSelectElement).value as typeof table; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]] as const).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
@@ -339,7 +340,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         } }, "All connections canvas"));
       acts.append(allControls);
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
-      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, spec))); acts.append(b); }
+      if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || undefined }, "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;
@@ -358,7 +359,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
