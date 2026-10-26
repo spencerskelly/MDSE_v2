@@ -1262,7 +1262,7 @@ Rules: BOM-046 (new); BOM-038 (changed).
 2026-10-25 · Spencer · Accepted (owner, chat: items 2, 3 and 10 of the vault review)
 
 1. **Relationships as YAML.** Every relationship the SysML block says is also a YAML property of links on the owning note, named as the Workbench names it, so Obsidian shows backlinks and the graph and any reader sees names instead of symbols. The SysML block stays the authority; the Workbench counts YAML and block as one relationship. (rule IMP-136)
-2. **Tension with D-0069.** D-0069 stopped persisting SysML-defined inverse YAML because a second copy can drift. This is forward only, written at import, and the Workbench does not yet rewrite it when the block is edited; it is stale after a Workbench edit until the next import or a regeneration. A regeneration in the Workbench is open work.
+2. **Tension with D-0069.** D-0069 stopped persisting SysML-defined inverse YAML because a second copy can drift. This is forward only, written at import, and the Workbench does not yet rewrite it when the block is edited, so the YAML is stale after a Workbench edit until the next import or a regeneration (open work). To keep the stale copy from acting, the Workbench ignores these YAML fields on a note that has a SysML block (found by a test: removing a specialization left the YAML edge in place).
 3. **Requirement text** is the first lines of the body, under the title, as well as the `doc`. The same drift limit applies. (rule IMP-097 changed)
 4. **Possible merges.** Notes with the same requirement text, or the same type, name, text and SysML, are rows in `Review - Possible Merges.csv`. Nothing is merged or flagged. (rule IMP-137)
 5. **Heading subtype for requirements** is left for later (owner).

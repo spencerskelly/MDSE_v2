@@ -29,6 +29,8 @@ const CORE_KEYS = new Set(["type", "subtype", "id", "uid", "status", "eaType", "
 const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 export const baseName = (path: string): string => path.split("/").pop()!.replace(/\.md$/i, "");
 const SYSML_TO_KIND: Record<string, string> = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
+/** D-0108: relationships the importer repeats as YAML so people and AI can read them. On a note that has a SysML block the block is the authority and these YAML fields are never counted, so an edit made to the block cannot be undone by a stale copy. */
+const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "includes", "extendedBy"]);
 const DEP_KIND: Record<string, string> = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path: string, text: string, o: BuildOptions): Note | null {
@@ -101,6 +103,7 @@ function resolveAll(ix: ModelIndex): void {
     const said = new Set((ix.out.get(n.path) ?? []).filter((e) => e.via === "sysml" && e.to).map((e) => e.kind + "\u0000" + e.to));
     for (const l of n.links) {
       const t = ix.byName.get(l.target.toLowerCase()) ?? null;
+      if (n.def && MIRRORED.has(l.field)) continue;
       if (t && said.has(l.field + "\u0000" + t)) continue;
       link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" });
     }
