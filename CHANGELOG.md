@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Workbench fix: a table (or panel) opened after the vault index was built stayed on "Reading notes…" until the next rebuild. A view is now handed the index when it opens, and a failed read shows the reason. Regression check added to the plugin test.
 - Workbench Internal structure canvas: the note is one large card with its parts inside it and its ports on the edge of each card; wires join port cards. An object with no port shows a placeholder port (nothing written); the Dashboard and Review count objects without a port. Cards are skipped by Refresh and Auto-layout so they can be moved by hand, and Save canvas offers the object's own folder first. WKB-045, WKB-046, D-0097
 - Workbench canvas spacing: cards of related notes stay three card widths or heights apart; cards of unrelated notes are one apart (a row of parts is tight, the row sits three heights under its assembly). Applies to every canvas view, Pick notes, Add to canvas, Add children and Auto-layout. WKB-030, D-0096
 - Workbench canvas: Collapse layer, Expand layer, Collapse all and Expand all for the chosen cards (panel buttons and commands). Expand all stops at 200 cards on the canvas. WKB-044, D-0095

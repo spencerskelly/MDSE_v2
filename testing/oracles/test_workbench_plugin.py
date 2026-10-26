@@ -112,6 +112,8 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
             self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
             pg.wait_for_selector("table")
+            # a table opened after the index was built must be handed it, not sit on "Reading notes…"
+            pg.wait_for_function("() => { const v = window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view; return v.contentEl.querySelector('table') && !/Reading notes/.test(v.contentEl.textContent); }")
 
             # canvas: one scratch file in the main window, overwritten each time
             pg.click("button:has-text('Canvas in main window')")

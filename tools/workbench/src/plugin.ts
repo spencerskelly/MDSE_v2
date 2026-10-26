@@ -188,8 +188,7 @@ class PanelView extends obsidian.ItemView {
     this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
     this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel" });
     this.plugin.apps.add(this.app_);
-    await this.plugin.ensureIndex();
-    this.plugin.syncSelection();
+    await this.plugin.attachIndex(this.app_);
   }
   async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
 }
@@ -206,8 +205,7 @@ class TableView extends obsidian.ItemView {
     this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
     this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "main", lens: this.lens });
     this.plugin.apps.add(this.app_);
-    await this.plugin.ensureIndex();
-    this.plugin.syncSelection();
+    await this.plugin.attachIndex(this.app_);
   }
   async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
 }
@@ -272,6 +270,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async saveSettings() { await this.saveData(this.settings); }
 
   /* ---- the one shared index ---- */
+  /** A view that opens after the index exists is handed it at once (it used to wait for the next rebuild and sat on "Reading notes…"); a failed read shows the reason instead of waiting for ever. */
+  async attachIndex(app_: any): Promise<void> {
+    if (this.ix) app_.setIndex(this.ix);
+    try { await this.ensureIndex(); } catch (e: any) { app_.setIndex(null, "Could not read the vault: " + String(e?.message ?? e)); return; }
+    if (this.ix) app_.setIndex(this.ix);
+    this.syncSelection();
+  }
   ensureIndex(): Promise<void> {
     if (this.ix) return Promise.resolve();
     if (!this.building) {
