@@ -1393,6 +1393,16 @@ const LENS_GROUPS                                                               
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
+/** The panel's vertical toolbar: every lens once, in task groups (feature request 2026-10-29). Individual functions live here; a view's own options sit at the top of that view. `needsEdit` buttons show disabled where the host cannot edit. */
+                                                                                       
+const TOOLBAR_GROUPS                                                             = [
+  { id: "navigate", label: "Navigate", items: [{ lens: "dashboard", glyph: "▦", label: "Dashboard" }, { lens: "note", glyph: "☰", label: "Note" }, { lens: "tables", glyph: "▤", label: "Tables" }] },
+  { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
+  { id: "trace", label: "Trace", items: [{ lens: "structure", glyph: "⌥", label: "Structure" }, { lens: "design", glyph: "◇", label: "Design types" }, { lens: "internal", glyph: "◫", label: "Internal structure" }, { lens: "functional", glyph: "ƒ", label: "Function" }, { lens: "states", glyph: "◉", label: "States" }, { lens: "requirements", glyph: "✓", label: "Requirements" }] },
+  { id: "edit", label: "Create and edit", items: [{ lens: "edit", glyph: "✎", label: "Edit", needsEdit: true }, { lens: "merge", glyph: "⊕", label: "Merge notes", needsEdit: true }] },
+  { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }] },
+  { id: "canvas", label: "Canvas", items: [{ lens: "layout", glyph: "⊞", label: "Auto-layout and refresh" }] },
+];
 const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
 const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar";
@@ -3640,6 +3650,63 @@ function uniqueParts(ix            , pa        , pb        )                    
   return { a: a.node, b: b.node, uniqueA: a.count, uniqueB: b.count };
 }
 
+/* similar.ts */
+/* Find similar (feature request 2026-10-29): notes that share a relationship with the selected note.
+ * Read-only and derived from the index edges (SysML block plus the YAML links it does not state, WKB-020).
+ * For each relationship the selected note has, the peers are the other notes joined to the SAME note by the SAME kind:
+ *   out: the selected note --kind--> T, so the peers are the other notes that also --kind--> T
+ *        (other assemblies that use the same part, other functions that satisfy the same requirement).
+ *   in:  S --kind--> the selected note, so the peers are the other notes S also --kind-->
+ *        (the other parts of the same parent, the other requirements the same function satisfies).
+ * Nothing is inferred: a peer is listed only because a resolved relationship says so. */
+
+                        
+               
+                                                                                           
+                          
+                                
+              
+                  
+ 
+                         
+                         
+                                                                                
+                                                 
+ 
+
+const live = (ix            , p        )          => ix.notes.has(p) && !ix.notes.get(p) .meta.mergedInto;
+
+function findSimilar(ix            , path        , opt                       = {})                {
+  const empty                = { groups: [], peers: [] };
+  if (!ix.notes.has(path)) return empty;
+  const want = opt.kinds?.length ? new Set(opt.kinds) : null, groups = new Map                      ();
+  const add = (kind        , direction              , via        , peerEdges                         )       => {
+    const peers = [...new Set(peerEdges.map((x) => x.peer))].filter((p) => p !== path && p !== via && live(ix, p));
+    if (!peers.length) return;
+    peers.sort((a, b) => ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
+    groups.set(`${direction}|${kind}|${via}`, { kind, direction, via, peers });
+  };
+  const seen = new Set        ();
+  for (const e of ix.out.get(path) ?? []) {                                            // path --kind--> T: others that also reach T
+    if (!e.to || e.reverse || e.to === path || !live(ix, e.to) || (want && !want.has(e.kind))) continue;
+    const k = `out|${e.kind}|${e.to}`; if (seen.has(k)) continue; seen.add(k);
+    add(e.kind, "out", e.to, (ix.inn.get(e.to) ?? []).filter((x) => x.kind === e.kind && !x.reverse).map((x) => ({ peer: x.from })));
+  }
+  for (const e of ix.inn.get(path) ?? []) {                                            // S --kind--> path: others S also reaches
+    if (e.reverse || e.from === path || !live(ix, e.from) || (want && !want.has(e.kind))) continue;
+    const k = `in|${e.kind}|${e.from}`; if (seen.has(k)) continue; seen.add(k);
+    add(e.kind, "in", e.from, (ix.out.get(e.from) ?? []).filter((x) => x.kind === e.kind && x.to && !x.reverse).map((x) => ({ peer: x.to  })));
+  }
+  const list = [...groups.values()].sort((a, b) => a.kind.localeCompare(b.kind) || (a.direction === b.direction ? 0 : a.direction === "out" ? -1 : 1) || ix.notes.get(a.via) .title.localeCompare(ix.notes.get(b.via) .title) || a.via.localeCompare(b.via));
+  const count = new Map                ();
+  for (const g of list) for (const p of g.peers) count.set(p, (count.get(p) ?? 0) + 1);
+  const peers = [...count].map(([p, shared]) => ({ path: p, shared })).sort((a, b) => b.shared - a.shared || ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
+  return { groups: list, peers };
+}
+
+/** The kinds that have at least one similar note, for the lens's kind filter. */
+const similarKinds = (r               )           => [...new Set(r.groups.map((g) => g.kind))].sort();
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -3755,7 +3822,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
                 
                                                                                           
@@ -4795,6 +4862,8 @@ function editView(c         )              {
 const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
+.mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
+.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
@@ -5068,6 +5137,11 @@ function mountPanel(root             , host           , opt                     
       return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
+    const toolbar = h("nav", { class: "tbar", "aria-label": "Workbench functions" }, ...V.TOOLBAR_GROUPS.flatMap((g, gi) => [gi ? h("div", { class: "tg", role: "separator", title: g.label }) : null, ...g.items.map((it) => {
+      const off = !!it.needsEdit && !host.edit, b = h("button", { type: "button", "aria-label": it.label, "aria-pressed": lens === it.lens ? "true" : "false", title: off ? `${it.label}: editing is not available in this window` : `${g.label}: ${it.label}`, disabled: off || undefined }, it.glyph);
+      b.addEventListener("click", () => { if (off) return; if (it.lens === "merge") openMerge(""); else { lens = it.lens; if (it.lens !== "edit") editEl = null; draw(); } });
+      return b;
+    })]));
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       // A direct, all-relationships canvas launcher on the Workbench home screen.
@@ -5118,7 +5192,8 @@ function mountPanel(root             , host           , opt                     
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
-    wrap.replaceChildren(header, lenses, ...(compact ? [acts] : []), ...(status ? [status] : []), body);
+    if (compact) { wrap.classList.add("tb"); wrap.replaceChildren(h("div", { class: "split" }, h("div", { class: "main" }, header, acts, ...(status ? [status] : []), body), toolbar)); }
+    else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
   }
   draw();
 

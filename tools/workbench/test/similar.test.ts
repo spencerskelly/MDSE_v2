@@ -36,3 +36,11 @@ test("kind filter, no relationships, unknown note, retired notes", () => {
   const w = buildIndex(new Map([o("OBJ-00001", "A", ["P"]), o("OBJ-00002", "B", ["P"]), o("OBJ-00003", "C", ["P"], "mergedInto: \"[[B]]\"\n"), o("OBJ-00004", "P")]), { classes });
   assert.deepEqual(findSimilar(w, "A.md").groups[0]!.peers, ["B.md"], "a retired stub is not a peer");
 });
+
+test("toolbar: every lens has exactly one button, in a task group", async () => {
+  const { TOOLBAR_GROUPS, LENSES } = await import("../src/views.ts");
+  const all = TOOLBAR_GROUPS.flatMap((g) => g.items.map((i) => i.lens));
+  assert.equal(new Set(all).size, all.length, "no lens twice");
+  assert.deepEqual([...all].sort(), LENSES.map(([l]) => l).sort(), "no lens missing");
+  assert.ok(TOOLBAR_GROUPS.every((g) => g.items.length > 0 && g.label));
+});

@@ -64,7 +64,6 @@ undefined;
 """
 
 
-GROUP = {"Tables": "Model", "Structure": "Note"}
 
 
 @unittest.skipIf(sync_playwright is None or not MAIN.exists(), "playwright or built plugin unavailable")
@@ -105,9 +104,17 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("window.__ev['file-open']({ path: 'x.canvas', extension: 'canvas' })")
             self.assertIn("PCE25", pg.inner_text("header"))
 
+            # the toolbar is a vertical strip on the right edge of the panel, one button per lens, and it scrolls on its own
+            tb, main = pg.locator("nav.tbar").bounding_box(), pg.locator(".mdp .main").bounding_box()
+            self.assertGreater(tb["x"], main["x"] + main["width"] - 1); self.assertGreater(tb["height"], tb["width"])
+            self.assertEqual(pg.locator("nav.tbar button").count(), 17)
+            pg.click("nav.tbar button[aria-label='Find similar']")
+            pg.wait_for_selector("select[aria-label='Relationship kind']")
+            self.assertEqual(pg.evaluate("document.querySelector(\"nav.tbar button[aria-pressed=true]\").getAttribute('aria-label')"), "Find similar")
+
             # table: opens in the main window for the selected note
             for lens in ("Tables", "Structure"):
-                pg.select_option(f"select[aria-label='{GROUP[lens]} menu']", label=lens)
+                pg.click(f"nav.tbar button[aria-label=\"{lens}\"]")
             pg.click("button:has-text('Table in main window')")
             pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
             self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
@@ -182,7 +189,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
-            pg.select_option("select[aria-label='Note menu']", label="Edit")
+            pg.click("nav.tbar button[aria-label=\"Edit\"]")
             pg.click("button:has-text('Add relationship')")
 
             # relationship: dropdown of kinds, searchable target browser, preview diff, apply, undo
@@ -231,7 +238,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("() => !Object.keys(window.__notes).some(k => k.startsWith('10_Model/New/'))")
 
             # change / properties / remove from the note's relationship list
-            pg.select_option("select[aria-label='Note menu']", label="Edit")
+            pg.click("nav.tbar button[aria-label=\"Edit\"]")
             pg.click(".mded .tabs button:has-text('Relationships')")
             pg.wait_for_timeout(500)
             pg.wait_for_selector("table.rl")
@@ -333,7 +340,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("p => !JSON.parse(window.__files[p]).edges.some((e) => e.id === '77ee88ff99aa00bb')", arg=PREVIEW)
 
             # pick notes by a word in the name or description, tick some, place them on a canvas (D-0078)
-            pg.select_option("select[aria-label='Canvas menu']", label="Pick notes")
+            pg.click("nav.tbar button[aria-label=\"Pick notes\"]")
             pg.fill("input[aria-label='Search for notes to place on a canvas']", "o")
             pg.keyboard.press("Tab")
             pg.wait_for_selector("text=/\\d+ match/")
@@ -352,7 +359,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("p => JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas']).nodes.length === 1")
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
             pg.wait_for_selector(f"header >> text={title}")
-            pg.select_option("select[aria-label='Note menu']", label="Note")
+            pg.click("nav.tbar button[aria-label=\"Note\"]")
             pg.click("summary:has-text('Add related notes to the canvas')")
             pg.click("button:has-text('related to canvas')")
             pg.wait_for_selector("text=/Added \\d+ note/")
@@ -364,14 +371,14 @@ class WorkbenchPlugin(unittest.TestCase):
             two = pg.evaluate("""() => { const e = window.__plugin.ix.edges.find((x) => x.to && !x.reverse && x.from !== x.to); return [e.from, e.to]; }""")
             pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", two)
             pg.wait_for_selector("text=Chosen on the canvas", timeout=3000)
-            self.assertEqual(pg.evaluate("document.querySelector(\"select[aria-label='Canvas menu']\").selectedOptions[0].textContent"), "Common related")
+            self.assertEqual(pg.evaluate("document.querySelector(\"nav.tbar button[aria-pressed=true]\").getAttribute('aria-label')"), "Common related")
             pg.wait_for_selector("text=/Related to all 2/")
             # one card again: back to the note
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; }""", two[0])
-            pg.wait_for_function("document.querySelector(\"select[aria-label='Note menu']\").selectedOptions[0].textContent === 'Note'", timeout=3000)
+            pg.wait_for_function("document.querySelector(\"nav.tbar button[aria-pressed=true]\").getAttribute('aria-label') === 'Note'", timeout=3000)
 
             # Structure view: full tree or direct parts, and tick rows to add to the canvas (D-0085)
-            pg.select_option("select[aria-label='Note menu']", label="Structure")
+            pg.click("nav.tbar button[aria-label=\"Structure\"]")
             pg.wait_for_selector("select[aria-label='How much of the structure']")
             pg.select_option("select[aria-label='How much of the structure']", label="Direct parts only")
             pg.wait_for_selector("button:has-text('Add ticked to canvas')")
@@ -433,7 +440,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
-            pg.select_option("select[aria-label='Note menu']", label="Edit")
+            pg.click("nav.tbar button[aria-label=\"Edit\"]")
             pg.click(".mded .tabs button:has-text('Ports')")
 
             # a conjugated, counted port typed by a port definition chosen in the browser
@@ -494,22 +501,22 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
             # compare (D-0092)
-            pg.select_option("select[aria-label='Note menu']", label="Compare notes")
+            pg.click("nav.tbar button[aria-label=\"Compare notes\"]")
             pg.wait_for_selector("text=Choose the second note above.")
             pg.select_option("select[aria-label='Note to compare with']", value="10_Model/Charger.md")
             pg.wait_for_selector("text=Properties that differ")
             pg.wait_for_selector("text=Structure, down to the parts that differ")
             pg.wait_for_selector("text=/\\d+ differences?:/")
             # from the note itself
-            pg.select_option("select[aria-label='Note menu']", label="Note")
+            pg.click("nav.tbar button[aria-label=\"Note\"]")
             pg.click("button:has-text('Merge with another note')")
             pg.wait_for_selector("text=/as the same part as/")
             # from the Note menu
-            pg.select_option("select[aria-label='Model menu']", label="Dashboard")
-            pg.select_option("select[aria-label='Note menu']", label="Merge notes")
+            pg.click("nav.tbar button[aria-label=\"Dashboard\"]")
+            pg.click("nav.tbar button[aria-label=\"Merge notes\"]")
             pg.wait_for_selector("text=/as the same part as/")
             # two notes chosen on the canvas: the other one is already picked, and the BOM part stays
-            pg.select_option("select[aria-label='Canvas menu']", label="Common related")
+            pg.click("nav.tbar button[aria-label=\"Common related\"]")
             pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", ["10_Model/Charger.md", "10_Model/CHG-1.md"])
             pg.click("button:has-text('Merge these two')")
             pg.wait_for_selector("text=/as the same part as/")
@@ -548,7 +555,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
-            pg.select_option("select[aria-label='Note menu']", label="Edit")
+            pg.click("nav.tbar button[aria-label=\"Edit\"]")
             pg.click(".mded .tabs button:has-text('Merge')")
 
             # the EA part number matches the BOM number: a confident match, ticked for us
