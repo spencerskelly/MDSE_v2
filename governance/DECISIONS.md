@@ -1282,4 +1282,21 @@ Rules: IMP-136, IMP-137 (new); IMP-097 (changed).
 7. **Not done.** No importer code, no schema edit, no MDSE_DEFINITION or ROADMAP edit. BOM-047 to BOM-055 are not implemented. AI-CR-01 needs no edit: its Engineering class already names "revision".
 8. **Not verified.** That an exported CL1 value changes only for a fit, form or function change and CL2 only otherwise. The importer joins CL1 and CL2 into one revision string (`bom.ts`) and BOM-018 orders letters before the trailing number, which suggests CL1 is the letter part. That was not checked against a real BOM (OD-18).
 
-Rules: BOM-047 to BOM-055 (new, Proposed). Open: OD-18 to OD-22.
+Rules: BOM-047 to BOM-055 (new, Proposed). Open: OD-18 to OD-22. Items 4 and 6 and the CL2 handling are amended by D-0110.
+
+## D-0110 — Engineering vaults change only on ECO branches
+
+2026-10-29 · Spencer · Accepted in principle (owner, chat 2026-10-29). The rule wording is Proposed until the owner reviews it. Amends D-0109 items 4 and 6 and its CL2 handling.
+
+1. **Rule (owner).** In an engineering vault, new work is defined on a branch of the vault's repository and reaches `main` by merge, to track changes as ISO 9001 requires. All changes after the golden import use an ECO branch. One ECO covers both EA and BOM content, because a BOM change often leads to a definition change and the reverse. (GOV-025)
+2. **CL2 is not exempt (owner).** CL1 and CL2 changes follow the same process, because even a documentation update must be traceable. This replaces D-0109's "CL2 needs no ECO". (BOM-049, BOM-052)
+3. **New element (owner).** A new kind of note, "something like Information or Concept", with subtypes such as Change, Decision, Goal and Task, to cover topics not yet defined. The Change or ECO subtype carries the Jira ticket and the branch that brings it in. (GOV-026, OD-23)
+4. **Scope.** Engineering vaults only. MDSE_v2 holds the toolset and schema and never holds real data (DAT-002, GOV-017); its own rule stays GOV-001 (push to `main`).
+5. **Jira.** The ECO is approved in Jira and the approval stays there (GOV-027). The change note is written on the branch and holds the Jira key, Jira link and branch name, so the Jira export that D-0109 item 6 proposed as a third importer input is optional. (OD-21)
+6. **Imports.** An EA or BOM import is run on the ECO branch. The importer is offline and does not create, switch or merge branches; the engineer does. The changelog of the run stays with the branch (IMP-075). This follows from items 1 and 2 and was not stated by the owner. (GOV-028)
+7. **Replaces D-0109 item 4.** The `Engineering Change` class with prefix `ECO` is not proposed; the element and its home are OD-23. Not made now, because the schema binds the tools.
+8. **Not decided.** The element's name and class (OD-23). Whether an ECO branch merges to `main` on completion or into a release branch first: the owner said both "once the ECO is complete, that branch would be merged" and "merging releases into the main" (OD-24). Branch naming, who may merge, and how two ECOs that touch the same note are reconciled (OD-24). When "after the golden import" starts: the golden definition is still open (REG-264).
+9. **Not verified.** That the vault repository exists with a protected `main`, required reviews or branch rules. Whether a merge to `main` is accepted by an auditor as the vault's release record; it is the owner's reading of ISO 9001 and the clause references are from memory.
+10. **On acceptance.** MDSE_DEFINITION.md: Principles (change control), Definitions (change note, ECO branch), Inputs (Jira export optional). ROADMAP.md: the Phase 2 gate. GOV-015, which still names Test_Vault_ and SharePoint. Nothing is edited now.
+
+Rules: GOV-025 to GOV-029 (new, Proposed); BOM-049, BOM-051, BOM-052 (changed). Open: OD-23, OD-24; OD-21 and OD-22 changed.
