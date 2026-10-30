@@ -7,6 +7,7 @@ import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
 import { MAX_PICK, relatedNotes, commonRelated } from "./canvas.ts";
+import { findSimilar, similarKinds } from "./similar.ts";
 import { editView, setEditRef, editRefresh, markEditStale, setEditMode, setMergeWith, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
@@ -274,6 +275,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
   }
 
+  /* Find similar: the notes that share a relationship with the selected note, grouped by relationship and direction. */
+  let simKinds: string[] = [];
+  function similarView(): HTMLElement {
+    const n = sel ? note(sel) : null; if (!n) return empty("Select a note to find the notes that share a relationship with it.");
+    const all = findSimilar(ix!, sel), kinds = similarKinds(all), r = simKinds.length ? findSimilar(ix!, sel, { kinds: simKinds }) : all;
+    const addBtn = (label: string, paths: string[], cls = "sm"): HTMLElement => { const b = h("button", { class: cls, title: "Put on the canvas preview, beside the selected note" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas!(sel, paths))); return b; };
+    const box = h("div", {}, h("div", { class: "chips" }, h("span", { class: "mut" }, "Relationship"), h("select", { "aria-label": "Relationship kind", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; simKinds = v ? [v] : []; draw(); } }, h("option", { value: "" }, "all"), ...kinds.map((k) => h("option", { value: k, selected: simKinds[0] === k }, k)))));
+    if (!r.groups.length) { box.append(h("div", { class: "mut" }, all.groups.length ? "No similar notes for this relationship." : "No other note shares a relationship with this one.")); return box; }
+    if (host.addToCanvas) box.append(h("div", { class: "row" }, addBtn(`Add all ${r.peers.length} to canvas`, r.peers.map((x) => x.path), "sm pri")));
+    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via)!.title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via)!.title}` : `${note(g.via)!.title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), " ", tag(note(p)!.type)))], { count: g.peers.length }));
+    return box;
+  }
+
   /* D-0084: the notes related to every note chosen on the canvas. */
   function commonView(): HTMLElement {
     const given = canvasSel.filter((p) => ix!.notes.has(p));
@@ -356,6 +370,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
+      else if (lens === "similar") body.append(similarView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
