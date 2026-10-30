@@ -52,7 +52,16 @@
  },
  "Info": {
   "prefix": "INFO",
-  "subtype": []
+  "subtype": [
+   "change",
+   "decision",
+   "goal",
+   "task",
+   ""
+  ],
+  "prefixBySubtype": {
+   "change": "ECO"
+  }
  },
  "Issue": {
   "prefix": "ISS",

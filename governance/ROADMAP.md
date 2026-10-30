@@ -21,9 +21,13 @@ Work in this order. Each step lists the ruleset rules it implements; filter `rul
 
 ## Phase 2 — BOM import, merge and approval
 
-**Gate:** each BOM imports with every row dispositioned; only additions, pre-approved and review-approved changes reach existing notes; conflicts are flagged in the body and listed in the changelog; parents with mismatched child revisions are flagged and the child bodies list the older-revision usage; empty source fields do not appear; exactly one changelog per run; re-import changes nothing; AI-CR-01 has run before an engineer reads the changelog.
+**Gate:** each BOM imports with every row dispositioned; only additions, pre-approved and review-approved changes reach existing notes; conflicts are flagged in the body and listed in the changelog; a parent that calls an older child revision lists it under "Older revision usages" without a flag (BOM-046); empty source fields do not appear; exactly one changelog per run; re-import changes nothing; AI-CR-01 has run before an engineer reads the changelog.
 
 Blocked by OD-04 (Import State for add-onto runs). BOM list: open decision DEC-2.
+
+## Golden import
+
+Follows Phase 2 (D-0111). **Gate:** the golden definition, still open (REG-264 in `OPEN_DECISIONS.md`). From here every change to an engineering vault is made on an ECO branch and merged into `main` by an approver (GOV-025, GOV-030, GOV-031). Open points: OD-24 to OD-26.
 
 ## Phase 3 — Workbench editing
 

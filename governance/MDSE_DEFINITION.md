@@ -17,6 +17,7 @@ MDSE combines the two. It is a single, linked engineering model stored as plain 
 |---|---|---|
 | **P1** | Import of the real EA SysML v1 model (`.qeax`) into notes with SysML v2 text; Base Vault and Bootstrap; read-only Workbench | Real EA data imported and viewed in the Workbench |
 | **P2** | Import of multiple product BOMs (Excel) into the existing vault, additively | Every BOM row dispositioned; only approved changes to existing content |
+| **Golden import** | The vault accepted as the baseline once P2 is complete. From here every change to an engineering vault is made on an ECO branch | The golden definition (open, REG-264) |
 | **P3** | Workbench editing | Edits saved, valid, and surviving re-import |
 | Later | Third-party documentation output (data tables, requirements lists, block diagrams); validation once editing is stable; GSE charger BOMs; EA diagrams; cross-vault | Not scheduled |
 
@@ -48,6 +49,7 @@ Phase 1 delivers one vault (GOV-017).
 - **Meaning lives in the rules and schemas.** Tools may not change model semantics.
 - **Files first.** The vault is usable without the tools.
 - **Repeatable.** Importing the same input twice produces no changes.
+- **Changes are traceable.** After the golden import every change to an engineering vault is made on an ECO branch, approved in Jira and merged into `main` by an approver. A note is changed by one open ECO at a time (GOV-025 to GOV-031, D-0110, D-0111).
 - **One AI instruction per process.** Every AI process has a written instruction file with an ID.
 
 ## Definitions
@@ -64,6 +66,10 @@ Phase 1 delivers one vault (GOV-017).
 - **Conflict:** source content that contradicts existing content and is listed in the body for engineer review.
 - **Pre-approval:** approval given in the importer's Start step by selecting a field; applies to all notes in that run.
 - **Review:** the engineer's pass after an import, approving a listed change or selecting the correct data.
+- **Golden import:** the accepted vault baseline that follows Phase 2. Its definition is open (REG-264).
+- **ECO branch:** a branch of an engineering vault's repository that holds one engineering change order. It is merged into `main` by an approver.
+- **Change note:** an `Info` note of subtype `change`: the record of one ECO, with its Jira key, Jira link and branch. `Info` also has the subtypes `decision`, `goal` and `task`.
+- **Approver:** a person who may merge an ECO branch into `main`.
 - **Flag:** a typed Obsidian callout marking an issue (see Flag convention).
 - **Base Vault:** the preconfigured vault released to users.
 - **Bootstrap:** the plugin that verifies the release, activates plugins and registers the author.

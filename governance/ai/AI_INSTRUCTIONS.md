@@ -1,6 +1,6 @@
 # MDSE AI Instructions
 
-Status: updated 2026-10-19 for D-0003, D-0009 and D-0010; owner review requested. Ships into every vault as `99_System/02_AI/AI_INSTRUCTIONS.md`.
+Status: updated 2026-10-19 for D-0003, D-0009 and D-0010, and 2026-10-29 for D-0111; owner review requested. Ships into every vault as `99_System/02_AI/AI_INSTRUCTIONS.md`.
 
 For every AI tool that creates, edits or reviews notes in an MDSE vault (Claude, ChatGPT, Rovo, Gemini or any other). AI tools cannot run Templater, so you do by hand exactly what the template snippets do. The result must look the same as a note created from a template.
 
@@ -29,7 +29,7 @@ Before substantial work, read `99_System/03_Schemas/element-types.yaml`, `99_Sys
    - **Author code, if a user directed the note:** that user's `code` from their person note, even if you wrote every word. If you do not know who the user is, ask. Notes carrying a person's `previousCodes` are also theirs.
    - **Author code, if you created the note on your own:** your code from `ai_authors` in `authors.yaml`. If your tool is not listed, add it: tool name (lowercase letters, at most 11), then `ai`, then hyphens to 13 characters.
    - **If that 30-character token is already used,** add one millisecond until it is unique in the vault.
-3. **Fill in `id`** yourself: the class prefix, a hyphen and a five-digit number. Standard requirements use `STD`, stakeholder requirements `STK`, other requirements `REQ`. Find the highest number used for that prefix across every note in the vault, including retired notes and ids listed under `## Former ids`, then add one. Never reuse a number. External designators (for example a standard's clause number) never go in `id`.
+3. **Fill in `id`** yourself: the class prefix, a hyphen and a five-digit number. Standard requirements use `STD`, stakeholder requirements `STK`, other requirements `REQ`, and `Info` notes of subtype `change` use `ECO`. Find the highest number used for that prefix across every note in the vault, including retired notes and ids listed under `## Former ids`, then add one. Never reuse a number. External designators (for example a standard's clause number) never go in `id`.
 4. **Check before saving:** `uid` matches `^\d{17}[a-z-]{13}$`; `id` matches `^[A-Z]+-\d{5}$`.
 
 ```
@@ -42,6 +42,13 @@ uid: 20260928101530123claudeai-----   (Claude created it on its own)
 
 - Leave `status` at the template default. Never advance it or mark your own note reviewed or approved.
 - Never delete a note. To remove one, set `status` to Retired. The `id` stays reserved.
+
+## ECO branches (after the golden import)
+
+- Work only on the ECO branch you are directed to. Never commit to `main`, merge a branch or approve an ECO. Only an approver merges.
+- Change only notes that the ECO's change note lists. If you find that another open ECO lists a note you need to change, stop and tell the user.
+- A change note is an `Info` note of subtype `change` with the properties `jiraKey`, `jiraUrl` and `branch`. Take them from the user; never invent a Jira key or a branch name.
+- Before the golden import no branch is required.
 
 ## Flags
 

@@ -95,7 +95,7 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     "Templater is AGPL-3.0 and Advanced Canvas is GPL-3.0. If you give this vault, with its `.obsidian/plugins` folder, to other people, those licences apply to what you give them.", ""].join("\n"));
 
   for (const [type, c] of Object.entries(o.classes)) {
-    const sub = c.subtype.length ? `subtype: # one of: ${c.subtype.join(", ")}` : "subtype:";
+    const named = c.subtype.filter(Boolean), sub = named.length ? `subtype: # one of: ${named.join(", ")}` : "subtype:";
     put(`99_System/05_Templates/Template - ${type}.md`, `---\ntype: ${/\s/.test(type) ? JSON.stringify(type) : type}\n${sub}\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n`);
   }
   put(".gitignore", `# MDSE vault: files that stay on each user's machine and are not committed.

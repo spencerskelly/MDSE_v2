@@ -1,5 +1,5 @@
-schemaVersion: '1.18'
-date: '2026-10-05'
+schemaVersion: '1.19'
+date: '2026-10-29'
 basis: MDSE ruleset 1.23
 commonProperties: [type, subtype, id, uid, status, tags]   # order fixed by W-97
 optionalProperties:
@@ -46,7 +46,12 @@ classes:
   subtype: ["engineering issue", "lifecycle risk"]
 - name: Info
   prefix: INFO
-  subtype: []
+  subtype: ["change", "decision", "goal", "task", ""]
+  # D-0111: Info records work and decisions that no other class covers. A subtype is added by a decision.
+  # change = an engineering change (ECO); its id takes the ECO prefix and it carries jiraKey, jiraUrl and branch (GOV-026).
+  # The empty entry keeps a blank subtype valid for EA InformationItems (MOD-065): the format check rejects a blank
+  # subtype on any class whose list does not contain it. Templates and the Workbench offer the named subtypes (OD-27).
+  prefix_by_subtype: {change: ECO}
 - name: Verification
   prefix: VER
   subtype: ["test", "analysis", "inspection", "demonstration"]

@@ -14,7 +14,10 @@
     "name",
     "aliases",
     "partNumber",
-    "description"
+    "description",
+    "jiraKey",
+    "jiraUrl",
+    "branch"
   ],
   "properties": [
     {
@@ -93,6 +96,27 @@
       "appliesTo": "BOM part notes",
       "meaning": "The BOM name or description of the part (BOM-016).",
       "source": "BOM name column"
+    },
+    {
+      "name": "jiraKey",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Key of the Jira ticket that approved the ECO (GOV-026). Approval, approver and date stay in Jira (GOV-027).",
+      "source": "Person, from the Jira ticket"
+    },
+    {
+      "name": "jiraUrl",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Link to the Jira ticket (GOV-026).",
+      "source": "Person, from the Jira ticket"
+    },
+    {
+      "name": "branch",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Name of the repository branch that brings the ECO in (GOV-026).",
+      "source": "Person"
     },
     {
       "name": "bomCategory",
