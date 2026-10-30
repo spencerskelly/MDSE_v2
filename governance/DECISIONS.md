@@ -1316,3 +1316,16 @@ Rules: GOV-025 to GOV-029 (new, Proposed); BOM-049, BOM-051, BOM-052 (changed). 
 9. **Not verified.** That the vault repository can restrict who merges, or that a merge record is accepted as approval evidence under ISO 9001 (the clause references in this repository are from memory).
 
 Rules: MOD-175 (new, Active); GOV-030 to GOV-032 (new, Proposed); GOV-025, GOV-026, GOV-027, GOV-029, MOD-067, BOM-051 (changed). Open: OD-24 (narrowed), OD-25, OD-26, OD-27. Settled: OD-23.
+
+## D-0112 — Revisions finalized: CL1 notes, CL2 in the CL1 note, ECO note links every part changed
+
+2026-10-29 · Spencer · Accepted (owner, chat 2026-10-29: "Revisions need to be finalized. All CL1 parts become notes. CL2 changes are documented in the CL1 affected. New changes are identified by an ECO note that links to all parts changed.")
+
+1. **Finalized (owner).** BOM-048 (every CL1 revision is a note specializing the part number's note), BOM-049 (CL2 listed in the CL1 note, described by an engineer) and BOM-054 (compatibility never inferred) become Active. BOM-051 becomes Active with one change: the ECO note `drives` every note it added or changed, including a CL1 note that gained a CL2 value, so one ECO note links all the parts changed.
+2. **Rules that now conflict.** BOM-006, BOM-007, BOM-017, BOM-034, BOM-038 and BOM-046 are set to Check, each with a note of what changed. They still describe what the importer does today; the importer has not been changed. BOM-008 and BOM-012 stay Active as written until OD-20 is answered.
+3. **Left Proposed.** BOM-047 and BOM-050 depend on OD-18 (what CL1 and CL2 mean and how CL1 values are ordered), which is not verified against a real BOM. BOM-052, BOM-053 and BOM-055 are importer behavior that the owner has not reviewed. D-0109 item 6 stays: the Jira export is optional (OD-21).
+4. **Definition.** MDSE_DEFINITION.md Merge rules 2 and 10 and the definition of "Part definition" are updated, with CL1 and CL2 revision added. Rule 10 still said `flagConflict`; BOM-012 had already removed that flag.
+5. **Not done, listed as OD-28.** Importer code, migration of existing notes, historical revisions, tests, records matrix. Also unchanged: AI-CR-01, GOV-015, the three claude.ai Project copies of the documents (stale against this repository).
+6. **Not verified.** CL1/CL2 behavior in real BOMs, the Jira export fields, that the vault repository can restrict who merges, and every ISO 9001 clause reference in this repository (from memory).
+
+Rules: BOM-048, BOM-049, BOM-051, BOM-054 (Active); BOM-006, BOM-007, BOM-017, BOM-034, BOM-038, BOM-046 (Check). Open: OD-18 to OD-22, OD-24 to OD-28.

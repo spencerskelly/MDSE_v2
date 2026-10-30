@@ -57,7 +57,8 @@ Phase 1 delivers one vault (GOV-017).
 - **Vault:** the Obsidian folder that holds the model.
 - **Note:** one Markdown file for one model element.
 - **UID:** the permanent identifier of a note, independent of filename and folder.
-- **Part definition:** the note for one PartNumber. One PN, one definition.
+- **Part definition:** the note for one PartNumber. One PN, one part-number definition; each CL1 revision of it is a further note that specializes it (D-0112).
+- **CL1 revision:** a revision that changes fit, form or function. It is a note. A **CL2 revision** is a documentation change or has no fit, form or function impact; it is listed in the CL1 note and has no note.
 - **Usage:** a use of a definition within an owning context, declared in the owner's SysML block, not in the definition.
 - **Author code:** a 13-character code generated from an author's name by one fixed rule.
 - **Ruleset:** [RULESET.md](RULESET.md), the only set of governing rules.
@@ -91,7 +92,7 @@ Phase 1 delivers one vault (GOV-017).
 Apply to every import into an existing vault (EA re-import and BOM import). Rules in RULESET.md, section IMP, "Merge, rerun and conflicts", and section BOM.
 
 1. **Identity:** a note is matched by UID (EA) or PartNumber (BOM), never by path.
-2. **Revision:** a part definition lists the latest revision. Which revision of a child an assembly uses is on the assembly's own usage; the child note names no assembly (D-0063).
+2. **Revision:** every CL1 revision of a part number is a note that specializes the part number's note; CL2 revisions are listed in the CL1 note they fall under and have no note (BOM-048, BOM-049, D-0112). Which revision of a child an assembly uses is on the assembly's own usage; the child note names no assembly (D-0063).
 3. **New element:** creates a new note.
 4. **Matching content:** no change.
 5. **Empty fields:** template fields are always present; a non-template field with no source data is not written.
@@ -99,7 +100,7 @@ Apply to every import into an existing vault (EA re-import and BOM import). Rule
 7. **Change (approval only):** changing any existing value needs pre-approval (Start step, whole run) or review approval. Both are recorded in the changelog with old and new values.
 8. **SysML v2:** existing `## SysML v2` content changes only by an approved change.
 9. **Conflict:** unapproved contradicting content is not applied; it is listed in the body with `flagConflict`.
-10. **Mismatched child revision:** the parent is flagged with `flagConflict`; the child body lists the usage.
+10. **Older child revision:** no flag. The parent's body lists each part it calls at an older revision than the latest (BOM-012, BOM-046).
 11. **Missing source record:** reported with `flagImport`; never deleted.
 12. **Changelog:** exactly one dated changelog per run, linking each changed file.
 13. **Engineer edits:** not changed unless approved.
