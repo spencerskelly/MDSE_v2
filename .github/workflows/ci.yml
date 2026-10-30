@@ -1,7 +1,7 @@
 name: CI
 
 # One workflow for the whole repository. Every job must pass on main (GOV-001).
-# The parser job runs on every push to main and on demand (D-0114). The parser pin is not final yet (see testing/fixtures/golden-charger/parser-pin.json).
+# The parser job runs on every push to main and on demand (D-0114). The pin records the 2026-04 pilot kernel digest; real-model validation is still pending (see testing/fixtures/golden-charger/parser-pin.json).
 
 on:
   push:

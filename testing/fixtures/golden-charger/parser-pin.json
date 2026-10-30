@@ -7,14 +7,18 @@
   "pilot_repository": "Systems-Modeling/SysML-v2-Pilot-Implementation",
   "pilot_release": "2026-04",
   "pilot_release_commit": "20897e3",
-  "parser_binary": null,
-  "parser_binary_sha256": null,
-  "parser_command": null,
-  "validation_level": "pending-independent-parser",
+  "parser_binary": "jupyter-sysml-kernel-0.59.0-all.jar",
+  "parser_binary_sha256": "7d6f1f2d555ddde2538a2b4f726709ba261567aa6c7eb172ad7db762d01efbaf",
+  "parser_command": "./validate-sysml {model}",
+  "validation_level": "synthetic-models-accepted-in-ci",
   "notes": [
-    "2026-04 pilot release identifies Eclipse language plugin 0.59.0; exact distributable digest not yet established.",
+    "parser_binary is the Pilot Implementation kernel jar the validator wraps (release 2026-04, artifact 0.59.0); its digest is from the CI parser job's parser-sha256.txt on the run after commit 43eb6bc (2026-10-30). The validator is built from source in CI.",
+    "validator_jar_sha256_observed is the digest of one CI build of the validator jar. It is not known whether that build is byte-for-byte reproducible, so it is evidence of one run, not a pin to verify against.",
     "Do not infer SysML 2.0 compatibility from latest (2026-08) beta-containing parser.",
-    "DeciSym sysmlv2-validator wraps the Pilot Implementation but requires checking its resolved dependency before use.",
-    "Parser must check complete assembled model; syntax-only success does not establish cross-package semantic resolution."
-  ]
+    "Parser must check complete assembled model; syntax-only success does not establish cross-package semantic resolution.",
+    "validation_level synthetic-models-accepted-in-ci: the synthetic Golden Charger and BOM sample models are accepted, malformed syntax and unresolved types are rejected. The real EA model has not been through the parser."
+  ],
+  "validator_repository": "DeciSym/sysmlv2-validator",
+  "validator_commit": "63abbd9fbc7851dc437d01b2dc07836b919770b8",
+  "validator_jar_sha256_observed": "c2dce209f35ebbe7188cd51c8b4f79d008ffb2ae20daa11604c7328b0a871957"
 }

@@ -24,4 +24,4 @@ Python is allowed here only (GOV-002). An oracle is an independent implementatio
 
 ## Parser gate
 
-The pinned independent SysML v2 parser (Java, via `fixtures/golden-charger/provision_parser.sh`) runs only in CI, from the `parser` job: on every push to `main`, and on demand (Actions → CI → Run workflow → tick "parser"). A pass is evidence that the generated text parses and resolves; it is not evidence of engineering correctness. The pin is in `fixtures/golden-charger/parser-pin.json` and is not final.
+The pinned independent SysML v2 parser (Java, via `fixtures/golden-charger/provision_parser.sh`) runs only in CI, from the `parser` job: on every push to `main`, and on demand (Actions → CI → Run workflow → tick "parser"). A pass is evidence that the generated text parses and resolves; it is not evidence of engineering correctness. The pin is in `fixtures/golden-charger/parser-pin.json`: it records the pilot kernel digest, and the real EA model has not been through the parser.
