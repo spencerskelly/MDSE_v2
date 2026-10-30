@@ -1,7 +1,7 @@
 name: CI
 
 # One workflow for the whole repository. Every job must pass on main (GOV-001).
-# The parser job is manual until the parser pin is final (see testing/fixtures/golden-charger/parser-pin.json).
+# The parser job runs on every push to main and on demand (D-0114). The parser pin is not final yet (see testing/fixtures/golden-charger/parser-pin.json).
 
 on:
   push:
@@ -72,8 +72,8 @@ jobs:
           if [ -n "$bad" ]; then echo "Real-data file types are not allowed in this repository:"; echo "$bad"; exit 1; fi
 
   parser:
-    name: Independent SysML v2 parser (manual)
-    if: github.event_name == 'workflow_dispatch' && inputs.parser
+    name: Independent SysML v2 parser
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.parser)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

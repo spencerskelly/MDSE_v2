@@ -35,7 +35,7 @@ Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 Requirements: Node 22 (`.nvmrc`), Python 3.12+ with `pip install -r testing/requirements.txt`, and Chromium for the browser smoke test (`python -m playwright install chromium`).
 
 ```bash
-npm test                 # everything CI runs, except the manual parser gate
+npm test                 # everything CI runs, except the parser gate (Java; CI runs it on every push to main)
 npm run check:rules      # ruleset format and generated register
 npm run build:importer   # rebuild tools/importer/dist/mdse_importer.html after changing tools/core or tools/importer
 ```

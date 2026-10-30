@@ -1339,3 +1339,11 @@ Rules: BOM-048, BOM-049, BOM-051, BOM-054 (Active); BOM-006, BOM-007, BOM-017, B
 3. **Not covered.** Matching by property (same part number, same type) is not part of this version. The look of the toolbar has not been checked in real Obsidian.
 
 Rules: WKB-033 (amended), WKB-052 (Active). Other rules and guide text that say "Note menu" mean the same buttons in the toolbar.
+
+## D-0114 — The parser job runs on every push to main
+
+2026-10-29 · Spencer · Accepted (owner, chat: "run it", after being offered running the parser job automatically)
+
+1. **Change.** The independent SysML v2 parser job in `ci.yml` runs on every push to `main`, and still on demand. It stays off for pull requests. This replaces "the parser job stays manual" in item 2 of D-0049 (BOM sample parser gate).
+2. **Cost.** About 2.5 minutes more per push to `main`. A red parser job is a red `main` (GOV-001).
+3. **Not changed.** The parser pin is not final: `parser-pin.json` still has no binary digest. A pass is evidence that the synthetic models parse and resolve, not that the real model does.

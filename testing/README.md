@@ -8,7 +8,7 @@ Proof that the tools follow the rules. Unit tests live next to their tool (`tool
 |---|---|---|
 | `oracles/` | Independent Python reference implementations and the tests that compare the tools against them: note format, core cross-check, QEAX reader, importer in a real browser | `npm run test:oracles` |
 | `oracles/cli/` | Small Node wrappers that let Python tests call the JavaScript tools | used by the oracle tests |
-| `fixtures/golden-charger/` | Synthetic Charger model: three notes, SysML exports, parser gate scripts, parser pin | `npm run test:fixtures`; parser: CI `parser` job (manual) |
+| `fixtures/golden-charger/` | Synthetic Charger model: three notes, SysML exports, parser gate scripts, parser pin | `npm run test:fixtures`; parser: CI `parser` job (every push to `main`, or on demand) |
 | `fixtures/sample-instrument/` | One synthetic note used by the note-format tests | via oracles |
 | `fixtures/charger-connections/` | Synthetic connection/interface candidate. Not yet in CI | — |
 | `REAL_DATA_TEST_LOG.md` | Index of private real-data runs that found issues | — |
@@ -24,4 +24,4 @@ Python is allowed here only (GOV-002). An oracle is an independent implementatio
 
 ## Parser gate
 
-The pinned independent SysML v2 parser (Java, via `fixtures/golden-charger/provision_parser.sh`) runs only in CI, from the `parser` job (Actions → CI → Run workflow → tick "parser"). A pass is evidence that the generated text parses and resolves; it is not evidence of engineering correctness. The pin is in `fixtures/golden-charger/parser-pin.json` and is not final.
+The pinned independent SysML v2 parser (Java, via `fixtures/golden-charger/provision_parser.sh`) runs only in CI, from the `parser` job: on every push to `main`, and on demand (Actions → CI → Run workflow → tick "parser"). A pass is evidence that the generated text parses and resolves; it is not evidence of engineering correctness. The pin is in `fixtures/golden-charger/parser-pin.json` and is not final.
