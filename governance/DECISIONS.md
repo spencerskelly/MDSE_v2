@@ -1329,3 +1329,13 @@ Rules: MOD-175 (new, Active); GOV-030 to GOV-032 (new, Proposed); GOV-025, GOV-0
 6. **Not verified.** CL1/CL2 behavior in real BOMs, the Jira export fields, that the vault repository can restrict who merges, and every ISO 9001 clause reference in this repository (from memory).
 
 Rules: BOM-048, BOM-049, BOM-051, BOM-054 (Active); BOM-006, BOM-007, BOM-017, BOM-034, BOM-038, BOM-046 (Check). Open: OD-18 to OD-22, OD-24 to OD-28.
+
+## D-0113 — Vertical function toolbar; Find similar
+
+2026-10-29 · Spencer · Accepted (owner, chat: a toolbar that scrolls, sorted into groups, vertically on the right side of the pane; every individual function in the toolbar; a view's sub-functions at the top of its pane; a Find similar button listing notes with a matching relationship, such as a shared part or parent for BOM elements, or the same function or requirement for modeled elements)
+
+1. **Toolbar.** In the Obsidian panel the three menus of D-0084 are replaced by one vertical strip on the right edge of the panel. It scrolls by itself and has one icon button per view, in task groups: Navigate (Dashboard, Note, Tables), Find (Find similar, Pick notes, Common related, Compare notes), Trace (Structure, Design types, Internal structure, Function, States, Requirements), Create and edit (Edit, Merge notes), Review, Canvas (Auto-layout and refresh). Each button has a name and tooltip. The button for the current view is pressed. Edit and Merge notes show disabled, with a tooltip, in a window that cannot edit. Options that belong to one view (tree depth, inherit boxes, table choice) stay at the top of that view's pane. The standalone page is unchanged.
+2. **Find similar.** A new view for the selected note. For each resolved relationship the note has, it lists the other notes joined to the same note by the same kind: "out" (this note and the peers all point at the same note: assemblies that use the same part, functions that satisfy the same requirement) and "in" (the same note points at this note and the peers: the other parts of the same parent). Results are grouped by kind, direction and shared note, can be filtered by kind, and can be added to the canvas. Relationships come from the index (the `## SysML v2` block plus the YAML links it does not state, WKB-020); nothing is inferred and retired notes are not listed. It reads no frontmatter mirror, so open decision C-19/REG-266 does not affect it.
+3. **Not covered.** Matching by property (same part number, same type) is not part of this version. The look of the toolbar has not been checked in real Obsidian.
+
+Rules: WKB-033 (amended), WKB-052 (Active). Other rules and guide text that say "Note menu" mean the same buttons in the toolbar.
