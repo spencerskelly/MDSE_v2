@@ -47,6 +47,18 @@ Owner decisions needed. Each one names what it blocks. When decided, record the 
 
 **D-0070 cross-reference (2026-10-24):** New provisional `tracesTo` writes are prohibited; unresolved MDSE-note connectors now require `flagLink` plus the source ledger. Historical `tracesTo` records remain review evidence. OD-01 still controls field-by-field classification and removal of the legacy schema entry; the contradiction between D-0010 and D-0045 clause 4 is resolved for new writes without editing either historical decision.
 
+## New (2026-10-29, revision and ECO tracking, D-0109)
+
+Options are prepared; the owner decides.
+
+| ID | Phase | Area | Decision needed |
+|---|---|---|---|
+| OD-18 | P2 | BOM | CL1 and CL2 meaning and order. The importer joins CL1 and CL2 into one revision string (`bom.ts`) and BOM-018 orders letters before the trailing number. Confirm on a real BOM: is CL1 the letter part and CL2 the number part; does CL1 change only for a fit, form or function change; is the BOM-018 order right for CL1 alone? **Not verified.** Blocks BOM-047 and BOM-050. |
+| OD-19 | P2 | BOM | Revision note identity. MOD-170 names a BOM note by its part number, which the part number's own note already uses. File name options: (a) `<PN> <CL1>` in the part number's folder (recommended: the part number stays the lead key); (b) the note's id; (c) a subfolder per part number. Also: which properties sit on which note. BOM-016 and BOM-028 put description and manufacturer data on the part number's note. Options: (i) that note keeps the latest revision's facts as today and revision notes hold their own (the latest is stored twice); (ii) that note holds identity only and every revision note, the latest included, holds its facts (recommended: nothing stored twice, D-0003; needs a migration for notes already in the vault). Blocks BOM-048. |
+| OD-20 | P2 | BOM | Older-revision usage. BOM-046 writes one line per part an assembly calls at an older revision, and `childRevision` shows the latest (BOM-012). With revision notes the line can point at the revision it pins. Options: (a) keep BOM-046 and link the revision note from the line (recommended: smallest change); (b) type the usage by the pinned revision's definition. Blocks the change to BOM-008 and BOM-012. |
+| OD-21 | P2 | ECO | ECO source and class. Needs: the Jira export fields (key, title, affected part number, CL1?) and whether a BOM carries an ECO number, **neither verified**; the class (`Engineering Change`, prefix `ECO`, proposed in D-0109); and whether the ECO list becomes a third input in MDSE_DEFINITION.md (the importer is offline and cannot query Jira). Blocks BOM-051. |
+| OD-22 | P2 | Process | ISO 9001 change evidence. Approval stays in Jira (D-0109). To show who approved a change to the vault: (a) the changelog (IMP-075) records the approver's author code and date for each approved change, and for a pre-approval the person who ran the import; (b) AI-CR-01 review notes get an engineer disposition block; (c) a records matrix (record, system of record, vault role, retention) kept outside this repository. A CL2 change has no ECO, so it needs a link to the PDM document approval or an accepted gap. ISO clause references are from memory and **not checked** against the standard. Blocks nothing; needed before an audit. |
+
 ## Carried conflicts between sources
 
 | ID | Tool | Conflict | Sources | Proposed resolution | Blocks |
