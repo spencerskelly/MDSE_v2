@@ -1423,3 +1423,13 @@ Rules: MOD-185 to MOD-187, BOM-060, WKB-053 to WKB-057 (new, Active); WKB-017, W
 6. **New rule section.** `PLM` holds rules for the tools and process of this decision. The tool folders are not created yet.
 
 Rules: PLM-001 to PLM-004 (new, Active). Open: OD-29, OD-32.
+
+## D-0121 — The latest owner decision wins; conflicts are raised when found
+
+2026-11-03 · Spencer · Accepted (owner, chat: "The latest decisions win. If something I approve is against the existing rules sets, it needs to be brought up when the conflict is identified.")
+
+1. **Precedence (owner).** The owner's latest decision wins over an earlier rule. The earlier rule is then changed by the decision and named in it (GOV-013).
+2. **Raising conflicts (owner).** When something the owner is asked to approve conflicts with an existing rule, the conflict is raised at the time it is found, naming both rules, before the rule is changed. This applies to people and to AI agents working in this repository (AGENTS.md).
+3. **Applied to D-0115 to D-0120.** A review of those decisions found conflicts that were not raised when they were written. They are listed in the pull request description and in OD-33.
+
+Rules: GOV-033 (new, Active). Open: OD-33.

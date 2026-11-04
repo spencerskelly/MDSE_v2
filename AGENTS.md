@@ -7,5 +7,6 @@ You are working on the MDSE toolchain repository, not on an engineering vault.
 3. Rules with status `Unreviewed` are not binding. Do not build on them without the owner's review.
 4. Never add real engineering data (DAT-002). Use the synthetic fixtures in `testing/fixtures/`.
 5. Do not resolve items in [governance/OPEN_DECISIONS.md](governance/OPEN_DECISIONS.md) yourself. Prepare options; the owner decides.
+6. The owner's latest decision wins. If a change you are asked to make conflicts with an existing rule, say so at once, naming both rules (GOV-033).
 
 Instructions for AI tools working **inside a generated vault** are a different file: [governance/ai/AI_INSTRUCTIONS.md](governance/ai/AI_INSTRUCTIONS.md). It ships into every vault.
