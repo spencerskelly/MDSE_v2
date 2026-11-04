@@ -1433,3 +1433,17 @@ Rules: PLM-001 to PLM-004 (new, Active). Open: OD-29, OD-32.
 3. **Applied to D-0115 to D-0120.** A review of those decisions found conflicts that were not raised when they were written. They are listed in the pull request description and in OD-33.
 
 Rules: GOV-033 (new, Active). Open: OD-33.
+
+## D-0122 — Part folders by level and category; makeBuy, businessLine, describes
+
+2026-11-04 · Spencer · Accepted (owner, chat)
+
+1. **Document link.** A drawing or document is linked to its part with `describes` (YAML, on the document); the part holds `describedBy`. The BOM line is still a SysML `ref item`. This settles conflict (1) and the first part of (2) in OD-33.
+2. **Element link.** `implements` stays the rule for now; the owner is still deciding (OD-35). `tracesTo` was considered and is provisional (every link a Review finding), so it was not adopted.
+3. **Folders.** `BOM/Parts/<Product|Assembly|Part>/<category>/`. `level` is a field. Product is a top-level assembly. Make/buy is no longer a folder.
+4. **Fields.** `makeBuy` (make, buy, other) on every BOM part note, separate from `sourcing`. `businessLine`: one value of IPC, GSE, MHE, BMID, PD, RV, PT; IPC when several lines.
+5. **Categories.** Optional `category` column in a BOM file for the first imports. Keywords SCH, ENCL, PNL, BRKT added. SW, FW leave Documents. ASSY and ASM are not category words. Few categories; manual placement is expected.
+6. **Also recorded.** Parts stay separate notes (so the merge rules in WKB are to be rewritten). A firmware part number is an ordinary BOM part with the version in the SW repo. `partNumber` is the property name.
+7. **Existing notes.** Not moved. There is no golden import yet.
+
+Rules: BOM-041 (changed), BOM-061 to BOM-063, MOD-188 (new, Active); MOD-178, MOD-184, MOD-185 (changed). Open: OD-34, OD-35.
