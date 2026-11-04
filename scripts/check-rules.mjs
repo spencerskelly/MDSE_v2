@@ -12,7 +12,7 @@ const RULESET = path.join(root, "governance/RULESET.md");
 const CSV = path.join(root, "governance/register/rules-register.csv");
 const STATUS = new Set(["Active", "Proposed", "Check", "Unreviewed"]);
 const PHASE = new Set(["Standing", "P1", "P2", "P3", "Later"]);
-const SECTIONS = new Set(["GOV", "DAT", "MOD", "IMP", "BOM", "BAS", "BOO", "WKB", "AIP", "TST"]);
+const SECTIONS = new Set(["GOV", "DAT", "MOD", "IMP", "BOM", "BAS", "BOO", "WKB", "AIP", "TST", "PLM"]);
 const HEAD = /^- \*\*([A-Z]{3})-(\d{3})\*\* · (\S+) · (\S+)(?: · (live))? — (.*)$/;
 
 // Split "rule text (origin) *Note: ...*" from the right, honouring nested parentheses in the origin.

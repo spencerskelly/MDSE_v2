@@ -1347,3 +1347,79 @@ Rules: WKB-033 (amended), WKB-052 (Active). Other rules and guide text that say 
 1. **Change.** The independent SysML v2 parser job in `ci.yml` runs on every push to `main`, and still on demand. It stays off for pull requests. This replaces "the parser job stays manual" in item 2 of D-0049 (BOM sample parser gate).
 2. **Cost.** About 2.5 minutes more per push to `main`. A red parser job is a red `main` (GOV-001).
 3. **Not changed.** The parser pin is not final: `parser-pin.json` still has no binary digest. A pass is evidence that the synthetic models parse and resolve, not that the real model does.
+
+## D-0115 — Revisions: CL1 and CL2 columns, revision note names, structure typed by the pinned revision
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-01 to 2026-11-03, answers to OD-18, OD-19, OD-20 and the revision questions: "BOMs must be accurate, so we call the revision in the assembly")
+
+1. **OD-18, columns (owner).** CL1 and CL2 are two separate columns in the BOM export. The importer reads each directly. BOM-047 becomes Active. Still not verified on a real BOM: that the exported CL1 changes only for a fit, form or function change, and that the BOM-018 order is right for CL1 alone. BOM-050 stays Proposed for that reason (OD-18).
+2. **OD-19, file name (owner).** A CL1 revision note is named `<PN> <CL1>`, in the part number's folder. The part number's own note stays `<PN>`. Which properties sit on which note is still open (OD-19).
+3. **OD-20 (owner).** An assembly's usage of a child is typed by the pinned CL1 revision's note, and `childRevision` shows the pinned revision (CL1 and CL2 as exported), not the child's latest. BOM-056 states it. BOM-008, BOM-012 and BOM-046 become Check. OD-20 is closed.
+4. **No automatic cascade (owner).** When a child gets a new CL1 revision, engineering decides each time whether a parent needs a new CL1. The importer never infers a parent revision (BOM-057). Option considered and not chosen: a rule that stops the cascade at the first parent whose fit, form and function are unchanged.
+5. **CL2 structure (owner).** The CL1 note keeps the structure lines of the latest CL2 value. The other CL2 values are listed in the body with their lines, as data (BOM-049). Trade-off stated to the owner: a parent that calls an older CL2 of a child rolls up using the child's latest CL2 structure.
+6. **Superseded revisions are retained.** This is the claude.ai register's REG-316 deprecation. BOM-006, BOM-007, BOM-017, BOM-034 and BOM-038 stay Check until the importer is changed.
+
+Rules: BOM-047 (Active); BOM-048, BOM-049 (amended); BOM-056, BOM-057 (new, Active); BOM-008, BOM-012, BOM-046 (Check); MOD-170 (amended). Closed: OD-20. Changed: OD-18, OD-19.
+
+## D-0116 — Part class, part numbers, part types, document file names
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-01 to 2026-11-03)
+
+1. **Part is a class (owner).** A `Part` class with id prefix `PRT` holds a physical part. MDSE elements stay `Object` notes. Parts and elements are never merged (MOD-176). Not in the schema yet.
+2. **Part numbers (owner).** All part numbers go through one system, PDM, which assigns the number of each new part; MDSE records it. BOM objects and controlled documents both have part numbers. A drawing takes the number of the part it draws; any other document, including a table drawing, gets a new number (MOD-177).
+3. **Ownership (owner).** PDM owns only the part number. MDSE owns descriptions and revisions. A released document's revision is checked against its source CAD revision (PLM-001).
+4. **Part type fields (owner).** Three fields: `subtype` is the technology (sheet metal, polymer, formed mechanical, passive, active, electromechanical, PCB, PCBA, cable), `sourcing` (designed, standard hardware, OTS) and `level` (part or assembly). Sourcing and level are filled from the BOM's `source` column and `bomRole` where those exist, and stay editable. What the `source` column holds is not verified (OD-31). Fabrication method is not tracked; some parts have several methods and it is not required (MOD-178).
+5. **File names (owner).** A document note is named `<number> <type code>`, for example `12345 DWG`, so a drawing and its part do not share a file name (MOD-111). Codes: DWG drawing, SCH schematic, WI work instruction, SPEC specification, TDWG table drawing, EXT external standard or regulatory document (MOD-179).
+6. **Firmware (owner).** Firmware is handled outside the system. A firmware part number that appears in a BOM is imported as an ordinary part and needs an element to implement (BOM-058).
+
+Rules: MOD-176 to MOD-179, BOM-058, PLM-001 (new, Active); BOM-016 (Check). Open: OD-29, OD-31.
+
+## D-0117 — Documents: subtypes, storage, applicable documents, table drawings, BOM lines
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-01 to 2026-11-03)
+
+1. **Subtypes (owner).** `Document` has subtypes: drawing, schematic, work instruction, specification, table drawing, external standard. A further subtype is added by a decision. This reverses the no-subtype rule for Document (MOD-180).
+2. **Revision and storage (owner).** A controlled document has its own revision history, separate from the parts it documents. The current revision's file is in the vault, next to its note, with its hash. Earlier revisions are moved to SharePoint and the note keeps a reference (MOD-181).
+3. **Applicable documents (owner).** A schema file maps part technology and sourcing to required and optional document types. A missing required document is a Review finding; a waiver is written in the part note. The table starts with the three or four most-used part types (MOD-182).
+4. **Table drawings (owner).** A table drawing takes a new document number. Variant values (such as length) are properties on each variant Part note, with governed names. The drawing is referenced and its table is not transcribed; a place is reserved in the table drawing's note for a later cross-check (MOD-183).
+5. **Documents in the BOM (owner).** The part-to-document link is authoritative. An exported BOM lists drawings and documents as lines with quantity zero, generated from the link. An imported zero-quantity document line creates or confirms the link, matched by document number (MOD-184, BOM-014).
+6. **Zero-quantity lines (owner).** BOM lines with quantity zero are kept as exported. The first import reports them by kind; whether anything more is needed is decided after that (BOM-059).
+
+Rules: MOD-180 to MOD-184, BOM-059 (new, Active). Open: OD-29.
+
+## D-0118 — ECOs: approver and date copied, one ECO per note, issued date
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-03: "There may be a case where we find a way to run the whole ECO within the tool, so I'd like to start with the approvers already in")
+
+1. **Approver and date are copied (owner).** The change note carries the approver's author code (`approver`), the approval date (`approvedOn`, YYYY-MM-dd) and the ECO issued date (`issuedDate`), as well as the Jira key, Jira link and branch. This reverses "approver, date and status stay in Jira and are not copied" in GOV-027 and BOM-051. The status stays in Jira. A person types the approver and date at first; a Workbench command that writes the registered author code and the date is the target (GOV-027, MOD-175).
+2. **One ECO per note (owner).** No two ECOs alter the same part. A second ECO may reference a part, but only to adjust its quantity or application in a parent assembly, which changes the parent's note. Each note is changed by one open ECO at a time (GOV-031). This replaces "one revision may be driven by several ECOs" in BOM-051.
+3. **Enforcement (owner).** Process only: the approver checks before approving. No tool. Stated risk: overlaps are found late, as merge conflicts, or missed when the edits are on different lines of the same note (GOV-031, OD-25).
+4. **Effectivity (owner).** An issued date. Serial numbers are tracked in another system.
+
+Rules: GOV-026, GOV-027, GOV-031 (amended, still Proposed), MOD-175, BOM-051 (amended). Changed: OD-22, OD-25.
+
+## D-0119 — The `implements` link, stored inverses, element coverage, candidate matches
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-01 to 2026-11-03)
+
+1. **The link (owner).** A Part `implements` the MDSE element it realizes. It is a YAML list of links on the Part note, many to many, definition level now and usage level later. The inverse `implementedBy` is stored on the element note. It is an explicit exception to D-0003 and D-0069: the SysML block does not state this relationship (MOD-185). The name pair is new; `realizes` is already the generated inverse of `realizedBy` for Use Cases.
+2. **Inverses after merge (owner).** An ECO branch writes only the forward field. The inverse fields are written on `main` after a merge, by one Workbench command run by an engineer, in one commit, in sorted one-per-line order. A check on `main` reports stale inverses (MOD-186, WKB-056).
+3. **Coverage (owner).** A Part with no `implements` link is a Review finding. An element with no part is not a finding for now; counts are information only. Later, only non-abstract physical Objects will need a part (MOD-187).
+4. **Candidates (owner).** The importer writes a report of candidate matches between BOM parts and EA elements, as it does today. The Workbench turns candidates into one-click links and offers a bulk link (BOM-060, WKB-053). A formal Match step with a saved record may come later.
+5. **Combined view and change report (owner).** A read-only view shows BOM elements and MDSE elements together (WKB-054). A report lists parts whose element changed since the part's last revision, and the reverse; nothing is written to the notes (WKB-055).
+6. **Merge withdrawn for parts (owner).** Merging a BOM part with an EA note is withdrawn. WKB-017 and WKB-035 become Check.
+
+Rules: MOD-185 to MOD-187, BOM-060, WKB-053 to WKB-057 (new, Active); WKB-017, WKB-035 (Check). Open: OD-29, OD-30.
+
+## D-0120 — Two new tools: document intake and package exporter
+
+2026-11-03 · Spencer · Accepted (owner, chat 2026-11-03)
+
+1. **Document intake tool (owner).** A separate offline single-file HTML tool, built like the importer, brings any PDF into the vault. It always writes the PDF and a note (number, type, revision, hash, link to the source CAD file and revision). Text extraction is a separate step on an existing note; the text goes into the note's user zone once, is never touched by a tool again, and a second extraction on the same note is refused (PLM-002).
+2. **Regulatory documents (owner).** The tool adds one anchor per clause from a clause list the engineer supplies. The available text of a third-party standard is kept as a single note per edition with a YAML link to the official document. The owner states the vault is not shared. The licenses were not checked; the vault stays private and the text never goes into a public repository (PLM-003, DAT-002, OD-32).
+3. **Package exporter (owner).** A separate offline single-file HTML tool builds packages for third parties: a BOM in Excel and the documents at their current revisions, with Gerber and STEP files exported from Altium and SolidWorks added to the package folder, and a manifest. Packages are stored outside the vault, and where each is sent is tracked separately (PLM-004).
+4. **Deferred (owner).** A check of the vault's part numbers against PDM's full list.
+5. **Rovo.** The owner tested that Rovo reads Markdown. OD-02 is not closed: it also asks how relationships written only in SysML text are queried.
+6. **New rule section.** `PLM` holds rules for the tools and process of this decision. The tool folders are not created yet.
+
+Rules: PLM-001 to PLM-004 (new, Active). Open: OD-29, OD-32.
