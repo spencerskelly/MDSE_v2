@@ -1492,3 +1492,14 @@ Rules: BOM-041, BOM-061, BOM-062, BOM-063 (notes changed). Open: OD-34.
 2. **Order.** Unchanged: letters first and number second already gives the scheme's order.
 
 Rules: BOM-018 (note changed).
+
+## D-0127 — Revision notes: what each note holds
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Revision note** (`<PN> <CL1>`, BOM-048) holds `description`, `manufacturerN`, `mfgPnN`, `revision`, the structure lines and the list of CL2 values. Its SysML name is `P_<PN>_<CL1>`, specializing `P_<PN>`.
+2. **Part number note** (`<PN>`) holds `partNumber`, `level`, `makeBuy`, `sourcing`, `bomCategory`, `businessLine`, `implements`, `describes` and the model content.
+3. **Assumed, not stated:** `bomRole` stays on the part number's note.
+4. **Not built.** The importer still writes one note per part number with the latest revision's data. Rewriting it, the update scan and the five Check rules (BOM-006, 007, 017, 038, 046) is the next importer work.
+
+Rules: BOM-048 (changed). Open: OD-19 remainder.
