@@ -1447,3 +1447,17 @@ Rules: GOV-033 (new, Active). Open: OD-33.
 7. **Existing notes.** Not moved. There is no golden import yet.
 
 Rules: BOM-041 (changed), BOM-061 to BOM-063, MOD-188 (new, Active); MOD-178, MOD-184, MOD-185 (changed). Open: OD-34, OD-35.
+
+## D-0123 — Revision scheme, prototypes, PDM ownership, ECO scope, archive
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Revision scheme.** A released revision is a letter and a two-digit number (`A01`, `B02`, `B03`, `C04`). CL1 is the letter, CL2 is the number. The number is one running sequence and does not reset. No rollover: past `Z` or `99` the part needs a new part number. Finding `REV_SCHEME` for a revision that breaks the scheme. Changes BOM-018, BOM-047, BOM-050.
+2. **Ownership.** PDM sets the part number and the revision. The engineer enters them into MDSE until a tool does it. The earlier wording that MDSE owns revisions is withdrawn (PLM-001).
+3. **Prototypes.** `<base>#NN` is a prototype revision, not CL1 or CL2, outside the ECO process. One note per base number, `<base> PROTO`, with the `#NN` rows inside; `partNumber` is the base number. Not linked to released parts; found by search. `#` cannot be in a link (BOM-064, MOD-170).
+4. **ECO scope.** The ECO process starts when a part is released at `A01` (GOV-025).
+5. **ECO note.** Each entry in the list of changed items names the person responsible, by author code (BOM-051).
+6. **Branch.** The engineer creates the ECO branch (GOV-028). The rest of the flow stays OD-24.
+7. **Archive.** Earlier revisions of documents go to a git archive, not SharePoint. Revision notes and original notes stay in the vault (MOD-181).
+
+Rules: BOM-064 (new, Active); BOM-018 (rewritten); BOM-047, BOM-050, BOM-051, GOV-025, GOV-028, MOD-170, MOD-181, PLM-001 (changed). Open: OD-36; OD-18 still not verified on a real BOM; OD-22, OD-24, OD-25, OD-26 unchanged apart from the notes.
