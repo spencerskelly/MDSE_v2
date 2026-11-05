@@ -270,6 +270,15 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     for (const [k, list] of byKind) pane.append(section("use-" + k, k, [tableOf([["k", "Kind"], ["name", "Name"], ["type", "Type"], ["mult", "Multiplicity"]], list.map((u) => [(u.dir ? u.dir + " " : "") + (u.ref ? "ref " : "") + u.kind, u.name, u.type ? lnk(ix!.bySymbol.get(u.type) ?? null, u.type) : h("span", { class: "gap" }, "untyped"), u.mult ?? ""]))], { count: list.length }));
     if (n.block) pane.append(section("sysml", "SysML v2", [highlight(n.block), n.warnings.length ? h("div", { class: "gap" }, n.warnings.join("; ")) : null], { open: false }));
     if (n.sourceLines.length) pane.append(section("prov", "Provenance (Source: EA)", [h("ul", {}, ...n.sourceLines.map((l) => h("li", {}, l.slice(2))))], { count: n.sourceLines.length, open: false }));
+    {   // D-0128: the part fields and the implements links, in one place for a part; the implementers for an element
+      const pn = String(n.meta.partNumber ?? "").trim(), rows: Child[][] = [];
+      if (pn) for (const [k, label] of [["partNumber", "Part number"], ["level", "Level"], ["makeBuy", "Make or buy"], ["sourcing", "Sourcing"], ["businessLine", "Business line"], ["bomCategory", "Category"], ["bomRole", "Role in the BOM"]] as Array<[string, string]>) { const v = String(n.meta[k] ?? "").trim(); if (v) rows.push([label, v]); }
+      const impl = ix!.edges.filter((e) => e.kind === "implements" && e.via === "yaml");
+      const mine = impl.filter((e) => e.from === n.path), by = impl.filter((e) => e.to === n.path);
+      if (rows.length) pane.append(section("part", "Part", [tableOf([["k", "Field"], ["v", "Value"]], rows)], { open: true }));
+      if (mine.length) pane.append(section("implements", "Implements", [h("ul", {}, ...mine.map((e) => h("li", {}, lnk(e.to, e.to ? ix!.notes.get(e.to)?.title : e.toSymbol))))], { count: mine.length, open: true }));
+      if (by.length) pane.append(section("implementedBy", "Implemented by", [h("ul", {}, ...by.map((e) => h("li", {}, lnk(e.from, ix!.notes.get(e.from)?.title), " ", h("span", { class: "mut" }, String(ix!.notes.get(e.from)?.meta.partNumber ?? "")))))], { count: by.length, open: true }));
+    }
     pane.append(section("props", "Properties", [tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path)], { open: false }));
     return pane;
   }

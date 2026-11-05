@@ -1503,3 +1503,16 @@ Rules: BOM-018 (note changed).
 4. **Not built.** The importer still writes one note per part number with the latest revision's data. Rewriting it, the update scan and the five Check rules (BOM-006, 007, 017, 038, 046) is the next importer work.
 
 Rules: BOM-048 (changed). Open: OD-19 remainder.
+
+## D-0128 — Workbench: Part and links tab, Part section in the Note lens
+
+2026-11-05 · Spencer · Accepted (owner, chat: bring in the Workbench first to test the interface)
+
+1. **Built.** The Edit lens has a tab, Part and links. For a part note it sets `level`, `makeBuy`, `sourcing` and `businessLine` from the lists in `properties.json` (a test keeps the two in step), and edits `implements`. For an Info note it edits `describes`. Every change shows a preview and can be undone.
+2. **Refused.** `level`, `makeBuy` and `sourcing` on anything but a part; `implements` from a note that is not a part, to a part, to itself, or to a link that matches no note (MOD-185).
+3. **Inverse not written.** `implementedBy` is shown, read only, and is not counted as a second relationship (MOD-186). Writing it is the inverse sync command (WKB-056), not built.
+4. **Note lens.** Part, Implements and Implemented by sections show before the properties.
+5. **Not built.** Revision chain and PROTO views, bulk link, candidates from the importer, ECO lens.
+
+Rules: WKB-053, WKB-054 (notes changed). Open: OD-29.
+

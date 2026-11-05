@@ -9,6 +9,7 @@ import * as ED from "./edit.ts";
 import * as RL from "./edit_rel.ts";
 import * as PT from "./edit_port.ts";
 import * as MG from "./merge_ops.ts";
+import * as PL from "./edit_plm.ts";
 import { ED_HELP } from "./edit_help.ts";
 
 export interface EditHost {
@@ -37,7 +38,7 @@ export const EDIT_STYLE = `
 
 `;
 
-type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text";
+type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text" | "plm";
 const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean; mergeWith: string } = { mode: "manage", ref: null, stale: false, mergeWith: "" };
 /** Open the Edit lens on its Merge tab (D-0086). */
 export function setEditMode(mode: Mode): void { SAVED.mode = mode; }
@@ -56,7 +57,7 @@ export function editView(c: EditCtx): HTMLElement {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m: Mode): void => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box as unknown as { mdRefresh: () => void }).mdRefresh = (): void => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh: (() => void) | null = null;                                 // redraws only a list, never a form being filled
@@ -463,11 +464,49 @@ export function editView(c: EditCtx): HTMLElement {
     return v;
   }
 
+
+  /* ---- part fields and links (D-0128) ---- */
+  function plmView(): HTMLElement {
+    if (!from) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a note in Obsidian to edit its part fields and links.");
+    const n = from, isPart = PL.plmIsPart(n), isDoc = PL.plmIsDocLike(n), cur = (k: string): string => String(n.meta[k] ?? "");
+    const sels = new Map<string, HTMLSelectElement>(), v = h("div", {});
+    v.append(h("div", {}, h("b", {}, n.title), " ", h("span", { class: "mut" }, `${n.id || n.name}${isPart ? " · part " + cur("partNumber") : ""}`)));
+    const pick = (k: string, label: string): HTMLElement => {
+      const vals = PL.PLM_LISTS[k]!, own = cur(k), extra = own && !vals.includes(own) ? [h("option", { value: own, selected: true }, `${own} (not in the list)`)] : [];
+      const s = h("select", { "aria-label": label, onchange: () => showPlan(null) }, h("option", { value: "" }, "(not set)"), ...vals.map((x) => h("option", { value: x, selected: x === own ? true : undefined }, x)), ...extra) as HTMLSelectElement;
+      sels.set(k, s); return field(label, s);
+    };
+    if (isPart) v.append(pick("level", "Level"), pick("makeBuy", "Make or buy"), pick("sourcing", "Sourcing"));
+    v.append(pick("businessLine", "Business line"));
+    v.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => { const vals: Record<string, string> = {}; for (const [k, s] of sels) vals[k] = s.value; showPlan(PL.planSetPartFields(ix, host.files(), n.path, vals)); } }, "Preview field changes")));
+    const linkEditor = (f: "implements" | "describes", title: string): HTMLElement => {
+      let list = PL.plmTargets(ix, n, f).map((x) => x.path), q = "";
+      const box2 = h("div", {}), have = h("div", {}), res = h("div", { class: "pick" });
+      const change = (): void => { draw(); showPlan(PL.planSetLinks(ix, host.files(), n.path, f, list)); };
+      const search = h("input", { type: "search", placeholder: "Search by name, id or part number", "aria-label": `Find a note to add to ${f}` }) as HTMLInputElement;
+      search.addEventListener("input", () => { q = search.value; draw(); });
+      function draw(): void {
+        have.replaceChildren(...(list.length ? list.map((p) => { const t = ix.notes.get(p); return h("div", { style: "display:flex;gap:6px;align-items:center;margin:2px 0" }, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); c.open(p); } }, t?.title ?? p), h("span", { class: "mut", style: "font-size:11.5px" }, t?.id ?? ""), h("button", { class: "sm", onclick: () => { list = list.filter((x) => x !== p); change(); } }, "Remove")); }) : [h("div", { class: "mut", style: "font-size:12px" }, "None yet.")]));
+        res.replaceChildren();
+        if (q.trim()) for (const t of PL.plmCandidates(ix, n, f, q).filter((t) => !list.includes(t.path)).slice(0, 30)) res.append(h("div", { class: "it", onclick: () => { list = [...list, t.path]; q = ""; search.value = ""; change(); } }, t.title, " ", h("span", { class: "sn" }, `${t.id} · ${t.type}`)));
+      }
+      draw(); box2.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, title), have, search, res); return box2;
+    };
+    if (isPart) v.append(linkEditor("implements", "Implements (the MDSE elements this part realizes)"));
+    else if (isDoc) v.append(linkEditor("describes", "Describes (the notes this document is about)"));
+    else {
+      const by = PL.plmSources(ix, n, "implements");
+      v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Implemented by (read from the parts' implements links)"), ...(by.length ? by.map((t) => h("div", {}, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); c.open(t.path); } }, t.title), " ", h("span", { class: "mut", style: "font-size:11.5px" }, cur("partNumber") || t.meta.partNumber || ""))) : [h("div", { class: "mut", style: "font-size:12px" }, "No part implements this note yet.")]));
+    }
+    v.append(previewBox, applyRow);
+    return v;
+  }
+
   function render(): void {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "text"] as Mode[])[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "text"] as Mode[])[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : textView());
   }
   void plan;
   render();

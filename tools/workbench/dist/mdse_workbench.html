@@ -715,6 +715,8 @@ const baseName = (path        )         => path.split("/").pop() .replace(/\.md$
 const SYSML_TO_KIND                         = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
 /** D-0108: relationships the importer repeats as YAML so people and AI can read them. On a note that has a SysML block the block is the authority and these YAML fields are never counted, so an edit made to the block cannot be undone by a stale copy. */
 const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "includes", "extendedBy"]);
+/** MOD-186 (D-0128): `implementedBy` is the stored inverse of `implements`. The forward link on the part is the relationship; counting the inverse too would double every implements edge. */
+const STORED_INVERSE = new Set(["implementedBy"]);
 const DEP_KIND                         = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path        , text        , o              )              {
@@ -788,6 +790,7 @@ function resolveAll(ix            )       {
     for (const l of n.links) {
       const t = ix.byName.get(l.target.toLowerCase()) ?? null;
       if (n.def && MIRRORED.has(l.field)) continue;
+      if (STORED_INVERSE.has(l.field)) continue;
       if (t && said.has(l.field + "\u0000" + t)) continue;
       link(ix, { from: n.path, to: t, toSymbol: l.target, kind: l.field, label: "", via: "yaml", detail: "" });
     }
@@ -2502,6 +2505,113 @@ function edDiff(before               , after        )                           
   return { removed: a.slice(s, ea), added: b.slice(s, eb) };
 }
 
+/* edit_plm.ts */
+/* Part fields and the links a Part or a document writes in YAML (D-0128): level, makeBuy, sourcing and businessLine
+ * (MOD-178, BOM-061, MOD-188) and the `implements` and `describes` links (MOD-185, MOD-184). Every function here only
+ * PLANS a change; the Edit lens shows the diff and applies it with an Undo like any other edit.
+ * The stored inverses (`implementedBy`, `describedBy`) are not written here: one command writes them after a merge (MOD-186, not built). */
+
+
+/** The governed lists of governance/schemas/properties.json (D-0124). A test compares them with the file, so they cannot drift. */
+const PLM_LISTS                           = {
+  level: ["product", "assembly", "part"],
+  makeBuy: ["make", "buy", "other"],
+  sourcing: ["designed", "standard hardware", "OTS"],
+  businessLine: ["IPC", "GSE", "MHE", "BMID", "PD", "RV", "PT"],
+};
+const PLM_FIELDS = ["level", "sourcing", "makeBuy", "businessLine"];
+/** Fields only a Part has (a note with a part number); businessLine may also sit on an element a Part implements (MOD-188). */
+const PART_ONLY = new Set(["level", "sourcing", "makeBuy"]);
+const AFTER_KEYS = ["bomCategory", "bomRole", ...PLM_FIELDS];
+const plmIsPart = (n      )          => !!String(n.meta.partNumber ?? "").trim();
+/** Notes that can carry `describes` (relationships.yaml: from Info, Artifact, Document). */
+const plmIsDocLike = (n      )          => n.type === "Info" || n.type === "Artifact" || n.type === "Document";
+
+const yamlScalar = (v        )         => (/^[\s'"]|[:#]\s|\s$|^[-?!&*|>%@`]|[,\[\]{}]/.test(v) ? JSON.stringify(v) : v);
+
+/** Set, add or remove one front-matter key. `null` removes it. A key that is not there is added after the nearest earlier key of the part group, else at the end. Line endings are kept. */
+function plmSetYaml(text        , key        , value               )         {
+  const crlf = text.includes("\r\n"), t = text.replace(/\r\n/g, "\n");
+  const m = /^---\n([\s\S]*?)\n---(\n|$)/.exec(t); if (!m) return text;
+  const lines = m[1] .split("\n"), at = lines.findIndex((l) => l.startsWith(key + ":"));
+  const line = value === null ? null : value === "" ? `${key}:` : `${key}: ${value}`;
+  if (at >= 0) { if (line === null) lines.splice(at, 1); else lines[at] = line; }
+  else if (line !== null) {
+    const earlier = AFTER_KEYS.slice(0, Math.max(AFTER_KEYS.indexOf(key), 0)), pos = lines.reduce((p, l, i) => (earlier.some((k) => l.startsWith(k + ":")) ? i : p), -1);
+    lines.splice(pos >= 0 ? pos + 1 : lines.length, 0, line);
+  }
+  const out = `---\n${lines.join("\n")}\n---${m[2]}` + t.slice(m[0].length);
+  return crlf ? out.replace(/\n/g, "\r\n") : out;
+}
+
+/** `[[file name|name]]` (MOD-170). */
+const plmLink = (n      )         => `[[${n.name}|${String(n.meta.name ?? n.title).replace(/[|\[\]\n]/g, " ").replace(/\s+/g, " ").trim() || n.name}]]`;
+const linkList = (ns        )         => `[${ns.map((n) => JSON.stringify(plmLink(n))).join(", ")}]`;
+
+/** The targets a link field of a note names now, as index notes (a dangling link is left out here and kept by the planner). */
+function plmTargets(ix            , n      , field        )         {
+  const out         = [];
+  for (const l of n.links) if (l.field === field) { const p = ix.byName.get(l.target.toLowerCase()); const t = p ? ix.notes.get(p) : undefined; if (t && !out.includes(t)) out.push(t); }
+  return out;
+}
+/** Notes that name this note in `field` (for `implementedBy`, read from the forward links, never from a stored inverse). */
+function plmSources(ix            , n      , field        )         {
+  const out         = [];
+  for (const e of ix.inn.get(n.path) ?? []) if (e.kind === field && e.via === "yaml") { const s = ix.notes.get(e.from); if (s && !out.includes(s)) out.push(s); }
+  return out;
+}
+
+                                                                                                   
+/** Set the part fields of one note. A value of "" removes the field. Values outside the governed lists are refused. */
+function planSetPartFields(ix            , files                     , path        , vals            )           {
+  const n = ix.notes.get(path), text = files.get(path), bad = (m        )           => ({ summary: "", writes: [], problems: [m] });
+  if (!n || text === undefined) return bad("That note is not in the vault.");
+  let out = text; const said           = [];
+  for (const k of PLM_FIELDS) {
+    const v = (vals                                      )[k]; if (v === undefined) continue;
+    if (PART_ONLY.has(k) && !plmIsPart(n)) return bad(`${k} belongs to a part (a note with a part number).`);
+    if (v !== "" && !PLM_LISTS[k] .includes(v)) return bad(`"${v}" is not a ${k} value. Allowed: ${PLM_LISTS[k] .join(", ")}.`);
+    const cur = String(n.meta[k] ?? ""); if (v === cur) continue;
+    out = plmSetYaml(out, k, v === "" ? null : yamlScalar(v)); said.push(v === "" ? `remove ${k}` : `${k}: ${v}`);
+  }
+  if (out === text) return bad("Nothing changed.");
+  return { summary: `${n.title}: ${said.join(", ")}.`, writes: [{ path, before: text, after: out }], problems: [] };
+}
+
+/** Set the targets of `implements` (on a part) or `describes` (on an Info, Artifact or Document note). An empty list removes the field. */
+function planSetLinks(ix            , files                     , path        , field                            , targetPaths          )           {
+  const n = ix.notes.get(path), text = files.get(path), bad = (m        )           => ({ summary: "", writes: [], problems: [m] });
+  if (!n || text === undefined) return bad("That note is not in the vault.");
+  if (field === "implements" && !plmIsPart(n)) return bad("Only a part (a note with a part number) implements an element.");
+  if (field === "describes" && !plmIsDocLike(n)) return bad("Only an Info, Artifact or Document note describes another note.");
+  const ts         = [];
+  for (const p of [...new Set(targetPaths)]) {
+    const t = ix.notes.get(p); if (!t) return bad(`${p} is not in the vault.`);
+    if (t.path === n.path) return bad("A note cannot link to itself.");
+    if (field === "implements" && plmIsPart(t)) return bad(`${t.title} is a part. A part implements an MDSE element, not another part (MOD-185).`);
+    ts.push(t);
+  }
+  ts.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const dangling = n.links.filter((l) => l.field === field && !ix.byName.has(l.target.toLowerCase()));
+  if (dangling.length) return bad(`${field} holds ${dangling.length} link(s) that match no note (${dangling.map((d) => d.target).join(", ")}). Fix them in the note first so nothing is lost.`);
+  const out = plmSetYaml(text, field, ts.length ? linkList(ts) : null);
+  if (out === text) return bad("Nothing changed.");
+  const was = plmTargets(ix, n, field).length;
+  return { summary: `${n.title}: ${field} ${was} → ${ts.length} link(s). The stored inverse is written after the next merge (MOD-186).`, writes: [{ path, before: text, after: out }], problems: [] };
+}
+
+/** Notes that can be offered as a target. For `implements`: elements that are not parts. For `describes`: any note except itself. */
+function plmCandidates(ix            , from      , field                            , query        , limit = 50)         {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean), out         = [];
+  for (const n of ix.notes.values()) {
+    if (n.path === from.path || n.meta.mergedInto || String(n.meta.status ?? "") === "Retired") continue;
+    if (field === "implements" && (plmIsPart(n) || plmIsDocLike(n))) continue;
+    if (words.length) { const hay = `${n.title} ${n.name} ${n.meta.description ?? ""} ${n.id} ${n.meta.partNumber ?? ""}`.toLowerCase(); if (!words.every((w) => hay.includes(w))) continue; }
+    out.push(n); if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /* canvas_draw.ts */
 /* Draw-to-relate (D-0043). A line the person draws between two note cards on the canvas preview becomes a relationship
  * only through the same previewed, undoable plan the Edit lens uses (WKB-009). Pure functions: find the lines the person
@@ -4087,6 +4197,15 @@ function mountWorkbench(root             , host       = {})      {
     for (const [k, list] of byKind) pane.append(section("use-" + k, k, [tableOf([["k", "Kind"], ["name", "Name"], ["type", "Type"], ["mult", "Multiplicity"]], list.map((u) => [(u.dir ? u.dir + " " : "") + (u.ref ? "ref " : "") + u.kind, u.name, u.type ? lnk(ix .bySymbol.get(u.type) ?? null, u.type) : h("span", { class: "gap" }, "untyped"), u.mult ?? ""]))], { count: list.length }));
     if (n.block) pane.append(section("sysml", "SysML v2", [highlight(n.block), n.warnings.length ? h("div", { class: "gap" }, n.warnings.join("; ")) : null], { open: false }));
     if (n.sourceLines.length) pane.append(section("prov", "Provenance (Source: EA)", [h("ul", {}, ...n.sourceLines.map((l) => h("li", {}, l.slice(2))))], { count: n.sourceLines.length, open: false }));
+    {   // D-0128: the part fields and the implements links, in one place for a part; the implementers for an element
+      const pn = String(n.meta.partNumber ?? "").trim(), rows            = [];
+      if (pn) for (const [k, label] of [["partNumber", "Part number"], ["level", "Level"], ["makeBuy", "Make or buy"], ["sourcing", "Sourcing"], ["businessLine", "Business line"], ["bomCategory", "Category"], ["bomRole", "Role in the BOM"]]                           ) { const v = String(n.meta[k] ?? "").trim(); if (v) rows.push([label, v]); }
+      const impl = ix .edges.filter((e) => e.kind === "implements" && e.via === "yaml");
+      const mine = impl.filter((e) => e.from === n.path), by = impl.filter((e) => e.to === n.path);
+      if (rows.length) pane.append(section("part", "Part", [tableOf([["k", "Field"], ["v", "Value"]], rows)], { open: true }));
+      if (mine.length) pane.append(section("implements", "Implements", [h("ul", {}, ...mine.map((e) => h("li", {}, lnk(e.to, e.to ? ix .notes.get(e.to)?.title : e.toSymbol))))], { count: mine.length, open: true }));
+      if (by.length) pane.append(section("implementedBy", "Implemented by", [h("ul", {}, ...by.map((e) => h("li", {}, lnk(e.from, ix .notes.get(e.from)?.title), " ", h("span", { class: "mut" }, String(ix .notes.get(e.from)?.meta.partNumber ?? "")))))], { count: by.length, open: true }));
+    }
     pane.append(section("props", "Properties", [tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path)], { open: false }));
     return pane;
   }
@@ -4340,6 +4459,7 @@ const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElem
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
 const MG = { mgRead, mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgMembers, mgOwnerRows, planMergePairs, planNoteMerge };
+const PL = { PLM_LISTS, PLM_FIELDS, plmIsPart, plmIsDocLike, plmSetYaml, plmLink, plmTargets, plmSources, planSetPartFields, planSetLinks, plmCandidates };
 
                     
                                
@@ -4367,7 +4487,7 @@ const EDIT_STYLE = `
 
 `;
 
-                                                                   
+                                                                           
 const SAVED                                                                         = { mode: "manage", ref: null, stale: false, mergeWith: "" };
 /** Open the Edit lens on its Merge tab (D-0086). */
 function setEditMode(mode      )       { SAVED.mode = mode; }
@@ -4386,7 +4506,7 @@ function editView(c         )              {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box                                        ).mdRefresh = ()       => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh                      = null;                                 // redraws only a list, never a form being filled
@@ -4793,11 +4913,49 @@ function editView(c         )              {
     return v;
   }
 
+
+  /* ---- part fields and links (D-0128) ---- */
+  function plmView()              {
+    if (!from) return h("div", { class: "empty", style: "padding:12px 0" }, "Open a note in Obsidian to edit its part fields and links.");
+    const n = from, isPart = PL.plmIsPart(n), isDoc = PL.plmIsDocLike(n), cur = (k        )         => String(n.meta[k] ?? "");
+    const sels = new Map                           (), v = h("div", {});
+    v.append(h("div", {}, h("b", {}, n.title), " ", h("span", { class: "mut" }, `${n.id || n.name}${isPart ? " · part " + cur("partNumber") : ""}`)));
+    const pick = (k        , label        )              => {
+      const vals = PL.PLM_LISTS[k] , own = cur(k), extra = own && !vals.includes(own) ? [h("option", { value: own, selected: true }, `${own} (not in the list)`)] : [];
+      const s = h("select", { "aria-label": label, onchange: () => showPlan(null) }, h("option", { value: "" }, "(not set)"), ...vals.map((x) => h("option", { value: x, selected: x === own ? true : undefined }, x)), ...extra)                     ;
+      sels.set(k, s); return field(label, s);
+    };
+    if (isPart) v.append(pick("level", "Level"), pick("makeBuy", "Make or buy"), pick("sourcing", "Sourcing"));
+    v.append(pick("businessLine", "Business line"));
+    v.append(h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => { const vals                         = {}; for (const [k, s] of sels) vals[k] = s.value; showPlan(PL.planSetPartFields(ix, host.files(), n.path, vals)); } }, "Preview field changes")));
+    const linkEditor = (f                            , title        )              => {
+      let list = PL.plmTargets(ix, n, f).map((x) => x.path), q = "";
+      const box2 = h("div", {}), have = h("div", {}), res = h("div", { class: "pick" });
+      const change = ()       => { draw(); showPlan(PL.planSetLinks(ix, host.files(), n.path, f, list)); };
+      const search = h("input", { type: "search", placeholder: "Search by name, id or part number", "aria-label": `Find a note to add to ${f}` })                    ;
+      search.addEventListener("input", () => { q = search.value; draw(); });
+      function draw()       {
+        have.replaceChildren(...(list.length ? list.map((p) => { const t = ix.notes.get(p); return h("div", { style: "display:flex;gap:6px;align-items:center;margin:2px 0" }, h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); c.open(p); } }, t?.title ?? p), h("span", { class: "mut", style: "font-size:11.5px" }, t?.id ?? ""), h("button", { class: "sm", onclick: () => { list = list.filter((x) => x !== p); change(); } }, "Remove")); }) : [h("div", { class: "mut", style: "font-size:12px" }, "None yet.")]));
+        res.replaceChildren();
+        if (q.trim()) for (const t of PL.plmCandidates(ix, n, f, q).filter((t) => !list.includes(t.path)).slice(0, 30)) res.append(h("div", { class: "it", onclick: () => { list = [...list, t.path]; q = ""; search.value = ""; change(); } }, t.title, " ", h("span", { class: "sn" }, `${t.id} · ${t.type}`)));
+      }
+      draw(); box2.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, title), have, search, res); return box2;
+    };
+    if (isPart) v.append(linkEditor("implements", "Implements (the MDSE elements this part realizes)"));
+    else if (isDoc) v.append(linkEditor("describes", "Describes (the notes this document is about)"));
+    else {
+      const by = PL.plmSources(ix, n, "implements");
+      v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Implemented by (read from the parts' implements links)"), ...(by.length ? by.map((t) => h("div", {}, h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); c.open(t.path); } }, t.title), " ", h("span", { class: "mut", style: "font-size:11.5px" }, cur("partNumber") || t.meta.partNumber || ""))) : [h("div", { class: "mut", style: "font-size:12px" }, "No part implements this note yet.")]));
+    }
+    v.append(previewBox, applyRow);
+    return v;
+  }
+
   function render()       {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "text"]          )[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "text"]          )[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : textView());
   }
   void plan;
   render();
