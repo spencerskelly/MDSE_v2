@@ -1472,3 +1472,14 @@ Rules: BOM-064 (new, Active); BOM-018 (rewritten); BOM-047, BOM-050, BOM-051, GO
 4. **Not done.** No tool reads or writes these yet. `subtype` as technology is not settled (OD-36 item 7).
 
 Rules: MOD-185, MOD-188 (notes changed). Open: OD-29, OD-34, OD-36.
+
+## D-0125 — Importer: level folders, category column, makeBuy, keyword table
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Built.** The BOM importer writes new part notes to `BOM/Parts/<Product|Assembly|Part>/<category>/<PN>.md` and adds `level` and `makeBuy` (BOM-041, BOM-042, BOM-061). The optional `category` column outranks the word table (BOM-062). The keyword table follows BOM-063.
+2. **Names.** `ENCL` and `PNL` go to the existing category Enclosures and mechanical. `BRKT` goes to a new category, Brackets, as BOM-063 says, while `BRACKET` stays in Enclosures and mechanical (OD-34).
+3. **Findings.** `CATEGORY_UNKNOWN` for a category column value not in the list; `MAKEBUY_OTHER` lists the source values read that were not make or buy.
+4. **Not done.** An update scan does not add `level` or `makeBuy` to existing notes; existing notes are not moved (no golden import yet). A redline has no source column, so its parts get `makeBuy: other`.
+
+Rules: BOM-041, BOM-061, BOM-062, BOM-063 (notes changed). Open: OD-34.

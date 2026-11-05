@@ -10,7 +10,7 @@ import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
-import { bomCategoryOf, bomRoleOf, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
+import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -47,10 +47,10 @@ export interface Src { mfr: string; mpn: string }
 /** An alternate that has its own part number and sits on line 1xx beside line xx (BOM-003). */
 export interface AltPart { pn: string; rev: string; name: string; line: string; amount: string; unit: string; mfr: string; mpn: string; row: number }
 export interface Usage {
-  parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childState: string;
+  parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childCategory: string; childState: string;
   amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; /** D-0064: rows numbered 100 above this line that carry a part number of their own: alternates, not usages */ altParts: AltPart[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
 }
-export interface ParentObs { pn: string; rev: string; name: string; source: string; state: string; drawingLocation: string }
+export interface ParentObs { pn: string; rev: string; name: string; source: string; category: string; state: string; drawingLocation: string }
 /** D-0059: a row the reader could not turn into a line is kept as its cell text (never just a count), so its content stays available to the person. */
 export interface SkippedRow { row: number; code: string; cells: string }
 export interface Parsed { layout: "flat" | "redline"; usages: Usage[]; parents: ParentObs[]; findings: Finding[]; skipped: SkippedRow[] }
@@ -108,7 +108,7 @@ export function parseBom(grid: Grid): Parsed {
   const skip = (r: number, code: string): void => { const row = grid[r] ?? [], cells: string[] = []; row.forEach((c, i) => { const x = bomCurPrev(c); if (!x.cur && !x.prev) return; cells.push(`${bomTxt(hdr[i]) || "column " + (i + 1)}: ${x.cur}${x.prev ? (x.cur ? ` (was ${x.prev})` : `(struck: ${x.prev})`) : ""}`); }); skipped.push({ row: r + 1, code, cells: cells.join("; ") }); };
   if (d.missing.length) findings.push({ level: "error", code: "BOM_COLUMNS", message: `Missing column(s): ${d.missing.join(", ")}.` });
   const m = bomColMap(grid[d.headerRow]!), usages: Usage[] = [], parents: ParentObs[] = [];
-  const blank = (u: Partial<Usage>): Usage => ({ parent: "", parentRev: "", line: "", child: "", childRev: "", childName: "", childSource: "", childState: "", amount: "", unit: "", refDes: "", from: "", to: "", ssc: "", notes: "", row: 0, alternates: [], altParts: [], ownSrc: null, drawingLocation: "", prevChild: "", ...u });
+  const blank = (u: Partial<Usage>): Usage => ({ parent: "", parentRev: "", line: "", child: "", childRev: "", childName: "", childSource: "", childCategory: "", childState: "", amount: "", unit: "", refDes: "", from: "", to: "", ssc: "", notes: "", row: 0, alternates: [], altParts: [], ownSrc: null, drawingLocation: "", prevChild: "", ...u });
   if (d.layout === "flat") {
     let last: Usage | null = null;
     for (let r = d.headerRow + 1; r < grid.length; r++) {
@@ -120,10 +120,10 @@ export function parseBom(grid: Grid): Parsed {
         findings.push({ level: "warn", code: mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD", message: `Row ${r + 1}: no child part number${mpn ? " and no unambiguous primary line above; review only" : ""}.` }); skip(r, mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD"); continue;
       }
       const u = blank({ parent, parentRev: bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2"), line: bomGet(row, m, "linenumber"), child, childRev: bomGet(row, m, "childcl1") + bomGet(row, m, "childcl2"), childName: bomGet(row, m, "childname"),
-        childSource: bomGet(row, m, "childsource"), childState: bomGet(row, m, "childstate"), amount: bomGet(row, m, "amount", "quantity"), unit: bomGet(row, m, "unit"), refDes: bomGet(row, m, "referencedesignator"), from: bomGet(row, m, "from"), to: bomGet(row, m, "to"),
+        childSource: bomGet(row, m, "childsource"), childCategory: bomGet(row, m, "childcategory", "category"), childState: bomGet(row, m, "childstate"), amount: bomGet(row, m, "amount", "quantity"), unit: bomGet(row, m, "unit"), refDes: bomGet(row, m, "referencedesignator"), from: bomGet(row, m, "from"), to: bomGet(row, m, "to"),
         ssc: bomGet(row, m, "ssc"), notes: bomGet(row, m, "cildnotes", "childnotes"), row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null });
       if (!parent) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: no parent part number; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
-      parents.push({ pn: parent, rev: u.parentRev, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
+      parents.push({ pn: parent, rev: u.parentRev, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), category: bomGet(row, m, "parentcategory"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
       usages.push(u); last = u;
     }
     return { layout: "flat", usages: foldAltLines(usages, findings), parents, findings, skipped };
@@ -144,15 +144,15 @@ export function parseBom(grid: Grid): Parsed {
     const name = bomCurPrev(row[m.get("name") ?? -1]).cur, cl1 = bomCurPrev(row[m.get("cl1") ?? -1]).cur, cl2 = bomCurPrev(row[m.get("cl2") ?? -1]).cur, rev = cl1 + cl2;
     stack.length = level + 1; stack[level] = { pn: num.cur, rev };
     const dl = bomGet(row, m, "drawinglocation");
-    if (level === 0) { parents.push({ pn: num.cur, rev, name, source: "", state: "", drawingLocation: dl }); last = null; continue; }
+    if (level === 0) { parents.push({ pn: num.cur, rev, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl }); last = null; continue; }
     const p = stack[level - 1];
     if (!p) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: level ${level} with no row above at level ${level - 1}; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
     const unitCol = m.get("unitofmeasure") ?? m.get("uom") ?? m.get("unit"), qtyCol = m.get("quantity") ?? m.get("amount") ?? (m.has("unitofmeasure") || m.has("uom") ? m.get("unit") : undefined);   // the DVS 400 sheet calls the quantity "Unit" and the unit "Unit Of Measure"
     const q = bomCurPrev(row[qtyCol ?? -1]), un = bomCurPrev(row[unitCol ?? -1]);
-    const u = blank({ parent: p.pn, parentRev: p.rev, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
+    const u = blank({ parent: p.pn, parentRev: p.rev, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, childCategory: bomGet(row, m, "category"), amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
     usages.push(u); last = u;
     // a child that has lines below it is a parent of those; its own attributes are the ones just read
-    parents.push({ pn: num.cur, rev, name, source: "", state: "", drawingLocation: dl });
+    parents.push({ pn: num.cur, rev, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl });
   }
   // keep a parent observation only for part numbers that really have lines below them
   const hasKids = new Set(usages.map((u) => u.parent + "\0" + u.parentRev));
@@ -258,6 +258,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsedRules = rulesText === undefined ? null : parseCategoryRules(rulesText), catRules = parsedRules?.rules ?? DEFAULT_CATEGORY_RULES;
   if (parsedRules && !parsedRules.rules) findings.push({ level: "warn", code: "CATEGORY_RULES_BAD", message: `${CATEGORY_RULES_PATH} was not used, so the built-in categories apply: ${parsedRules.problems.slice(0, 3).join("; ")}${parsedRules.problems.length > 3 ? `; and ${parsedRules.problems.length - 3} more` : ""}.` });
   const catOf = (d: string): string => bomCategoryOf(d, catRules);
+  // BOM-062: the file's `category` column wins when it names a category of the table; otherwise the words decide.
+  const catFor = (l: { name: string; category?: string }): string => bomNamedCategory(l.category ?? "", catRules) ?? catOf(l.name);
   const unknownUnits = new Map<string, number>();
   for (const u of parsed.usages) {
     const un = bomUnit(u.unit); if (!un.known) unknownUnits.set(un.unit, (unknownUnits.get(un.unit) ?? 0) + 1);
@@ -269,7 +271,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   if (blocking || !parsed.usages.length) { if (!blocking) findings.push({ level: "error", code: "BOM_EMPTY", message: "The sheet has a header but no usable lines." }); return { status: "FAILED", files: [], findings, problems: findings.filter((f) => f.level === "error").map((f) => f.message), summary: empty }; }
 
   // observations per part number
-  type Obs = { rev: string; name: string; source: string; state: string; drawingLocation: string };
+  type Obs = { rev: string; name: string; source: string; category: string; state: string; drawingLocation: string };
   const asParent = new Map<string, Map<string, Obs>>(), asChild = new Map<string, Map<string, Obs>>();
   // BOM-037: one part number at one revision that is named two ways on the same side (as a child, or as a parent) keeps the first name and says so.
   // A difference of case or spacing only is not a conflict. The key is side, part number and revision.
@@ -281,8 +283,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (ob.name) { const seen = nameSeen.get(k0); if (!seen) nameSeen.set(k0, { side, pn, rev, first: ob.name, firstRow: row, others: new Map() }); else if (nameKey(seen.first) !== nameKey(ob.name)) seen.others.set(ob.name, (seen.others.get(ob.name) ?? 0) + 1); }
     for (const k of Object.keys(ob) as Array<keyof Obs>) if (!cur[k] && ob[k]) cur[k] = ob[k];
   };
-  for (const p of parsed.parents) put(asParent, p.pn, p.rev, { rev: p.rev, name: p.name, source: p.source, state: p.state, drawingLocation: p.drawingLocation }, "parent", null);
-  for (const u of parsed.usages) put(asChild, u.child, u.childRev, { rev: u.childRev, name: u.childName, source: u.childSource, state: u.childState, drawingLocation: u.drawingLocation }, "child", u.row);
+  for (const p of parsed.parents) put(asParent, p.pn, p.rev, { rev: p.rev, name: p.name, source: p.source, category: p.category, state: p.state, drawingLocation: p.drawingLocation }, "parent", null);
+  for (const u of parsed.usages) put(asChild, u.child, u.childRev, { rev: u.childRev, name: u.childName, source: u.childSource, category: u.childCategory, state: u.childState, drawingLocation: u.drawingLocation }, "child", u.row);
   const nameConflicts = [...nameSeen.values()].filter((x) => x.others.size).sort((a, b) => (a.pn < b.pn ? -1 : a.pn > b.pn ? 1 : a.rev < b.rev ? -1 : a.rev > b.rev ? 1 : a.side < b.side ? -1 : 1));
   const allPns = new Set([...asParent.keys(), ...asChild.keys()]);
 
@@ -300,7 +302,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (uniqueDesignated.length > 1) findings.push({ level: "warn", code: "REV_CURRENT_CONFLICT", message: `${pn}: multiple revisions explicitly designated CURRENT; no revision-pin conflicts suppressed.` });
     else if (!uniqueDesignated.length && observed.size > 1) findings.push({ level: "warn", code: "REV_CURRENT_UNKNOWN", message: `${pn}: multiple revisions without an explicit CURRENT designation; ordering is provisional and pinned-revision differences require review.` });
     const base = (pr ?? cr)!.get(top)!, name = base.name || cr?.get(top)?.name || pr?.get(top)?.name || "";
-    latest.set(pn, { ...base, name, source: base.source || cr?.get(top)?.source || "", state: "" });
+    latest.set(pn, { ...base, name, source: base.source || cr?.get(top)?.source || "", category: base.category || cr?.get(top)?.category || "", state: "" });
     const all = [...new Set([...(pr?.keys() ?? []), ...(cr?.keys() ?? [])])].sort(bomRevCompare);
     if (all.length > 1) revsSeen.set(pn, all);
     if (revs.length > 1) findings.push({ level: "info", code: "REV_SELECTION", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")}; ${JSON.stringify(top)} selected ${uniqueDesignated.length === 1 ? "from explicit CURRENT source designation" : "provisionally by ordering (not verified current)"}.` });
@@ -374,7 +376,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: o.update ? ex.path : "", fresh: !!o.update }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
     const isD = key.startsWith("d:"), kids = (childrenOf.get(pn) ?? 0) > 0;
-    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, catOf(l.name), kids, l.source), safeName(pn, pn), ".md");
+    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, bomLevelOf(bomRoleOf(kids, parentOf.has(pn))), catFor(l)), safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
@@ -460,7 +462,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.source) head.push(`- Source: ${l.source}`);
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
-    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catOf(l.name)], ["bomRole", bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn))]];   // D-0072
+    const role = bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn));
+    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catFor(l)], ["bomRole", role], ["level", bomLevelOf(role)], ["makeBuy", bomMakeBuyOf(l.source ?? "")]];   // D-0072, BOM-061
     sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const older = revisionReview.filter((r) => r.parent === pn);
     // D-0107: a part an assembly calls at a revision older than the latest gets one line saying which revision the assembly calls; the vault uses the latest.
@@ -497,8 +500,15 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   {   // D-0072: how the new parts were sorted, so the rules can be improved from the unmatched count
-    const cc = new Map<string, number>(); let nParts = 0;
-    for (const pn of partPns) { if (existingBy.has(pn) && !o.update) continue; const c = catOf(latest.get(pn)?.name ?? ""); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++; }
+    const cc = new Map<string, number>(), badCat = new Map<string, number>(), otherMb = new Map<string, number>(); let nParts = 0;
+    for (const pn of partPns) {
+      if (existingBy.has(pn) && !o.update) continue;
+      const l = latest.get(pn) ?? { name: "", category: "", source: "" }, c = catFor(l), named = (l.category ?? "").trim(), src = (l.source ?? "").trim(); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++;
+      if (named && !bomNamedCategory(named, catRules)) badCat.set(named, (badCat.get(named) ?? 0) + 1);
+      if (bomMakeBuyOf(src) === "other") { const k = src || "(blank)"; otherMb.set(k, (otherMb.get(k) ?? 0) + 1); }   // BOM-061
+    }
+    if (badCat.size) findings.push({ level: "warn", code: "CATEGORY_UNKNOWN", message: `${[...badCat.values()].reduce((a, b) => a + b, 0)} part(s) name a category that is not in the category list, so the description words decided (BOM-062): ${[...badCat].map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")}.` });
+    if (otherMb.size) findings.push({ level: "info", code: "MAKEBUY_OTHER", message: `makeBuy is "other" for ${[...otherMb.values()].reduce((a, b) => a + b, 0)} part(s); the source values read were: ${[...otherMb].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")} (BOM-061).` });
     if (nParts) findings.push({ level: "info", code: "CATEGORIES", message: `${nParts} part note(s) sorted by description words: ${[...cc].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. "${NO_CATEGORY}" are the parts no rule matched (BOM-041).` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;

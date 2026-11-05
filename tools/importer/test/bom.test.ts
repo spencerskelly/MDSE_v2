@@ -433,18 +433,33 @@ test("a row on line 1xx beside line xx is an alternate of that line, not a usage
   assert.equal(r.summary.alternates, 2); assert.ok(!r.files.some((f) => /P-1ALT/.test(f.path)), "no note is created for an alternate-only part");
 });
 
-test("a part is sorted into a folder by description words, child lines and make or buy, and carries bomCategory and bomRole (D-0072)", () => {
+test("a part is sorted into a folder by level and category, and carries bomCategory, bomRole, level and makeBuy (D-0072, D-0122)", () => {
   const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2";
   const row = (p: string, pn: string, l: string, c: string, cn: string, cs: string): string => [p, "-A", "01", pn, "make", "PRODUCTION", l, c, "-A", "01", cn, cs, "PRODUCTION", "", "", "", "", "", "1", "ea", p + "-A01"].join("\t");
   const g = parseDelimited([H, row("TOP-1", "CHARGER ASSY", "1", "CAB-1", "CABLE ASSY 3M", "make"), row("TOP-1", "CHARGER ASSY", "2", "SCR-1", "SCREW M4", "buy"), row("CAB-1", "CABLE ASSY 3M", "1", "ODD-1", "THINGAMAJIG", "")].join("\n"));
   const r = buildBom(g, baseOpts), f = (pn: string) => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!;
-  assert.equal(f("TOP-1").path, "BOM/Parts/Chargers and systems/Assemblies/make/TOP-1.md");
-  assert.equal(f("CAB-1").path, "BOM/Parts/Cables and harnesses/Assemblies/make/CAB-1.md");
-  assert.equal(f("SCR-1").path, "BOM/Parts/Fasteners/Parts/buy/SCR-1.md");
-  assert.equal(f("ODD-1").path, "BOM/Parts/Uncategorized/Parts/other/ODD-1.md");
+  assert.equal(f("TOP-1").path, "BOM/Parts/Product/Chargers and systems/TOP-1.md");
+  assert.equal(f("CAB-1").path, "BOM/Parts/Assembly/Cables and harnesses/CAB-1.md");
+  assert.equal(f("SCR-1").path, "BOM/Parts/Part/Fasteners/SCR-1.md");
+  assert.equal(f("ODD-1").path, "BOM/Parts/Part/Uncategorized/ODD-1.md");
+  const prop = (pn: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(f(pn).content)?.[1] ?? "";
+  assert.deepEqual([["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", "other"]].map(([pn]) => [pn, prop(pn!, "level"), prop(pn!, "makeBuy")]), [["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", "other"]], "BOM-061, BOM-042");
   assert.match(f("TOP-1").content, /^bomCategory: Chargers and systems\nbomRole: final$/m);
   assert.match(f("CAB-1").content, /^bomRole: sub$/m); assert.match(f("SCR-1").content, /^bomRole: part$/m);
   assert.ok(r.findings.some((x) => x.code === "CATEGORIES" && /Uncategorized 1/.test(x.message)));
+});
+
+test("a category column, the BOM-063 keywords and the source column set the folder, bomCategory and makeBuy (BOM-061, BOM-062, BOM-063)", () => {
+  const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2" + "\tChild Category";
+  const row = (pn: string, cn: string, src: string, cat: string): string => ["TOP-1", "-A", "01", "TOP ASSEMBLY", "make", "PRODUCTION", "1", pn, "-A", "01", cn, src, "PRODUCTION", "", "", "", "", "", "1", "ea", "TOP-1-A01", cat].join("\t");
+  const g = parseDelimited([H, row("BRK-1", "BRKT 2MM", "Buy", ""), row("ENC-1", "ENCL TOP", "make", ""), row("SCH-1", "SCH MAIN", "buy", ""), row("FW-1", "FIRMWARE IMAGE", "buy", ""), row("CAT-1", "THINGAMAJIG", "buy", "fasteners"), row("CAT-2", "THINGAMAJIG", "Fab", "Nonsense")].join("\n"));
+  const r = buildBom(g, baseOpts), f = (pn: string) => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!;
+  const prop = (pn: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(f(pn).content)?.[1] ?? "";
+  assert.deepEqual(["BRK-1", "ENC-1", "SCH-1", "FW-1", "CAT-1", "CAT-2"].map((pn) => prop(pn, "bomCategory")), ["Brackets", "Enclosures and mechanical", "Documents", "Uncategorized", "Fasteners", "Uncategorized"]);
+  assert.equal(f("CAT-1").path, "BOM/Parts/Part/Fasteners/CAT-1.md", "a category column outranks the words and ignores case");
+  assert.deepEqual(["BRK-1", "ENC-1", "CAT-2"].map((pn) => prop(pn, "makeBuy")), ["buy", "make", "other"], "BOM-061: Buy is read as buy; an unknown source is other");
+  assert.ok(r.findings.some((x) => x.code === "CATEGORY_UNKNOWN" && /Nonsense/.test(x.message)), "a category not in the list is reported and the words decide");
+  assert.ok(r.findings.some((x) => x.code === "MAKEBUY_OTHER" && /"Fab" 1/.test(x.message)), "the other source values are reported");
 });
 
 test("the vault's own category list sorts the parts; a bad list is ignored with a warning (D-0076)", () => {
@@ -455,12 +470,12 @@ test("the vault's own category list sorts the parts; a bad list is ignored with 
   const rt = parseCategoryRules(renderCategoryRules());
   assert.deepEqual(rt.rules, DEFAULT_CATEGORY_RULES.map((r) => ({ category: r.category, words: r.words })), "the shipped file reads back to the built-in table");
   const vault = (text: string) => ({ ...baseOpts, existing: { hasVault: true, files: new Map([[CATEGORY_RULES_PATH, text]]) } });
-  assert.equal(find(buildBom(g, baseOpts), "GRM-1"), "BOM/Parts/Uncategorized/Parts/buy/GRM-1.md");
+  assert.equal(find(buildBom(g, baseOpts), "GRM-1"), "BOM/Parts/Part/Uncategorized/GRM-1.md");
   const own = buildBom(g, vault(renderCategoryRules([{ category: "Widgets", words: ["WIDGET"] }, ...DEFAULT_CATEGORY_RULES])));
-  assert.equal(find(own, "GRM-1"), "BOM/Parts/Widgets/Parts/buy/GRM-1.md");
+  assert.equal(find(own, "GRM-1"), "BOM/Parts/Part/Widgets/GRM-1.md");
   assert.match(own.files.find((x) => x.path.endsWith("/GRM-1.md"))!.content, /^bomCategory: Widgets$/m);
   const bad = buildBom(g, vault("# x\n- Widgets: WIDGET\n- Bad/Name: FOO\n- Empty: \n"));
-  assert.equal(find(bad, "GRM-1"), "BOM/Parts/Uncategorized/Parts/buy/GRM-1.md", "one bad line and none of the file is used");
+  assert.equal(find(bad, "GRM-1"), "BOM/Parts/Part/Uncategorized/GRM-1.md", "one bad line and none of the file is used");
   assert.ok(bad.findings.some((x) => x.code === "CATEGORY_RULES_BAD" && x.level === "warn" && /Bad\/Name/.test(x.message)));
   assert.equal(parseCategoryRules("nothing here").rules, null);
   assert.ok(parseCategoryRules("- Uncategorized: FOO").problems.length === 1 && parseCategoryRules("- Parts: A").rules === null, "words need two characters");
