@@ -1,0 +1,9 @@
+{
+  "id": "mdse-workbench",
+  "name": "MDSE Workbench",
+  "version": "0.9.0",
+  "minAppVersion": "1.5.0",
+  "description": "Read-only views over an MDSE vault: structure, where-used, traceability, behavior, interfaces, graph, review.",
+  "author": "MDSE",
+  "isDesktopOnly": false
+}
