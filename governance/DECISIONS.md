@@ -1461,3 +1461,14 @@ Rules: BOM-041 (changed), BOM-061 to BOM-063, MOD-188 (new, Active); MOD-178, MO
 7. **Archive.** Earlier revisions of documents go to a git archive, not SharePoint. Revision notes and original notes stay in the vault (MOD-181).
 
 Rules: BOM-064 (new, Active); BOM-018 (rewritten); BOM-047, BOM-050, BOM-051, GOV-025, GOV-028, MOD-170, MOD-181, PLM-001 (changed). Open: OD-36; OD-18 still not verified on a real BOM; OD-22, OD-24, OD-25, OD-26 unchanged apart from the notes.
+
+## D-0124 — Schema entries for the PLM properties and the implements pair
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Properties.** `properties.json` (1.1) gains `level`, `sourcing`, `makeBuy` and `businessLine`, each with its governed values and owner. A new owner value, `bom+person`, means the BOM fills it at import and a person may change it. A row may carry `values`, a governed list.
+2. **Category.** `category` is a column of a BOM file (BOM-062), not a note property. The note property stays `bomCategory`; its row now says it takes the column value first.
+3. **Relationship.** `relationships.yaml` (1.37) gains `implements` / `implementedBy`, from Object to any, flagged `yamlOnly`. This is the explicit exception of MOD-185 to D-0003 and D-0069. `implements` stays under review (OD-35); a rename would be a one-line change.
+4. **Not done.** No tool reads or writes these yet. `subtype` as technology is not settled (OD-36 item 7).
+
+Rules: MOD-185, MOD-188 (notes changed). Open: OD-29, OD-34, OD-36.

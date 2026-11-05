@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "1.0",
-  "date": "2026-10-24",
-  "decision": "D-0065",
-  "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool.",
+  "schemaVersion": "1.1",
+  "date": "2026-11-05",
+  "decision": "D-0065, D-0124",
+  "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool. Owner values: bom, ea, person, tool, and \"bom+person\" for a value the BOM fills at import and a person may change afterwards. A row with `values` is a governed list: the value is one of them, and adding a value is a rules edit.",
   "order": [
     "type",
     "subtype",
@@ -17,7 +17,11 @@
     "description",
     "jiraKey",
     "jiraUrl",
-    "branch"
+    "branch",
+    "level",
+    "sourcing",
+    "makeBuy",
+    "businessLine"
   ],
   "properties": [
     {
@@ -122,8 +126,8 @@
       "name": "bomCategory",
       "owner": "bom",
       "appliesTo": "BOM part notes",
-      "meaning": "Category from the words of the description, by the ordered rules in tools/importer/src/bom_category.ts. \"Uncategorized\" when no rule matches.",
-      "source": "BOM description"
+      "meaning": "The category of a BOM part: the value of the optional `category` column in the BOM file (BOM-062) or, when there is none, the category from the words of the description by the ordered rules in tools/importer/src/bom_category.ts (BOM-041, BOM-063). \"Uncategorized\" when no rule matches.",
+      "source": "BOM category column or BOM description"
     },
     {
       "name": "bomRole",
@@ -131,6 +135,58 @@
       "appliesTo": "BOM part notes",
       "meaning": "final (has child lines, no parent in the BOMs read), sub (both), part (no child lines, used somewhere), unused (neither).",
       "source": "BOM structure"
+    },
+    {
+      "name": "makeBuy",
+      "owner": "bom+person",
+      "appliesTo": "BOM part notes",
+      "values": [
+        "make",
+        "buy",
+        "other"
+      ],
+      "meaning": "Make or buy. Filled from the BOM `source` column (any other value or none is `other`, BOM-061); not the same as `sourcing`.",
+      "source": "BOM source column"
+    },
+    {
+      "name": "level",
+      "owner": "bom+person",
+      "appliesTo": "Part notes",
+      "values": [
+        "product",
+        "assembly",
+        "part"
+      ],
+      "meaning": "Level of a part: product is a top-level assembly. Filled from `bomRole` (`final` is product, `sub` is assembly, `part` and `unused` are part, BOM-042) (MOD-178).",
+      "source": "BOM structure (bomRole)"
+    },
+    {
+      "name": "sourcing",
+      "owner": "bom+person",
+      "appliesTo": "Part notes",
+      "values": [
+        "designed",
+        "standard hardware",
+        "OTS"
+      ],
+      "meaning": "How the part is sourced: designed, standard hardware or off-the-shelf (MOD-178). Filled from the BOM where it can be; not the same as `makeBuy`. Spelling as written in MOD-178.",
+      "source": "BOM where available, else a person"
+    },
+    {
+      "name": "businessLine",
+      "owner": "person",
+      "appliesTo": "Part notes and elements a Part implements",
+      "values": [
+        "IPC",
+        "GSE",
+        "MHE",
+        "BMID",
+        "PD",
+        "RV",
+        "PT"
+      ],
+      "meaning": "One business line; IPC when more than one line uses the part or assembly (MOD-188).",
+      "source": "Person"
     },
     {
       "name": "sourceRole",

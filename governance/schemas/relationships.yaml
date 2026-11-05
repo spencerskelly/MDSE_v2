@@ -2,9 +2,10 @@
 # D-0069: this is a LEGACY FIELD INVENTORY, not authority for SysML v2 endpoints or persisted SysML inverse YAML.
 # Only fields explicitly classified MDSE-only by a later OD-01 disposition may govern current YAML links.
 # D-0070: tracesTo/tracesFrom is a historical read-only entry; new unresolved connectors produce flagLink and deferred_review, not a YAML link.
+# D-0124: implements/implementedBy is an explicit YAML-only exception (MOD-185, D-0119); the inverse is written after merge (MOD-186). It is not a SysML relationship.
 # Proposed split: governance/OPEN_DECISIONS.md, OD-01. Until OD-01 is decided, do not build on the SysML-defined fields here.
-schemaVersion: '1.36'
-date: '2026-10-05'
+schemaVersion: '1.37'
+date: '2026-11-05'
 storage: Author forward/owner-side fields. Inverse fields are persisted in YAML and written with the forward field by the translator, Workbench or the regenerate script (W-275); the forward field wins when they disagree.
 paired:
 - {forward: subtypeOf, inverse: supertypeOf, from: any, to: any, sameClass: true}
@@ -22,6 +23,7 @@ paired:
 - {forward: triggeredBy, inverse: triggers, from: [Behavior, Condition], to: [Behavior, Condition, Item Flow]}
 - {forward: supersedes, inverse: supersededBy, from: any, to: any, sameClass: true}
 - {forward: describes, inverse: describedBy, from: [Info, Artifact, Document], to: any}
+- {forward: implements, inverse: implementedBy, from: [Object], to: any, yamlOnly: true}
 - {forward: tracesTo, inverse: tracesFrom, from: any, to: any, provisional: true}
 - {forward: performs, inverse: performedBy, from: [Object], to: [Behavior]}
 - {forward: hasDesign, inverse: designOf, from: [Object, Document], to: [Condition]}
