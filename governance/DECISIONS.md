@@ -1483,3 +1483,12 @@ Rules: MOD-185, MOD-188 (notes changed). Open: OD-29, OD-34, OD-36.
 4. **Not done.** An update scan does not add `level` or `makeBuy` to existing notes; existing notes are not moved (no golden import yet). A redline has no source column, so its parts get `makeBuy: other`.
 
 Rules: BOM-041, BOM-061, BOM-062, BOM-063 (notes changed). Open: OD-34.
+
+## D-0126 — Importer: REV_SCHEME finding
+
+2026-11-05 · Spencer · Accepted (owner, chat: build the toolset for PLM and interface testing)
+
+1. **Built.** `REV_SCHEME` (warn, one per part) when the revisions of a part do not follow BOM-018: not a letter and two digits, a number that does not rise, or past Z or 99 (new part number). Placeholders are not checked.
+2. **Order.** Unchanged: letters first and number second already gives the scheme's order.
+
+Rules: BOM-018 (note changed).

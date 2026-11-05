@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { deflateRawSync } from "node:zlib";
 import MDSE from "../../core/src/mdse_core.js";
 import { CATEGORY_RULES_PATH, DEFAULT_CATEGORY_RULES, renderCategoryRules, parseCategoryRules } from "../src/bom_category.ts";
-import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomUnit, bomDate } from "../src/bom.ts";
+import { buildBom, parseDelimited, detectLayout, parseBom, bomRevCompare, bomRevSchemeProblems, bomUnit, bomDate } from "../src/bom.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
 import type { Grid } from "../src/bom.ts";
 import { sha256Text } from "../src/sha256.ts";
@@ -479,4 +479,18 @@ test("the vault's own category list sorts the parts; a bad list is ignored with 
   assert.ok(bad.findings.some((x) => x.code === "CATEGORY_RULES_BAD" && x.level === "warn" && /Bad\/Name/.test(x.message)));
   assert.equal(parseCategoryRules("nothing here").rules, null);
   assert.ok(parseCategoryRules("- Uncategorized: FOO").problems.length === 1 && parseCategoryRules("- Parts: A").rules === null, "words need two characters");
+});
+
+test("revisions follow the letter and running-number scheme; anything else is REV_SCHEME (BOM-018, D-0123)", () => {
+  assert.deepEqual(bomRevSchemeProblems(["A01", "B02", "B03", "C04"]), [], "the owner's example");
+  assert.deepEqual(["A01", "B03", "B02", "C04"].sort(bomRevCompare), ["A01", "B02", "B03", "C04"]);
+  assert.match(bomRevSchemeProblems(["A01", "B02", "C02"])[0]!, /C02 follows B02 but its number is not higher/, "the number does not reset or stand still");
+  assert.match(bomRevSchemeProblems(["A01", "-A02"])[0]!, /-A02 is not a letter and two digits/);
+  assert.match(bomRevSchemeProblems(["Z99", "A01"]).join(), /^$/, "a placeholder is not checked");
+  assert.match(bomRevSchemeProblems(["B100"])[0]!, /past Z or 99/);
+  assert.match(bomRevSchemeProblems(["AA01"])[0]!, /past Z or 99/);
+  const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParent Drawing Location";
+  const row = (p: string, l: string, c: string, cl1: string, cl2: string): string => [p, "A", "01", "TOP ASSEMBLY", "make", "PRODUCTION", l, c, cl1, cl2, "PART " + c, "buy", "PRODUCTION", "", "", "", "", "", "1", "ea", ""].join("\t");
+  const r = buildBom(parseDelimited([H, row("TOP-1", "1", "X-1", "B", "02"), row("TOP-1", "2", "X-1", "C", "02")].join("\n")), baseOpts);
+  assert.ok(r.findings.some((x) => x.code === "REV_SCHEME" && x.level === "warn" && /X-1/.test(x.message) && /C02 follows B02/.test(x.message)));
 });

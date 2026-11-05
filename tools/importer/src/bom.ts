@@ -190,6 +190,19 @@ export function bomRevCompare(a: string, b: string): number {
   return a === b ? 0 : a < b ? -1 : 1;
 }
 
+/** BOM-018 (D-0123): the problems in the revisions of one part, given in ascending order. A released revision is a letter and two digits; the number is one running sequence, so it must rise with every step; there is no rollover, so a revision past Z or 99 needs a new part number. Placeholders are not checked. Empty when the revisions follow the scheme. */
+export function bomRevSchemeProblems(revsAscending: string[]): string[] {
+  const out: string[] = []; let prev: string | null = null;
+  for (const r of revsAscending) {
+    if (!r || bomPlaceholder(r)) continue;
+    if (/^[A-Z]{2,}\d+$|^[A-Z]\d{3,}$/.test(r)) { out.push(`${r} is past Z or 99, so the part needs a new part number`); continue; }
+    if (!/^[A-Z]\d{2}$/.test(r)) { out.push(`${r} is not a letter and two digits`); continue; }
+    if (prev !== null && +r.slice(1) <= +prev.slice(1)) out.push(`${r} follows ${prev} but its number is not higher`);
+    prev = r;
+  }
+  return out;
+}
+
 /** One spelling per unit (D-0047): ea for a count, SI and common abbreviations otherwise. `ZST`, `Null` and `x` are not units and are dropped; null in the result means "no unit". */
 const BOM_UNITS: Record<string, string> = { ea: "ea", each: "ea", piece: "ea", pieces: "ea", pc: "ea", pcs: "ea", m: "m", meter: "m", meters: "m", metre: "m", metres: "m", mm: "mm", millimeter: "mm", millimeters: "mm", cm: "cm", centimeter: "cm", in: "in", inch: "in", inches: "in", ft: "ft", foot: "ft", feet: "ft", yd: "yd", yard: "yd", yards: "yd",
   ml: "mL", milliliter: "mL", milliliters: "mL", l: "L", liter: "L", liters: "L", litre: "L", g: "g", gram: "g", grams: "g", kg: "kg", kilogram: "kg", kilograms: "kg", oz: "oz", ounce: "oz", ounces: "oz", lb: "lb", lbs: "lb", pound: "lb", pounds: "lb", m2: "m2", m3: "m3" };
@@ -305,6 +318,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     latest.set(pn, { ...base, name, source: base.source || cr?.get(top)?.source || "", category: base.category || cr?.get(top)?.category || "", state: "" });
     const all = [...new Set([...(pr?.keys() ?? []), ...(cr?.keys() ?? [])])].sort(bomRevCompare);
     if (all.length > 1) revsSeen.set(pn, all);
+    { const bad = bomRevSchemeProblems(all); if (bad.length) findings.push({ level: "warn", code: "REV_SCHEME", message: `${pn}: revisions ${all.map((x) => JSON.stringify(x)).join(", ")} do not follow the revision scheme (BOM-018): ${bad.join("; ")}.` }); }
     if (revs.length > 1) findings.push({ level: "info", code: "REV_SELECTION", message: `${pn}: revisions ${revs.map((x) => JSON.stringify(x)).join(", ")}; ${JSON.stringify(top)} selected ${uniqueDesignated.length === 1 ? "from explicit CURRENT source designation" : "provisionally by ordering (not verified current)"}.` });
   }
   // A part number a redline struck out and replaced is named by the BOM, so it gets a note too (BOM-022); without one the supersedes dependency would point at nothing.
