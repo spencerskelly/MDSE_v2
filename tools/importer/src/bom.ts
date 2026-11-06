@@ -49,8 +49,10 @@ export interface AltPart { pn: string; rev: string; name: string; line: string; 
 export interface Usage {
   parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childCategory: string; childState: string;
   amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; /** D-0064: rows numbered 100 above this line that carry a part number of their own: alternates, not usages */ altParts: AltPart[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
+  /** The CL1 and CL2 columns of the parent and the child as exported (BOM-047). `parentRev` and `childRev` are the two joined. */
+  parentCl1?: string; parentCl2?: string; childCl1?: string; childCl2?: string;
 }
-export interface ParentObs { pn: string; rev: string; name: string; source: string; category: string; state: string; drawingLocation: string }
+export interface ParentObs { pn: string; rev: string; name: string; source: string; category: string; state: string; drawingLocation: string; cl1?: string; cl2?: string }
 /** D-0059: a row the reader could not turn into a line is kept as its cell text (never just a count), so its content stays available to the person. */
 export interface SkippedRow { row: number; code: string; cells: string }
 export interface Parsed { layout: "flat" | "redline"; usages: Usage[]; parents: ParentObs[]; findings: Finding[]; skipped: SkippedRow[] }
@@ -119,18 +121,18 @@ export function parseBom(grid: Grid): Parsed {
         if (mpn && last && last.parent === parent && last.parentRev === bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2")) { last.alternates.push({ mfr, mpn }); continue; }
         findings.push({ level: "warn", code: mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD", message: `Row ${r + 1}: no child part number${mpn ? " and no unambiguous primary line above; review only" : ""}.` }); skip(r, mpn ? "ALT_NO_PRIMARY" : "ROW_NO_CHILD"); continue;
       }
-      const u = blank({ parent, parentRev: bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2"), line: bomGet(row, m, "linenumber"), child, childRev: bomGet(row, m, "childcl1") + bomGet(row, m, "childcl2"), childName: bomGet(row, m, "childname"),
+      const u = blank({ parent, parentRev: bomGet(row, m, "parentcl1") + bomGet(row, m, "parentcl2"), parentCl1: bomGet(row, m, "parentcl1"), parentCl2: bomGet(row, m, "parentcl2"), childCl1: bomGet(row, m, "childcl1"), childCl2: bomGet(row, m, "childcl2"), line: bomGet(row, m, "linenumber"), child, childRev: bomGet(row, m, "childcl1") + bomGet(row, m, "childcl2"), childName: bomGet(row, m, "childname"),
         childSource: bomGet(row, m, "childsource"), childCategory: bomGet(row, m, "childcategory", "category"), childState: bomGet(row, m, "childstate"), amount: bomGet(row, m, "amount", "quantity"), unit: bomGet(row, m, "unit"), refDes: bomGet(row, m, "referencedesignator"), from: bomGet(row, m, "from"), to: bomGet(row, m, "to"),
         ssc: bomGet(row, m, "ssc"), notes: bomGet(row, m, "cildnotes", "childnotes"), row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null });
       if (!parent) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: no parent part number; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
-      parents.push({ pn: parent, rev: u.parentRev, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), category: bomGet(row, m, "parentcategory"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
+      parents.push({ pn: parent, rev: u.parentRev, cl1: u.parentCl1, cl2: u.parentCl2, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), category: bomGet(row, m, "parentcategory"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
       usages.push(u); last = u;
     }
     return { layout: "flat", usages: foldAltLines(usages, findings), parents, findings, skipped };
   }
   // redline: the parent of a row is the nearest row above it one level up (the 0..7 columns match Structure)
   const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]), lvl = bomLevelSource(grid, d.headerRow, m);
-  const stack: Array<{ pn: string; rev: string } | undefined> = []; let last: Usage | null = null;
+  const stack: Array<{ pn: string; rev: string; cl1: string; cl2: string } | undefined> = []; let last: Usage | null = null;
   for (let r = d.headerRow + 1; r < grid.length; r++) {
     const row = grid[r] ?? []; if (!row.some((c) => bomTxt(c))) continue;
     let level = levelCols.find(([, i]) => bomTxt(row[i]))?.[0] ?? -1;
@@ -142,17 +144,17 @@ export function parseBom(grid: Grid): Parsed {
     if (level < 0) { findings.push({ level: "warn", code: "ROW_NO_LEVEL", message: `Row ${r + 1}: no level; skipped.` }); skip(r, "ROW_NO_LEVEL"); continue; }
     if (!num.cur) { findings.push({ level: "info", code: "LINE_REMOVED", message: `Row ${r + 1}: part number ${num.prev} is struck out with no replacement; the line is removed in this release and was not imported.` }); skip(r, "LINE_REMOVED"); stack[level] = undefined; continue; }
     const name = bomCurPrev(row[m.get("name") ?? -1]).cur, cl1 = bomCurPrev(row[m.get("cl1") ?? -1]).cur, cl2 = bomCurPrev(row[m.get("cl2") ?? -1]).cur, rev = cl1 + cl2;
-    stack.length = level + 1; stack[level] = { pn: num.cur, rev };
+    stack.length = level + 1; stack[level] = { pn: num.cur, rev, cl1, cl2 };
     const dl = bomGet(row, m, "drawinglocation");
-    if (level === 0) { parents.push({ pn: num.cur, rev, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl }); last = null; continue; }
+    if (level === 0) { parents.push({ pn: num.cur, rev, cl1, cl2, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl }); last = null; continue; }
     const p = stack[level - 1];
     if (!p) { findings.push({ level: "warn", code: "ROW_NO_PARENT", message: `Row ${r + 1}: level ${level} with no row above at level ${level - 1}; skipped.` }); skip(r, "ROW_NO_PARENT"); continue; }
     const unitCol = m.get("unitofmeasure") ?? m.get("uom") ?? m.get("unit"), qtyCol = m.get("quantity") ?? m.get("amount") ?? (m.has("unitofmeasure") || m.has("uom") ? m.get("unit") : undefined);   // the DVS 400 sheet calls the quantity "Unit" and the unit "Unit Of Measure"
     const q = bomCurPrev(row[qtyCol ?? -1]), un = bomCurPrev(row[unitCol ?? -1]);
-    const u = blank({ parent: p.pn, parentRev: p.rev, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, childCategory: bomGet(row, m, "category"), amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
+    const u = blank({ parent: p.pn, parentRev: p.rev, parentCl1: p.cl1, parentCl2: p.cl2, childCl1: cl1, childCl2: cl2, line: bomCurPrev(row[m.get("linenumber") ?? -1]).cur, child: num.cur, childRev: rev, childName: name, childCategory: bomGet(row, m, "category"), amount: q.cur, unit: un.cur, row: r + 1, ownSrc: mpn || mfr ? { mfr, mpn } : null, drawingLocation: dl, prevChild: num.prev });
     usages.push(u); last = u;
     // a child that has lines below it is a parent of those; its own attributes are the ones just read
-    parents.push({ pn: num.cur, rev, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl });
+    parents.push({ pn: num.cur, rev, cl1, cl2, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl });
   }
   // keep a parent observation only for part numbers that really have lines below them
   const hasKids = new Set(usages.map((u) => u.parent + "\0" + u.parentRev));
@@ -199,6 +201,35 @@ export function bomRevSchemeProblems(revsAscending: string[]): string[] {
     if (!/^[A-Z]\d{2}$/.test(r)) { out.push(`${r} is not a letter and two digits`); continue; }
     if (prev !== null && +r.slice(1) <= +prev.slice(1)) out.push(`${r} follows ${prev} but its number is not higher`);
     prev = r;
+  }
+  return out;
+}
+
+/** BOM-047 (D-0123): a released revision such as `B03` is CL1 `B` and CL2 `03`. Anything else (a placeholder like `-099`, or an old free-form label) is kept whole as one CL1 value with no CL2, so nothing is invented. */
+export function bomSplitRev(rev: string): { cl1: string; cl2: string } {
+  const m = /^([A-Z])(\d{2})$/.exec(rev.trim());
+  return m ? { cl1: m[1]!, cl2: m[2]! } : { cl1: rev.trim(), cl2: "" };
+}
+export interface BomRevision { /** the CL1 value as exported (BOM-010) */ cl1: string; /** CL2 values seen under it, lowest first; none for a revision that has no CL2 */ cl2: string[]; /** every joined revision label seen, as exported */ labels: string[] }
+type RevSide = { pn: string; rev: string; cl1?: string; cl2?: string };
+/** BOM-048, D-0129: the revisions each part number has as far as the BOM defines them: every CL1 value that appears as a parent's revision or as a pinned child revision, lowest first (BOM-018 order). CL1 and CL2 are the two columns as exported; when a caller gives only the joined label, `bomSplitRev` splits it. A revision no row names is not in the list, so a gap stays a gap. A blank revision is not a revision (BOM-053). */
+export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; parentRev: string; parentCl1?: string; parentCl2?: string; child: string; childRev: string; childCl1?: string; childCl2?: string }>; parents: Array<{ pn: string; rev: string; cl1?: string; cl2?: string }> }): Map<string, BomRevision[]> {
+  const seen = new Map<string, Map<string, { cl1: string; cl2: string }>>();
+  const add = (x: RevSide): void => {
+    const label = x.rev.trim(); if (!x.pn || !label) return;
+    const part = x.cl1 !== undefined || x.cl2 !== undefined ? { cl1: (x.cl1 ?? "").trim(), cl2: (x.cl2 ?? "").trim() } : bomSplitRev(label);
+    (seen.get(x.pn) ?? seen.set(x.pn, new Map()).get(x.pn)!).set(label, part);
+  };
+  for (const p of parsed.parents) add(p);
+  for (const u of parsed.usages) { add({ pn: u.parent, rev: u.parentRev, cl1: u.parentCl1, cl2: u.parentCl2 }); add({ pn: u.child, rev: u.childRev, cl1: u.childCl1, cl2: u.childCl2 }); }
+  const out = new Map<string, BomRevision[]>();
+  for (const [pn, labels] of [...seen].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    const by = new Map<string, BomRevision>();
+    for (const [label, { cl1, cl2 }] of [...labels].sort((a, b) => bomRevCompare(a[0], b[0]))) {
+      const r = by.get(cl1) ?? by.set(cl1, { cl1, cl2: [], labels: [] }).get(cl1)!;
+      if (cl2 && !r.cl2.includes(cl2)) r.cl2.push(cl2); r.labels.push(label);
+    }
+    out.set(pn, [...by.values()].sort((a, b) => bomRevCompare(a.labels[0]!, b.labels[0]!)));
   }
   return out;
 }

@@ -1572,3 +1572,13 @@ Rules: none changed (GOV-034, never in force, removed).
 
 Rules: WKB-059 (new).
 
+## D-0134 — Importer: revision inventory (step one of the revision-note rewrite)
+
+2026-11-05 · Spencer · Accepted (owner, chat: start on the importer)
+
+1. **Built.** The BOM readers keep the CL1 and CL2 columns of every parent and child as exported (BOM-047, D-0115), next to the joined revision label. `bomRevisionInventory` lists, for each part number, the CL1 values any row names (as a parent's revision or a child's pin), with the CL2 values under each, in BOM-018 order. A revision no row names is not listed (D-0129).
+2. **No output change.** Notes, findings and the update scan are unchanged. Real BOM labels such as CL1 `-B` with CL2 `99` are read from the columns, not split from the joined text.
+3. **Next steps**, each its own commit: (a) write a note per CL1 revision with the D-0127 contents and move the structure into it; (b) remove `earlierRevisions` and the `EARLIER_REV_*` findings; (c) the "Changes from" section; (d) the five Check rules and BOM-065; (e) the update scan.
+
+Rules: none changed.
+

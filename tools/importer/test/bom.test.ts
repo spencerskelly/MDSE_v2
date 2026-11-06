@@ -494,3 +494,25 @@ test("revisions follow the letter and running-number scheme; anything else is RE
   const r = buildBom(parseDelimited([H, row("TOP-1", "1", "X-1", "B", "02"), row("TOP-1", "2", "X-1", "C", "02")].join("\n")), baseOpts);
   assert.ok(r.findings.some((x) => x.code === "REV_SCHEME" && x.level === "warn" && /X-1/.test(x.message) && /C02 follows B02/.test(x.message)));
 });
+
+import { bomSplitRev, bomRevisionInventory } from "../src/bom.ts";
+test("revision inventory: CL1 and CL2 come from the columns, every named revision is listed, a gap stays a gap (D-0129, BOM-048)", () => {
+  assert.deepEqual(bomSplitRev("B03"), { cl1: "B", cl2: "03" });
+  assert.deepEqual(bomSplitRev("-B99"), { cl1: "-B99", cl2: "" }, "a legacy label is not guessed at");
+  const u = (parent: string, parentRev: string, pc1: string, pc2: string, child: string, childRev: string, cc1: string, cc2: string) => ({ parent, parentRev, parentCl1: pc1, parentCl2: pc2, child, childRev, childCl1: cc1, childCl2: cc2 });
+  const inv = bomRevisionInventory({
+    parents: [{ pn: "ASM", rev: "A01", cl1: "A", cl2: "01" }],
+    usages: [u("ASM", "A01", "A", "01", "SCR", "-B99", "-B", "99"), u("ASM", "C04", "C", "04", "SCR", "-B01", "-B", "01"), u("ASM", "C05", "C", "05", "SCR", "", "", ""), u("TOP", "A01", "A", "01", "ASM", "B02", "B", "02")],
+  });
+  assert.deepEqual(inv.get("ASM")!.map((r) => [r.cl1, r.cl2]), [["A", ["01"]], ["B", ["02"]], ["C", ["04", "05"]]], "B is listed because TOP pins B02; D is not, because no row names it");
+  assert.deepEqual(inv.get("SCR")!.map((r) => [r.cl1, r.cl2]), [["-B", ["01", "99"]]], "two revisions under one legacy CL1");
+  assert.deepEqual(inv.get("ASM")!.find((r) => r.cl1 === "A")!.labels, ["A01"]);
+  assert.deepEqual(inv.get("TOP")!.map((r) => r.cl1), ["A"]);
+  assert.equal(inv.has(""), false);
+});
+test("the readers carry CL1 and CL2 separately", () => {
+  const p = parseBom(parseDelimited(flatText));
+  const x = p.usages.find((v) => v.parent === "04270-001")!;
+  assert.deepEqual([x.parentCl1, x.parentCl2, x.childCl1, x.childCl2], ["-D", "99", "-B", "99"]);
+  assert.deepEqual(p.parents.filter((v) => v.pn === "04766").map((v) => [v.cl1, v.cl2]), [["-C", "99"]]);
+});
