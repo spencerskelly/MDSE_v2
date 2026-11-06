@@ -1528,3 +1528,14 @@ Rules: WKB-053, WKB-054 (notes changed). Open: OD-29.
 
 Rules: BOM-006, BOM-007, BOM-017, BOM-038, BOM-046, BOM-048 (changed); BOM-065 (new).
 
+## D-0130 — Workbench: revision chain in the Note lens
+
+2026-11-05 · Spencer · Accepted (owner, chat: workbench next)
+
+1. **Built.** A Revisions section in the Note lens for a note with a part number and more than one revision: the notes in BOM-018 order, with what changed from the one before (WKB-058). Computed from the notes; nothing is written.
+2. **No gaps filled.** A revision no note defines is not shown.
+3. **Z99** ranks as a placeholder (lowest) until OD-36 item 3 is answered.
+4. **Not built.** The PROTO view, the ECO lens, the check of the stored "Changes from" text (BOM-065).
+
+Rules: WKB-058 (new).
+

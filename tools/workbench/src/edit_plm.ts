@@ -104,3 +104,34 @@ export function plmCandidates(ix: ModelIndex, from: Note, field: "implements" | 
   }
   return out;
 }
+
+// ---- Revision chain (D-0129, BOM-048): every note of one part number in revision order, and what changed from one to the next. Read only.
+const REV = /^([A-Z])(\d{2})$/;
+/** BOM-018: letter then number; a placeholder or anything not letter+two digits ranks below every real revision (-1). */
+export function plmRevRank(rev: string): number {
+  const m = REV.exec(rev.trim()); if (!m) return -1;
+  if (m[0] === "Z99") return -1;                                       // OD-36 item 3: Z99 is a placeholder until the owner says otherwise
+  return (m[1]!.charCodeAt(0) - 65) * 100 + Number(m[2]);
+}
+const isMfg = (k: string): boolean => /^(manufacturer|mfgPn)\d+$/.test(k);
+/** The part number's note first (no `revision`), then each revision note from lowest to highest rank, ties by name. */
+export function plmRevisionChain(ix: ModelIndex, n: Note): Note[] {
+  const pn = String(n.meta.partNumber ?? "").trim(); if (!pn) return [];
+  const all = [...ix.notes.values()].filter((x) => String(x.meta.partNumber ?? "").trim() === pn);
+  const key = (x: Note): number => (x.meta.revision ? plmRevRank(String(x.meta.revision)) : -2);
+  return all.sort((a, b) => key(a) - key(b) || a.name.localeCompare(b.name));
+}
+export interface PlmRevDiff { props: Array<[string, string, string]>; added: string[]; removed: string[]; changed: string[] }
+const lines = (ix: ModelIndex, n: Note): Map<string, string> => {
+  const m = new Map<string, string>();
+  for (const e of ix.out.get(n.path) ?? []) if (e.kind === "hasPart") m.set(e.to ? (ix.notes.get(e.to)?.name ?? e.toSymbol) : e.toSymbol, `${e.label} ${e.detail}`.trim());
+  return m;
+};
+/** What differs between two revision notes: description and manufacturer data, and the structure lines (added, removed, changed). */
+export function plmRevDiff(ix: ModelIndex, prev: Note, cur: Note): PlmRevDiff {
+  const keys = new Set([...Object.keys(prev.meta), ...Object.keys(cur.meta)].filter((k) => k === "description" || isMfg(k)));
+  const props: Array<[string, string, string]> = [];
+  for (const k of [...keys].sort()) { const a = String(prev.meta[k] ?? ""), b = String(cur.meta[k] ?? ""); if (a !== b) props.push([k, a, b]); }
+  const p = lines(ix, prev), c = lines(ix, cur);
+  return { props, added: [...c.keys()].filter((k) => !p.has(k)).sort(), removed: [...p.keys()].filter((k) => !c.has(k)).sort(), changed: [...c.keys()].filter((k) => p.has(k) && p.get(k) !== c.get(k)).sort() };
+}

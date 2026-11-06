@@ -5,6 +5,7 @@ import type { CanvasResult } from "./canvas.ts";
 import { buildIndexAsync } from "./index.ts";
 import type { ModelIndex, Note } from "./index.ts";
 import * as V from "./views.ts";
+import * as PL from "./edit_plm.ts";
 import { GUIDE } from "./guide.ts";
 
 export interface Host {
@@ -278,6 +279,20 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       if (rows.length) pane.append(section("part", "Part", [tableOf([["k", "Field"], ["v", "Value"]], rows)], { open: true }));
       if (mine.length) pane.append(section("implements", "Implements", [h("ul", {}, ...mine.map((e) => h("li", {}, lnk(e.to, e.to ? ix!.notes.get(e.to)?.title : e.toSymbol))))], { count: mine.length, open: true }));
       if (by.length) pane.append(section("implementedBy", "Implemented by", [h("ul", {}, ...by.map((e) => h("li", {}, lnk(e.from, ix!.notes.get(e.from)?.title), " ", h("span", { class: "mut" }, String(ix!.notes.get(e.from)?.meta.partNumber ?? "")))))], { count: by.length, open: true }));
+    }
+    {   // D-0129: every note of this part number in revision order, with what changed from one to the next (computed, not stored)
+      const chain = PL.plmRevisionChain(ix!, n);
+      if (chain.length > 1 && chain.some((x) => x.meta.revision)) {
+        const rows: Child[][] = [], note: Child[] = [];
+        chain.forEach((x, i) => {
+          const rev = String(x.meta.revision ?? ""), prev = i > 0 && chain[i - 1]!.meta.revision && rev ? chain[i - 1]! : null;
+          const d = prev ? PL.plmRevDiff(ix!, prev, x) : null;
+          const what = !d ? "" : [...d.props.map(([k, a, b]) => `${k}: ${a || "—"} → ${b || "—"}`), ...d.added.map((c) => "+ " + c), ...d.removed.map((c) => "− " + c), ...d.changed.map((c) => "~ " + c)].join("; ") || "no difference";
+          rows.push([x.path === n.path ? h("b", {}, rev || "part number") : (rev || "part number"), lnk(x.path, x.title), String(x.meta.status ?? ""), what]);
+        });
+        if (chain.some((x) => x.meta.revision && PL.plmRevRank(String(x.meta.revision)) < 0)) note.push(h("div", { class: "mut" }, "A revision that is not a letter and two digits (BOM-018) ranks below every real one."));
+        pane.append(section("revisions", "Revisions", [tableOf([["r", "Revision"], ["n", "Note"], ["s", "Status"], ["c", "Changed from the one before"]], rows), ...note], { count: chain.length, open: true }));
+      }
     }
     pane.append(section("props", "Properties", [tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path)], { open: false }));
     return pane;

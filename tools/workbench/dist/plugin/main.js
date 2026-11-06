@@ -2605,6 +2605,37 @@ function plmCandidates(ix            , from      , field                        
   return out;
 }
 
+// ---- Revision chain (D-0129, BOM-048): every note of one part number in revision order, and what changed from one to the next. Read only.
+const REV = /^([A-Z])(\d{2})$/;
+/** BOM-018: letter then number; a placeholder or anything not letter+two digits ranks below every real revision (-1). */
+function plmRevRank(rev        )         {
+  const m = REV.exec(rev.trim()); if (!m) return -1;
+  if (m[0] === "Z99") return -1;                                       // OD-36 item 3: Z99 is a placeholder until the owner says otherwise
+  return (m[1] .charCodeAt(0) - 65) * 100 + Number(m[2]);
+}
+const isMfg = (k        )          => /^(manufacturer|mfgPn)\d+$/.test(k);
+/** The part number's note first (no `revision`), then each revision note from lowest to highest rank, ties by name. */
+function plmRevisionChain(ix            , n      )         {
+  const pn = String(n.meta.partNumber ?? "").trim(); if (!pn) return [];
+  const all = [...ix.notes.values()].filter((x) => String(x.meta.partNumber ?? "").trim() === pn);
+  const key = (x      )         => (x.meta.revision ? plmRevRank(String(x.meta.revision)) : -2);
+  return all.sort((a, b) => key(a) - key(b) || a.name.localeCompare(b.name));
+}
+                                                                                                                      
+const lines = (ix            , n      )                      => {
+  const m = new Map                ();
+  for (const e of ix.out.get(n.path) ?? []) if (e.kind === "hasPart") m.set(e.to ? (ix.notes.get(e.to)?.name ?? e.toSymbol) : e.toSymbol, `${e.label} ${e.detail}`.trim());
+  return m;
+};
+/** What differs between two revision notes: description and manufacturer data, and the structure lines (added, removed, changed). */
+function plmRevDiff(ix            , prev      , cur      )             {
+  const keys = new Set([...Object.keys(prev.meta), ...Object.keys(cur.meta)].filter((k) => k === "description" || isMfg(k)));
+  const props                                  = [];
+  for (const k of [...keys].sort()) { const a = String(prev.meta[k] ?? ""), b = String(cur.meta[k] ?? ""); if (a !== b) props.push([k, a, b]); }
+  const p = lines(ix, prev), c = lines(ix, cur);
+  return { props, added: [...c.keys()].filter((k) => !p.has(k)).sort(), removed: [...p.keys()].filter((k) => !c.has(k)).sort(), changed: [...c.keys()].filter((k) => p.has(k) && p.get(k) !== c.get(k)).sort() };
+}
+
 /* canvas_draw.ts */
 /* Draw-to-relate (D-0043). A line the person draws between two note cards on the canvas preview becomes a relationship
  * only through the same previewed, undoable plan the Edit lens uses (WKB-009). Pure functions: find the lines the person
@@ -3926,6 +3957,7 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const PL = { PLM_LISTS, PLM_FIELDS, plmIsPart, plmIsDocLike, plmSetYaml, plmLink, plmTargets, plmSources, planSetPartFields, planSetLinks, plmCandidates, plmRevRank, plmRevisionChain, plmRevDiff };
 
                 
                                                                                           
@@ -4199,6 +4231,20 @@ function mountWorkbench(root             , host       = {})      {
       if (mine.length) pane.append(section("implements", "Implements", [h("ul", {}, ...mine.map((e) => h("li", {}, lnk(e.to, e.to ? ix .notes.get(e.to)?.title : e.toSymbol))))], { count: mine.length, open: true }));
       if (by.length) pane.append(section("implementedBy", "Implemented by", [h("ul", {}, ...by.map((e) => h("li", {}, lnk(e.from, ix .notes.get(e.from)?.title), " ", h("span", { class: "mut" }, String(ix .notes.get(e.from)?.meta.partNumber ?? "")))))], { count: by.length, open: true }));
     }
+    {   // D-0129: every note of this part number in revision order, with what changed from one to the next (computed, not stored)
+      const chain = PL.plmRevisionChain(ix , n);
+      if (chain.length > 1 && chain.some((x) => x.meta.revision)) {
+        const rows            = [], note          = [];
+        chain.forEach((x, i) => {
+          const rev = String(x.meta.revision ?? ""), prev = i > 0 && chain[i - 1] .meta.revision && rev ? chain[i - 1]  : null;
+          const d = prev ? PL.plmRevDiff(ix , prev, x) : null;
+          const what = !d ? "" : [...d.props.map(([k, a, b]) => `${k}: ${a || "—"} → ${b || "—"}`), ...d.added.map((c) => "+ " + c), ...d.removed.map((c) => "− " + c), ...d.changed.map((c) => "~ " + c)].join("; ") || "no difference";
+          rows.push([x.path === n.path ? h("b", {}, rev || "part number") : (rev || "part number"), lnk(x.path, x.title), String(x.meta.status ?? ""), what]);
+        });
+        if (chain.some((x) => x.meta.revision && PL.plmRevRank(String(x.meta.revision)) < 0)) note.push(h("div", { class: "mut" }, "A revision that is not a letter and two digits (BOM-018) ranks below every real one."));
+        pane.append(section("revisions", "Revisions", [tableOf([["r", "Revision"], ["n", "Note"], ["s", "Status"], ["c", "Changed from the one before"]], rows), ...note], { count: chain.length, open: true }));
+      }
+    }
     pane.append(section("props", "Properties", [tableOf([["k", "Field"], ["v", "Value"]], Object.entries(n.meta).map(([k, v]) => [k, v])), h("div", { class: "mut" }, n.path)], { open: false }));
     return pane;
   }
@@ -4452,7 +4498,7 @@ const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElem
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
 const MG = { mgRead, mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgMembers, mgOwnerRows, planMergePairs, planNoteMerge };
-const PL = { PLM_LISTS, PLM_FIELDS, plmIsPart, plmIsDocLike, plmSetYaml, plmLink, plmTargets, plmSources, planSetPartFields, planSetLinks, plmCandidates };
+
 
                     
                                

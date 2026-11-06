@@ -77,3 +77,22 @@ test("candidates for implements are elements, not parts or documents", () => {
   assert.deepEqual(P.plmCandidates(ix, scr, "implements", "").map((n) => n.name), ["Power Module"]);
   assert.deepEqual(P.plmCandidates(ix, scr, "implements", "nothing like it"), []);
 });
+
+test("revision chain: part number note first, revisions in BOM-018 order, placeholders lowest, and what changed (D-0129)", () => {
+  assert.ok(P.plmRevRank("A01") < P.plmRevRank("B02") && P.plmRevRank("B02") < P.plmRevRank("B03") && P.plmRevRank("B03") < P.plmRevRank("C04"));
+  for (const p of ["-099", "_99", "Z99", "", "B2"]) assert.equal(P.plmRevRank(p), -1, p);
+  const rev = (id: string, r: string, desc: string, extra: Record<string, string>, body: string): string => note({ type: "Object", subtype: "part", id, uid: "u" + id, status: "Draft", partNumber: "ASM-1", revision: r, description: desc, ...extra }, "ASM-1 " + r.slice(0, 1), `package ${id.replace("-", "_")} {\n part def P_ASM_1_${r.slice(0, 1)} {\n${body}\n }\n}`);
+  const f = new Map<string, string>([
+    ["P/SCR-1.md", part("OBJ-00010", "SCR-1")], ["P/SCR-2.md", part("OBJ-00011", "SCR-2")],
+    ["P/ASM-1.md", note({ type: "Object", subtype: "part", id: "OBJ-00020", uid: "u20", status: "Draft", partNumber: "ASM-1" }, "ASM-1")],
+    ["P/ASM-1 C.md", rev("OBJ-00023", "C04", "Cover, black", { manufacturer1: "Acme" }, "  part s1 : P_SCR_1;\n  part s2 : P_SCR_2;")],
+    ["P/ASM-1 A.md", rev("OBJ-00021", "A01", "Cover", {}, "  part s1 : P_SCR_1;")],
+  ]);
+  const ix = idx(f), c = P.plmRevisionChain(ix, ix.notes.get("P/ASM-1.md")!);
+  assert.deepEqual(c.map((n) => n.name), ["ASM-1", "ASM-1 A", "ASM-1 C"], "no B note: none is invented");
+  const d = P.plmRevDiff(ix, c[1]!, c[2]!);
+  assert.deepEqual(d.props, [["description", "Cover", "Cover, black"], ["manufacturer1", "", "Acme"]]);
+  assert.equal(d.added.length + d.removed.length + d.changed.length, d.added.length, "one structure line added, none removed");
+  assert.equal(d.added.length, 1);
+  assert.deepEqual(P.plmRevisionChain(ix, ix.notes.get("P/SCR-1.md")!).map((n) => n.name), ["SCR-1"]);
+});
