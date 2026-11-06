@@ -1516,3 +1516,15 @@ Rules: BOM-048 (changed). Open: OD-19 remainder.
 
 Rules: WKB-053, WKB-054 (notes changed). Open: OD-29.
 
+## D-0129 — Every revision a BOM defines is a note; changes between revisions are written down
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Latest is only the default.** The latest revision is the one shown as current and the one a new import is compared with. It no longer decides what is stored (BOM-006, BOM-007, BOM-017).
+2. **Old revisions are notes.** A BOM that calls an old revision gets that revision's note with its structure. The `earlierRevisions` keep/drop option, the three `EARLIER_REV_*` findings and the "Older revision usages" line are removed (BOM-038, BOM-046).
+3. **No invented revisions.** A revision no BOM defines gets no note. With `A01` and `C04` and no `B`, `C` is compared with `A`; a pin to an undefined revision is a `flagConflict` (BOM-017, BOM-048).
+4. **Changes between revisions** are a "Changes from <previous>" section in the text of each revision note after the first, written by the importer from the two notes (BOM-048). New Check BOM-065 flags a stale one.
+5. **Not built.** The importer still builds one note per part number from the latest revision. Its rewrite, the update scan and the Check rules are the next importer work (OD-19, OD-28).
+
+Rules: BOM-006, BOM-007, BOM-017, BOM-038, BOM-046, BOM-048 (changed); BOM-065 (new).
+
