@@ -1582,3 +1582,13 @@ Rules: WKB-059 (new).
 
 Rules: none changed.
 
+## D-0135 — Every part number and every CL1 is a note; a section for each CL2
+
+2026-11-05 · Spencer · Accepted (owner, chat)
+
+1. **Every part number** named in a BOM has a note. **Every CL1** of it that a BOM names, as a parent's revision or as a child's pin, has a revision note, even when no row lists parts under it (a bought part, or a revision only pinned by a parent). The importer writes what the BOM gives: the revision and the name from the pinning row (BOM-048).
+2. **CL2.** A CL1 with more than one CL2 value has a section for each CL2 value in its revision note; a CL1 with one lists it in the body (BOM-049).
+3. **Assumed, not stated:** a CL2 section holds the value, the BOM and import date, the lines the BOM gives at that value, and the change from the previous CL2 value. CL2 does not change structure (owner, 2026-11-05 08:35), so a CL2 whose lines differ from the CL1's is a finding, `CL2_STRUCTURE_DIFF` (I8).
+
+Rules: BOM-048, BOM-049 (changed).
+
