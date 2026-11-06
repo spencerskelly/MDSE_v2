@@ -33,6 +33,9 @@ export const GUIDE: GuideSection[] = [
     "Use the category buttons and the severity list to narrow the queue, and Export CSV to take the filtered list elsewhere." ] },
   { title: "Editing", body: [
     "Edits are few, previewed and undoable. The Relationships tab edits the selected note's SysML relationships; Review sets an Issue status and resolves one flag. The ? buttons explain each option.",
+    "Part and links (Edit tab): set a part's level, make or buy, sourcing and business line, and link it to the element it implements; an Info note links to what it describes. The reverse link is shown but not written.",
+    "Revisions (Note view): for a part number with several revisions, the notes in order and what changed from the one before. A revision no note defines is not shown.",
+    "ECO (Edit tab): give the reason, description, owner, ECR date and Jira link, pick the changed parts, check where they are used, then preview the ECO note. You create the branch yourself; approval stays in Jira.",
     "The Workbench never renames or deletes a model note." ] },
   { title: "What not to do", body: [
     "Do not edit the SysML block as free text unless you know the syntax; use the Edit view so the block stays consistent.",

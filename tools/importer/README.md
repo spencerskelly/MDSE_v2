@@ -30,7 +30,7 @@ Editing after import, review decisions, choosing which plugins exist (the base v
 | QEAX to notes (M2) | **Built on provisional rules (D-0016)**; synthetic data only | `tools/importer/test/importer.test.ts`: validates every note, ids/uids unique, re-import is a no-op, add-onto is additive |
 | SysML v2 writer (M3) | **Built, blocks not parser-checked** (parser gate runs in CI only; report says "NOT RUN") | same tests; assembled-reference check |
 | Vault update (no source) | Working | `tools/importer/test/vault_update.test.ts`, browser test `VaultUpdateBrowser`. Step 4 of the page |
-| BOM reader (`src/xlsx_reader.js`, `src/bom.ts`) and update scan (`src/bom_update.ts`, D-0051) | Built (D-0032), run on the real BOM set in scratch | Flat and redline layouts, `.xlsx` / `.csv` / `.tsv`. No real BOM workbook has been run; the redline layout is inferred from a description. |
+| BOM reader (`src/xlsx_reader.js`, `src/bom.ts`) and update scan (`src/bom_update.ts`, D-0051) | Built (D-0032), run on the real BOM set in scratch | Flat and redline layouts, `.xlsx` / `.csv` / `.tsv`. No real BOM workbook has been run; the redline layout is inferred from a description. New part notes go to `BOM/Parts/<level>/<category>/` with `level`, `makeBuy` and `bomCategory` (D-0125); `REV_SCHEME` checks revisions (D-0126). **Not yet in line with the rules:** it still writes one note per part number from the latest revision; the rules now require a note per revision with a "Changes from" section (D-0129, BOM-048), and its update scan does not add `level` or `makeBuy` to existing notes. |
 | Run on real QEAX | **Never run** from this repository | — |
 
 ## Update an existing vault (no source needed)
