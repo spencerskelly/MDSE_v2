@@ -1560,3 +1560,15 @@ Rules: GOV-026, MOD-175, BOM-051 (changed); GOV-034 (new). Open: OD-37.
 
 Rules: none changed (GOV-034, never in force, removed).
 
+## D-0133 — Workbench: ECO tab, slice one
+
+2026-11-05 · Spencer · Accepted (owner, chat: continue)
+
+1. **Built.** An ECO tab in the Edit lens (WKB-059): the D-0131 fields, changed parts with action, revision after and responsible person, where-used impact, checks, and the ECO note written with a preview and Undo.
+2. **Where.** A tab of the Edit lens, not a new lens, so it reuses the diff, Apply and Undo; the toolbar group "Change" (W12) is not built.
+3. **Checks.** GOV-031 is checked only against ECO notes in the same vault with no `approvedOn`. Other branches are invisible to it (OD-26).
+4. **Not built.** Adding a new part, branch handling (the engineer creates it), a parent-revision proposal (BOM-057), the impact record for ISO evidence (OD-22).
+5. **Untested in Obsidian.** The planning code is tested; the tab's appearance and behavior are not.
+
+Rules: WKB-059 (new).
+

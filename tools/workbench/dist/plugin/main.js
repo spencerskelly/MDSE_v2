@@ -2636,6 +2636,95 @@ function plmRevDiff(ix            , prev      , cur      )             {
   return { props, added: [...c.keys()].filter((k) => !p.has(k)).sort(), removed: [...p.keys()].filter((k) => !c.has(k)).sort(), changed: [...c.keys()].filter((k) => p.has(k) && p.get(k) !== c.get(k)).sort() };
 }
 
+/* edit_eco.ts */
+/* ECO note and its impact (D-0131, BOM-051, GOV-026). Slice one: pick the changed items, see where each is used, check, and write the
+ * ECO note on the working tree. It plans only; the Edit lens shows the diff and applies it with an Undo.
+ * Not here: creating the branch (the engineer does, GOV-028), new parts (OD-24 first), the check across open branches (OD-26), approval (Jira). */
+
+
+const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+
+const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
+                                                 
+                                                                                                                                                                                                                 
+                                                                                                                                                                                                            
+                                                                          
+                                                                                                                          
+
+/** Every assembly above the items (V.whereUsed, depth 8), once each, with the items it contains and its shallowest depth. */
+function ecoImpact(ix            , items          , maxDepth = 8)                 {
+  const acc = new Map                      ();
+  for (const it of items) {
+    const walk = (nodes              , depth        )       => {
+      for (const c of nodes) {
+        if (c.path && !items.includes(c.path)) {
+          const n = ix.notes.get(c.path), cur = acc.get(c.path);
+          if (!cur) acc.set(c.path, { path: c.path, title: n?.title ?? c.path , partNumber: String(n?.meta.partNumber ?? ""), revision: String(n?.meta.revision ?? ""), depth, via: [it] });
+          else { cur.depth = Math.min(cur.depth, depth); if (!cur.via.includes(it)) cur.via.push(it); }
+        }
+        if (!c.cycle) walk(c.children, depth + 1);
+      }
+    };
+    walk(V.whereUsed(ix, it, maxDepth).tree.children, 1);
+  }
+  return [...acc.values()].sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title));
+}
+
+const isEco = (n      )          => n.type === "Info" && n.subtype === "change";
+/** The notes an ECO note lists in `drives` (resolved links of the note). */
+function ecoDrives(ix            , eco      )         {
+  return eco.links.filter((l) => l.field === "drives").map((l) => ix.byName.get(l.target.toLowerCase())).map((p) => (p ? ix.notes.get(p) : undefined)).filter((n)            => !!n);
+}
+
+/** The checks of slice one. `error` blocks the plan; `warn` is shown. GOV-031 is checked here only against ECO notes in this working tree that have no approval date: other open branches are not visible (OD-26). */
+function ecoChecks(ix            , items           )             {
+  const out             = [], seen = new Set        ();
+  const others = [...ix.notes.values()].filter((n) => isEco(n) && !n.meta.approvedOn);
+  for (const it of items) {
+    const n = ix.notes.get(it.path), t = n?.title ?? it.path;
+    if (!n) { out.push({ level: "error", item: t, text: "This note is not in the vault." }); continue; }
+    if (seen.has(it.path)) out.push({ level: "error", item: t, text: "Listed twice." }); seen.add(it.path);
+    if (!String(n.meta.partNumber ?? "").trim()) out.push({ level: "error", item: t, text: "Has no part number; an ECO changes parts (BOM-051)." });
+    if (!it.person.trim()) out.push({ level: "error", item: t, text: "No responsible person (BOM-051)." });
+    if (it.action !== "adjust-usage" && !String(n.meta.revision ?? "").trim() && n.meta.level !== undefined) out.push({ level: "warn", item: t, text: "No revision on the note, so the From column is blank." });
+    if (!ix.edges.some((e) => e.kind === "implements" && e.via === "yaml" && e.from === it.path)) out.push({ level: "warn", item: t, text: "Implements no element (MOD-187)." });
+    for (const o of others) if (ecoDrives(ix, o).some((d) => d.path === it.path)) out.push({ level: "error", item: t, text: `Already driven by ${o.title} (${o.id}), which is not approved yet (GOV-031).` });
+  }
+  return out;
+}
+
+const q = (s        )         => (/^[A-Za-z0-9][A-Za-z0-9 ._()\/:-]*$/.test(s) && !/^(true|false|null|yes|no|on|off)$/i.test(s) && !/^[\d.]+$/.test(s) ? s : JSON.stringify(s));
+const cell = (s        )         => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
+const jiraKeyOf = (url        )         => /\b([A-Z][A-Z0-9]+-\d+)\b/.exec(url)?.[1] ?? "";
+
+/** The ECO note: `reason`, `owner`, `ecrDate`, `jiraKey`, `jiraUrl`, `branch` and the `drives` list in YAML, the description as the text, and a table of the items with their responsible people. */
+function planCreateEco(ix            , classes           , o          )           {
+  const bad = (p          )           => ({ summary: "", writes: [], problems: p });
+  const reason = o.reason.replace(/\s+/g, " ").trim(), desc = o.description.replace(/\r\n/g, "\n").trim(), owner = o.owner.trim(), url = o.jiraUrl.trim(), date = o.ecrDate.trim();
+  const problems           = [];
+  if (!reason) problems.push("A reason is required.");
+  if (!desc) problems.push("A description is required.");
+  if (!owner || /\s/.test(owner)) problems.push("The owner is an author code, without spaces.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) problems.push("The ECR date is YYYY-MM-dd.");
+  if (!/^https?:\/\/\S+$/.test(url)) problems.push("The Jira link must start with http:// or https://.");
+  if (!o.items.length) problems.push("Add at least one changed item.");
+  const key = (o.jiraKey ?? "").trim() || jiraKeyOf(url);
+  if (!key) problems.push("No Jira key: type it, or use a link that contains it (for example .../browse/ABC-123).");
+  for (const c of ecoChecks(ix, o.items)) if (c.level === "error") problems.push(`${c.item}: ${c.text}`);
+  if (problems.length) return bad(problems);
+  const name = (key + " " + reason).slice(0, 90).trim();
+  const base = ED.planAddElement(ix, classes, { type: "Info", subtype: "change", title: name, folder: o.folder, author: o.author, now: o.now });
+  if (base.problems.length) return base;
+  const w = base.writes[0] , notes = o.items.map((i) => ({ i, n: ix.notes.get(i.path)  }));
+  const links = notes.map((x) => plmLink(x.n)).sort();
+  const yaml = [`reason: ${q(reason)}`, `owner: ${q(owner)}`, `ecrDate: ${date}`, `jiraKey: ${q(key)}`, `jiraUrl: ${JSON.stringify(url)}`, ...((o.branch ?? "").trim() ? [`branch: ${q(o.branch .trim())}`] : []), `drives: [${links.map((l) => JSON.stringify(l)).join(", ")}]`].join("\n");
+  const label = (a           )         => ECO_ACTIONS.find((x) => x[0] === a) [1];
+  const table = ["| Item | Action | From | To | Responsible |", "|---|---|---|---|---|", ...notes.map(({ i, n }) => `| ${plmLink(n)} | ${label(i.action)} | ${cell(String(n.meta.revision ?? ""))} | ${cell(i.to ?? "")} | ${cell(i.person)} |`)].join("\n");
+  const after = w.after.replace(/^(name: .*)$/m, `$1\n${yaml}`).replace(/^(# .*\n)/m, `$1\n## Description\n\n${desc}\n\n## Items\n\n${table}\n`);
+  return { summary: `Add ECO "${name}" (${w.path}) driving ${notes.length} note${notes.length === 1 ? "" : "s"}.`, writes: [{ ...w, after }], problems: [] };
+}
+
 /* canvas_draw.ts */
 /* Draw-to-relate (D-0043). A line the person draws between two note cards on the canvas preview becomes a relationship
  * only through the same previewed, undoable plan the Edit lens uses (WKB-009). Pure functions: find the lines the person
@@ -3956,7 +4045,6 @@ async function readDirHandle(dir           , prefix = "", out = new Map         
 
 
 
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 const PL = { PLM_LISTS, PLM_FIELDS, plmIsPart, plmIsDocLike, plmSetYaml, plmLink, plmTargets, plmSources, planSetPartFields, planSetLinks, plmCandidates, plmRevRank, plmRevisionChain, plmRevDiff };
 
                 
@@ -4494,11 +4582,11 @@ function mountWorkbench(root             , host       = {})      {
 
 
 
-const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
 const RL = { edMembers, edLineRange, ED_DEP_KINDS, edRelInfo, edPropsFor, edRenderMember, planRemoveRelationship, planUpdateRelationship };
 const PT = { ED_PORT_OWNERS, ED_PORT_LABEL, edPortKindsFor, edMultText, edResolvePath, edFeaturePaths, edCheckPortSpec, planPortAdd, planPortRemove, planPortReplace, edSpecOfMember };
 const MG = { mgRead, mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkMany, mgSuggest, mgMembers, mgOwnerRows, planMergePairs, planNoteMerge };
 
+const EC = { ECO_ACTIONS, ecoImpact, ecoDrives, ecoChecks, planCreateEco };
 
                     
                                
@@ -4526,7 +4614,8 @@ const EDIT_STYLE = `
 
 `;
 
-                                                                           
+                                                                                   
+const ECO_SAVED = { reason: "", description: "", owner: "", ecrDate: "", jiraUrl: "", jiraKey: "", folder: "", items: []                 };
 const SAVED                                                                         = { mode: "manage", ref: null, stale: false, mergeWith: "" };
 /** Open the Edit lens on its Merge tab (D-0086). */
 function setEditMode(mode      )       { SAVED.mode = mode; }
@@ -4545,7 +4634,7 @@ function editView(c         )              {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box                                        ).mdRefresh = ()       => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh                      = null;                                 // redraws only a list, never a form being filled
@@ -4990,11 +5079,51 @@ function editView(c         )              {
     return v;
   }
 
+  /* ---- ECO: items, impact, checks, the ECO note (D-0131, BOM-051) ---- */
+  function ecoView()              {
+    const E = ECO_SAVED, v = h("div", {}), itemsBox = h("div", {}), impactBox = h("div", {}), checkBox = h("div", {}), res = h("div", { class: "pick" });
+    if (!E.owner) E.owner = host.author(); if (!E.ecrDate) E.ecrDate = new Date().toISOString().slice(0, 10);
+    const inp = (key                                                                   , label        , ph = "")              => { const i = h("input", { type: "text", placeholder: ph, "aria-label": label })                    ; i.value = E[key]; i.addEventListener("input", () => { E[key] = i.value; }); return field(label, i); };
+    const desc = h("textarea", { placeholder: "What changes, and why it is safe", "aria-label": "Description" })                       ; desc.value = E.description; desc.addEventListener("input", () => { E.description = desc.value; });
+    const folder = inp("folder", "Folder for the ECO note", "for example Changes");
+    v.append(inp("reason", "Reason", "one line"), field("Description", desc), inp("owner", "Owner (author code)"), inp("ecrDate", "ECR date (YYYY-MM-dd)"), inp("jiraUrl", "Jira link", "https://…/browse/ABC-123"), inp("jiraKey", "Jira key (leave blank to read it from the link)"), folder);
+    const label = (p        )         => ix.notes.get(p)?.title ?? p;
+    function draw()       {
+      itemsBox.replaceChildren(...(E.items.length ? E.items.map((it, i) => {
+        const act = h("select", { "aria-label": "Action", onchange: (e       ) => { it.action = (e.target                     ).value                ; drawChecks(); } }, ...opts(EC.ECO_ACTIONS.map((a) => [a[0], a[1]]                    ), it.action))                     ;
+        const to = h("input", { type: "text", placeholder: "to revision", style: "width:90px", "aria-label": "Revision after the change" })                    ; to.value = it.to ?? ""; to.addEventListener("input", () => { it.to = to.value; });
+        const who = h("input", { type: "text", placeholder: "who", style: "width:70px", "aria-label": "Responsible person (author code)" })                    ; who.value = it.person; who.addEventListener("input", () => { it.person = who.value; drawChecks(); });
+        return h("div", { style: "display:flex;gap:6px;align-items:center;margin:3px 0;flex-wrap:wrap" }, h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); c.open(it.path); } }, label(it.path)), h("span", { class: "mut", style: "font-size:11.5px" }, String(ix.notes.get(it.path)?.meta.revision ?? "")), act, to, who, h("button", { class: "sm", onclick: () => { E.items.splice(i, 1); draw(); } }, "Remove"));
+      }) : [h("div", { class: "mut" }, "No items yet. Search for a part below" + (from?.meta.partNumber ? ", or add the open note." : ".")) ]));
+      drawImpact(); drawChecks();
+    }
+    function drawImpact()       {
+      const rows = EC.ecoImpact(ix, E.items.map((x) => x.path));
+      impactBox.replaceChildren(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, `Where the items are used (${rows.length} assembl${rows.length === 1 ? "y" : "ies"} above them). Whether a parent needs a new revision is your call (BOM-057); nothing here changes a parent.`),
+        ...rows.map((r) => h("div", { style: "margin:2px 0;padding-left:" + (r.depth - 1) * 12 + "px" }, h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); c.open(r.path); } }, r.title), " ", h("span", { class: "mut", style: "font-size:11.5px" }, `${r.partNumber} ${r.revision} · level ${r.depth} · via ${r.via.map(label).join(", ")}`))));
+    }
+    function drawChecks()       {
+      const cs = EC.ecoChecks(ix, E.items);
+      checkBox.replaceChildren(...(cs.length ? [h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Checks"), ...cs.map((k) => h("div", { class: k.level === "error" ? "gap" : "mut" }, `${k.level === "error" ? "Blocks" : "Note"}: ${k.item}: ${k.text}`))] : []));
+    }
+    const search = h("input", { type: "search", placeholder: "Find a part by name or part number", "aria-label": "Find a part to add" })                    ;
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase(); res.replaceChildren(); if (!q) return;
+      for (const t of [...ix.notes.values()].filter((t) => String(t.meta.partNumber ?? "").trim() && !E.items.some((x) => x.path === t.path) && (t.title + " " + t.id + " " + t.meta.partNumber).toLowerCase().includes(q)).slice(0, 30))
+        res.append(h("div", { class: "it", onclick: () => { E.items.push({ path: t.path, action: "alter-cl1", person: host.author() }); search.value = ""; res.replaceChildren(); draw(); } }, t.title, " ", h("span", { class: "sn" }, `${t.meta.partNumber} ${t.meta.revision ?? ""}`)));
+    });
+    const addOpen = from && String(from.meta.partNumber ?? "").trim() && !E.items.some((x) => x.path === from .path) ? h("button", { class: "sm", onclick: () => { E.items.push({ path: from .path, action: "alter-cl1", person: host.author() }); draw(); } }, "Add the open note") : null;
+    v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Changed items (the ECO's parts; written as `drives`)"), itemsBox, addOpen, search, res, impactBox, checkBox,
+      h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(EC.planCreateEco(ix, host.classes(), { reason: E.reason, description: E.description, owner: E.owner, ecrDate: E.ecrDate, jiraUrl: E.jiraUrl, jiraKey: E.jiraKey, items: E.items, folder: E.folder, author: host.author() })) }, "Preview ECO note"), h("button", { class: "sm", onclick: () => { Object.assign(E, { reason: "", description: "", jiraUrl: "", jiraKey: "", items: [] }); render(); } }, "Clear")),
+      h("div", { class: "mut", style: "font-size:12px" }, "You create the branch yourself (GOV-028). The ECO is approved in Jira, never here. Open ECOs on other branches are not visible to the check (OD-26)."), previewBox, applyRow);
+    draw(); return v;
+  }
+
   function render()       {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "text"]          )[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "eco", "text"]          )[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : SAVED.mode === "eco" ? ecoView() : textView());
   }
   void plan;
   render();

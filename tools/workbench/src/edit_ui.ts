@@ -10,6 +10,7 @@ import * as RL from "./edit_rel.ts";
 import * as PT from "./edit_port.ts";
 import * as MG from "./merge_ops.ts";
 import * as PL from "./edit_plm.ts";
+import * as EC from "./edit_eco.ts";
 import { ED_HELP } from "./edit_help.ts";
 
 export interface EditHost {
@@ -38,7 +39,8 @@ export const EDIT_STYLE = `
 
 `;
 
-type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text" | "plm";
+type Mode = "manage" | "rel" | "ports" | "merge" | "elem" | "text" | "plm" | "eco";
+const ECO_SAVED = { reason: "", description: "", owner: "", ecrDate: "", jiraUrl: "", jiraKey: "", folder: "", items: [] as EC.EcoItem[] };
 const SAVED: { mode: Mode; ref: EdgeRef | null; stale: boolean; mergeWith: string } = { mode: "manage", ref: null, stale: false, mergeWith: "" };
 /** Open the Edit lens on its Merge tab (D-0086). */
 export function setEditMode(mode: Mode): void { SAVED.mode = mode; }
@@ -57,7 +59,7 @@ export function editView(c: EditCtx): HTMLElement {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m: Mode): void => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
   box.append(tabs, body);
   (box as unknown as { mdRefresh: () => void }).mdRefresh = (): void => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh: (() => void) | null = null;                                 // redraws only a list, never a form being filled
@@ -502,11 +504,51 @@ export function editView(c: EditCtx): HTMLElement {
     return v;
   }
 
+  /* ---- ECO: items, impact, checks, the ECO note (D-0131, BOM-051) ---- */
+  function ecoView(): HTMLElement {
+    const E = ECO_SAVED, v = h("div", {}), itemsBox = h("div", {}), impactBox = h("div", {}), checkBox = h("div", {}), res = h("div", { class: "pick" });
+    if (!E.owner) E.owner = host.author(); if (!E.ecrDate) E.ecrDate = new Date().toISOString().slice(0, 10);
+    const inp = (key: "reason" | "owner" | "ecrDate" | "jiraUrl" | "jiraKey" | "folder", label: string, ph = ""): HTMLElement => { const i = h("input", { type: "text", placeholder: ph, "aria-label": label }) as HTMLInputElement; i.value = E[key]; i.addEventListener("input", () => { E[key] = i.value; }); return field(label, i); };
+    const desc = h("textarea", { placeholder: "What changes, and why it is safe", "aria-label": "Description" }) as HTMLTextAreaElement; desc.value = E.description; desc.addEventListener("input", () => { E.description = desc.value; });
+    const folder = inp("folder", "Folder for the ECO note", "for example Changes");
+    v.append(inp("reason", "Reason", "one line"), field("Description", desc), inp("owner", "Owner (author code)"), inp("ecrDate", "ECR date (YYYY-MM-dd)"), inp("jiraUrl", "Jira link", "https://…/browse/ABC-123"), inp("jiraKey", "Jira key (leave blank to read it from the link)"), folder);
+    const label = (p: string): string => ix.notes.get(p)?.title ?? p;
+    function draw(): void {
+      itemsBox.replaceChildren(...(E.items.length ? E.items.map((it, i) => {
+        const act = h("select", { "aria-label": "Action", onchange: (e: Event) => { it.action = (e.target as HTMLSelectElement).value as EC.EcoAction; drawChecks(); } }, ...opts(EC.ECO_ACTIONS.map((a) => [a[0], a[1]] as [string, string]), it.action)) as HTMLSelectElement;
+        const to = h("input", { type: "text", placeholder: "to revision", style: "width:90px", "aria-label": "Revision after the change" }) as HTMLInputElement; to.value = it.to ?? ""; to.addEventListener("input", () => { it.to = to.value; });
+        const who = h("input", { type: "text", placeholder: "who", style: "width:70px", "aria-label": "Responsible person (author code)" }) as HTMLInputElement; who.value = it.person; who.addEventListener("input", () => { it.person = who.value; drawChecks(); });
+        return h("div", { style: "display:flex;gap:6px;align-items:center;margin:3px 0;flex-wrap:wrap" }, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); c.open(it.path); } }, label(it.path)), h("span", { class: "mut", style: "font-size:11.5px" }, String(ix.notes.get(it.path)?.meta.revision ?? "")), act, to, who, h("button", { class: "sm", onclick: () => { E.items.splice(i, 1); draw(); } }, "Remove"));
+      }) : [h("div", { class: "mut" }, "No items yet. Search for a part below" + (from?.meta.partNumber ? ", or add the open note." : ".")) ]));
+      drawImpact(); drawChecks();
+    }
+    function drawImpact(): void {
+      const rows = EC.ecoImpact(ix, E.items.map((x) => x.path));
+      impactBox.replaceChildren(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, `Where the items are used (${rows.length} assembl${rows.length === 1 ? "y" : "ies"} above them). Whether a parent needs a new revision is your call (BOM-057); nothing here changes a parent.`),
+        ...rows.map((r) => h("div", { style: "margin:2px 0;padding-left:" + (r.depth - 1) * 12 + "px" }, h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); c.open(r.path); } }, r.title), " ", h("span", { class: "mut", style: "font-size:11.5px" }, `${r.partNumber} ${r.revision} · level ${r.depth} · via ${r.via.map(label).join(", ")}`))));
+    }
+    function drawChecks(): void {
+      const cs = EC.ecoChecks(ix, E.items);
+      checkBox.replaceChildren(...(cs.length ? [h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Checks"), ...cs.map((k) => h("div", { class: k.level === "error" ? "gap" : "mut" }, `${k.level === "error" ? "Blocks" : "Note"}: ${k.item}: ${k.text}`))] : []));
+    }
+    const search = h("input", { type: "search", placeholder: "Find a part by name or part number", "aria-label": "Find a part to add" }) as HTMLInputElement;
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase(); res.replaceChildren(); if (!q) return;
+      for (const t of [...ix.notes.values()].filter((t) => String(t.meta.partNumber ?? "").trim() && !E.items.some((x) => x.path === t.path) && (t.title + " " + t.id + " " + t.meta.partNumber).toLowerCase().includes(q)).slice(0, 30))
+        res.append(h("div", { class: "it", onclick: () => { E.items.push({ path: t.path, action: "alter-cl1", person: host.author() }); search.value = ""; res.replaceChildren(); draw(); } }, t.title, " ", h("span", { class: "sn" }, `${t.meta.partNumber} ${t.meta.revision ?? ""}`)));
+    });
+    const addOpen = from && String(from.meta.partNumber ?? "").trim() && !E.items.some((x) => x.path === from!.path) ? h("button", { class: "sm", onclick: () => { E.items.push({ path: from!.path, action: "alter-cl1", person: host.author() }); draw(); } }, "Add the open note") : null;
+    v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Changed items (the ECO's parts; written as `drives`)"), itemsBox, addOpen, search, res, impactBox, checkBox,
+      h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(EC.planCreateEco(ix, host.classes(), { reason: E.reason, description: E.description, owner: E.owner, ecrDate: E.ecrDate, jiraUrl: E.jiraUrl, jiraKey: E.jiraKey, items: E.items, folder: E.folder, author: host.author() })) }, "Preview ECO note"), h("button", { class: "sm", onclick: () => { Object.assign(E, { reason: "", description: "", jiraUrl: "", jiraKey: "", items: [] }); render(); } }, "Clear")),
+      h("div", { class: "mut", style: "font-size:12px" }, "You create the branch yourself (GOV-028). The ECO is approved in Jira, never here. Open ECOs on other branches are not visible to the check (OD-26)."), previewBox, applyRow);
+    draw(); return v;
+  }
+
   function render(): void {
     ix = c.getIx(); from = ix.notes.get(c.getSel());
-    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "text"] as Mode[])[i] === SAVED.mode));
+    for (const [i, b] of Array.from(tabs.children).entries()) b.setAttribute("aria-pressed", String((["manage", "rel", "ports", "merge", "elem", "plm", "eco", "text"] as Mode[])[i] === SAVED.mode));
     plan = null; previewBox.replaceChildren(); applyRow.replaceChildren(); listRefresh = null;
-    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : textView());
+    body.replaceChildren(SAVED.mode === "manage" ? manageView() : SAVED.mode === "rel" ? relView() : SAVED.mode === "ports" ? portsView() : SAVED.mode === "merge" ? mergeView() : SAVED.mode === "elem" ? elemView() : SAVED.mode === "plm" ? plmView() : SAVED.mode === "eco" ? ecoView() : textView());
   }
   void plan;
   render();
