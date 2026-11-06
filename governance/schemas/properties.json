@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "1.2",
+  "schemaVersion": "1.3",
   "date": "2026-11-05",
-  "decision": "D-0065, D-0124, D-0131",
+  "decision": "D-0065, D-0124, D-0131, D-0136",
   "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool. Owner values: bom, ea, person, tool, and \"bom+person\" for a value the BOM fills at import and a person may change afterwards. A row with `values` is a governed list: the value is one of them, and adding a value is a rules edit.",
   "order": [
     "type",
@@ -15,6 +15,7 @@
     "aliases",
     "partNumber",
     "description",
+    "revision",
     "jiraKey",
     "jiraUrl",
     "ecrDate",
@@ -103,6 +104,13 @@
       "appliesTo": "BOM part notes",
       "meaning": "The BOM name or description of the part (BOM-016).",
       "source": "BOM name column"
+    },
+    {
+      "name": "revision",
+      "owner": "bom",
+      "appliesTo": "BOM revision notes",
+      "meaning": "The latest revision label under the note's CL1, CL1 and CL2 joined as exported, for example B03 (BOM-048, D-0127).",
+      "source": "BOM CL1 and CL2 columns"
     },
     {
       "name": "jiraKey",

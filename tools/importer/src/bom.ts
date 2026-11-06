@@ -174,6 +174,9 @@ const bomIsNum = (s: string): boolean => /^-?\d+(\.\d+)?$/.test(s);
 const BOM_TEXT_ATTRS = new Set(["revision", "childRevision", "partNumber", "source", "drawingLocation", "refDes", "ssc", "notes", "effectiveFrom", "effectiveTo", "unit"]);
 const bomAttr = (name: string, v: string): string => `attribute ${name} = ${!BOM_TEXT_ATTRS.has(name) && bomIsNum(v) && !/^-?0\d/.test(v) ? v : JSON.stringify(v)};`;
 const bomSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::P_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
+/** BOM-048: the SysML name of a CL1 revision note, `P_<PN>_<CL1>`. */
+const bomRevDefOf = (pn: string, cl1: string): string => `P_${pn.replace(/[^A-Za-z0-9]/g, "_")}_${cl1.replace(/[^A-Za-z0-9]/g, "_")}`;
+const bomRevSymOf = (id: string, pn: string, cl1: string): string => `${id.replace("-", "_")}::${bomRevDefOf(pn, cl1)}`;
 const bomDocSymOf = (id: string, pn: string): string => `${id.replace("-", "_")}::D_${pn.replace(/[^A-Za-z0-9]/g, "_")}`;
 /** camelCase usage name from a part name. ALL-CAPS words are lowered first (CONNECTOR HOUSING -> connectorHousing); at most 40 characters. */
 export function bomIdent(name: string, pn: string): string {
@@ -210,7 +213,7 @@ export function bomSplitRev(rev: string): { cl1: string; cl2: string } {
   const m = /^([A-Z])(\d{2})$/.exec(rev.trim());
   return m ? { cl1: m[1]!, cl2: m[2]! } : { cl1: rev.trim(), cl2: "" };
 }
-export interface BomRevision { /** the CL1 value as exported (BOM-010) */ cl1: string; /** CL2 values seen under it, lowest first; none for a revision that has no CL2 */ cl2: string[]; /** every joined revision label seen, as exported */ labels: string[] }
+export interface BomRevision { /** the CL1 value as exported (BOM-010) */ cl1: string; /** CL2 values seen under it, lowest first; none for a revision that has no CL2 */ cl2: string[]; /** every joined revision label seen, as exported, lowest first */ labels: string[]; /** each label with its CL2 value */ parts: Array<{ label: string; cl2: string }> }
 type RevSide = { pn: string; rev: string; cl1?: string; cl2?: string };
 /** BOM-048, D-0129: the revisions each part number has as far as the BOM defines them: every CL1 value that appears as a parent's revision or as a pinned child revision, lowest first (BOM-018 order). CL1 and CL2 are the two columns as exported; when a caller gives only the joined label, `bomSplitRev` splits it. A revision no row names is not in the list, so a gap stays a gap. A blank revision is not a revision (BOM-053). */
 export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; parentRev: string; parentCl1?: string; parentCl2?: string; child: string; childRev: string; childCl1?: string; childCl2?: string }>; parents: Array<{ pn: string; rev: string; cl1?: string; cl2?: string }> }): Map<string, BomRevision[]> {
@@ -218,6 +221,7 @@ export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; p
   const add = (x: RevSide): void => {
     const label = x.rev.trim(); if (!x.pn || !label) return;
     const part = x.cl1 !== undefined || x.cl2 !== undefined ? { cl1: (x.cl1 ?? "").trim(), cl2: (x.cl2 ?? "").trim() } : bomSplitRev(label);
+    if (!part.cl1) return;   // BOM-053: no CL1, no revision
     (seen.get(x.pn) ?? seen.set(x.pn, new Map()).get(x.pn)!).set(label, part);
   };
   for (const p of parsed.parents) add(p);
@@ -226,8 +230,8 @@ export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; p
   for (const [pn, labels] of [...seen].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     const by = new Map<string, BomRevision>();
     for (const [label, { cl1, cl2 }] of [...labels].sort((a, b) => bomRevCompare(a[0], b[0]))) {
-      const r = by.get(cl1) ?? by.set(cl1, { cl1, cl2: [], labels: [] }).get(cl1)!;
-      if (cl2 && !r.cl2.includes(cl2)) r.cl2.push(cl2); r.labels.push(label);
+      const r = by.get(cl1) ?? by.set(cl1, { cl1, cl2: [], labels: [], parts: [] }).get(cl1)!;
+      if (cl2 && !r.cl2.includes(cl2)) r.cl2.push(cl2); r.labels.push(label); r.parts.push({ label, cl2 });
     }
     out.set(pn, [...by.values()].sort((a, b) => bomRevCompare(a.labels[0]!, b.labels[0]!)));
   }
@@ -265,6 +269,8 @@ export interface BomOptions {
   update?: boolean;
   /** D-0056: what to do with the lines a file gives for an assembly at a revision older than its latest. "keep" (the default) writes them into the note body; "drop" skips them and says how many. */
   earlierRevisions?: "keep" | "drop";
+  /** D-0127, D-0129, D-0135 (transitional): write the part number's note without structure and one note per CL1 revision that holds the structure, typed by the pinned revision (BOM-048, BOM-056). Off by default until the update scan (BOM-032) reads the new shape; ignored in an update scan. */
+  revisionNotes?: boolean;
   /** D-0098: effectivity dates (from, to) are not imported unless asked for; they play no part in comparing repeated lines. */
   dates?: boolean;
 }
@@ -297,6 +303,8 @@ const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.un
 
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
+  const revMode = o.revisionNotes === true && !o.update, inventory = bomRevisionInventory(parsed);
+  const cl1Of = (cl1: string | undefined, rev: string): string => (cl1 !== undefined ? cl1.trim() : bomSplitRev(rev).cl1);
   // D-0076: the vault's own category list when it has one (a pending file of the same run counts), else the built-in table.
   const rulesText = [...(o.existing?.files ?? []), ...o.pending].find(([p]) => p === CATEGORY_RULES_PATH)?.[1];
   const parsedRules = rulesText === undefined ? null : parseCategoryRules(rulesText), catRules = parsedRules?.rules ?? DEFAULT_CATEGORY_RULES;
@@ -375,9 +383,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   for (const u of parsed.usages) {
     if (undetermined.has(u.parent) || (undetermined.has(u.child) && !bomIsDrawing(u))) continue;
     const lp = latest.get(u.parent)!;
-    if (lp.rev !== u.parentRev) { (earlierOf.get(u.parent) ?? earlierOf.set(u.parent, []).get(u.parent)!).push(u); continue; }   // D-0056: kept in the note body, never dropped without a decision
-    const k = u.parent + "\0" + u.line;
+    if (!revMode && lp.rev !== u.parentRev) { (earlierOf.get(u.parent) ?? earlierOf.set(u.parent, []).get(u.parent)!).push(u); continue; }   // D-0056: kept in the note body, never dropped without a decision
+    const k = u.parent + "\0" + (revMode ? u.parentRev + "\0" : "") + u.line;
     const exP = existingBy.get(u.parent);
+    if (exP && !o.update && revMode) continue;   // BOM-026: a part number already in the vault is left as it is
     if (exP && !o.update) {   // BOM-026: an assembly already in the vault is not re-read line by line; only its lines are kept to say where this file disagrees
       const vr = /attribute revision = (?:"([^"]*)"|([^;]+));/.exec(exP.text), vaultRev = vr ? (vr[1] ?? vr[2] ?? "").trim() : "";
       if (vaultRev !== lp.rev) { otherRev.add(u.parent); continue; }
@@ -407,7 +416,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   const partPns = [...latest.keys()].filter((pn) => !drawingPns.has(pn) || okUsage.some((u) => u.child === pn && !bomIsDrawing(u))).sort();
   const newParts = partPns.filter((pn) => !existingBy.has(pn)), newDrawings = [...drawingPns].filter((pn) => (o.update || !existingBy.has(pn)) && latest.has(pn)).sort();
-  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
+  const revReq = revMode ? newParts.flatMap((pn) => (inventory.get(pn) ?? []).map((r) => ({ key: "r:" + pn + "\0" + r.cl1, prefix: o.classes["Object"]!.prefix, created: "", guid: pn + " " + r.cl1 }))) : [];
+  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...revReq, ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
   const ids = allocateIds(idReq, highest);
   const uids = allocateUids(idReq.map((r) => ({ key: r.key, created: "", guid: r.guid, author: "" })), { authorMap: {}, fallbackCode: o.authorCode, unmappedNames: [""] }, taken, bomStampOf(o.runDate));
   const names = new NameRegistry([...(o.existing?.allPaths ?? []), ...(o.existing?.files.keys() ?? []), ...o.pending.map(([p]) => p)]);
@@ -425,6 +435,12 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
+  // D-0127, D-0135: one note per CL1 revision a BOM names, in the folder of the part number's note
+  const revInfo = new Map<string, { id: string; base: string; path: string; uid: string }>();
+  if (revMode) for (const pn of newParts) for (const r of inventory.get(pn) ?? []) {
+    const key = "r:" + pn + "\0" + r.cl1, pnPath = info.get(pn)!.path, path = names.claim(pnPath.slice(0, pnPath.lastIndexOf("/")), safeName(`${pn} ${r.cl1}`, `${pn} ${r.cl1}`), ".md");
+    revInfo.set(pn + "\0" + r.cl1, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, uid: uids.get(key)!.uid });
+  }
   const keptDates = (parent: string, line: string): { from: string; to: string } => {
     const t = existingBy.get(parent)?.text ?? ""; if (!line || !t) return { from: "", to: "" };
     for (const m of t.matchAll(/^ {8}part \w+ : [^\n]*\{\n([\s\S]*?)\n {8}\}/gm)) {
@@ -468,10 +484,10 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const body: string[] = [], flags: string[] = [], srcLines: string[] = [];
     const decl: string[] = [];
     if (!isDoc) {
-      decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`); if (l.rev) decl.push(`        ${bomAttr("revision", l.rev)}`);
+      decl.push(`        attribute partNumber = ${JSON.stringify(pn)};`); if (l.rev && !revMode) decl.push(`        ${bomAttr("revision", l.rev)}`);
       if (l.source) decl.push(`        ${bomAttr("source", l.source)}`);
       if (l.drawingLocation) decl.push(`        ${bomAttr("drawingLocation", l.drawingLocation)}`);
-      for (const u of kids) {
+      for (const u of (revMode ? [] : kids)) {
         if (bomIsDrawing(u)) { drawingCount++; const dn = info.get(u.child); if (dn) decl.push(`        ref item ${scope.take(bomIdent(u.childName, u.child))} : ${bomDocSymOf(dn.id, u.child)};`); continue; }
         usageCount++;
         const cinf = info.get(u.child), name = scope.take(bomIdent(u.childName, u.child)), discrete = BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0;
@@ -509,7 +525,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     const role = bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn));
     const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catFor(l)], ["bomRole", role], ["level", bomLevelOf(role)], ["makeBuy", bomMakeBuyOf(l.source ?? "")]];   // D-0072, BOM-061
-    sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
+    if (!revMode) sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const older = revisionReview.filter((r) => r.parent === pn);
     // D-0107: a part an assembly calls at a revision older than the latest gets one line saying which revision the assembly calls; the vault uses the latest.
     if (older.length) {
@@ -520,8 +536,43 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     if (!isDoc && earlierKeep) { const e = earlierText(pn); if (e.length) body.push("**Earlier revisions of this assembly**", "", "Lines the BOM gives for revisions older than the latest one above. They are kept as data from the file and are not part of the SysML structure.", "", ...e, ""); }
     for (const d of dupes.get(pn) ?? []) flags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}${d.kept.refDes ? ", reference " + d.kept.refDes : ""}${withDates ? `, from ${d.kept.from || "-"}, to ${d.kept.to || "-"}` : ""}.`, `Other (row ${d.other.row}): ${d.other.child} revision ${JSON.stringify(d.other.childRev)}, quantity ${d.other.amount || "-"} ${d.other.unit}${d.other.refDes ? ", reference " + d.other.refDes : ""}${withDates ? `, from ${d.other.from || "-"}, to ${d.other.to || "-"}` : ""}.`, `Review which applies.`]));
     files.push({ path: inf.path, content: bomStamp(renderNote({ type: cls, subtype: isDoc ? "" : "part", id: inf.id, uid: (o.update && existingBy.get(pn)?.uid) || uids.get((isDoc ? "d:" : "p:") + pn)!.uid, eaType: "BOM", title: pn,
-      relFields: older.length ? [["noteReview", ["Old Revision Usage"]]] : [], extraFields: extra, partNumber: pn, ...(!isDoc && replaces.get(pn)?.size ? { aliases: [...replaces.get(pn)!].sort() } : {}), bodyText: body.join("\n"), ...(l.name ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
+      relFields: older.length ? [["noteReview", ["Old Revision Usage"]]] : [], extraFields: extra, partNumber: pn, ...(!isDoc && replaces.get(pn)?.size ? { aliases: [...replaces.get(pn)!].sort() } : {}), bodyText: body.join("\n"), ...(l.name && (!revMode || isDoc) ? { description: l.name } : {}), flags, sourceLines: [...head, ...srcLines], sysml,
       sourceRole: "authoritative-model", primarySymbol: isDoc ? bomDocSymOf(inf.id, pn) : bomSymOf(inf.id, pn) }), o.sourceName, o.runDate.slice(0, 10)) });
+    if (revMode && !isDoc) for (const r of inventory.get(pn) ?? []) {
+      // BOM-048, BOM-049, D-0127, D-0135: the revision note holds the BOM facts that change with a revision: description, manufacturers, revision, structure and the CL2 values
+      const ri = revInfo.get(pn + "\0" + r.cl1)!, rscope = new IdentScope(), latestLabel = r.labels[r.labels.length - 1]!;
+      const linesAt = (label: string): Usage[] => (byParent.get(pn) ?? []).filter((u) => u.parentRev === label).sort((a, b) => lineKey(a) - lineKey(b) || a.row - b.row);
+      const pinned = (u: Usage): string => { const cl = cl1Of(u.childCl1, u.childRev), rv = u.childRev ? revInfo.get(u.child + "\0" + cl) : undefined, ci = info.get(u.child); return rv ? bomRevSymOf(rv.id, u.child, cl) : ci ? bomSymOf(ci.id, u.child) : "P_" + u.child.replace(/[^A-Za-z0-9]/g, "_"); };   // BOM-056
+      const rdecl: string[] = [`        attribute partNumber = ${JSON.stringify(pn)};`, `        ${bomAttr("revision", latestLabel)}`], rflags: string[] = [], rsrc: string[] = [];
+      for (const u of linesAt(latestLabel)) {
+        if (bomIsDrawing(u)) { drawingCount++; const dn = info.get(u.child); if (dn) rdecl.push(`        ref item ${rscope.take(bomIdent(u.childName, u.child))} : ${bomDocSymOf(dn.id, u.child)};`); continue; }
+        usageCount++;
+        const name = rscope.take(bomIdent(u.childName, u.child)), discrete = BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0, props: string[] = [];
+        if (u.line) props.push(bomAttr("line", u.line)); props.push(bomAttr("childRevision", u.childRev));
+        if (!discrete && u.amount) { props.push(bomAttr("quantity", u.amount)); if (u.unit) props.push(bomAttr("unit", u.unit)); else if (!/^\d+$/.test(u.amount)) findings.push({ level: "warn", code: "QTY_NO_UNIT", message: `Row ${u.row}: quantity ${u.amount} for ${u.child} has no unit; none was assumed.` }); }
+        if (!discrete && u.amount === "0") findings.push({ level: "warn", code: "QTY_ZERO", message: `Row ${u.row}: ${u.child} under ${u.parent} has quantity 0 and is not a drawing line.` });
+        if (u.refDes) props.push(bomAttr("refDes", u.refDes)); if (withDates && u.from) props.push(bomAttr("effectiveFrom", u.from)); if (withDates && u.to) props.push(bomAttr("effectiveTo", u.to));
+        if (u.ssc) props.push(bomAttr("ssc", u.ssc)); if (u.notes) props.push(bomAttr("notes", u.notes));
+        rdecl.push(`        part ${name} : ${pinned(u)}${discrete && u.amount !== "1" ? ` [${u.amount}]` : ""} {`, ...props.map((x) => `            ${x}`), "        }");
+        if (u.alternates.length || u.altParts.length) rsrc.push(`- Alternates for line ${u.line || "?"} (${u.child}): ${[...u.alternates.map((a) => [a.mfr, a.mpn].filter(Boolean).join(" ")), ...u.altParts.map((a) => `part ${a.pn}${a.rev ? " revision " + JSON.stringify(a.rev) : ""}${a.name ? " (" + a.name + ")" : ""}`)].join("; ")}`);
+        if (u.prevChild) rsrc.push(`- Line ${u.line || "?"}: part number was ${u.prevChild} before this release (struck out in the redline); now ${u.child}.`);
+      }
+      for (const d of dupes.get(pn) ?? []) if (cl1Of(d.kept.parentCl1, d.kept.parentRev) === r.cl1) rflags.push(flagCallout("flagValue", `Line ${d.kept.line} has two sets of values`, link, [`Kept (row ${d.kept.row}): ${d.kept.child} revision ${JSON.stringify(d.kept.childRev)}, quantity ${d.kept.amount || "-"} ${d.kept.unit}.`, `Other (row ${d.other.row}): ${d.diff}.`]));
+      const rsrcSeen = new Set<string>(), rsrcAll: Src[] = [];
+      for (const u of parsed.usages) if (u.child === pn && cl1Of(u.childCl1, u.childRev) === r.cl1) for (const sx of [...(u.ownSrc ? [u.ownSrc] : []), ...u.alternates]) { if (!sx.mfr && !sx.mpn) continue; const k = `${sx.mfr.toLowerCase()}\0${sx.mpn.toLowerCase()}`; if (!rsrcSeen.has(k)) { rsrcSeen.add(k); rsrcAll.push(sx); } }
+      const rname = [...r.labels].reverse().map((lb) => asParent.get(pn)?.get(lb)?.name || asChild.get(pn)?.get(lb)?.name || "").find(Boolean) || l.name;
+      const rextra: Array<[string, string]> = [["revision", latestLabel]];
+      rsrcAll.forEach((sx, i) => { if (sx.mfr) rextra.push([`manufacturer${i + 1}`, sx.mfr]); if (sx.mpn) rextra.push([`mfgPn${i + 1}`, sx.mpn]); });
+      const rbody: string[] = [];
+      if (r.cl2.length === 1) rbody.push(`CL2 value ${r.cl2[0]}: seen in \`${o.sourceName}\`, imported ${o.runDate.slice(0, 10)}.`, "");   // BOM-049
+      if (r.cl2.length > 1) for (const part of r.parts) {   // D-0135: a section for each CL2 value
+        rbody.push(`### CL2 ${part.cl2 || "(none)"}`, "", `Revision ${JSON.stringify(part.label)}: seen in \`${o.sourceName}\`, imported ${o.runDate.slice(0, 10)}.`, "");
+        const ls = linesAt(part.label); if (ls.length) rbody.push("Lines the BOM gives at this value (data; the structure above is the latest value's):", "", ...ls.map((u) => `- line ${u.line || "?"}: ${u.child}${u.childName ? " (" + u.childName + ")" : ""}${u.childRev ? " at revision " + JSON.stringify(u.childRev) : ""}${u.amount ? ", quantity " + u.amount + (u.unit ? " " + u.unit : "") : ""}${u.refDes ? ", reference " + u.refDes : ""} (row ${u.row})`), "");
+      }
+      const rhead = [`- BOM revision of: ${pn}`, `- CL1: ${r.cl1}`, `- BOM source: ${o.sourceName} (SHA-256 ${o.fingerprint})`, `- Revisions in the BOM under this CL1: ${r.labels.map((x) => JSON.stringify(x)).join(", ")}`];
+      files.push({ path: ri.path, content: bomStamp(renderNote({ type: "Object", subtype: "part", id: ri.id, uid: ri.uid, eaType: "BOM", title: `${pn} ${r.cl1}`, relFields: [], extraFields: rextra, partNumber: pn, bodyText: rbody.join("\n"), ...(rname ? { description: rname } : {}), flags: rflags, sourceLines: [...rhead, ...rsrc],
+        sysml: `package ${ri.id.replace("-", "_")} {\n    part def ${bomRevDefOf(pn, r.cl1)} :> ${bomSymOf(inf.id, pn)} {\n${rdecl.join("\n")}\n    }\n}\n`, sourceRole: "authoritative-model", primarySymbol: bomRevSymOf(ri.id, pn, r.cl1) }), o.sourceName, o.runDate.slice(0, 10)) });
+    }
   }
 
   if (revisionReview.length) {

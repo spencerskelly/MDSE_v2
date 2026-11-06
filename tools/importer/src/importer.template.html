@@ -354,7 +354,7 @@ async function assemble(existing, writeStage) {
       eaTitles.push(p.split("/").pop().replace(/\.md$/i, ""));
       for (const re of [/^- EA alias: (.+)$/m, /^- (?:PN|Part Number): (.+)$/m]) { const m = re.exec(t); if (m && m[1].trim()) eaTitles.push(m[1].trim()); }
     }
-    bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles });
+    bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles, revisionNotes: true });
     const s = bomRes.summary, errs = bomRes.findings.filter((f) => f.level === "error"), warns = bomRes.findings.filter((f) => f.level === "warn");
     summaryHtml += `<h3>Bill of materials (${esc(s.layout)})</h3><table><tr><th>Status</th><td>${bomRes.status}</td></tr><tr><td>New part notes</td><td>${s.parts} · ${s.usages} usages · ${s.drawings} drawing references · ${s.alternates} alternate sources</td></tr>` +
       `<tr><td>Already in the vault</td><td>${s.existing}</td></tr><tr><td>Not imported (latest revision unknown)</td><td>${s.skippedParts}</td></tr><tr><td>Child pinned at an older revision</td><td>${s.conflicts}</td></tr>` +

@@ -516,3 +516,44 @@ test("the readers carry CL1 and CL2 separately", () => {
   assert.deepEqual([x.parentCl1, x.parentCl2, x.childCl1, x.childCl2], ["-D", "99", "-B", "99"]);
   assert.deepEqual(p.parents.filter((v) => v.pn === "04766").map((v) => [v.cl1, v.cl2]), [["-C", "99"]]);
 });
+
+test("revision notes (D-0127, D-0135): a part number note without structure, a note per CL1 with it, pins typed by the pinned revision", () => {
+  const r = buildBom(parseDelimited(flatText), { ...baseOpts, revisionNotes: true });
+  assert.equal(r.status, "WRITE_READY");
+  const by = (name: string): string => r.files.find((f) => f.path.split("/").pop() === name + ".md")?.content ?? "";
+  const pn = by("04766"), b = by("04766 -B"), c = by("04766 -C");
+  assert.ok(pn && b && c, "the part number's note and a note for each CL1 the BOM names");
+  assert.doesNotMatch(pn, /^\s*part \w+ : /m, "no structure in the part number's note");
+  assert.doesNotMatch(pn, /attribute revision/);
+  assert.doesNotMatch(pn, /^description:/m);
+  assert.match(c, /part def P_04766__C :> \w+::P_04766 \{/);
+  assert.match(c, /^revision: "?-C99"?$/m);
+  assert.match(c, /^description: ASSY MICROCONTROLLER SMARTGUARD$/m);
+  assert.match(c, /part \w+ : \w+::P_01191__0 \{/, "the child is typed by the pinned revision's note");
+  assert.match(b, /part def P_04766__B :> /);
+  assert.doesNotMatch(b, /^\s*part \w+ : /m, "-B is only pinned by 04270-001: it has a note and no lines");
+  assert.match(by("04270-001"), /^bomRole: /m);
+  const top = by("04270-001 -D");
+  assert.match(top, /part \w+ : \w+::P_04766__B \{/, "04270-001 pins -B99, so the usage is typed by the -B note");
+  assert.match(top, /attribute childRevision = "-B99";/);
+  assert.equal(r.findings.some((f) => /^EARLIER_REV_|REV_REVIEW_INDEX/.test(f.code)), false, "no earlier-revision findings in this mode");
+  assert.equal(r.files.some((f) => f.path.endsWith("Old Revision Usage.md")), false);
+  const ids = r.files.map((f) => /^id: (\S+)$/m.exec(f.content)?.[1]).filter(Boolean);
+  assert.equal(new Set(ids).size, ids.length, "every note has its own id");
+});
+
+test("revision notes: several CL2 values under one CL1 each get a section; one CL2 is listed in the body", () => {
+  const row = (cl2: string, line: string, child: string): string => { const c = FLAT_ROWS[0]!.split("\t"); c[0] = "ASM"; c[1] = "B"; c[2] = cl2; c[3] = "ASSEMBLY"; c[6] = line; c[7] = child; c[8] = "-0"; c[9] = "99"; c[10] = "PART " + child; return c.join("\t"); };
+  const head = FLAT_HEAD.split("\t").length;
+  const t = [FLAT_HEAD, row("02", "1", "C1"), row("03", "1", "C1"), row("03", "2", "C2")].join("\n");
+  const r = buildBom(parseDelimited(t), { ...baseOpts, revisionNotes: true });
+  assert.ok(head > 10);
+  const note = r.files.find((f) => f.path.endsWith("ASM B.md"))?.content ?? "";
+  assert.match(note, /^### CL2 02$/m); assert.match(note, /^### CL2 03$/m);
+  assert.match(note, /^revision: "?B03"?$/m, "the latest CL2 value is the note's revision");
+  const sysml = note.slice(note.indexOf("part def"));
+  assert.equal((sysml.match(/^\s+part \w+ : /gm) ?? []).length, 2, "the structure is the latest CL2 value's lines");
+  const c1 = r.files.find((f) => f.path.endsWith("C1 -0.md"))?.content ?? "";
+  assert.match(c1, /^CL2 value 99: seen in/m, "one CL2 value: listed in the body, no section");
+  assert.doesNotMatch(c1, /^### CL2/m);
+});

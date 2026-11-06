@@ -1592,3 +1592,16 @@ Rules: none changed.
 
 Rules: BOM-048, BOM-049 (changed).
 
+## D-0136 — Importer: revision notes written on a first import
+
+2026-11-05 · Spencer · Accepted (owner, chat: build)
+
+1. **Built.** A first BOM import writes the part number's note without structure, and one note `<PN> <CL1>` per CL1 the BOM names (BOM-048, D-0135). The revision note holds `description`, `manufacturerN`, `mfgPnN`, `revision` (new property, `properties.json` 1.3), the structure lines of the latest CL2 value, and a `### CL2 <value>` section for each CL2 value when there are several (BOM-049). It specializes the part number's note. Each usage is typed by the pinned revision's note (BOM-056); `childRevision` shows the revision as exported.
+2. **Pins define revisions.** A revision a parent pins has a note even with no rows under it. This supersedes the `flagConflict` sentence of D-0129 item 3 (later decision wins, GOV-033); BOM-017 is reworded.
+3. **Gone in this mode:** the `earlierRevisions` choice, the `EARLIER_REV_*` findings, the "Older revision usages" line and the Old Revision Usage index.
+4. **Transitional.** The option `revisionNotes` is on in the importer page and off by default in the library. It is ignored in an update scan, which still reads and writes the old one-note shape, and a part number already in the vault is left as it is (BOM-026). Until the update scan moves (next step), a vault should be built fresh with this mode, not updated.
+5. **Not built.** The "Changes from" section (BOM-048), `CL2_STRUCTURE_DIFF`, `Check` BOM-065, the update scan, and dropping the old path.
+6. **PN note has no `description`** (D-0127 puts it on the revision note); the Workbench shows a revision note by its description.
+
+Rules: BOM-017 (changed), BOM-048 (note).
+
