@@ -1539,3 +1539,15 @@ Rules: BOM-006, BOM-007, BOM-017, BOM-038, BOM-046, BOM-048 (changed); BOM-065 (
 
 Rules: WKB-058 (new).
 
+## D-0131 — ECO note fields and the ECO tag
+
+2026-11-05 · Spencer · Accepted (owner, chat), tag name and placement proposed
+
+1. **Fields.** Reason, Description, Owner, Parts, Jira Link, ECR Date; more to be added later. Written as `reason`, `owner` (author code), `ecrDate`, `jiraUrl` (with `jiraKey`), the note text for the description, and `drives` for the parts (MOD-175, GOV-026).
+2. **Parts are generated.** The tool writes `drives` from the items chosen and the impact found (BOM-051).
+3. **Tag.** A note an open ECO changes carries a tag that is removed at release (GOV-034, Proposed). Name and placement are open (OD-37).
+4. **Schema.** `properties.json` 1.2 adds `reason`, `owner`, `ecrDate`. `issuedDate`, `approver` and `approvedOn` stay unlisted (OD-29).
+5. **Not built.** The ECO lens, the tag handling.
+
+Rules: GOV-026, MOD-175, BOM-051 (changed); GOV-034 (new). Open: OD-37.
+

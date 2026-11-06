@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "1.1",
+  "schemaVersion": "1.2",
   "date": "2026-11-05",
-  "decision": "D-0065, D-0124",
+  "decision": "D-0065, D-0124, D-0131",
   "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool. Owner values: bom, ea, person, tool, and \"bom+person\" for a value the BOM fills at import and a person may change afterwards. A row with `values` is a governed list: the value is one of them, and adding a value is a rules edit.",
   "order": [
     "type",
@@ -17,6 +17,9 @@
     "description",
     "jiraKey",
     "jiraUrl",
+    "ecrDate",
+    "owner",
+    "reason",
     "branch",
     "level",
     "sourcing",
@@ -113,6 +116,27 @@
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
       "meaning": "Link to the Jira ticket (GOV-026).",
+      "source": "Person, from the Jira ticket"
+    },
+    {
+      "name": "reason",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Why the change is made, one line (GOV-026, D-0131).",
+      "source": "Person"
+    },
+    {
+      "name": "owner",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who owns the ECO (GOV-026, D-0131). Each changed item also names its responsible person (BOM-051).",
+      "source": "Person"
+    },
+    {
+      "name": "ecrDate",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date the engineering change request was made, YYYY-MM-dd (GOV-026, D-0131). Not the issued date.",
       "source": "Person, from the Jira ticket"
     },
     {
