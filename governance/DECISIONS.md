@@ -1551,3 +1551,12 @@ Rules: WKB-058 (new).
 
 Rules: GOV-026, MOD-175, BOM-051 (changed); GOV-034 (new). Open: OD-37.
 
+## D-0132 — No ECO tag
+
+2026-11-05 · Spencer · Accepted (owner, chat: "forget the tag, we'll continue as defined")
+
+1. **Withdrawn.** The ECO tag of D-0131 item 3 is not used. GOV-034 and OD-37 are removed; nothing was built on them.
+2. **What marks a note in change** is the ECO note's `drives` list (BOM-051) and the claim check of GOV-031. Part and revision notes carry no ECO mark.
+
+Rules: none changed (GOV-034, never in force, removed).
+
