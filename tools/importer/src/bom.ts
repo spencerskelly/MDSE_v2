@@ -139,11 +139,11 @@ export function parseBom(grid: Grid): Parsed {
     if (level < 0 && lvl.col >= 0) { const s = bomTxt(row[lvl.col]); if (/^\d+$/.test(s)) level = +s; }
     const num = bomCurPrev(row[m.get(bomNumKey(m)) ?? -1]), mfr = bomGet(row, m, "manufacturer"), mpn = bomGet(row, m, "manufacturerpartnumber", "manufacturerpartnubmer");
     if (!num.cur && !num.prev) {   // blank number: an alternate source of the line above (BOM-013)
-      if ((mfr || mpn) && last) last.alternates.push({ mfr, mpn }); else findings.push({ level: "warn", code: "ALT_NO_PRIMARY", message: `Row ${r + 1}: blank part number and nothing above it to attach to; review only.` }); skip(r, "ALT_NO_PRIMARY"); continue;
+      if ((mfr || mpn) && last) { last.alternates.push({ mfr, mpn }); continue; } findings.push({ level: "warn", code: "ALT_NO_PRIMARY", message: `Row ${r + 1}: blank part number and nothing above it to attach to; review only.` }); skip(r, "ALT_NO_PRIMARY"); continue;
     }
     if (level < 0) { findings.push({ level: "warn", code: "ROW_NO_LEVEL", message: `Row ${r + 1}: no level; skipped.` }); skip(r, "ROW_NO_LEVEL"); continue; }
     if (!num.cur) { findings.push({ level: "info", code: "LINE_REMOVED", message: `Row ${r + 1}: part number ${num.prev} is struck out with no replacement; the line is removed in this release and was not imported.` }); skip(r, "LINE_REMOVED"); stack[level] = undefined; continue; }
-    const name = bomCurPrev(row[m.get("name") ?? -1]).cur, cl1 = bomCurPrev(row[m.get("cl1") ?? -1]).cur, cl2 = bomCurPrev(row[m.get("cl2") ?? -1]).cur, rev = cl1 + cl2;
+    const name = bomCurPrev(row[(m.get("name") ?? m.get("partname")) ?? -1]).cur, cl1 = bomCurPrev(row[m.get("cl1") ?? -1]).cur, cl2 = bomCurPrev(row[m.get("cl2") ?? -1]).cur, rev = cl1 + cl2;
     stack.length = level + 1; stack[level] = { pn: num.cur, rev, cl1, cl2 };
     const dl = bomGet(row, m, "drawinglocation");
     if (level === 0) { parents.push({ pn: num.cur, rev, cl1, cl2, name, source: "", category: bomGet(row, m, "category"), state: "", drawingLocation: dl }); last = null; continue; }

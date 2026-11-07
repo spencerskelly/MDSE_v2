@@ -275,6 +275,14 @@ test("redline variants: preamble rows, unlabelled level column, Part Number, UOM
   assert.equal(parseBom(d3).usages.length, 1);
 });
 
+test("redline: a 'Part Name' column is the description of the part and of its revision note", () => {
+  const g = grid([["Update Drawing", "0", "1", "", "Part Number", "CL 1", "CL 2", "Part Name", "Line Number", "Unit", "Unit Of Measure"],
+    ["", "0", "", "0", "100", "A", "01", "TOP ASSY", "", "", ""], ["", "", "1", "1", "200", "A", "01", "WASHER FLAT", "1", "2", "Piece"]]);
+  const r = buildBom(g, { ...baseOpts, revisionNotes: true });
+  const rev = r.files.find((f) => /\/200 A\.md$/.test(f.path))!.content;
+  assert.match(rev, /^description: WASHER FLAT$/m);
+});
+
 test("a second BOM that disagrees with a part already in the vault says so and leaves the note as it is", () => {
   const head = ["New Rev", "0", "1", "Structure Level", "Number", "CL1", "CL2", "Name", "Line Number", "Quantity", "Unit"];
   const g = (qty: string): Grid => grid([head, ["", "0", "", "0", "100", "A", "01", "TOP", "", "", ""], ["", "", "1", "1", "200", "A", "01", "WIRE", "1", qty, "Meter"]]);
