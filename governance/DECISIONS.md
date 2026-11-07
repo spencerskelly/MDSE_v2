@@ -1605,3 +1605,15 @@ Rules: BOM-048, BOM-049 (changed).
 
 Rules: BOM-017 (changed), BOM-048 (note).
 
+## D-0137 — Many BOMs, each adding data and removing none
+
+2026-11-06 · Spencer · Accepted (owner, chat)
+
+1. **Rule.** Many BOMs will be added to the vault. Each adds every piece of data it can place and removes none. Existing parts are added to (BOM-022, BOM-026, BOM-039).
+2. **CL2.** A CL2 value for a CL1 that already has a note is added to that note (BOM-066).
+3. **Differences.** A value that differs from the vault is listed as a change and not ticked; the vault value stays until the owner approves it. A line the file no longer lists is a removal, not ticked (BOM-032, BOM-033, unchanged).
+4. **Order of work before the first real import:** the update scan reading revision notes (this decision's rules), the "Changes from" section, `CL2_STRUCTURE_DIFF`, then dropping the old one-note path. The owner reviews between imports, from a private repository to be attached when it exists.
+5. **Not verified:** how the real BOMs differ from the sample (OD-18).
+
+Rules: BOM-022, BOM-026 (changed); BOM-066 (new).
+
