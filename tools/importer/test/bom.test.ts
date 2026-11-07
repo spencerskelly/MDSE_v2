@@ -127,7 +127,7 @@ test("D-0098: an exact repeat of a line is dropped even when its dates differ; t
   assert.match(byTitle(q.files, "01141-002").content, /\[!flagValue\]/); assert.doesNotMatch(byTitle(q.files, "01141-002").content, /, from /);
 });
 
-test("blank part number + manufacturer part number is an alternate of the line above, not a part (BOM-003/013)", () => {
+test("blank part number + manufacturer part number is an alternate of the line above, not a part", () => {
   const head = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tManufacturer\tManufacturer Part Number\tAmount\tUnit";
   const rows = ["PC-0\tA\t1\tFRAME\t1\tPC-100\tA\t1\tPLATE\tCIRCLE AW\tAW 250\t2\tea", "PC-0\tA\t1\tFRAME\t\t\t\t\t\tEATON B-LINE\tAW250\t\t", "PC-0\tA\t1\tFRAME\t\t\t\t\t\tOTHER\tX1\t\t"];
   const r = buildBom(parseDelimited([head, ...rows].join("\n")), baseOpts);
@@ -430,15 +430,13 @@ test("rows that are skipped keep their content in the findings note, not capped 
   assert.doesNotMatch(clean.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content, /Skipped rows/);
 });
 
-test("a row on line 1xx beside line xx is an alternate of that line, not a usage (BOM-003, D-0064)", () => {
+test("a row on line 1xx beside line xx is an ordinary line (D-0138)", () => {
   const row = (line: string, child: string, q: string, parent = "ASM-1") => `${parent}\tA\t01\tASM\tbuy\tP\t${line}\t${child}\tA\t01\tNAME ${child}\tbuy\tP\t\t\t\t\t\t${q}\tea\tx`;
-  const rows = [row("1", "P-1", "2"), row("2", "P-2", "1"), row("101", "P-1ALT", "2"), row("150", "P-150", "1"), row("1", "P-9", "1", "ASM-2"), row("101", "P-9ALT", "1", "ASM-2")];
+  const rows = [row("1", "P-1", "2"), row("2", "P-2", "1"), row("101", "P-1ALT", "2"), row("150", "P-150", "1")];
   const r = buildBom(parseDelimited([FLAT_HEAD, ...rows].join("\n")), baseOpts), asm = byTitle(r.files, "ASM-1").content;
-  assert.equal(r.findings.filter((f) => f.code === "ALT_BY_LINE").length, 2, "one finding per folded row");
-  assert.match(asm, /Alternates for line 1 \(P-1\): part P-1ALT.*quantity 2 ea, line 101, row 4/);
-  assert.doesNotMatch(asm, /P_1ALT|partP1ALT/, "the alternate is not a usage");
-  assert.match(asm, /P_150/, "line 150 has no line 50, so it stays a usage");
-  assert.equal(r.summary.alternates, 2); assert.ok(!r.files.some((f) => /P-1ALT/.test(f.path)), "no note is created for an alternate-only part");
+  assert.equal(r.findings.filter((f) => f.code === "ALT_BY_LINE").length, 0);
+  assert.match(asm, /P_1ALT/, "line 101 is a usage"); assert.match(asm, /P_150/);
+  assert.equal(r.summary.alternates, 0);
 });
 
 test("a part is sorted into a folder by level and category, and carries bomCategory, bomRole, level and makeBuy (D-0072, D-0122)", () => {

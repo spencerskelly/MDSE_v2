@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: the `Part Name` column is read as the description; blank-number manufacturer rows are no longer also listed as skipped; the line 1xx alternate rule is withdrawn and `ALT_BY_LINE` is gone. BOM-003, D-0138
+- Workbench shows a note by its description with the part number in smaller type beneath. WKB-060, D-0139
 - BOM import (first import only): the part number's note has no structure; each CL1 revision a BOM names has its own note `<PN> <CL1>` that specializes it and holds the description, manufacturers, revision and structure, with a section for each CL2 value when there are several; usages are typed by the pinned revision's note. The update scan still uses the old shape, so build a vault fresh for now. New property `revision` (`properties.json` 1.3). BOM-017, BOM-048, BOM-049, D-0134, D-0135, D-0136
 - Workbench ECO tab (Edit lens): writes one ECO note with reason, description, owner, ECR date, Jira link and the changed parts (generated `drives` list, responsible person per part); shows where the parts are used; blocks a part already driven by an unapproved ECO note in the same vault. No branch handling, no approval, no new parts. WKB-059, D-0131, D-0133
 - Properties `reason`, `owner`, `ecrDate` added for ECO notes; `properties.json` 1.2. No ECO tag (D-0132). GOV-026, MOD-175, BOM-051, D-0131

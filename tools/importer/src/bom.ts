@@ -44,7 +44,7 @@ function bomCurPrev(c: Cell | null | undefined): { cur: string; prev: string } {
 }
 
 export interface Src { mfr: string; mpn: string }
-/** An alternate that has its own part number and sits on line 1xx beside line xx (BOM-003). */
+/** An alternate that has its own part number (no longer produced; line 1xx is an ordinary line, D-0138). */
 export interface AltPart { pn: string; rev: string; name: string; line: string; amount: string; unit: string; mfr: string; mpn: string; row: number }
 export interface Usage {
   parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childCategory: string; childState: string;
@@ -92,17 +92,6 @@ export function detectLayout(grid: Grid): { layout: "flat" | "redline" | null; h
 
 const bomGet = (row: Array<Cell | null | undefined>, m: Map<string, number>, ...keys: string[]): string => { for (const k of keys) { const i = m.get(k); if (i !== undefined) { const v = bomTxt(row[i]); if (v) return v; } } return ""; };
 
-/** BOM-003 / D-0064: a row on line 1xx whose line xx exists under the same parent and revision is an alternate of line xx, not a usage: it adds no quantity and is listed under that line. Every case is reported for review. */
-function foldAltLines(usages: Usage[], findings: Finding[]): Usage[] {
-  const base = new Map<string, Usage>(); for (const u of usages) if (bomIsNum(u.line) && +u.line < 100) { const k = `${u.parent}\0${u.parentRev}\0${+u.line}`; if (!base.has(k)) base.set(k, u); }
-  return usages.filter((u) => {
-    if (!bomIsNum(u.line) || +u.line < 101 || +u.line > 199) return true;
-    const b = base.get(`${u.parent}\0${u.parentRev}\0${+u.line - 100}`); if (!b) return true;
-    b.altParts.push({ pn: u.child, rev: u.childRev, name: u.childName, line: u.line, amount: u.amount, unit: u.unit, mfr: u.ownSrc?.mfr ?? "", mpn: u.ownSrc?.mpn ?? "", row: u.row });
-    findings.push({ level: "warn", code: "ALT_BY_LINE", message: `Row ${u.row}: line ${u.line} (${u.child}) under ${u.parent} is read as an alternate of line ${b.line} (${b.child}) because the line numbers are 100 apart (BOM-003). It adds no quantity. Check that it is not a real line.` });
-    return false;
-  });
-}
 export function parseBom(grid: Grid): Parsed {
   const d = detectLayout(grid), findings: Finding[] = [];
   if (!d.layout) return { layout: "flat", usages: [], parents: [], skipped: [], findings: [{ level: "error", code: "BOM_LAYOUT", message: "No header row found. A flat BOM needs Parent Part Number and Child Part Number columns; a redline needs Number, CL1, CL2 and level columns 0..7 or Structure." }] };
@@ -128,7 +117,7 @@ export function parseBom(grid: Grid): Parsed {
       parents.push({ pn: parent, rev: u.parentRev, cl1: u.parentCl1, cl2: u.parentCl2, name: bomGet(row, m, "parentpartname"), source: bomGet(row, m, "parentsource"), category: bomGet(row, m, "parentcategory"), state: bomGet(row, m, "parentstate"), drawingLocation: "" });
       usages.push(u); last = u;
     }
-    return { layout: "flat", usages: foldAltLines(usages, findings), parents, findings, skipped };
+    return { layout: "flat", usages, parents, findings, skipped };
   }
   // redline: the parent of a row is the nearest row above it one level up (the 0..7 columns match Structure)
   const levelCols = [...m.entries()].filter(([k]) => /^[0-7]$/.test(k)).map(([k, i]) => [+k, i] as const).sort((a, b) => a[0] - b[0]), lvl = bomLevelSource(grid, d.headerRow, m);
@@ -158,7 +147,7 @@ export function parseBom(grid: Grid): Parsed {
   }
   // keep a parent observation only for part numbers that really have lines below them
   const hasKids = new Set(usages.map((u) => u.parent + "\0" + u.parentRev));
-  return { layout: "redline", usages: foldAltLines(usages, findings), parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings, skipped };
+  return { layout: "redline", usages, parents: parents.filter((p) => hasKids.has(p.pn + "\0" + p.rev)), findings, skipped };
 }
 
 // ---- resolve and render ---------------------------------------------------------------------------------------------------

@@ -50,7 +50,7 @@ export const STYLE = `
 .mdw aside input{width:100%;margin-bottom:8px}.mdw nav.tabs{display:flex;gap:2px;flex-wrap:wrap;padding:6px 10px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
 .mdw nav.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:6px 10px;color:var(--mut)}.mdw nav.tabs button[aria-selected=true]{color:var(--fg);border-color:var(--acc);font-weight:600}.mdw nav.tabs button:disabled{opacity:.4;cursor:default}
 .mdw .pane{padding:14px 16px 40px}.mdw h2{margin:0 0 8px;font-size:17px}.mdw h3{margin:18px 0 6px;font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.mdw a.lnk{color:var(--acc);cursor:pointer;text-decoration:none}.mdw a.lnk:hover{text-decoration:underline}.mdw .mut{color:var(--mut)}.mdw .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.mdw .dn{display:block}.mdw .dn small{display:block;font-size:11px;font-weight:400;color:var(--mut)}.mdw a.lnk{color:var(--acc);cursor:pointer;text-decoration:none}.mdw a.lnk:hover{text-decoration:underline}.mdw .mut{color:var(--mut)}.mdw .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
 .mdw table{border-collapse:collapse;width:100%}.mdw th,.mdw td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top}.mdw th{font-weight:600;color:var(--mut);white-space:nowrap}.mdw th.sort{cursor:pointer}.mdw td.n,.mdw th.n{text-align:right}
 .mdw .vsbox{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:8px 0}.mdw .vsbox summary{cursor:pointer;font-weight:600}.mdw fieldset.vs{border:0;margin:6px 0;padding:0;display:flex;flex-wrap:wrap;gap:4px;align-items:center}.mdw fieldset.vs legend{font-size:12px;color:var(--mut);padding:0;float:left;margin-right:8px}.mdw .tree ul{list-style:none;margin:0;padding-left:16px;border-left:1px dotted var(--line)}.mdw .tree>ul{border:0;padding-left:0}.mdw .tree li{padding:1px 0}.mdw .tree summary{cursor:pointer}.mdw .tree .sel{background:color-mix(in srgb,var(--acc) 18%,transparent);border-radius:4px}
 .mdw .tag{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--mut);margin-left:6px}.mdw .tag.k{color:var(--acc);border-color:var(--acc)}
@@ -101,8 +101,12 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const select = (p: string, to?: string): void => { sel = p; if (to) tab = to; else if (!TABS.find((t) => t[0] === tab)?.[2]) tab = "note"; draw(); };
   const lnk = (p: string | null, text?: string): Node => {
     if (!p || !note(p)) return h("span", { class: "mut" }, text ?? p ?? "(unresolved)");
-    return h("a", { class: "lnk", href: "#", onclick: (e: Event) => { e.preventDefault(); select(p); } }, text ?? note(p)!.title);
+    const n = note(p)!, d = String(n.meta.description ?? "").trim();
+    // D-0139: a note that has a description is shown by it, with the name (the part number) in smaller type beneath
+    const body: Node | string = d && (text === undefined || text === n.title) ? h("span", { class: "dn" }, d, h("small", {}, n.title)) : (text ?? n.title);
+    return h("a", { class: "lnk", href: "#", onclick: (e: Event) => { e.preventDefault(); select(p); } }, body);
   };
+  const heading = (n: Note): Node => { const d = String(n.meta.description ?? "").trim(); return d ? h("h2", { class: "dn" }, d, h("small", {}, n.title)) : h("h2", {}, n.title); };
   const typeTag = (n: Note): Node => h("span", { class: "tag" }, n.type + (n.subtype ? "/" + n.subtype : ""));
 
   /* ---- sidebar ---- */
@@ -258,7 +262,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   function vNote(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
     const n = note(sel)!, pane = h("div", { class: "pane" });
-    pane.append(h("h2", {}, n.title), h("div", { class: "row" }, h("span", { class: "pill" }, n.id), n.name !== n.title ? h("span", { class: "pill", title: "File name" }, n.name) : null, typeTag(n), h("span", { class: "pill" }, n.status || "no status"),
+    pane.append(heading(n), h("div", { class: "row" }, h("span", { class: "pill" }, n.id), n.name !== n.title ? h("span", { class: "pill", title: "File name" }, n.name) : null, typeTag(n), h("span", { class: "pill" }, n.status || "no status"),
       n.block ? h("span", { class: "pill " + (ix!.parser === "passed" ? "ok" : ix!.parser === "failed" ? "bad" : "warn") }, ix!.parser === "passed" ? "SysML checked" : ix!.parser === "failed" ? "SysML check failed" : "SysML unchecked") : null,
       host.openNote ? h("button", { onclick: () => host.openNote!(n.path) }, "Open in editor") : null), secBar());
     if (n.flags.length) pane.append(section("flags", "Flags", n.flags.map((f) => h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail)), { count: n.flags.length }));

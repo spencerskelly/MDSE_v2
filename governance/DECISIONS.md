@@ -1617,3 +1617,23 @@ Rules: BOM-017 (changed), BOM-048 (note).
 
 Rules: BOM-022, BOM-026 (changed); BOM-066 (new).
 
+## D-0138 — The line 1xx alternate rule is withdrawn
+
+2026-11-06 · Spencer · Accepted (owner, chat: "disregard the 1xx rule for now, let's remove it to avoid issues")
+
+1. **Rule.** A row on line 101 to 199 is an ordinary line. The line number never makes a row an alternate. This withdraws D-0064 and the 1xx clause of BOM-003; `ALT_BY_LINE` is no longer raised.
+2. **Why.** On the first real BOM (DVS 400, 18 cases) every row the rule folded was a different part with its own full quantity; folding removed real parts from the structure. D-0064 item 3 had warned that the habit was not verified against a real BOM.
+3. **Alternates stay.** A row with a blank part number and manufacturer data is an alternate source of the part above it, and every manufacturer is kept (BOM-003, unchanged).
+4. **Existing vaults.** A vault imported before this change holds those rows as alternates in the Source section; a new import of the same BOM lists them as added lines through the update scan.
+5. **Revisit.** The owner may bring the rule back with a stricter test after reviewing more BOMs.
+
+Rules: BOM-003 (changed).
+
+## D-0139 — The Workbench shows the description first
+
+2026-11-06 · Spencer · Accepted (owner, chat)
+
+1. **Rule.** The note's name is the part number (unchanged). The Workbench shows a note by its description, with the part number in smaller type beneath, in links, lists and headings (WKB-060).
+2. **Other interface changes.** The owner finds the interface not convenient but named no specific change yet; none is made on this decision.
+
+Rules: WKB-060 (new).
