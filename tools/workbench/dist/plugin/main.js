@@ -1140,6 +1140,15 @@ const SUBTYPE_COLOR                         = { "Object/interface": "#1e3a8a" };
 /** Colors that mean one thing and belong to no kind: a port, a retired note, a link to a note that is not in the vault. */
 const PORT_COLOR = "#0f766e", RETIRED_COLOR = "#dc2626", MISSING_COLOR = "#f43f5e";
 const typeColor = (type        , subtype = "")                     => SUBTYPE_COLOR[`${type}/${subtype}`] ?? TYPE_COLOR[type];
+/** D-0140: a canvas line is named by the relationship alone ("has part"), never by the element at its end, and is drawn in the colour of its kind. Obsidian's canvas keeps a colour, a label and the two arrow ends for a line; it has no dashed or thick lines. */
+const EDGE_COLOR                         = {
+  hasPart: "#2557d6", hasPort: "#0f766e", hasAction: "#15803d", hasState: "#6d28d9", hasFlow: "#64748b", specializes: "#8a8f98", satisfies: "#ea580c", verifies: "#a21caf", verifiedBy: "#a21caf",
+  implements: "#0ea5e9", implementedBy: "#0ea5e9", allocatedTo: "#ca8a04", performs: "#be185d", derives: "#b45309", derivedFrom: "#b45309", includes: "#65a30d", extendedBy: "#4d7c0f",
+};
+/** "hasPart" is shown as "has part". */
+const edgeName = (kind        )         => kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().slice(0, 60);
+const edgeLook = (kind        )                                    => { const c = EDGE_COLOR[kind]; return { label: edgeName(kind), ...(c ? { color: c } : {}) }; };
+
 /** A lighter mix of a hex color, for things shown only by inheritance. */
 const muted = (hex        )         => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const [r, g, b] = [1, 2, 3].map((k) => Math.round(parseInt(m[k] , 16) * 0.45 + 255 * 0.55)); return "#" + [r, g, b].map((v) => v .toString(16).padStart(2, "0")).join(""); };
 
@@ -1615,7 +1624,7 @@ function structureCanvas(ix            , root        , mode                   ) 
     for (const k of list) {
       const t = at.get(k.to); if (!t) continue;
       if (aboveSet.has(from) ? k.to !== root : (depth.get(k.to) ?? 0) <= (depth.get(from) ?? 0)) continue;       // above: only the line down to the note; below: only lines that go down a layer
-      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label: [k.e.kind, k.e.label].filter(Boolean).join(" ").slice(0, 60) });
+      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(k.e.kind) });
     }
   }
   return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped, fileName: `Structure - ${safe(rn.title)} (${mode === "direct" ? "direct parts" : "complete BOM"}).canvas`, groups: 0, hidden: 0 };
@@ -1661,7 +1670,7 @@ function pickCanvas(ix            , paths          , opts                       
   if (opts.relations) for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   }
   return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
@@ -1771,7 +1780,7 @@ function addToCanvas(doc           , ix            , anchor               , path
     if (!e.to || e.reverse || !(isFresh.has(e.from) || isFresh.has(e.to))) continue;
     const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
     const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
+    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
   }
   return { doc: out, added: fresh.length, present, lineIds };
 }
@@ -1809,10 +1818,10 @@ function addChildren(doc           , ix            , parent        , paths      
     const on = new Map(kids.map((p) => [p, find(cur, p) ]         ));
     for (const e of ix.edges) {
       if (e.kind !== "hasPart" || !e.to || e.reverse || e.from !== parent || !on.has(e.to)) continue;
-      const c = on.get(e.to) , label = [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+      const c = on.get(e.to) , label = edgeName(e.kind);
       if (cur.edges.some((x) => x.fromNode === pc.id && x.toNode === c.id && (x.label ?? "") === label)) continue;
       const id = nid("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label }); lineIds.push(id);
+      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
     }
   }
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
@@ -1945,7 +1954,7 @@ function refreshCanvas(doc           , ix            )                          
   }
   const drawn = (e            )          => new RegExp(`^[ea]\\d+(?:${EDGE_REF_SEP}.*)?$`).test(e.id);                          // ids the Workbench gives; a line the person drew has another id
   const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)]         ));
-  const labelOf = (e                                 )         => [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+  const labelOf = (e                                 )         => edgeName(e.kind);
   const real = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to);
   let linesRemoved = 0, linesAdded = 0;
   const hadDrawn = out.edges.some(drawn);
@@ -1963,7 +1972,7 @@ function refreshCanvas(doc           , ix            )                          
       const label = labelOf(r);
       if (out.edges.some((e) => e.fromNode === f.id && e.toNode === t.id && (e.label ?? "") === label)) continue;
       while (taken.has("a" + k)) k++; taken.add("a" + k);
-      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label }); linesAdded++;
+      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(r.kind) }); linesAdded++;
     }
   }
   return { doc: out, redrawn, missing, linesAdded, linesRemoved };
@@ -2171,7 +2180,7 @@ function toCanvas(ix            , start        , profile         , spec         
   const edges               = [];
   const push = (from        , to        , e      )       => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   };
   for (const e of g.edges) push(id.get(e.from) , id.get(e.to ) , e);
   for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
@@ -2643,7 +2652,7 @@ function plmRevDiff(ix            , prev      , cur      )             {
 
 
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
 const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
                                                  
@@ -5609,27 +5618,30 @@ const ensureFolder = async (app     , dir        )                => {
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
 };
 const parseDoc = (text        )      => { try { const d = JSON.parse(text); return { nodes: d.nodes ?? [], edges: d.edges ?? [], ...d }; } catch { return { nodes: [], edges: [] }; } };
-const removePreview = async (app     )                => { const f = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH); if (f) await app.vault.delete(f); };
+const removePreview = async (app     )                => {             // every scratch preview of an earlier session (D-0140: each view is a new canvas)
+  const dir = app.vault.getAbstractFileByPath(WB.PREVIEW_DIR);
+  for (const f of [...(dir?.children ?? [])]) if (/^Workbench Preview.*\.canvas$/.test(f.name)) await app.vault.delete(f);
+};
 
-/** Writes the preview (one scratch file, overwritten each time) and shows it in the main window. Nothing is kept until the person saves. */
+/** Writes a NEW preview canvas (D-0140: a scratch file of its own, so earlier views stay open to compare) and shows it in the main window. Nothing is kept until the person saves. */
 async function writePreview(plugin     , r                                                                                                                                                    )                  {
-  const app = plugin.app, path = WB.PREVIEW_PATH;
-  await ensureFolder(app, path.slice(0, path.lastIndexOf("/")));
-  const text = JSON.stringify(r.doc, null, 2);
-  let file = app.vault.getAbstractFileByPath(path);
-  if (file) await app.vault.modify(file, text); else file = await app.vault.create(path, text);
-  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
-  const open = app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === path);
-  if (open) app.workspace.revealLeaf(open); else await mainLeaf(app).openFile(file);
+  const app = plugin.app;
+  await ensureFolder(app, WB.PREVIEW_DIR);
+  let path = WB.PREVIEW_PATH.replace(/\.canvas$/, ` ${++plugin.previewSeq}.canvas`);
+  while (app.vault.getAbstractFileByPath(path)) path = WB.PREVIEW_PATH.replace(/\.canvas$/, ` ${++plugin.previewSeq}.canvas`);
+  const file = await app.vault.create(path, JSON.stringify(r.doc, null, 2));
+  plugin.preview = { path, fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
+  plugin.previews.set(path, plugin.preview);
+  await mainLeaf(app).openFile(file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
 }
 
 /** Copies the preview as it is now (including any rearranging the person did) into the chosen folder, never overwriting. */
 async function savePreview(plugin     , folder        )                  {
-  const app = plugin.app, src = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-  if (!src || !plugin.preview) throw new Error("No preview to save. Open a canvas preview first.");
+  const app = plugin.app, rec = plugin.targetPreview(), src = rec ? app.vault.getAbstractFileByPath(rec.path) : null;
+  if (!src || !rec) throw new Error("No preview to save. Open a canvas preview first.");
   await ensureFolder(app, folder);
-  const base = plugin.preview.fileName.replace(/\.canvas$/, "");
+  const base = rec.fileName.replace(/\.canvas$/, "");
   let path = `${folder}/${base}.canvas`;
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
   const saved = await app.vault.create(path, await app.vault.read(src));
@@ -5760,31 +5772,34 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files                      = new Map(); ix      = null; building                       = null; apps           = new Set(); selected = ""; rebuildTimer      = null;
-  preview                                                                         = null; settings                                                = { defaultFolder: "", lastFolder: "" };
+  preview                                                                                       = null; previews                                                                                             = new Map(); previewSeq = 0; settings                                                = { defaultFolder: "", lastFolder: "" };
   author = ""; drawTimer      = null; drawBusy              = new Set(); drawQueue                = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
   /** Changes the scratch canvas file; a line that is not found leaves it as it is. */
-  async editPreview(fn                                 )                {
-    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+  /** The preview the person is looking at: the open canvas when it is one of ours, else the newest. */
+  targetPreview() { const t = this.canvasTarget(); return (t && this.previews.get(t.path)) || (this.preview && this.app.vault.getAbstractFileByPath(this.preview.path) ? this.preview : null); }
+  async editPreview(fn                                 , path         )                {
+    const f = this.app.vault.getAbstractFileByPath(path ?? this.preview?.path ?? "");
     if (f) await this.app.vault.process(f, (t        ) => fn(t) ?? t);
   }
   /** The canvas file changed (Obsidian saves a moment after a line is drawn or a card is moved). Any line the Workbench did not draw is the person's. */
-  previewChanged() {
+  previewChanged(path        ) {
     clearTimeout(this.drawTimer);
     this.drawTimer = setTimeout(async () => {
-      const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-      if (!f || !this.preview) return;
+      const f = this.app.vault.getAbstractFileByPath(path), rec = this.previews.get(path);
+      if (!f || !rec) return;
       let doc     ; try { doc = JSON.parse(await this.app.vault.read(f)); } catch { return; }
-      for (const line of WB.cdDrawnLines(doc, this.preview.edgeIds)) {
+      for (const line of WB.cdDrawnLines(doc, rec.edgeIds)) {
         if (this.drawBusy.has(line.id)) continue;
         this.drawBusy.add(line.id);
-        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
+        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line, path)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
       }
     }, 700);
   }
-  async relateDrawnLine(line                                                        )                {
-    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id)).catch(() => {});
+  async relateDrawnLine(line                                                        , path        )                {
+    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id), path).catch(() => {});
+    const edgeIds = this.previews.get(path)?.edgeIds;
     try {
       await this.ensureIndex();
       if (!line.from || !line.to) { new obsidian.Notice("MDSE: a relationship joins two notes. This line has a card that is not a note in the vault, so it was removed.", 8000); await drop(); return; }
@@ -5793,11 +5808,11 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       const picked                                      = await new Promise((resolve) => new RelateModal(this.app, this, { from: line.from , to: line.to  }, resolve).open());
       if (!picked) { await drop(); return; }
       const res = await this.applyPlan(picked.plan);
-      this.preview?.edgeIds.add(line.id);
-      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label));
+      edgeIds?.add(line.id);
+      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label), path);
       const frag = document.createDocumentFragment(), btn = document.createElement("button");
       btn.textContent = "Undo"; btn.style.marginLeft = "0.5em";
-      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); this.preview?.edgeIds.delete(line.id); await drop(); } catch (e     ) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
+      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); edgeIds?.delete(line.id); await drop(); } catch (e     ) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
       frag.append("MDSE: " + res.message + " ", btn);
       new obsidian.Notice(frag, 15000);
     } catch (e     ) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); await drop(); }
@@ -5906,8 +5921,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
     const leaf = this.canvasLeaf, v = leaf?.view, path                     = v?.file?.path;
     if (path && v.getViewType?.() === "canvas" && (!v.containerEl || v.containerEl.isConnected) && this.app.vault.getAbstractFileByPath(path)) return { path, leaf };
-    const open = this.app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === WB.PREVIEW_PATH);
-    return open && this.preview ? { path: WB.PREVIEW_PATH, leaf: open } : null;
+    const open = this.preview && this.app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === this.preview .path);
+    return open && this.preview ? { path: this.preview.path, leaf: open } : null;
   }
   /** Changes a canvas file; an open canvas is saved first so a card the person just moved is not lost. */
   async editTarget(t                             , fn                                 )                {
@@ -5975,10 +5990,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.structureCanvas(this.ix, path, mode));
   }
 
-  /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
+  /** D-0140: picked notes always open a new canvas; "Add to canvas" is the way to add to the open one (D-0083). */
   async openPickCanvas(paths          , label        , relations         , group         , replace         )                  {
     await this.ensureIndex();
-    if (!replace && this.canvasTarget()) return this.addToCanvasPreview(null, paths, relations);
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
@@ -5987,30 +6001,16 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     await this.ensureIndex();
     const place = (doc     ) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
-    if (target && target.path !== WB.PREVIEW_PATH) {                                // D-0089: the canvas that is open in the main window, whichever file it is
-      let res                                            = null;
-      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
+    if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is
+      let res                                                                = null;
+      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; if (!r.added) return null; const rec = this.previews.get(target.path); if (rec) for (const id of r.lineIds ?? []) rec.edgeIds.add(id); return JSON.stringify(r.doc, null, 2); });
       const r = res                                             ;
       if (!r) return "Could not read that canvas.";
       this.app.workspace.revealLeaf(target.leaf);
       return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Nothing else on it moved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
     }
-    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
-      const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
-      return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
-    }
-    let res                                            = null;
-    await this.editPreview((text) => {
-      const r = place(JSON.parse(text)); res = r;
-      if (!r.added) return null;
-      for (const id of r.lineIds) this.preview .edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
-      return JSON.stringify(r.doc, null, 2);
-    });
-    const r = res                                             ;
-    if (!r) return "Could not read the canvas preview.";
-    const open = this.app.workspace.getLeavesOfType("canvas").find((l     ) => l.view?.file?.path === WB.PREVIEW_PATH); if (open) this.app.workspace.revealLeaf(open);
-    return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to the canvas preview${r.present ? ` (${r.present} already there)` : ""}. Not saved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
+    const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
+    return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
   }
 
   /* ---- saving a preview ---- */
@@ -6021,7 +6021,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
   saveWithPicker()                  {
     return new Promise((resolve, reject) => {
-      if (!this.preview) { reject(new Error("No preview to save. Open a canvas preview first.")); return; }
+      if (!this.targetPreview()) { reject(new Error("No preview to save. Open a canvas preview first.")); return; }
       let chosen = false;
       const m = new PickModal(this.app, "Save canvas in which folder?", this.folderChoices(), (f        ) => f, (f        ) => { chosen = true; savePreview(this, f).then(resolve, reject); });
       const close = m.onClose?.bind(m); m.onClose = () => { close?.(); setTimeout(() => { if (!chosen) resolve("Save cancelled. The preview is still open."); }, 150); };
@@ -6129,7 +6129,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addCommand({ id: "expand-layer", name: "Expand one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("expandLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "collapse-all", name: "Collapse all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "expand-all", name: "Expand all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("expandAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
-    this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk         ) => { if (!this.preview || !this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
+    this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk         ) => { if (!this.targetPreview()) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
     this.registerEvent(this.app.workspace.on("file-menu", (menu     , f     ) => {
       if (f?.extension !== "md") return;
       menu.addItem((i     ) => i.setTitle("Show in MDSE Workbench").setIcon("network").onClick(async () => { await this.openPanel(); await this.ensureIndex(); this.selected = f.path; this.apps.forEach((a     ) => a.select(f.path)); }));
@@ -6138,7 +6138,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("file-open", (f     ) => this.onFileOpen(f)));
     for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
     this.registerInterval(window.setInterval(() => { try { this.canvasSelection(); } catch { /* a canvas internal that moved must never break the plugin */ } }, 300));
-    this.registerEvent(this.app.vault.on("modify", (f     ) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
+    this.registerEvent(this.app.vault.on("modify", (f     ) => { if (f?.path && this.previews.has(f.path)) this.previewChanged(f.path); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session
       this.app.workspace.detachLeavesOfType?.(OLD_VIEW);                          // the pre-0.6 main-window view

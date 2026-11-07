@@ -5,7 +5,7 @@ import type { Edge, EdgeRef, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
 import type { Profile, ViewSpec, InheritFrom, InheritedMember } from "./views.ts";
 import { uniqueParts, type UniqueNode } from "./compare.ts";
-import { RETIRED_COLOR, MISSING_COLOR, PORT_COLOR, typeColor, muted } from "./views.ts";
+import { RETIRED_COLOR, MISSING_COLOR, PORT_COLOR, typeColor, muted, edgeLook, edgeName } from "./views.ts";
 import { traverse, isRequirement, requirementText, TYPE_COLOR, defaultSpec, specIsDefault, internalStructure, inheritedMembers, portsOfType } from "./views.ts";
 
 /** A canvas edge id carries the relationship it draws, so a selected line can be edited (D-0031). */
@@ -106,7 +106,7 @@ export function structureCanvas(ix: ModelIndex, root: string, mode: "direct" | "
     for (const k of list) {
       const t = at.get(k.to); if (!t) continue;
       if (aboveSet.has(from) ? k.to !== root : (depth.get(k.to) ?? 0) <= (depth.get(from) ?? 0)) continue;       // above: only the line down to the note; below: only lines that go down a layer
-      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label: [k.e.kind, k.e.label].filter(Boolean).join(" ").slice(0, 60) });
+      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(k.e.kind) });
     }
   }
   return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped, fileName: `Structure - ${safe(rn.title)} (${mode === "direct" ? "direct parts" : "complete BOM"}).canvas`, groups: 0, hidden: 0 };
@@ -152,7 +152,7 @@ export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: b
   if (opts.relations) for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   }
   return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
@@ -262,7 +262,7 @@ export function addToCanvas(doc: CanvasDoc, ix: ModelIndex, anchor: string | nul
     if (!e.to || e.reverse || !(isFresh.has(e.from) || isFresh.has(e.to))) continue;
     const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
     const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
+    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
   }
   return { doc: out, added: fresh.length, present, lineIds };
 }
@@ -300,10 +300,10 @@ export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, path
     const on = new Map(kids.map((p) => [p, find(cur, p)!] as const));
     for (const e of ix.edges) {
       if (e.kind !== "hasPart" || !e.to || e.reverse || e.from !== parent || !on.has(e.to)) continue;
-      const c = on.get(e.to)!, label = [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+      const c = on.get(e.to)!, label = edgeName(e.kind);
       if (cur.edges.some((x) => x.fromNode === pc.id && x.toNode === c.id && (x.label ?? "") === label)) continue;
       const id = nid("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label }); lineIds.push(id);
+      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
     }
   }
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
@@ -436,7 +436,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
   }
   const drawn = (e: CanvasEdge): boolean => new RegExp(`^[ea]\\d+(?:${EDGE_REF_SEP}.*)?$`).test(e.id);                          // ids the Workbench gives; a line the person drew has another id
   const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)] as const));
-  const labelOf = (e: { kind: string; label: string }): string => [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+  const labelOf = (e: { kind: string; label: string }): string => edgeName(e.kind);
   const real = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to);
   let linesRemoved = 0, linesAdded = 0;
   const hadDrawn = out.edges.some(drawn);
@@ -454,7 +454,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
       const label = labelOf(r);
       if (out.edges.some((e) => e.fromNode === f.id && e.toNode === t.id && (e.label ?? "") === label)) continue;
       while (taken.has("a" + k)) k++; taken.add("a" + k);
-      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label }); linesAdded++;
+      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(r.kind) }); linesAdded++;
     }
   }
   return { doc: out, redrawn, missing, linesAdded, linesRemoved };
@@ -662,7 +662,7 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
   const edges: CanvasEdge[] = [];
   const push = (from: string, to: string, e: Edge): void => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   };
   for (const e of g.edges) push(id.get(e.from)!, id.get(e.to!)!, e);
   for (const x of ghosts) { const anchor = id.get(x.anchor)!; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }

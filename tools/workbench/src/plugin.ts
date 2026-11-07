@@ -62,27 +62,30 @@ const ensureFolder = async (app: any, dir: string): Promise<void> => {
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
 };
 const parseDoc = (text: string): any => { try { const d = JSON.parse(text); return { nodes: d.nodes ?? [], edges: d.edges ?? [], ...d }; } catch { return { nodes: [], edges: [] }; } };
-const removePreview = async (app: any): Promise<void> => { const f = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH); if (f) await app.vault.delete(f); };
+const removePreview = async (app: any): Promise<void> => {             // every scratch preview of an earlier session (D-0140: each view is a new canvas)
+  const dir = app.vault.getAbstractFileByPath(WB.PREVIEW_DIR);
+  for (const f of [...(dir?.children ?? [])]) if (/^Workbench Preview.*\.canvas$/.test(f.name)) await app.vault.delete(f);
+};
 
-/** Writes the preview (one scratch file, overwritten each time) and shows it in the main window. Nothing is kept until the person saves. */
+/** Writes a NEW preview canvas (D-0140: a scratch file of its own, so earlier views stay open to compare) and shows it in the main window. Nothing is kept until the person saves. */
 async function writePreview(plugin: any, r: { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number }): Promise<string> {
-  const app = plugin.app, path = WB.PREVIEW_PATH;
-  await ensureFolder(app, path.slice(0, path.lastIndexOf("/")));
-  const text = JSON.stringify(r.doc, null, 2);
-  let file = app.vault.getAbstractFileByPath(path);
-  if (file) await app.vault.modify(file, text); else file = await app.vault.create(path, text);
-  plugin.preview = { fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
-  const open = app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === path);
-  if (open) app.workspace.revealLeaf(open); else await mainLeaf(app).openFile(file);
+  const app = plugin.app;
+  await ensureFolder(app, WB.PREVIEW_DIR);
+  let path = WB.PREVIEW_PATH.replace(/\.canvas$/, ` ${++plugin.previewSeq}.canvas`);
+  while (app.vault.getAbstractFileByPath(path)) path = WB.PREVIEW_PATH.replace(/\.canvas$/, ` ${++plugin.previewSeq}.canvas`);
+  const file = await app.vault.create(path, JSON.stringify(r.doc, null, 2));
+  plugin.preview = { path, fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
+  plugin.previews.set(path, plugin.preview);
+  await mainLeaf(app).openFile(file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
 }
 
 /** Copies the preview as it is now (including any rearranging the person did) into the chosen folder, never overwriting. */
 async function savePreview(plugin: any, folder: string): Promise<string> {
-  const app = plugin.app, src = app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-  if (!src || !plugin.preview) throw new Error("No preview to save. Open a canvas preview first.");
+  const app = plugin.app, rec = plugin.targetPreview(), src = rec ? app.vault.getAbstractFileByPath(rec.path) : null;
+  if (!src || !rec) throw new Error("No preview to save. Open a canvas preview first.");
   await ensureFolder(app, folder);
-  const base = plugin.preview.fileName.replace(/\.canvas$/, "");
+  const base = rec.fileName.replace(/\.canvas$/, "");
   let path = `${folder}/${base}.canvas`;
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
   const saved = await app.vault.create(path, await app.vault.read(src));
@@ -213,31 +216,34 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
-  preview: { fileName: string; edgeIds: Set<string>; saveFolder?: string } | null = null; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
+  preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string } = { defaultFolder: "", lastFolder: "" };
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
   /** Changes the scratch canvas file; a line that is not found leaves it as it is. */
-  async editPreview(fn: (text: string) => string | null): Promise<void> {
-    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
+  /** The preview the person is looking at: the open canvas when it is one of ours, else the newest. */
+  targetPreview() { const t = this.canvasTarget(); return (t && this.previews.get(t.path)) || (this.preview && this.app.vault.getAbstractFileByPath(this.preview.path) ? this.preview : null); }
+  async editPreview(fn: (text: string) => string | null, path?: string): Promise<void> {
+    const f = this.app.vault.getAbstractFileByPath(path ?? this.preview?.path ?? "");
     if (f) await this.app.vault.process(f, (t: string) => fn(t) ?? t);
   }
   /** The canvas file changed (Obsidian saves a moment after a line is drawn or a card is moved). Any line the Workbench did not draw is the person's. */
-  previewChanged() {
+  previewChanged(path: string) {
     clearTimeout(this.drawTimer);
     this.drawTimer = setTimeout(async () => {
-      const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-      if (!f || !this.preview) return;
+      const f = this.app.vault.getAbstractFileByPath(path), rec = this.previews.get(path);
+      if (!f || !rec) return;
       let doc: any; try { doc = JSON.parse(await this.app.vault.read(f)); } catch { return; }
-      for (const line of WB.cdDrawnLines(doc, this.preview.edgeIds)) {
+      for (const line of WB.cdDrawnLines(doc, rec.edgeIds)) {
         if (this.drawBusy.has(line.id)) continue;
         this.drawBusy.add(line.id);
-        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
+        this.drawQueue = this.drawQueue.then(() => this.relateDrawnLine(line, path)).catch(() => {}).finally(() => { this.drawBusy.delete(line.id); });
       }
     }, 700);
   }
-  async relateDrawnLine(line: { id: string; from: string | null; to: string | null }): Promise<void> {
-    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id)).catch(() => {});
+  async relateDrawnLine(line: { id: string; from: string | null; to: string | null }, path: string): Promise<void> {
+    const drop = () => this.editPreview((t) => WB.cdDropLine(t, line.id), path).catch(() => {});
+    const edgeIds = this.previews.get(path)?.edgeIds;
     try {
       await this.ensureIndex();
       if (!line.from || !line.to) { new obsidian.Notice("MDSE: a relationship joins two notes. This line has a card that is not a note in the vault, so it was removed.", 8000); await drop(); return; }
@@ -246,11 +252,11 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       const picked: { plan: any; label: string } | null = await new Promise((resolve) => new RelateModal(this.app, this, { from: line.from!, to: line.to! }, resolve).open());
       if (!picked) { await drop(); return; }
       const res = await this.applyPlan(picked.plan);
-      this.preview?.edgeIds.add(line.id);
-      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label));
+      edgeIds?.add(line.id);
+      await this.editPreview((t) => WB.cdLabelLine(t, line.id, picked.label), path);
       const frag = document.createDocumentFragment(), btn = document.createElement("button");
       btn.textContent = "Undo"; btn.style.marginLeft = "0.5em";
-      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); this.preview?.edgeIds.delete(line.id); await drop(); } catch (e: any) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
+      btn.onclick = async () => { try { new obsidian.Notice("MDSE: " + (await res.undo())); edgeIds?.delete(line.id); await drop(); } catch (e: any) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); } };
       frag.append("MDSE: " + res.message + " ", btn);
       new obsidian.Notice(frag, 15000);
     } catch (e: any) { new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000); await drop(); }
@@ -359,8 +365,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
     const leaf = this.canvasLeaf, v = leaf?.view, path: string | undefined = v?.file?.path;
     if (path && v.getViewType?.() === "canvas" && (!v.containerEl || v.containerEl.isConnected) && this.app.vault.getAbstractFileByPath(path)) return { path, leaf };
-    const open = this.app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === WB.PREVIEW_PATH);
-    return open && this.preview ? { path: WB.PREVIEW_PATH, leaf: open } : null;
+    const open = this.preview && this.app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === this.preview!.path);
+    return open && this.preview ? { path: this.preview.path, leaf: open } : null;
   }
   /** Changes a canvas file; an open canvas is saved first so a card the person just moved is not lost. */
   async editTarget(t: { path: string; leaf: any }, fn: (text: string) => string | null): Promise<void> {
@@ -428,10 +434,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     return writePreview(this, WB.structureCanvas(this.ix, path, mode));
   }
 
-  /** D-0083: with a preview open, the picked notes are added to it and nothing already there moves; `replace` (or no preview) starts a new one. */
+  /** D-0140: picked notes always open a new canvas; "Add to canvas" is the way to add to the open one (D-0083). */
   async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string> {
     await this.ensureIndex();
-    if (!replace && this.canvasTarget()) return this.addToCanvasPreview(null, paths, relations);
     return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
@@ -440,30 +445,16 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     await this.ensureIndex();
     const place = (doc: any) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
-    if (target && target.path !== WB.PREVIEW_PATH) {                                // D-0089: the canvas that is open in the main window, whichever file it is
-      let res: { added: number; present: number } | null = null;
-      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; return r.added ? JSON.stringify(r.doc, null, 2) : null; });
+    if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is
+      let res: { added: number; present: number; lineIds?: string[] } | null = null;
+      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; if (!r.added) return null; const rec = this.previews.get(target.path); if (rec) for (const id of r.lineIds ?? []) rec.edgeIds.add(id); return JSON.stringify(r.doc, null, 2); });
       const r = res as { added: number; present: number } | null;
       if (!r) return "Could not read that canvas.";
       this.app.workspace.revealLeaf(target.leaf);
       return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Nothing else on it moved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
     }
-    const f = this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH);
-    if (replace || !f || !this.preview) {                                                      // no preview yet: start one with the same placement rules (D-0085)
-      const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });
-      return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
-    }
-    let res: { added: number; present: number } | null = null;
-    await this.editPreview((text) => {
-      const r = place(JSON.parse(text)); res = r;
-      if (!r.added) return null;
-      for (const id of r.lineIds) this.preview!.edgeIds.add(id);                 // lines the Workbench drew, so they are not mistaken for the person's
-      return JSON.stringify(r.doc, null, 2);
-    });
-    const r = res as { added: number; present: number } | null;
-    if (!r) return "Could not read the canvas preview.";
-    const open = this.app.workspace.getLeavesOfType("canvas").find((l: any) => l.view?.file?.path === WB.PREVIEW_PATH); if (open) this.app.workspace.revealLeaf(open);
-    return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to the canvas preview${r.present ? ` (${r.present} already there)` : ""}. Not saved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
+    const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
+    return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
   }
 
   /* ---- saving a preview ---- */
@@ -474,7 +465,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
   saveWithPicker(): Promise<string> {
     return new Promise((resolve, reject) => {
-      if (!this.preview) { reject(new Error("No preview to save. Open a canvas preview first.")); return; }
+      if (!this.targetPreview()) { reject(new Error("No preview to save. Open a canvas preview first.")); return; }
       let chosen = false;
       const m = new PickModal(this.app, "Save canvas in which folder?", this.folderChoices(), (f: string) => f, (f: string) => { chosen = true; savePreview(this, f).then(resolve, reject); });
       const close = m.onClose?.bind(m); m.onClose = () => { close?.(); setTimeout(() => { if (!chosen) resolve("Save cancelled. The preview is still open."); }, 150); };
@@ -582,7 +573,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addCommand({ id: "expand-layer", name: "Expand one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("expandLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "collapse-all", name: "Collapse all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "expand-all", name: "Expand all layers under the selected canvas cards", callback: () => this.cardActionOnSelected("expandAll").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
-    this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk: boolean) => { if (!this.preview || !this.app.vault.getAbstractFileByPath(WB.PREVIEW_PATH)) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
+    this.addCommand({ id: "save-canvas", name: "Save preview canvas…", checkCallback: (chk: boolean) => { if (!this.targetPreview()) return false; if (!chk) this.saveWithPicker().then((m) => new obsidian.Notice("MDSE: " + m), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)); return true; } });
     this.registerEvent(this.app.workspace.on("file-menu", (menu: any, f: any) => {
       if (f?.extension !== "md") return;
       menu.addItem((i: any) => i.setTitle("Show in MDSE Workbench").setIcon("network").onClick(async () => { await this.openPanel(); await this.ensureIndex(); this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); }));
@@ -591,7 +582,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
     for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
     this.registerInterval(window.setInterval(() => { try { this.canvasSelection(); } catch { /* a canvas internal that moved must never break the plugin */ } }, 300));
-    this.registerEvent(this.app.vault.on("modify", (f: any) => { if (f?.path === WB.PREVIEW_PATH) this.previewChanged(); }));
+    this.registerEvent(this.app.vault.on("modify", (f: any) => { if (f?.path && this.previews.has(f.path)) this.previewChanged(f.path); }));
     this.app.workspace.onLayoutReady(() => {
       removePreview(this.app).catch(() => {});                                  // a stale preview from an earlier session
       this.app.workspace.detachLeavesOfType?.(OLD_VIEW);                          // the pre-0.6 main-window view

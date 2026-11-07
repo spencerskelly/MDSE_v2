@@ -1147,6 +1147,15 @@ const SUBTYPE_COLOR                         = { "Object/interface": "#1e3a8a" };
 /** Colors that mean one thing and belong to no kind: a port, a retired note, a link to a note that is not in the vault. */
 const PORT_COLOR = "#0f766e", RETIRED_COLOR = "#dc2626", MISSING_COLOR = "#f43f5e";
 const typeColor = (type        , subtype = "")                     => SUBTYPE_COLOR[`${type}/${subtype}`] ?? TYPE_COLOR[type];
+/** D-0140: a canvas line is named by the relationship alone ("has part"), never by the element at its end, and is drawn in the colour of its kind. Obsidian's canvas keeps a colour, a label and the two arrow ends for a line; it has no dashed or thick lines. */
+const EDGE_COLOR                         = {
+  hasPart: "#2557d6", hasPort: "#0f766e", hasAction: "#15803d", hasState: "#6d28d9", hasFlow: "#64748b", specializes: "#8a8f98", satisfies: "#ea580c", verifies: "#a21caf", verifiedBy: "#a21caf",
+  implements: "#0ea5e9", implementedBy: "#0ea5e9", allocatedTo: "#ca8a04", performs: "#be185d", derives: "#b45309", derivedFrom: "#b45309", includes: "#65a30d", extendedBy: "#4d7c0f",
+};
+/** "hasPart" is shown as "has part". */
+const edgeName = (kind        )         => kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().slice(0, 60);
+const edgeLook = (kind        )                                    => { const c = EDGE_COLOR[kind]; return { label: edgeName(kind), ...(c ? { color: c } : {}) }; };
+
 /** A lighter mix of a hex color, for things shown only by inheritance. */
 const muted = (hex        )         => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const [r, g, b] = [1, 2, 3].map((k) => Math.round(parseInt(m[k] , 16) * 0.45 + 255 * 0.55)); return "#" + [r, g, b].map((v) => v .toString(16).padStart(2, "0")).join(""); };
 
@@ -1622,7 +1631,7 @@ function structureCanvas(ix            , root        , mode                   ) 
     for (const k of list) {
       const t = at.get(k.to); if (!t) continue;
       if (aboveSet.has(from) ? k.to !== root : (depth.get(k.to) ?? 0) <= (depth.get(from) ?? 0)) continue;       // above: only the line down to the note; below: only lines that go down a layer
-      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label: [k.e.kind, k.e.label].filter(Boolean).join(" ").slice(0, 60) });
+      edges.push({ id: `e${edges.length}${k.e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(k.e.ref)) : ""}`, fromNode: f.id, toNode: t.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(k.e.kind) });
     }
   }
   return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped, fileName: `Structure - ${safe(rn.title)} (${mode === "direct" ? "direct parts" : "complete BOM"}).canvas`, groups: 0, hidden: 0 };
@@ -1668,7 +1677,7 @@ function pickCanvas(ix            , paths          , opts                       
   if (opts.relations) for (const e of ix.edges) {
     if (!e.to || e.reverse) continue;
     const a = at.get(e.from), b = at.get(e.to); if (!a || !b || a === b) continue;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: a.id, toNode: b.id, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   }
   return { doc: { nodes, edges }, notes: use.length, unresolved: 0, capped: chosen.length > use.length, fileName: `Search - ${safe(opts.label || "picked notes")} [${hash(use.join("|"))}]`, groups, hidden: 0 };
 }
@@ -1778,7 +1787,7 @@ function addToCanvas(doc           , ix            , anchor               , path
     if (!e.to || e.reverse || !(isFresh.has(e.from) || isFresh.has(e.to))) continue;
     const f = at.get(e.from), t = at.get(e.to); if (!f || !t || f === t) continue;
     const id = freshId("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) }); lineIds.push(id);
+    out.edges.push({ id, fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
   }
   return { doc: out, added: fresh.length, present, lineIds };
 }
@@ -1816,10 +1825,10 @@ function addChildren(doc           , ix            , parent        , paths      
     const on = new Map(kids.map((p) => [p, find(cur, p) ]         ));
     for (const e of ix.edges) {
       if (e.kind !== "hasPart" || !e.to || e.reverse || e.from !== parent || !on.has(e.to)) continue;
-      const c = on.get(e.to) , label = [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+      const c = on.get(e.to) , label = edgeName(e.kind);
       if (cur.edges.some((x) => x.fromNode === pc.id && x.toNode === c.id && (x.label ?? "") === label)) continue;
       const id = nid("a") + (e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : "");
-      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", label }); lineIds.push(id);
+      cur.edges.push({ id, fromNode: pc.id, toNode: c.id, fromSide: "bottom", toSide: "top", toEnd: "arrow", ...edgeLook(e.kind) }); lineIds.push(id);
     }
   }
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
@@ -1952,7 +1961,7 @@ function refreshCanvas(doc           , ix            )                          
   }
   const drawn = (e            )          => new RegExp(`^[ea]\\d+(?:${EDGE_REF_SEP}.*)?$`).test(e.id);                          // ids the Workbench gives; a line the person drew has another id
   const pathOf = new Map(out.nodes.map((n) => [n.id, n.type === "group" ? null : cardNotePath(n)]         ));
-  const labelOf = (e                                 )         => [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60);
+  const labelOf = (e                                 )         => edgeName(e.kind);
   const real = ix.edges.filter((e) => e.to && !e.reverse && e.from !== e.to);
   let linesRemoved = 0, linesAdded = 0;
   const hadDrawn = out.edges.some(drawn);
@@ -1970,7 +1979,7 @@ function refreshCanvas(doc           , ix            )                          
       const label = labelOf(r);
       if (out.edges.some((e) => e.fromNode === f.id && e.toNode === t.id && (e.label ?? "") === label)) continue;
       while (taken.has("a" + k)) k++; taken.add("a" + k);
-      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", label }); linesAdded++;
+      out.edges.push({ id: "a" + k + (r.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(r.ref)) : ""), fromNode: f.id, toNode: t.id, ...sideOf(f, t), toEnd: "arrow", ...edgeLook(r.kind) }); linesAdded++;
     }
   }
   return { doc: out, redrawn, missing, linesAdded, linesRemoved };
@@ -2178,7 +2187,7 @@ function toCanvas(ix            , start        , profile         , spec         
   const edges               = [];
   const push = (from        , to        , e      )       => {
     const a = at.get(from), b = at.get(to); if (!a || !b) return;
-    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", label: [e.kind, e.label].filter(Boolean).join(" ").slice(0, 60) });
+    edges.push({ id: `e${edges.length}${e.ref ? EDGE_REF_SEP + encodeURIComponent(JSON.stringify(e.ref)) : ""}`, fromNode: from, toNode: to, ...sideOf(a, b), toEnd: "arrow", ...edgeLook(e.kind) });
   };
   for (const e of g.edges) push(id.get(e.from) , id.get(e.to ) , e);
   for (const x of ghosts) { const anchor = id.get(x.anchor) ; if (x.edge.reverse) push(x.key, anchor, x.edge); else push(anchor, x.key, x.edge); }
@@ -2650,7 +2659,7 @@ function plmRevDiff(ix            , prev      , cur      )             {
 
 
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
 const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
                                                  

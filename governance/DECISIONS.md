@@ -1637,3 +1637,15 @@ Rules: BOM-003 (changed).
 2. **Other interface changes.** The owner finds the interface not convenient but named no specific change yet; none is made on this decision.
 
 Rules: WKB-060 (new).
+
+## D-0140 — Each canvas view is a new canvas; lines named by relationship and coloured by kind
+
+2026-11-07 · Spencer · Accepted (owner, chat)
+
+1. **New canvas by default.** Each canvas view opens a new preview canvas and leaves the earlier ones open; the owner often draws several views before choosing the next step. Add to canvas adds to the open one (WKB-061; WKB-038 changed).
+2. **Line labels.** A line shows the relationship only: "has part", not "hasPart Screw" (WKB-062).
+3. **Colours.** Cards keep their fixed kind colours (D-0103). Lines get a fixed colour per relationship kind (WKB-063). Line style beyond colour is not offered by Obsidian's canvas; not verified against the installed version.
+4. **Still to do from the same request (not built):** panels open with a function dropdown in place of a row of buttons; a "select all" in each list of ticked items.
+5. **Not verified:** none of this was run in Obsidian; the build and unit tests pass only.
+
+Rules: WKB-061, WKB-062, WKB-063 (new); WKB-038 (changed).

@@ -363,7 +363,7 @@ ${body}
   assert.ok(!local.edges.some((e) => e.kind === "allocatedTo" && !e.to), "no orphaned allocation ghost");
   const canvas = toCanvas(local, "Req.md", V.PROFILES.find((p) => p.name === "Everything")!, { depth: 2, cap: 20 });
   const labels = canvas.doc.edges.map((e) => e.label ?? "");
-  assert.ok(labels.some((x) => x.includes("allocatedTo")), "canvas draws the allocation");
+  assert.ok(labels.some((x) => x.includes("allocated to")), "canvas draws the allocation");
   assert.ok(labels.some((x) => x.includes("verifies")), "canvas draws the verification");
 });
 
@@ -408,7 +408,7 @@ ${members}
   assert.equal(cc.doc.edges.length, 4, "Canvas includes distinct action, refinement and prerequisite links");
   assert.equal(cc.unresolved, 0, "No unsupported or imaginary endpoints");
   assert.ok(cc.doc.edges.some(e => e.label === "refines"), "need refinement gets an explicit canvas kind");
-  assert.ok(cc.doc.edges.some(e => e.label === "hasAction discoverModelElements"), "action usage is not a dependency");
+  assert.ok(cc.doc.edges.some(e => e.label === "has action"), "action usage is not a dependency");
 });
 
 test("a note is shown by name, else description, else heading, else file name, and the file name stays visible (MOD-171, D-0065)", () => {

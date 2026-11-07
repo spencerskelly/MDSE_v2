@@ -304,6 +304,15 @@ export const SUBTYPE_COLOR: Record<string, string> = { "Object/interface": "#1e3
 /** Colors that mean one thing and belong to no kind: a port, a retired note, a link to a note that is not in the vault. */
 export const PORT_COLOR = "#0f766e", RETIRED_COLOR = "#dc2626", MISSING_COLOR = "#f43f5e";
 export const typeColor = (type: string, subtype = ""): string | undefined => SUBTYPE_COLOR[`${type}/${subtype}`] ?? TYPE_COLOR[type];
+/** D-0140: a canvas line is named by the relationship alone ("has part"), never by the element at its end, and is drawn in the colour of its kind. Obsidian's canvas keeps a colour, a label and the two arrow ends for a line; it has no dashed or thick lines. */
+export const EDGE_COLOR: Record<string, string> = {
+  hasPart: "#2557d6", hasPort: "#0f766e", hasAction: "#15803d", hasState: "#6d28d9", hasFlow: "#64748b", specializes: "#8a8f98", satisfies: "#ea580c", verifies: "#a21caf", verifiedBy: "#a21caf",
+  implements: "#0ea5e9", implementedBy: "#0ea5e9", allocatedTo: "#ca8a04", performs: "#be185d", derives: "#b45309", derivedFrom: "#b45309", includes: "#65a30d", extendedBy: "#4d7c0f",
+};
+/** "hasPart" is shown as "has part". */
+export const edgeName = (kind: string): string => kind.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().slice(0, 60);
+export const edgeLook = (kind: string): { label: string; color?: string } => { const c = EDGE_COLOR[kind]; return { label: edgeName(kind), ...(c ? { color: c } : {}) }; };
+
 /** A lighter mix of a hex color, for things shown only by inheritance. */
 export const muted = (hex: string): string => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const [r, g, b] = [1, 2, 3].map((k) => Math.round(parseInt(m[k]!, 16) * 0.45 + 255 * 0.55)); return "#" + [r, g, b].map((v) => v!.toString(16).padStart(2, "0")).join(""); };
 
