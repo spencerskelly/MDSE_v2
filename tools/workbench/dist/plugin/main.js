@@ -907,6 +907,20 @@ function bom(ix            , root        , maxDepth = 12)                       
   return [...acc.values()].map((v) => ({ ...v, title: nm(ix, v.path, v.path) })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title) || a.unit.localeCompare(b.unit));
 }
 
+/** D-0141: the category of a part: its own `bomCategory`, else the one on the note of its part number (a revision note carries the part number). */
+function bomCategoryOfNote(ix            , path        )         {
+  const n = ix.notes.get(path); if (!n) return "";
+  const own = String(n.meta.bomCategory ?? "").trim(); if (own) return own;
+  const pn = String(n.meta.partNumber ?? "").trim(), base = pn ? ix.notes.get(ix.byName.get(pn.toLowerCase()) ?? "") : undefined;
+  return String(base?.meta.bomCategory ?? "").trim();
+}
+/** The parts under `root` (rolled up, as bom()) sorted into the categories they carry; parts with none are "(no category)". */
+function bomByCategory(ix            , root        , maxDepth = 12)                                                                                                                                                                   {
+  const rows = bom(ix, root, maxDepth).map((r) => ({ ...r, category: bomCategoryOfNote(ix, r.path) || "(no category)" }));
+  const m = new Map                (); for (const r of rows) m.set(r.category, (m.get(r.category) ?? 0) + 1);
+  return { categories: [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)), rows };
+}
+
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
                                                                                                                                
 function whereUsed(ix            , target        , maxDepth = 8)                  {
@@ -2652,7 +2666,7 @@ function plmRevDiff(ix            , prev      , cur      )             {
 
 
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const V = { qtyOf, structure, measuredOf, bom, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, structure, measuredOf, bom, bomCategoryOfNote, bomByCategory, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
 const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
                                                  
@@ -4140,7 +4154,7 @@ function mountWorkbench(root             , host       = {})      {
   const style = h("style"); style.textContent = STYLE;
   let ix                    = null, sel = "", tab = "dashboard", sidebar                       = "folders", query = "";
   let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        (); let tableF                = { sort: "id" }, relKinds           = [], relText = "", profile = "Structure", gspec                      = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
-  let tableGroup                         = "";
+  let tableGroup                         = ""; let catPick = "";
   const secs = new Map                 ();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis                     ).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
@@ -4371,6 +4385,18 @@ function mountWorkbench(root             , host       = {})      {
     const b = V.bom(ix , sel);
     if (b.length) pane.append(section("bom", "Parts list (rolled up)", [tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
       h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV")], { count: b.length, open: b.length < 60 }));
+    const bc = V.bomByCategory(ix , sel);
+    if (bc.categories.length > 1 || (bc.categories[0] && bc.categories[0].name !== "(no category)")) {
+      const pick = bc.categories.some((c) => c.name === catPick) ? catPick : "", rows = pick ? bc.rows.filter((x) => x.category === pick) : [];
+      const dd = h("select", { "aria-label": "Category", onchange: (e       ) => { catPick = (e.target                     ).value; draw(); } }, h("option", { value: "" }, "Choose a category…"), ...bc.categories.map((c) => h("option", { value: c.name, selected: c.name === pick }, `${c.name} (${c.count})`)));
+      const body          = [h("div", { class: "mut" }, "Every part under this note that carries the category, rolled up. Categories come from the BOM (BOM-062)."), dd];
+      if (pick) {
+        body.push(tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], rows.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])));
+        const bar = h("div", { class: "row" }, h("button", { onclick: () => download("parts-" + pick + ".csv", ["part,quantity,unit,depth", ...rows.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
+        if (host.makeCanvas) { const b = h("button", { title: "A new canvas of these parts" }, "Open as new canvas"); b.addEventListener("click", () => { b.setAttribute("disabled", ""); b.textContent = "Creating…"; host.makeCanvas (pickCanvas(ix , rows.map((x) => x.path), { relations: false, label: `${pick} in ${note(sel) .title}`, group: false })).then((m) => { canvasMsg = m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw()); }); bar.append(b); }
+        pane.append(section("bycat", "Parts by category", [...body, bar, canvasMsg ? h("span", { class: "mut" }, canvasMsg) : null], { count: rows.length, open: true }));
+      } else pane.append(section("bycat", "Parts by category", body, { count: bc.categories.length, open: true }));
+    }
     return pane;
   }
 

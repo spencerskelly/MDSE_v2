@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: a category the BOM names is used as written (new `CATEGORY_NEW` and `CATEGORY_WORDS` findings replace `CATEGORY_UNKNOWN`). Workbench Structure view: Parts by category. BOM-062 (changed), WKB-064, D-0141
 - Workbench: every canvas view opens a new preview canvas; canvas lines are labelled with the relationship only and coloured by relationship kind. WKB-061, WKB-062, WKB-063, WKB-038 (changed), D-0140
 - BOM import: the `Part Name` column is read as the description; blank-number manufacturer rows are no longer also listed as skipped; the line 1xx alternate rule is withdrawn and `ALT_BY_LINE` is gone. BOM-003, D-0138
 - Workbench shows a note by its description with the part number in smaller type beneath. WKB-060, D-0139

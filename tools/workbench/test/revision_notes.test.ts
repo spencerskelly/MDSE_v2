@@ -5,6 +5,7 @@ import { buildBom, parseDelimited } from "../../importer/src/bom.ts";
 import { buildIndex } from "../src/index.ts";
 import * as P from "../src/edit_plm.ts";
 import * as E from "../src/edit_eco.ts";
+import * as V from "../src/views.ts";
 import { classes } from "./harness.ts";
 const FLAT_HEAD = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2";
 const FLAT_ROWS = [
@@ -35,4 +36,13 @@ test("importer revision notes: usages and specializations resolve, the chain lis
   assert.ok(impact.some((x) => x.partNumber === "04270-001"), "04270-001 pins 04766 at -B99, so it is above the -B note");
   const c = [...ix.notes.values()].find((n) => n.name === "04766 -C")!;
   assert.equal(E.ecoImpact(ix, [c.path]).length, 0, "nothing pins -C99");
+});
+
+test("a revision note takes its category from its part number's note, and parts under an assembly can be listed by category (D-0141)", () => {
+  const ix = buildIndex(built(), { classes });
+  const rev = [...ix.notes.values()].find((n) => n.name === "01191 -0")!, pn = [...ix.notes.values()].find((n) => n.name === "01191")!;
+  assert.ok(String(pn.meta.bomCategory ?? "") !== "", "the part number note carries the category");
+  assert.equal(V.bomCategoryOfNote(ix, rev.path), String(pn.meta.bomCategory));
+  const top = [...ix.notes.values()].find((n) => n.name === "01141-002 -N")!, r = V.bomByCategory(ix, top.path);
+  assert.ok(r.rows.length > 0 && r.categories.reduce((a, c) => a + c.count, 0) === r.rows.length, "every part is in exactly one category");
 });

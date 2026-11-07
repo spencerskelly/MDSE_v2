@@ -1649,3 +1649,14 @@ Rules: WKB-060 (new).
 5. **Not verified:** none of this was run in Obsidian; the build and unit tests pass only.
 
 Rules: WKB-061, WKB-062, WKB-063 (new); WKB-038 (changed).
+
+## D-0141 — The BOM's own categories are used; parts can be viewed by category
+
+2026-11-07 · Spencer · Accepted (owner, chat)
+
+1. **Categories.** A category the BOM names is used as written, even when the category table does not have it (BOM-062 changed). Words common in each new category are listed in the Findings note so keywords for placing parts with no category can be chosen later (BOM-063).
+2. **View.** A way to look at all parts of one category under an assembly: all cable assemblies in the DVS, all panels in the MVS, all PCBAs in the power station. Built as the Structure view's Parts by category section (WKB-064).
+3. **Not decided:** document-like categories (Schematic, Gerber, Drawing, Manual, Firmware, EE BOM, Requirements, Document) are still imported as parts (PLM-02 open). The category table in the vault is not yet extended with the new names.
+4. **Not verified:** the new section was not opened in Obsidian; the view lists the parts of one assembly's tree, not a whole vault.
+
+Rules: BOM-062 (changed); WKB-064 (new).

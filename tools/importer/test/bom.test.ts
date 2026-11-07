@@ -461,10 +461,11 @@ test("a category column, the BOM-063 keywords and the source column set the fold
   const g = parseDelimited([H, row("BRK-1", "BRKT 2MM", "Buy", ""), row("ENC-1", "ENCL TOP", "make", ""), row("SCH-1", "SCH MAIN", "buy", ""), row("FW-1", "FIRMWARE IMAGE", "buy", ""), row("CAT-1", "THINGAMAJIG", "buy", "fasteners"), row("CAT-2", "THINGAMAJIG", "Fab", "Nonsense")].join("\n"));
   const r = buildBom(g, baseOpts), f = (pn: string) => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!;
   const prop = (pn: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(f(pn).content)?.[1] ?? "";
-  assert.deepEqual(["BRK-1", "ENC-1", "SCH-1", "FW-1", "CAT-1", "CAT-2"].map((pn) => prop(pn, "bomCategory")), ["Brackets", "Enclosures and mechanical", "Documents", "Uncategorized", "Fasteners", "Uncategorized"]);
+  assert.deepEqual(["BRK-1", "ENC-1", "SCH-1", "FW-1", "CAT-1", "CAT-2"].map((pn) => prop(pn, "bomCategory")), ["Brackets", "Enclosures and mechanical", "Documents", "Uncategorized", "Fasteners", "Nonsense"]);
   assert.equal(f("CAT-1").path, "BOM/Parts/Part/Fasteners/CAT-1.md", "a category column outranks the words and ignores case");
   assert.deepEqual(["BRK-1", "ENC-1", "CAT-2"].map((pn) => prop(pn, "makeBuy")), ["buy", "make", "other"], "BOM-061: Buy is read as buy; an unknown source is other");
-  assert.ok(r.findings.some((x) => x.code === "CATEGORY_UNKNOWN" && /Nonsense/.test(x.message)), "a category not in the list is reported and the words decide");
+  assert.equal(f("CAT-2").path, "BOM/Parts/Part/Nonsense/CAT-2.md", "D-0141: a category the BOM names is used as written");
+  assert.ok(r.findings.some((x) => x.code === "CATEGORY_NEW" && /Nonsense/.test(x.message)), "a category not in the list is reported");
   assert.ok(r.findings.some((x) => x.code === "MAKEBUY_OTHER" && /"Fab" 1/.test(x.message)), "the other source values are reported");
 });
 

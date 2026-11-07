@@ -92,7 +92,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   const style = h("style"); style.textContent = STYLE;
   let ix: ModelIndex | null = null, sel = "", tab = "dashboard", sidebar: "folders" | "search" = "folders", query = "";
   let pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>(); let tableF: V.TableFilter = { sort: "id" }, relKinds: string[] = [], relText = "", profile = "Structure", gspec: Partial<V.ViewSpec> = {}, loading = "", hasPreview = false, canvasMsg = "", reviewCat = "", reviewSev = "";
-  let tableGroup: "" | "type" | "folder" = "";
+  let tableGroup: "" | "type" | "folder" = ""; let catPick = "";
   const secs = new Map<string, boolean>();                       // which sections are open, kept across redraws
   const wrap = h("div", { class: "mdw" + (typeof (globalThis as { app?: unknown }).app !== "undefined" ? " obs" : "") });
   root.replaceChildren(style, wrap);
@@ -323,6 +323,18 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const b = V.bom(ix!, sel);
     if (b.length) pane.append(section("bom", "Parts list (rolled up)", [tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
       h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV")], { count: b.length, open: b.length < 60 }));
+    const bc = V.bomByCategory(ix!, sel);
+    if (bc.categories.length > 1 || (bc.categories[0] && bc.categories[0].name !== "(no category)")) {
+      const pick = bc.categories.some((c) => c.name === catPick) ? catPick : "", rows = pick ? bc.rows.filter((x) => x.category === pick) : [];
+      const dd = h("select", { "aria-label": "Category", onchange: (e: Event) => { catPick = (e.target as HTMLSelectElement).value; draw(); } }, h("option", { value: "" }, "Choose a category…"), ...bc.categories.map((c) => h("option", { value: c.name, selected: c.name === pick }, `${c.name} (${c.count})`)));
+      const body: Child[] = [h("div", { class: "mut" }, "Every part under this note that carries the category, rolled up. Categories come from the BOM (BOM-062)."), dd];
+      if (pick) {
+        body.push(tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], rows.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])));
+        const bar = h("div", { class: "row" }, h("button", { onclick: () => download("parts-" + pick + ".csv", ["part,quantity,unit,depth", ...rows.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV"));
+        if (host.makeCanvas) { const b = h("button", { title: "A new canvas of these parts" }, "Open as new canvas"); b.addEventListener("click", () => { b.setAttribute("disabled", ""); b.textContent = "Creating…"; host.makeCanvas!(pickCanvas(ix!, rows.map((x) => x.path), { relations: false, label: `${pick} in ${note(sel)!.title}`, group: false })).then((m) => { canvasMsg = m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); }); bar.append(b); }
+        pane.append(section("bycat", "Parts by category", [...body, bar, canvasMsg ? h("span", { class: "mut" }, canvasMsg) : null], { count: rows.length, open: true }));
+      } else pane.append(section("bycat", "Parts by category", body, { count: bc.categories.length, open: true }));
+    }
     return pane;
   }
 

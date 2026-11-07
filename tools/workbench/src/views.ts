@@ -71,6 +71,20 @@ export function bom(ix: ModelIndex, root: string, maxDepth = 12): Array<{ path: 
   return [...acc.values()].map((v) => ({ ...v, title: nm(ix, v.path, v.path) })).sort((a, b) => a.depth - b.depth || a.title.localeCompare(b.title) || a.unit.localeCompare(b.unit));
 }
 
+/** D-0141: the category of a part: its own `bomCategory`, else the one on the note of its part number (a revision note carries the part number). */
+export function bomCategoryOfNote(ix: ModelIndex, path: string): string {
+  const n = ix.notes.get(path); if (!n) return "";
+  const own = String(n.meta.bomCategory ?? "").trim(); if (own) return own;
+  const pn = String(n.meta.partNumber ?? "").trim(), base = pn ? ix.notes.get(ix.byName.get(pn.toLowerCase()) ?? "") : undefined;
+  return String(base?.meta.bomCategory ?? "").trim();
+}
+/** The parts under `root` (rolled up, as bom()) sorted into the categories they carry; parts with none are "(no category)". */
+export function bomByCategory(ix: ModelIndex, root: string, maxDepth = 12): { categories: Array<{ name: string; count: number }>; rows: Array<{ path: string; title: string; qty: number; depth: number; unit: string; category: string }> } {
+  const rows = bom(ix, root, maxDepth).map((r) => ({ ...r, category: bomCategoryOfNote(ix, r.path) || "(no category)" }));
+  const m = new Map<string, number>(); for (const r of rows) m.set(r.category, (m.get(r.category) ?? 0) + 1);
+  return { categories: [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)), rows };
+}
+
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
 export interface WhereUsedResult { tree: TreeNode; roots: string[]; references: Array<{ path: string; kind: string; label: string }> }
 export function whereUsed(ix: ModelIndex, target: string, maxDepth = 8): WhereUsedResult {

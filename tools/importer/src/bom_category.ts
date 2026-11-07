@@ -46,12 +46,20 @@ export const bomMakeBuyOf = (source: string): MakeBuy => { const t = source.trim
 /** BOM-042: final is product, sub is assembly, part and unused are part. */
 export const bomLevelOf = (role: BomRole): BomLevel => (role === "final" ? "product" : role === "sub" ? "assembly" : "part");
 const LEVEL_FOLDER: Record<BomLevel, string> = { product: "Product", assembly: "Assembly", part: "Part" };
-/** BOM-062: the category a BOM file names, as the table spells it (case ignored), or null when it is not in the table. "Uncategorized" is accepted. */
-export function bomNamedCategory(named: string, rules: CategoryRule[]): string | null {
-  const t = named.trim().toLowerCase(); if (!t) return null;
-  if (t === NO_CATEGORY.toLowerCase()) return NO_CATEGORY;
-  return rules.find((r) => r.category.toLowerCase() === t)?.category ?? null;
+/** BOM-062 (D-0141): the category a BOM file names. The table's spelling when it has the category (case ignored); otherwise the name as written, trimmed and made safe for a folder name, with the first spelling met kept for every later case variant (`seen`). Empty gives null. "Uncategorized" is accepted. */
+export function bomNamedCategory(named: string, rules: CategoryRule[], seen?: Map<string, string>): string | null {
+  const t = named.trim().replace(/\s+/g, " "); if (!t) return null;
+  const k = t.toLowerCase();
+  if (k === NO_CATEGORY.toLowerCase()) return NO_CATEGORY;
+  const inTable = rules.find((r) => r.category.toLowerCase() === k)?.category;
+  if (inTable) return inTable;
+  const safe = t.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60); if (!safe) return null;
+  if (!seen) return safe;
+  if (!seen.has(k)) seen.set(k, safe);
+  return seen.get(k)!;
 }
+/** True when the category is one the table knows (so it needs no new-category notice). */
+export const bomCategoryInTable = (named: string, rules: CategoryRule[]): boolean => { const k = named.trim().toLowerCase(); return k === NO_CATEGORY.toLowerCase() || rules.some((r) => r.category.toLowerCase() === k); };
 /** The folder of a part under `dir` (default BOM): level, then category (BOM-041). */
 export const bomPartFolder = (dir: string, level: BomLevel, category: string): string => `${dir}/Parts/${LEVEL_FOLDER[level]}/${category}`;
 

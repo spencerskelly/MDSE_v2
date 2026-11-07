@@ -10,7 +10,7 @@ import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
-import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
+import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomCategoryInTable, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -290,6 +290,7 @@ function bomUsageDiffs(a: Usage, b: Usage, dates: boolean): Array<[string, strin
 const bomUsageDiff = (a: Usage, b: Usage, dates: boolean): string => bomUsageDiffs(a, b, dates).map(([n, x, y]) => `${n} ${JSON.stringify(x)} kept, ${JSON.stringify(y)} other`).join("; ");
 const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.unit.toLowerCase()) && /^\d+$/.test(u.amount) && +u.amount > 0 ? (+u.amount === 1 ? "1" : u.amount) : u.amount ? u.amount + " " + u.unit : "1"}`.trim();
 
+const STOP = new Set(["the","and","for","with","assy","asm","cec","dvs","pwr","stn"]);
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
   const revMode = o.revisionNotes === true && !o.update, inventory = bomRevisionInventory(parsed);
@@ -300,7 +301,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   if (parsedRules && !parsedRules.rules) findings.push({ level: "warn", code: "CATEGORY_RULES_BAD", message: `${CATEGORY_RULES_PATH} was not used, so the built-in categories apply: ${parsedRules.problems.slice(0, 3).join("; ")}${parsedRules.problems.length > 3 ? `; and ${parsedRules.problems.length - 3} more` : ""}.` });
   const catOf = (d: string): string => bomCategoryOf(d, catRules);
   // BOM-062: the file's `category` column wins when it names a category of the table; otherwise the words decide.
-  const catFor = (l: { name: string; category?: string }): string => bomNamedCategory(l.category ?? "", catRules) ?? catOf(l.name);
+  const seenCat = new Map<string, string>();
+  const catFor = (l: { name: string; category?: string }): string => bomNamedCategory(l.category ?? "", catRules, seenCat) ?? catOf(l.name);
   const unknownUnits = new Map<string, number>();
   for (const u of parsed.usages) {
     const un = bomUnit(u.unit); if (!un.known) unknownUnits.set(un.unit, (unknownUnits.get(un.unit) ?? 0) + 1);
@@ -585,16 +587,17 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     findings.push({ level: "info", code: "EA_JOIN", message: `EA to BOM: ${eaMatched} of ${partPns.length} BOM part numbers appear in exactly one EA element name, alias or PN tag; ${partPns.length - eaMatched} are BOM-only by that test. The EA-side key for a part number is not decided, so this is a report, not a link.` });
   }
   {   // D-0072: how the new parts were sorted, so the rules can be improved from the unmatched count
-    const cc = new Map<string, number>(), badCat = new Map<string, number>(), otherMb = new Map<string, number>(); let nParts = 0;
+    const cc = new Map<string, number>(), badCat = new Map<string, number>(), catWords = new Map<string, Map<string, number>>(), otherMb = new Map<string, number>(); let nParts = 0;
     for (const pn of partPns) {
       if (existingBy.has(pn) && !o.update) continue;
       const l = latest.get(pn) ?? { name: "", category: "", source: "" }, c = catFor(l), named = (l.category ?? "").trim(), src = (l.source ?? "").trim(); cc.set(c, (cc.get(c) ?? 0) + 1); nParts++;
-      if (named && !bomNamedCategory(named, catRules)) badCat.set(named, (badCat.get(named) ?? 0) + 1);
+      if (named && !bomCategoryInTable(named, catRules)) { badCat.set(c, (badCat.get(c) ?? 0) + 1); const w = catWords.get(c) ?? new Map<string, number>(); for (const x of new Set(l.name.toLowerCase().split(/[^a-z]+/).filter((y) => y.length > 2 && !STOP.has(y)))) w.set(x, (w.get(x) ?? 0) + 1); catWords.set(c, w); }
       if (bomMakeBuyOf(src) === "other") { const k = src || "(blank)"; otherMb.set(k, (otherMb.get(k) ?? 0) + 1); }   // BOM-061
     }
-    if (badCat.size) findings.push({ level: "warn", code: "CATEGORY_UNKNOWN", message: `${[...badCat.values()].reduce((a, b) => a + b, 0)} part(s) name a category that is not in the category list, so the description words decided (BOM-062): ${[...badCat].map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")}.` });
+    if (badCat.size) findings.push({ level: "info", code: "CATEGORY_NEW", message: `${[...badCat.values()].reduce((a, b) => a + b, 0)} part(s) are sorted by a category the BOM names that is not in the category list; it is used as written (BOM-062, D-0141): ${[...badCat].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")}.` });
+    if (catWords.size) findings.push({ level: "info", code: "CATEGORY_WORDS", message: `Description words common in each new category, to help choose keywords for placing parts without a category (BOM-063): ${[...catWords].map(([k, w]) => `${k}: ${[...w].filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([x, n]) => `${x} ${n}`).join(", ") || "none repeated"}`).join("; ")}.` });
     if (otherMb.size) findings.push({ level: "info", code: "MAKEBUY_OTHER", message: `makeBuy is "other" for ${[...otherMb.values()].reduce((a, b) => a + b, 0)} part(s); the source values read were: ${[...otherMb].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")} (BOM-061).` });
-    if (nParts) findings.push({ level: "info", code: "CATEGORIES", message: `${nParts} part note(s) sorted by description words: ${[...cc].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. "${NO_CATEGORY}" are the parts no rule matched (BOM-041).` });
+    if (nParts) findings.push({ level: "info", code: "CATEGORIES", message: `${nParts} part note(s) by category: ${[...cc].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${k} ${v}`).join("; ")}. "${NO_CATEGORY}" are the parts with no category and no matching word rule (BOM-041).` });
   }
   const existingN = new Set([...partPns, ...[...drawingPns].filter((x) => latest.has(x))].filter((pn) => existingBy.has(pn))).size;
   if (otherRev.size && !o.update) findings.push({ level: "info", code: "EXISTING_OTHER_REV", message: `${otherRev.size} assembl${otherRev.size === 1 ? "y is" : "ies are"} already in the vault at a different revision than this file's latest; their lines were not compared.${HINT_UPDATE}` });

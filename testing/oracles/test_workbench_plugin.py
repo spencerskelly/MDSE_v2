@@ -29,7 +29,7 @@ class FuzzySuggestModal { constructor(app) {} setPlaceholder() {} open() { windo
 class Notice { constructor(m) { if (typeof m === 'string') window.__notices.push(m); else { window.__notices.push(m.textContent); const d = document.createElement('div'); d.className = 'fake-notice'; d.append(m); document.body.append(d); } } }
 const isDir = (p) => p in window.__dirs;
 const exists = (p) => p in window.__notes || p in window.__files || isDir(p);
-const fileOf = (path) => isDir(path) ? { path, children: [] } : { path, extension: path.split('.').pop() };
+const fileOf = (path) => isDir(path) ? { path, children: Object.keys(window.__files).filter((f) => f.slice(0, f.lastIndexOf('/')) === path).map((f) => ({ path: f, name: f.split('/').pop(), extension: f.split('.').pop() })) } : { path, extension: path.split('.').pop() };
 const read = (f) => window.__notes[f.path] ?? window.__files[f.path];
 const mk = (kind) => ({ kind, view: null, async setViewState(s) { this.view = views[s.type](this); this.type = s.type; if (this.view.setState) await this.view.setState(s.state || {}, {}); await this.view.onOpen(); }, async openFile(f) { window.__opened.push([kind, f.path]); } });
 const leaves = { right: [], main: [] };
@@ -52,7 +52,7 @@ window.__app = {
     rootSplit: {}, getMostRecentLeaf: () => rootLeaf, setActiveLeaf() {},
     getLeaf: () => { const l = mk('main'); leaves.main.push(l); return l; },
     getRightLeaf: () => { const l = mk('right'); leaves.right.push(l); return l; },
-    getLeavesOfType: (t) => t === 'canvas' ? [] : [...leaves.right, ...leaves.main].filter((l) => l.type === t),
+    getLeavesOfType: (t) => t === 'canvas' ? window.__opened.filter((o) => o[1].endsWith('.canvas') && o[1] in window.__files).map((o) => ({ view: { file: { path: o[1] }, getViewType: () => 'canvas', containerEl: { isConnected: true } } })) : [...leaves.right, ...leaves.main].filter((l) => l.type === t),
     detachLeavesOfType: (t) => { window.__detached = t; }, revealLeaf() {}, onLayoutReady: (cb) => cb(),
     on: (ev, fn) => { if (ev === 'file-menu') window.__menu++; window.__ev[ev] = fn; return {}; },
     openLinkText: async () => {}, getActiveFile: () => window.__active ? fileOf(window.__active) : null,
@@ -74,7 +74,7 @@ class WorkbenchPlugin(unittest.TestCase):
         ISSUE = "10_Model/Issue Bad pin.md"
         notes[ISSUE] = "---\ntype: Issue\nid: ISS-1\nuid: uISS1\nstatus: Open\n---\n# Bad pin\n\n> [!flagNote] Check pin\n> Source: review.\n"
         errors = []
-        PREVIEW = "99_System/22_Views/Workbench Preview.canvas"
+        PREVIEW = "99_System/22_Views/Workbench Preview 1.canvas"
         with sync_playwright() as pw:
             b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
             pg = b.new_page(viewport={"width": 1300, "height": 850})
@@ -122,11 +122,13 @@ class WorkbenchPlugin(unittest.TestCase):
             # a table opened after the index was built must be handed it, not sit on "Reading notes…"
             pg.wait_for_function("() => { const v = window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view; return v.contentEl.querySelector('table') && !/Reading notes/.test(v.contentEl.textContent); }")
 
-            # canvas: one scratch file in the main window, overwritten each time
+            # canvas: each view is a new scratch file in the main window (D-0140)
             pg.click("button:has-text('Canvas in main window')")
             pg.wait_for_selector("text=/not saved/")
             pg.click("button:has-text('Canvas in main window')")
-            self.assertEqual([k for k in pg.evaluate("Object.keys(window.__files)")], [PREVIEW])
+            try: pg.wait_for_function("() => Object.keys(window.__files).length === 2", timeout=3000)
+            except Exception: print("FILES", pg.evaluate("Object.keys(window.__files)"), pg.evaluate("window.__notices"))
+            self.assertEqual(sorted(pg.evaluate("Object.keys(window.__files)")), [PREVIEW, PREVIEW.replace("1.canvas", "2.canvas")])
             doc = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + PCE_PATH[:-3] + "|") for n in doc["nodes"]))
             self.assertTrue(all(w[0] == "main" for w in pg.evaluate("window.__opened")), "never opened in the sidebar")
@@ -138,17 +140,18 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(choices[0], "99_System/23_Saved_Views")
             self.assertNotIn("99_System/22_Views", choices)
             pg.evaluate("window.__modal.close(); window.__modal.onChooseItem('00 Product Definition/MHE')")
-            pg.wait_for_function("Object.keys(window.__files).length === 2")
+            pg.wait_for_function("Object.keys(window.__files).length >= 2")
+            n_files = pg.evaluate("Object.keys(window.__files).length")
             pg.evaluate("(window.__sv = window.__plugin.saveWithPicker(), 0)")
             pg.evaluate("window.__modal.close(); window.__modal.onChooseItem('00 Product Definition/MHE')")
-            pg.wait_for_function("Object.keys(window.__files).length === 3")
+            pg.wait_for_function("n => Object.keys(window.__files).length > n", arg=n_files)
             self.assertTrue(any(k.endswith("(2).canvas") for k in pg.evaluate("Object.keys(window.__files)")))
             self.assertEqual(pg.evaluate("window.__data.lastFolder"), "00 Product Definition/MHE")
             # cancel: nothing written
             pg.evaluate("(window.__sv = window.__plugin.saveWithPicker(), 0)")
             pg.evaluate("window.__modal.close()")
             pg.wait_for_timeout(300)
-            self.assertEqual(pg.evaluate("Object.keys(window.__files).length"), 3)
+            self.assertEqual(pg.evaluate("Object.keys(window.__files).length"), n_files + 1)
 
             # Review actions: validated, undoable, and only on notes in the index
             old = notes[ISSUE]
@@ -277,7 +280,7 @@ class WorkbenchPlugin(unittest.TestCase):
     def test_a_line_drawn_on_the_canvas_becomes_a_relationship_through_the_dropdown(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
-        PREVIEW = "99_System/22_Views/Workbench Preview.canvas"
+        PREVIEW = "99_System/22_Views/Workbench Preview 1.canvas"
         A, B = "10_Model/Controller.md", "10_Model/Power Module.md"
         with sync_playwright() as pw:
             b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
@@ -348,6 +351,7 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertRegex(pg.inner_text("body"), r"[1-9]\d* ticked")
             pg.click("button:has-text('New canvas')")
             pg.wait_for_selector("text=/Canvas preview opened/")
+            PREVIEW = PREVIEW.replace("1.canvas", "2.canvas")   # D-0140: a new view is a new canvas
             picked = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertTrue(any(n["type"] == "text" and n["text"].startswith("**[[" + A[:-3] + "|") for n in picked["nodes"]), "the ticked note is on the canvas")
             self.assertTrue(any(n["type"] == "group" and n.get("label") for n in picked["nodes"]), "boxed by type")
@@ -356,7 +360,8 @@ class WorkbenchPlugin(unittest.TestCase):
             # a card chosen on the canvas becomes the selected note, and its related notes can be added to the canvas (D-0082)
             T, title = pg.evaluate("""() => { const ix = window.__plugin.ix, e = ix.edges.find((x) => x.to && !x.reverse && x.from !== x.to); return [e.to, ix.notes.get(e.to).title]; }""")
             pg.evaluate("p => window.__plugin.openPickCanvas([p], '', false, false, true)", T)
-            pg.wait_for_function("p => JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas']).nodes.length === 1")
+            PREVIEW = PREVIEW.replace("2.canvas", "3.canvas")
+            pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 1", arg=PREVIEW)
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
             pg.wait_for_selector(f"header >> text={title}")
             pg.click("nav.tbar button[aria-label=\"Note\"]")
@@ -394,22 +399,20 @@ class WorkbenchPlugin(unittest.TestCase):
                 pg.click("button:has-text('children to canvas')")
                 pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
             # a canvas of this view (D-0088): complete BOM and direct parts
-            pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
             for label in ("Canvas: complete BOM", "Canvas: direct parts"):
                 pg.click(f"button:has-text('{label}')")
-                pg.wait_for_function("() => { const t = window.__files['99_System/22_Views/Workbench Preview.canvas']; return !!t && JSON.parse(t).nodes.length > 0; }", timeout=4000)
-                doc = pg.evaluate("JSON.parse(window.__files['99_System/22_Views/Workbench Preview.canvas'])")
+                pg.wait_for_function("() => Object.keys(window.__files).some((x) => /Workbench Preview \\d+\\.canvas$/.test(x))", timeout=4000)
+                doc = pg.evaluate("() => { const k = Object.keys(window.__files).filter((x) => /Workbench Preview \\d+\\.canvas$/.test(x)).sort((a, b) => parseInt(a.match(/(\\d+)\\.canvas/)[1]) - parseInt(b.match(/(\\d+)\\.canvas/)[1])); return JSON.parse(window.__files[k[k.length - 1]]); }")
                 self.assertTrue(all(e["fromSide"] == "bottom" and e["toSide"] == "top" for e in doc["edges"]), label)
-                pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''")
                 pg.wait_for_selector("button:has-text('Canvas: direct parts')")
             # the canvas open in the main window is the one added to, and nothing on it moves (D-0089)
             pg.evaluate("""() => { window.__files['Mine.canvas'] = JSON.stringify({ nodes: [{ id: 'memo', type: 'text', x: 5, y: 7, width: 100, height: 50, text: 'mine' }], edges: [] });
-              window.__files['99_System/22_Views/Workbench Preview.canvas'] = ''; window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', file: { path: 'Mine.canvas' }, canvas: { selection: new Set() }, save: async () => {} } }; }""")
+              window.__files['99_System/22_Views/Workbench Preview 1.canvas'] = ''; window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', file: { path: 'Mine.canvas' }, canvas: { selection: new Set() }, save: async () => {} } }; }""")
             pg.click("button:has-text('shown to canvas')")
             pg.wait_for_function("() => JSON.parse(window.__files['Mine.canvas']).nodes.length > 1", timeout=4000)
             mine = pg.evaluate("JSON.parse(window.__files['Mine.canvas'])")
             self.assertEqual([n for n in mine["nodes"] if n["id"] == "memo"][0]["x"], 5)
-            self.assertEqual(pg.evaluate("window.__files['99_System/22_Views/Workbench Preview.canvas']"), "", "the preview was not touched")
+            self.assertEqual(pg.evaluate("window.__files['99_System/22_Views/Workbench Preview 1.canvas']"), "", "the preview was not touched")
             # auto-layout is a separate action
             pg.evaluate("""() => { const d = JSON.parse(window.__files['Mine.canvas']); const keep = d.nodes.filter((n) => n.id !== 'memo'), other = [...window.__plugin.ix.notes.keys()].find((k) => !keep.some((n) => n.text.includes(k.slice(0, -3))));
               d.nodes.push({ id: 'pile', type: 'text', x: keep[0].x, y: keep[0].y, width: 280, height: 90, text: '**[[' + other.slice(0, -3) + '|x]]**' }); window.__files['Mine.canvas'] = JSON.stringify(d); }""")
