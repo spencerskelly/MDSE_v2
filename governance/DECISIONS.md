@@ -1682,3 +1682,13 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 1. **Built.** The vertical column of icon buttons is replaced by one grouped drop-down of the views (WKB-033 changed); the Edit view's eight task buttons are one drop-down.
 2. **All and None** are on every list of ticked choices in a pane (WKB-065).
 3. **Interpretation.** "A dozen functions as buttons" was read as both the toolbar and the Edit tasks; the owner can narrow it.
+
+## D-0144 — The category table uses the owner's categories
+
+2026-11-07 · Spencer · Accepted (owner, chat: "Panel, Lid, Door can merge into ME Part")
+
+1. **Categories.** The built-in table (BOM-063) and the seed `99_System/06_Config/BOM Categories.md` use the categories of the Power Station BOM, with keywords chosen from how the owner placed those parts. The earlier word categories (Cables and harnesses, Fasteners, Connectors and terminals and others) are gone.
+2. **Merged.** Panel, Lid and Door are ME Part. A table line `- ME Part also: Panel, Lid, Door` records other names for a category; a BOM that names one of them is filed under the main name.
+3. **Placement.** The word nearest the start of the description decides (SCREW … CONE WASHER is a screw); the table's order breaks a tie. The two tiers are gone.
+4. **Not merged yet.** PCB and PCBA, Cable and Cable ASM, Product, Product ASM and Product Shipped, and the document-like categories remain as the owner wrote them. The assembly categories can only come from a category column.
+5. **Existing vaults.** The vault's own table is never overwritten (BOM-044): replace its content to use the new words. Notes already imported keep their folders.
