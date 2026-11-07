@@ -1,3 +1,4 @@
+import re
 """Drive the single-file HTML importer in a real Chromium: no network, QEAX analysis, vault check."""
 import pathlib, shutil, sqlite3, tempfile, unittest, zipfile, io
 
@@ -185,7 +186,7 @@ class FullVaultBuild(unittest.TestCase):
             self.assertIn("mdse-bootstrap", z.read(".obsidian/community-plugins.json").decode())
             self.assertIn("99_System/05_Templates", z.read(".obsidian/plugins/templater-obsidian/data.json").decode())
             parts = [n for n in names if n.startswith("BOM/Parts/")]
-            self.assertEqual(len(parts), 3)
+            self.assertEqual(len(parts), 6, "3 part numbers and a note for each CL1 (D-0135)")
             self.assertTrue(any(n.startswith("99_System/11_Import/BOM Findings") for n in names))
             self.assertIn("Trust author and enable plugins", pg.inner_text("#trustBody"))
             b.close()
@@ -222,9 +223,9 @@ class BomUpdateBrowser(unittest.TestCase):
             self.assertIn("Part description changed", out); self.assertIn("Assembly line changed", out)
             self.assertTrue(pg.is_disabled("#bomApply"), "nothing is ticked by default")
             pg.check("input.cat[data-cat=DESCRIPTION]")
-            self.assertFalse(pg.is_disabled("#bomApply")); self.assertIn("Apply 1 ticked", pg.inner_text("#bomApply"))
+            self.assertFalse(pg.is_disabled("#bomApply")); self.assertRegex(pg.inner_text("#bomApply"), r"Apply \d+ ticked")
             pg.click("#bomApply"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Applied')")
-            note = pg.evaluate("window.__readPart('01141-002')")
+            note = pg.evaluate("window.__readPart('01141-002 -N')")
             self.assertIn("description: CABLE ASSEMBLY", note); self.assertIn("importSource: bom2.tsv", note)
             self.assertIn("[2]", note, "the quantity change was not ticked, so it is untouched")
             names = pg.evaluate("(async () => { const r = await navigator.storage.getDirectory(); const d = await (await r.getDirectoryHandle('99_System')).getDirectoryHandle('11_Import'); const o = []; for await (const [n] of d.entries()) o.push(n); return o; })()")
@@ -288,21 +289,22 @@ class BomUpdateBrowser(unittest.TestCase):
             pg.click("#bomScan"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Nothing has been written')")
             self.assertIn("Additions are ticked", pg.inner_text("#bomUpdStatus"))
             self.assertTrue(pg.is_checked("input.cat[data-cat=NEW_PART]"), "a new part is an addition")
+            self.assertTrue(pg.is_checked("input.cat[data-cat=NEW_REVISION]"), "the new part's revision note is an addition (D-0137)")
             self.assertTrue(pg.is_checked("input.cat[data-cat=LINE_ADDED]"), "a new line is an addition")
             self.assertFalse(pg.is_checked("input.cat[data-cat=LINE_CHANGED]"), "a changed quantity is not")
             self.assertFalse(pg.is_checked("input.it[data-cat=LINE_CHANGED]"))
-            self.assertFalse(pg.is_disabled("#bomApply")); self.assertIn("Apply 2 ticked", pg.inner_text("#bomApply"))
+            self.assertFalse(pg.is_disabled("#bomApply")); self.assertIn("Apply 3 ticked", pg.inner_text("#bomApply"))
             # D-0062: the type boxes tick every item of a type
             self.assertTrue(pg.is_checked("input.kind[data-kind=add]")); self.assertFalse(pg.is_checked("input.kind[data-kind=change]"))
             pg.check("input.kind[data-kind=change]")
-            self.assertTrue(pg.is_checked("input.it[data-cat=LINE_CHANGED]"), "the Changes box ticks the changed quantity"); self.assertIn("Apply 3 ticked", pg.inner_text("#bomApply"))
+            self.assertTrue(pg.is_checked("input.it[data-cat=LINE_CHANGED]"), "the Changes box ticks the changed quantity"); self.assertIn("Apply 4 ticked", pg.inner_text("#bomApply"))
             pg.uncheck("input.kind[data-kind=change]")
-            self.assertFalse(pg.is_checked("input.it[data-cat=LINE_CHANGED]")); self.assertIn("Apply 2 ticked", pg.inner_text("#bomApply"))
+            self.assertFalse(pg.is_checked("input.it[data-cat=LINE_CHANGED]")); self.assertIn("Apply 3 ticked", pg.inner_text("#bomApply"))
             pg.uncheck("input.kind[data-kind=add]")
             self.assertTrue(pg.is_disabled("#bomApply"), "with every type unticked nothing is selected")
             pg.check("input.kind[data-kind=add]")
             pg.click("#bomApply"); pg.wait_for_function("document.getElementById('bomUpdStatus').textContent.includes('Applied')")
-            note = pg.evaluate("window.__readPart('01141-002')")
+            note = pg.evaluate("window.__readPart('01141-002 -N')")
             self.assertIn("09999", note, "the new line was written")
             self.assertIn("[2]", note, "the quantity change was not ticked, so it is untouched")
             b.close()
@@ -347,10 +349,10 @@ class RedlineXlsxInBrowser(unittest.TestCase):
             with pg.expect_download() as dl:
                 pg.click("#genNew")
             z = zipfile.ZipFile(dl.value.path())
-            top = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and n.endswith("/5913538.md"))][0]
+            top = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and re.search(r"/5913538 [^/]+\.md$", n))][0]
             self.assertIn("P_6100148", top); self.assertIn("was 06991 before this release", top); self.assertNotIn("P_06991", top)
             self.assertTrue(any((n.startswith("BOM/Parts/") and n.endswith("/6100148.md")) for n in z.namelist()))
-            alt = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and n.endswith("/6100148.md"))][0]
+            alt = [z.read(n).decode() for n in z.namelist() if (n.startswith("BOM/Parts/") and re.search(r"/6100148 [^/]+\.md$", n))][0]
             self.assertIn("manufacturer2: EATON B-LINE", alt); self.assertIn("mfgPn2: AW250", alt)
             b.close()
 

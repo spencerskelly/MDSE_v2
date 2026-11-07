@@ -543,7 +543,7 @@ $("bomScan").addEventListener("click", async () => {
   try {
     $("bomApply").disabled = true; bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").textContent = "Scanning the BOM against the vault. A large file takes a minute or two…"; await tick(); await rescanVault();
     const fp = await fileSha256(bom.file), runDate = localIso();
-    const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [] });
+    const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [], revisionNotes: true });
     if (sc.result.status !== "WRITE_READY") { $("bomUpdStatus").innerHTML = `<span class=bad>${esc(sc.result.problems.join(" ") || "The BOM cannot be read.")}</span>`; return; }
     bomScanned = sc; sc.runDate = runDate; sc.hiddenIds = [];
     const KIND_TEXT = { add: "Additions", change: "Changes", remove: "Removals" }, kindN = { add: 0, change: 0, remove: 0 }; for (const it of sc.items) kindN[it.kind]++;

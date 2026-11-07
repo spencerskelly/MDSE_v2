@@ -1660,3 +1660,17 @@ Rules: WKB-061, WKB-062, WKB-063 (new); WKB-038 (changed).
 4. **Not verified:** the new section was not opened in Obsidian; the view lists the parts of one assembly's tree, not a whole vault.
 
 Rules: BOM-062 (changed); WKB-064 (new).
+
+## D-0142 — The update scan reads and writes revision notes
+
+2026-11-07 · Spencer · Accepted (owner, chat: "run the update to the scan")
+
+1. **Built.** With the revision-note shape (D-0135) the update scan (D-0137) generates the notes a first import would write against the vault, keeps the id, path and stamp of every note the vault has (found by part number, and by part number plus CL1 for a revision note) and compares each with its vault note.
+2. **Offered, ticked (additions):** a new part number note; a new CL1 note for a part number the vault has; a CL2 value added to a CL1 note (NEW_CL2); structure lines, manufacturer pairs, a description, alternate source lines, a category (where the vault has none or `Uncategorized`), `level` and `makeBuy` that the vault lacks. Applying an addition also adds any note it points to.
+3. **Offered, not ticked:** a description or category that differs, a line whose values differ, a line the file no longer lists.
+4. **CL2 value added:** only missing structure lines are offered; other differences are the finding `CL2_STRUCTURE_DIFF`. The `revision` property becomes the highest label.
+5. **After applying,** the stamp describes the merged note, so the same file offers nothing more.
+6. **Rehearsed** on the real files: the DVS 400 BOM, then the Power Station BOM on top, 1,019 notes, no id repeated, no description or manufacturer line lost. Not yet done: the "Changes from <previous revision>" section (BOM-048) and its Check (BOM-065); the old one-note scan is still used when the page does not ask for revision notes.
+7. **Not verified:** the Power Station categories differ from the words the DVS import used for 231 shared parts; they are offered as unticked changes, not applied.
+
+Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).

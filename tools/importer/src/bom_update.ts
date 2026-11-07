@@ -8,9 +8,10 @@ import type { BomOptions, BomResult, Grid } from "./bom.ts";
 import type { OutFile } from "./merge.ts";
 import { yamlScalar } from "./notes.ts";
 
-export type UpdateCategory = "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES" | "EARLIER_REVISIONS" | "PART_NUMBER" | "CATEGORY";
+export type UpdateCategory = "NEW_CL2" | "SOURCE_LINES" | "NEW_PART" | "NEW_REVISION" | "DESCRIPTION" | "MANUFACTURER" | "PART_ATTRIBUTES" | "LINE_ADDED" | "LINE_REMOVED" | "LINE_CHANGED" | "DRAWING" | "SUPERSEDES" | "EARLIER_REVISIONS" | "PART_NUMBER" | "CATEGORY";
 export type HoldCode = "CONFLICT" | "NO_BASELINE" | "OLDER_IN_FILE" | "NOT_OWNED";
 export const UPDATE_CATEGORY_TEXT: Record<UpdateCategory, string> = {
+  NEW_CL2: "New CL2 value for a revision the vault has (added to its note)", SOURCE_LINES: "Alternate source lines added to a note",
   NEW_PART: "New part (a note is created)", NEW_REVISION: "New revision of an assembly (becomes the active one)", DESCRIPTION: "Part description changed", MANUFACTURER: "Manufacturer data changed",
   PART_ATTRIBUTES: "Part source or drawing location changed", LINE_ADDED: "Assembly line added", LINE_REMOVED: "Assembly line no longer listed", LINE_CHANGED: "Assembly line changed (quantity, unit, revision, dates ...)",
   DRAWING: "Drawing reference added or removed", SUPERSEDES: "New part number replaces an old one", EARLIER_REVISIONS: "Lines of earlier assembly revisions added to the note body", PART_NUMBER: "partNumber property added (D-0065)", CATEGORY: "Category and role of the part (D-0072)",
@@ -29,25 +30,27 @@ export interface UpdateScan {
   current: Map<string, string>;
   /** NEW_REVISION: path -> the lines of the revision being replaced, as earlier-revision body lines (D-0058), so applying the new revision keeps them. */
   replaced: Map<string, string[]>;
+  /** D-0137: "revision" when the scan read and writes the revision-note shape (bom_merge.ts) */
+  shape?: "revision";
 }
 
 /* ---- reading the SysML declaration of a part note (members come from bom.ts; only the importer's own are compared or changed) ---- */
-type Decl = { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[] };
-interface Parts { head: string[]; decl: Decl[]; tail: string[] }
+export type Decl = { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[] };
+export interface Parts { head: string[]; decl: Decl[]; tail: string[] }
 const ATTR = bomAttrOf;
-function sysmlOf(note: string): string | null { return MDSE.extractSysml(note) as string | null; }
-function splitSysml(sysml: string): Parts | null { const r = bomSplitSysml(sysml); return r ? { head: r.head, decl: r.members, tail: r.tail } : null; }
+export function sysmlOf(note: string): string | null { return MDSE.extractSysml(note) as string | null; }
+export function splitSysml(sysml: string): Parts | null { const r = bomSplitSysml(sysml); return r ? { head: r.head, decl: r.members, tail: r.tail } : null; }
 /** The text of an entry with its own name blanked, so a renamed usage with the same content does not count as a change. */
 const bodyOf = (d: Decl): string => d.lines.map((l, i) => (i === 0 ? l.replace(/^( {8}(?:part|ref item) )\w+/, "$1_") : l)).join("\n");
 const attrsOf = (d: Decl): Array<[string, string]> => [...d.lines.join("\n").matchAll(/attribute (\w+) = (?:"((?:[^"\\]|\\.)*)"|([^;]+));/g)].map((m) => [m[1]!, (m[2] ?? m[3] ?? "").trim()]);
-function yamlOwned(note: string): { description: string; mfr: Array<[string, string]> } {
+export function yamlOwned(note: string): { description: string; mfr: Array<[string, string]> } {
   const fm = /^---\n([\s\S]*?)\n---\n/.exec(note.replace(/\r\n?/g, "\n"))?.[1] ?? "", mfr: Array<[string, string]> = []; let description = "";
   for (const l of fm.split("\n")) { const m = /^(description|manufacturer\d+|mfgPn\d+):\s*(.*)$/.exec(l); if (!m) continue; const v = m[2]!.startsWith('"') ? (() => { try { return JSON.parse(m[2]!); } catch { return m[2]!; } })() : m[2]!; if (m[1] === "description") description = v; else mfr.push([m[1]!, v]); }
   return { description, mfr };
 }
-const importHashOf = (note: string): string | null => /^importHash: ([0-9a-f]{16})$/m.exec(note)?.[1] ?? null;
+export const importHashOf = (note: string): string | null => /^importHash: ([0-9a-f]{16})$/m.exec(note)?.[1] ?? null;
 const revOf = (p: Parts): string => ATTR(p.decl.filter((d) => d.key === "attr:revision").flatMap((d) => d.lines), "revision");
-const ownedOf = (p: Parts, owns: Set<BomArea>): Decl[] => p.decl.filter((d) => d.owned && owns.has(d.area as BomArea));
+export const ownedOf = (p: Parts, owns: Set<BomArea>): Decl[] => p.decl.filter((d) => d.owned && owns.has(d.area as BomArea));
 const lineWord = (d: Decl): string => { const l = ATTR(d.lines, "line"); const m = /^ {8}(?:part \w+ : (\S+)|ref item \w+ : (\S+))/.exec(d.lines[0]!); return `${l ? "line " + l + " " : ""}${(m?.[1] ?? m?.[2] ?? "").replace(/^.*::[PD]_/, "")}`; };
 /** True when every manufacturer / part number pair of the vault note is still in the file, so applying only adds pairs (the numbering may shift). */
 const mfrPairs = (m: Array<[string, string]>): string[] => { const num = (k: string): string => k.replace(/^\D+/, ""), by = new Map<string, { m: string; p: string }>(); for (const [k, v] of m) { const e = by.get(num(k)) ?? by.set(num(k), { m: "", p: "" }).get(num(k))!; if (/^manufacturer/.test(k)) e.m = v; else e.p = v; } return [...by.values()].map((e) => `${e.m.toLowerCase()}\0${e.p.toLowerCase()}`); };
@@ -81,6 +84,7 @@ const mfrText = (m: Array<[string, string]>): string => m.map(([k, v]) => `${k}:
 
 /* ---- the scan ---- */
 export function scanBomUpdate(grid: Grid, o: BomOptions): UpdateScan {
+  if (o.revisionNotes) return scanRevisionUpdate(grid, o);   // D-0137
   const result = buildBom(grid, { ...o, update: true }), dir = o.dir ?? "BOM";
   const out: UpdateScan = { items: [], holds: [], unchanged: 0, result, generated: new Map(), current: new Map(), replaced: new Map() };
   if (result.status !== "WRITE_READY") return out;
@@ -163,7 +167,7 @@ export interface ApplyResult { writes: OutFile[]; applied: UpdateItem[]; alsoAdd
 /** The approved items plus the new-part notes they point to, so an approved line never names a part that has no note. */
 export function closeApproval(scan: UpdateScan, approved: Set<string>): { all: Set<string>; extra: UpdateItem[] } {
   const all = new Set(approved), idToItem = new Map<string, UpdateItem>();
-  for (const it of scan.items) if (it.category === "NEW_PART") { const id = /^id: (\S+)$/m.exec(it.after)?.[1]; if (id) idToItem.set(id.replace("-", "_"), it); }
+  for (const it of scan.items) if (it.category === "NEW_PART" || it.category === "NEW_REVISION") { const id = /^id: (\S+)$/m.exec(it.after)?.[1]; if (id) idToItem.set(id.replace("-", "_"), it); }
   const extra: UpdateItem[] = []; let grew = true;
   while (grew) {
     grew = false;
@@ -177,7 +181,7 @@ export function closeApproval(scan: UpdateScan, approved: Set<string>): { all: S
 }
 
 const FOREIGN_NAME = /^ {8}(?:#\w+ )?(?:(?:in|out|inout|ref|abstract|readonly|derived|conjugated)\s+)*(?:port|part|attribute|item|action|state|constraint|requirement|calc|connection|interface|allocation|flow|perform|exhibit|occurrence|individual|snapshot|timeslice|enum|metadata|view|viewpoint|concern|verification|analysis|use case|satisfy|connect|bind|succession|transition|then|first|doc)\s+~?(\w+)/;
-function renameClashes(decl: Decl[]): void {
+export function renameClashes(decl: Decl[]): void {
   const seen = new Set<string>(decl.filter((d) => !d.owned).map((d) => FOREIGN_NAME.exec(d.lines[0]!)?.[1] ?? "").filter(Boolean));   // a usage must not take a name the model already uses in the same definition
   for (const d of decl) {
     if (d.kind !== "usage" && d.kind !== "ref") continue;
@@ -186,7 +190,7 @@ function renameClashes(decl: Decl[]): void {
     seen.add(name); if (name !== m[2]) d.lines[0] = d.lines[0]!.replace(/^( {8}(?:part|ref item) )\w+/, `$1${name}`);
   }
 }
-function setYamlOwned(note: string, desc: string | null, mfr: Array<[string, string]> | null): string {
+export function setYamlOwned(note: string, desc: string | null, mfr: Array<[string, string]> | null): string {
   let lines = note.split("\n"); const close = lines.indexOf("---", 1);
   let fm = lines.slice(1, close);
   if (mfr) fm = fm.filter((l) => !/^(manufacturer\d+|mfgPn\d+):/.test(l));
@@ -194,10 +198,11 @@ function setYamlOwned(note: string, desc: string | null, mfr: Array<[string, str
   if (mfr) { let at = fm.findIndex((l) => /^(sourceRole|primarySymbol|importSource):/.test(l)); if (at < 0) at = fm.length; fm.splice(at, 0, ...mfr.map(([k, v]) => `${k}: ${yamlScalar(v)}`)); }
   lines = [lines[0]!, ...fm, ...lines.slice(close)]; return lines.join("\n");
 }
-function sourceSection(note: string): string { const m = /\n## Source: EA\n([\s\S]*?)(?=\n## SysML v2|\s*$)/.exec(note); return m ? m[1]!.replace(/^\n+|\n+$/g, "") : ""; }
+export function sourceSection(note: string): string { const m = /\n## Source: EA\n([\s\S]*?)(?=\n## SysML v2|\s*$)/.exec(note); return m ? m[1]!.replace(/^\n+|\n+$/g, "") : ""; }
 function callouts(note: string): string[] { return [...note.matchAll(/^> \[!(?:flag\w+)\][^\n]*(?:\n> [^\n]*)*/gm)].map((m) => m[0]); }
 
 export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
+  if (scan.shape === "revision") return applyRevisionUpdate(scan, o);
   const { all, extra } = closeApproval(scan, o.approved), on = o.runDate.slice(0, 10), writes: OutFile[] = [], applied: UpdateItem[] = [];
   const byPath = new Map<string, UpdateItem[]>();
   for (const it of scan.items) if (all.has(it.id)) { applied.push(it); (byPath.get(it.path) ?? byPath.set(it.path, []).get(it.path)!).push(it); }
@@ -260,5 +265,154 @@ export function applyBomUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
   const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
   const rows = applied.map((i) => `| ${i.category} | [[${i.path.split("/").pop()!.replace(/\.md$/i, "")}]] | ${i.summary.replace(/\|/g, "\\|")} |`);
   const report = `# BOM Update ${label}\n\nSource \`${o.sourceName}\`. ${applied.length} change(s) applied to ${byPath.size} note(s)${extra.length ? `, of which ${extra.length} new part note(s) were added because an approved change refers to them` : ""}.\n\n| Category | Note | Change |\n|---|---|---|\n${rows.join("\n") || "| | | none |"}\n`;
+  return { writes: [...writes, { path: `99_System/11_Import/BOM Update ${label}.md`, content: report }], applied, alsoAdded: extra, report };
+}
+
+/* ======================================================================================================================================
+ * D-0137, BOM-066: the update scan on the revision-note shape. Each BOM adds every piece of data it can place and removes none.
+ * The notes a first import would write are generated against the vault (existing notes keep their id and path); each is compared with the
+ * vault note at the same path. Additions are ticked in the page; a value that differs, or a line the file no longer lists, is offered unticked.
+ * ====================================================================================================================================== */
+const isRevNote = (t: string): boolean => /^- BOM revision of: /m.test(t);
+const mfrList = (m: Array<[string, string]>): Array<{ k: number; m: string; p: string }> => {
+  const by = new Map<number, { k: number; m: string; p: string }>();
+  for (const [key, v] of m) { const n = +key.replace(/^\D+/, ""), e = by.get(n) ?? { k: n, m: "", p: "" }; if (/^manufacturer/.test(key)) e.m = v; else e.p = v; by.set(n, e); }
+  return [...by.values()].sort((a, b) => a.k - b.k);
+};
+const pairKey = (x: { m: string; p: string }): string => `${x.m.toLowerCase()}|${x.p.toLowerCase()}`;
+/** CL2 values a revision note records: `### CL2 x` headings, else the single `CL2 value x:` line. */
+const cl2Of = (t: string): string[] => { const h = [...t.matchAll(/^### CL2 (.+)$/gm)].map((m) => m[1]!.trim()); return h.length ? h : [...t.matchAll(/^CL2 value (\S+?):/gm)].map((m) => m[1]!); };
+/** The body block of one CL2 value in a generated note: its section, or the single line as a section. */
+function cl2Block(gen: string, v: string): string {
+  const ls = gen.split("\n"), at = ls.findIndex((l) => l.trim() === `### CL2 ${v}`);
+  if (at >= 0) { let end = ls.length; for (let i = at + 1; i < ls.length; i++) if (/^### CL2 /.test(ls[i]!) || /^## /.test(ls[i]!)) { end = i; break; } return ls.slice(at, end).join("\n").replace(/\n+$/, ""); }
+  const one = ls.find((l) => l.startsWith(`CL2 value ${v}:`)); return `### CL2 ${v}\n\n${one ? one.replace(/^CL2 value \S+?: /, "Seen: ") : "Seen in the BOM."}`;
+}
+const labelsOf = (t: string): string[] => [...(/^- Revisions in the BOM under this CL1: (.*)$/m.exec(t)?.[1] ?? "").matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]!);
+const altLines = (t: string): string[] => sourceSection(t).split("\n").filter((l) => /^- Alternates for line /.test(l));
+const lineNo = (d: Decl): string => ATTR(d.lines, "line") || "?";
+
+export function scanRevisionUpdate(grid: Grid, o: BomOptions): UpdateScan {
+  const result = buildBom(grid, { ...o, update: true, revisionNotes: true }), dir = o.dir ?? "BOM";
+  const out: UpdateScan = { items: [], holds: [], unchanged: 0, result, generated: new Map(), current: new Map(), replaced: new Map(), shape: "revision" };
+  if (result.status !== "WRITE_READY") return out;
+  const vault = new Map<string, string>(o.existing?.files ?? []);
+  let n = 0, edited = false;
+  const add = (category: UpdateCategory, path: string, pn: string, summary: string, before: string, after: string, key = "", kind: UpdateKind = "change"): void => { out.items.push({ id: `u${++n}`, kind, category, path, pn, summary, before, after, key, edited }); };
+  const nameOf = (t: string): string => /^# (.+)$/m.exec(t)?.[1]?.trim() ?? "";
+  for (const f of result.files) {
+    if (!f.path.startsWith(dir + "/")) continue;
+    const gen = f.content, old = vault.get(f.path), rev = isRevNote(gen), pn = rev ? /^- BOM revision of: (.+)$/m.exec(gen)![1]!.trim() : (/^- BOM Part Number: (.+)$/m.exec(gen)?.[1]?.trim() ?? nameOf(gen));
+    out.generated.set(f.path, gen);
+    if (old === undefined) { add(rev ? "NEW_REVISION" : "NEW_PART", f.path, pn, rev ? `${nameOf(gen)}: new revision note` : `${pn}: new note`, "", gen, "", "add"); continue; }
+    out.current.set(f.path, old);
+    const stamp = importHashOf(old);
+    if (!stamp) { out.holds.push({ code: "NO_BASELINE", path: f.path, pn, message: `${pn}: the note has no import stamp, so the scan cannot tell a BOM change from an edit.` }); continue; }
+    edited = stamp !== bomOwnedHash(old);
+    const before = out.items.length, title = nameOf(gen), yo = yamlOwned(old), yg = yamlOwned(gen);
+    // description: a missing one is added; a different one is a change (unticked by the page, BOM-033)
+    if (yg.description && !yo.description) add("DESCRIPTION", f.path, pn, `${title}: description added: ${yg.description}`, "", yg.description, "", "add");
+    else if (yg.description && yg.description !== yo.description) add("DESCRIPTION", f.path, pn, `${title}: description differs: vault "${yo.description}", file "${yg.description}"`, yo.description, yg.description, "", "change");
+    // manufacturers: pairs the vault lacks are added, none is removed
+    const have = new Set(mfrList(yo.mfr).map(pairKey)), miss = mfrList(yg.mfr).filter((x) => !have.has(pairKey(x)));
+    if (miss.length) add("MANUFACTURER", f.path, pn, `${title}: ${miss.length} manufacturer / part number pair(s) added: ${miss.map((x) => [x.m, x.p].filter(Boolean).join(" ")).join("; ")}`, mfrText(yo.mfr), miss.map((x) => `${x.m}\t${x.p}`).join("\n"), "", "add");
+    if (!rev) {   // the part number note: category, level and make/buy are added where the vault lacks them
+      const prop = (t: string, k: string): string => /^---\n([\s\S]*?)\n---/.exec(t.replace(/\r\n?/g, "\n"))?.[1]?.split("\n").find((l) => l.startsWith(k + ":"))?.slice(k.length + 1).trim() ?? "";
+      const cO = prop(old, "bomCategory"), cG = prop(gen, "bomCategory");
+      if (cG && cG !== cO) { if (!cO || cO === "Uncategorized") add("CATEGORY", f.path, pn, `${pn}: category ${cG}${cO ? ` (the vault has ${cO})` : ""}`, cO, cG, "bomCategory", "add"); else add("CATEGORY", f.path, pn, `${pn}: category differs: vault ${cO}, file ${cG}`, cO, cG, "bomCategory", "change"); }
+      for (const k of ["level", "makeBuy"]) { const vO = prop(old, k), vG = prop(gen, k); if (vG && (!vO || (k === "makeBuy" && vO === "other" && vG !== "other"))) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}`, vO, vG, k, "add"); }
+    }
+    if (rev) {
+      const pO = splitSysml(sysmlOf(old) ?? ""), pG = splitSysml(sysmlOf(gen) ?? "");
+      if (!pO || !pG) { out.holds.push({ code: "CONFLICT", path: f.path, pn, message: `${title}: the SysML block is not in the layout the importer writes.` }); continue; }
+      const vO = new Set(cl2Of(old)), newCl2 = cl2Of(gen).filter((v) => !vO.has(v)), lab = new Set(labelsOf(old)), newLab = labelsOf(gen).filter((l) => !lab.has(l));
+      if (newCl2.length) add("NEW_CL2", f.path, pn, `${title}: CL2 value${newCl2.length > 1 ? "s" : ""} ${newCl2.join(", ")} added (the vault has ${[...vO].join(", ") || "none"})`, [...vO].join(", "), newCl2.map((v) => cl2Block(gen, v)).join("\n\n"), "", "add");
+      else if (newLab.length) add("NEW_CL2", f.path, pn, `${title}: revision label${newLab.length > 1 ? "s" : ""} ${newLab.map((x) => JSON.stringify(x)).join(", ")} added to the list of revisions`, "", newLab.join(", "), "", "add");
+      // structure: lines by line number; the latest CL2 value's structure is the one written, so with a new CL2 value only missing lines are added (CL2_STRUCTURE_DIFF)
+      const dO = ownedOf(pO, new Set<BomArea>(["structure"])).filter((d) => d.kind === "usage" || d.kind === "ref"), dG = ownedOf(pG, new Set<BomArea>(["structure"])).filter((d) => d.kind === "usage" || d.kind === "ref");
+      const mO = new Map(dO.map((d) => [d.key, d])), mG = new Map(dG.map((d) => [d.key, d])), differ: string[] = [];
+      for (const d of dG) {
+        const x = mO.get(d.key);
+        if (!x) add("LINE_ADDED", f.path, pn, `${title}: line ${lineNo(d)} added: ${lineWord(d)}`, "", d.lines.join("\n"), d.key, "add");
+        else if (bodyOf(x) !== bodyOf(d)) { if (newCl2.length) differ.push(`line ${lineNo(d)} differs`); else add("LINE_CHANGED", f.path, pn, `${title}: line ${lineNo(d)} differs: vault ${lineWord(x)}, file ${lineWord(d)}`, x.lines.join("\n"), d.lines.join("\n"), d.key, "change"); }
+      }
+      for (const d of dO) if (!mG.has(d.key)) { if (newCl2.length) differ.push(`line ${lineNo(d)} not in the file`); else add("LINE_REMOVED", f.path, pn, `${title}: line ${lineNo(d)} no longer listed: ${lineWord(d)}`, d.lines.join("\n"), "", d.key, "remove"); }
+      if (differ.length) result.findings.push({ level: "info", code: "CL2_STRUCTURE_DIFF", message: `${title}: the file's structure (CL2 ${cl2Of(gen).join(", ")}) differs from the vault's in ${differ.length} place(s): ${differ.slice(0, 6).join("; ")}${differ.length > 6 ? " …" : ""}. Only missing lines were offered as additions.` });
+      const haveAlt = new Set(altLines(old)), missAlt = altLines(gen).filter((l) => !haveAlt.has(l));
+      if (missAlt.length) add("SOURCE_LINES", f.path, pn, `${title}: ${missAlt.length} alternate source line(s) added`, "", missAlt.join("\n"), "", "add");
+    }
+    if (out.items.length === before) out.unchanged++;
+  }
+  return out;
+}
+
+/** Puts a block of text at the end of the note body, before the Source section. */
+function addToBody(note: string, block: string): string {
+  const i = note.indexOf("\n## Source: EA"); if (i < 0) return note + "\n\n" + block + "\n";
+  return note.slice(0, i).replace(/\n+$/, "") + "\n\n" + block + "\n\n\n" + note.slice(i);
+}
+
+export function applyRevisionUpdate(scan: UpdateScan, o: ApplyOptions): ApplyResult {
+  const { all, extra } = closeApproval(scan, o.approved), on = o.runDate.slice(0, 10), writes: OutFile[] = [], applied: UpdateItem[] = [];
+  const byPath = new Map<string, UpdateItem[]>();
+  for (const it of scan.items) if (all.has(it.id)) { applied.push(it); (byPath.get(it.path) ?? byPath.set(it.path, []).get(it.path)!).push(it); }
+  for (const [path, items] of byPath) {
+    const gen = scan.generated.get(path)!;
+    if (items.some((i) => i.category === "NEW_PART" || i.category === "NEW_REVISION")) { writes.push({ path, content: gen }); continue; }
+    const old = scan.current.get(path)!, cats = (c: UpdateCategory): UpdateItem[] => items.filter((i) => i.category === c);
+    let note = old;
+    const yo = yamlOwned(old), yg = yamlOwned(gen);
+    if (cats("DESCRIPTION").length) note = setYamlOwned(note, yg.description, null);
+    if (cats("MANUFACTURER").length) {
+      const mine = mfrList(yo.mfr), have = new Set(mine.map(pairKey)); let next = Math.max(0, ...mine.map((x) => x.k)) + 1;
+      const all2 = [...mine, ...mfrList(yg.mfr).filter((x) => !have.has(pairKey(x))).map((x) => ({ k: next++, m: x.m, p: x.p }))];
+      note = setYamlOwned(note, null, all2.flatMap((x) => [...(x.m ? [[`manufacturer${x.k}`, x.m] as [string, string]] : []), ...(x.p ? [[`mfgPn${x.k}`, x.p] as [string, string]] : [])]));
+    }
+    for (const it of items) if (it.key && (it.category === "CATEGORY" || it.category === "PART_ATTRIBUTES") && /^(bomCategory|level|makeBuy)$/.test(it.key)) {
+      const ls = note.split("\n"), close = ls.indexOf("---", 1), at = ls.findIndex((l, i) => i < close && l.startsWith(it.key + ":")), line = `${it.key}: ${yamlScalar(it.after)}`;
+      if (at >= 0) ls[at] = line; else { const t = ls.findIndex((l, i) => i < close && /^(sourceRole|primarySymbol):/.test(l)); ls.splice(t >= 0 ? t : close, 0, line); }
+      note = ls.join("\n");
+    }
+    const structure = items.filter((i) => i.key && (i.category === "LINE_ADDED" || i.category === "LINE_CHANGED" || i.category === "LINE_REMOVED"));
+    if (structure.length) {
+      const owns = new Set<BomArea>(["structure"]), po = splitSysml(sysmlOf(note)!)!, pg = splitSysml(sysmlOf(gen)!)!, keyed = new Map(structure.map((i) => [i.key, i]));
+      let decl = po.decl.map((d) => ({ ...d, lines: [...d.lines] })); const newKeys = ownedOf(pg, owns).map((d) => d.key);
+      for (const d of ownedOf(pg, owns)) {
+        const it = keyed.get(d.key); if (!it || it.category === "LINE_REMOVED") continue;
+        const at = decl.findIndex((x) => x.key === d.key);
+        if (at >= 0) { const name = /^ {8}(?:part|ref item) (\w+)/.exec(decl[at]!.lines[0]!)?.[1]; decl[at] = { ...d, lines: [name ? d.lines[0]!.replace(/^( {8}(?:part|ref item) )\w+/, `$1${name}`) : d.lines[0]!, ...d.lines.slice(1)] }; }
+        else { let before = -1; for (let i = newKeys.indexOf(d.key) - 1; i >= 0 && before < 0; i--) before = decl.findIndex((x) => x.key === newKeys[i]); decl.splice(before + 1, 0, { ...d, lines: [...d.lines] }); }
+      }
+      for (const it of structure) if (it.category === "LINE_REMOVED") decl = decl.filter((x) => x.key !== it.key);
+      renameClashes(decl);
+      note = MDSE.replaceSysmlBlock(note, [...po.head, ...decl.flatMap((d) => d.lines), ...po.tail].join("\n") + "\n");
+    }
+    if (cats("NEW_CL2").length) {
+      const have = new Set(cl2Of(note));
+      // a single `CL2 value x:` line becomes a section before another value is added
+      if (have.size === 1 && !/^### CL2 /m.test(note)) { const v = [...have][0]!; note = note.replace(new RegExp(`^CL2 value ${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: `, "m"), `### CL2 ${v}\n\nSeen: `); }
+      const blocks = cats("NEW_CL2").map((i) => i.after).filter((b) => b.startsWith("### CL2 ")).join("\n\n");
+      if (blocks) { const fresh = blocks.split(/\n(?=### CL2 )/).filter((b) => !have.has(/^### CL2 (.+)$/m.exec(b)![1]!.trim())); if (fresh.length) note = addToBody(note, fresh.join("\n\n")); }
+      // the revision is the highest label (BOM-066), the list of labels is the union
+      const rOld = /^revision: (.*)$/m.exec(note)?.[1]?.replace(/^"|"$/g, ""), rGen = /^revision: (.*)$/m.exec(gen)?.[1]?.replace(/^"|"$/g, "");
+      if (rGen && (!rOld || bomRevCompare(rGen, rOld) > 0)) {
+        note = note.replace(/^revision: .*$/m, `revision: ${yamlScalar(rGen)}`);
+        const pn2 = splitSysml(sysmlOf(note)!); if (pn2) note = MDSE.replaceSysmlBlock(note, [...pn2.head, ...pn2.decl.map((d) => d.key === "attr:revision" ? d.lines.map((l) => l.replace(/(attribute revision = ")[^"]*(";)/, `$1${rGen}$2`)).join("\n") : d.lines.join("\n")), ...pn2.tail].join("\n") + "\n");
+      }
+    }
+    if (cats("NEW_CL2").length || cats("LINE_ADDED").length) {
+      const labels = [...new Set([...labelsOf(note), ...labelsOf(gen)])].sort(bomRevCompare);
+      note = note.replace(/^- Revisions in the BOM under this CL1: .*$/m, `- Revisions in the BOM under this CL1: ${labels.map((x) => JSON.stringify(x)).join(", ")}`);
+    }
+    if (cats("SOURCE_LINES").length) {
+      const add2 = cats("SOURCE_LINES").flatMap((i) => i.after.split("\n")).filter((l) => !note.includes(l));
+      if (add2.length) note = note.replace(/(\n## SysML v2)/, `\n${add2.join("\n")}\n$1`);
+    }
+    note = note.replace(/^importSource: .*$/m, `importSource: ${yamlScalar(o.sourceName)}`).replace(/^importedOn: .*$/m, `importedOn: ${on}`).replace(/^importHash: .*$/m, `importHash: ${bomOwnedHash(note)}`);
+    writes.push({ path, content: note });
+  }
+  const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
+  const rows = applied.map((i) => `| ${i.category} | [[${i.path.split("/").pop()!.replace(/\.md$/i, "")}]] | ${i.summary.replace(/\|/g, "\\|")} |`);
+  const report = `# BOM Update ${label}\n\nSource \`${o.sourceName}\`. ${applied.length} change(s) applied to ${byPath.size} note(s)${extra.length ? `, of which ${extra.length} new note(s) were added because an approved change refers to them` : ""}.\n\n| Type | Note | Change |\n| --- | --- | --- |\n${rows.join("\n")}\n`;
   return { writes: [...writes, { path: `99_System/11_Import/BOM Update ${label}.md`, content: report }], applied, alsoAdded: extra, report };
 }

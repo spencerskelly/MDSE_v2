@@ -293,7 +293,7 @@ const bomUsageSig = (u: Usage): string => `${u.childRev}|${BOM_DISCRETE.has(u.un
 const STOP = new Set(["the","and","for","with","assy","asm","cec","dvs","pwr","stn"]);
 export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const parsed = parseBom(grid), findings = [...parsed.findings], problems: string[] = [];
-  const revMode = o.revisionNotes === true && !o.update, inventory = bomRevisionInventory(parsed);
+  const revMode = o.revisionNotes === true, inventory = bomRevisionInventory(parsed);
   const cl1Of = (cl1: string | undefined, rev: string): string => (cl1 !== undefined ? cl1.trim() : bomSplitRev(rev).cl1);
   // D-0076: the vault's own category list when it has one (a pending file of the same run counts), else the built-in table.
   const rulesText = [...(o.existing?.files ?? []), ...o.pending].find(([p]) => p === CATEGORY_RULES_PATH)?.[1];
@@ -407,7 +407,14 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   const partPns = [...latest.keys()].filter((pn) => !drawingPns.has(pn) || okUsage.some((u) => u.child === pn && !bomIsDrawing(u))).sort();
   const newParts = partPns.filter((pn) => !existingBy.has(pn)), newDrawings = [...drawingPns].filter((pn) => (o.update || !existingBy.has(pn)) && latest.has(pn)).sort();
-  const revReq = revMode ? newParts.flatMap((pn) => (inventory.get(pn) ?? []).map((r) => ({ key: "r:" + pn + "\0" + r.cl1, prefix: o.classes["Object"]!.prefix, created: "", guid: pn + " " + r.cl1 }))) : [];
+  // D-0137: revision notes the vault already has (found by the part number and CL1 they name) keep their id, path and uid; a CL1 the vault lacks gets a new note
+  const existingRev = new Map<string, { id: string; base: string; path: string; uid: string }>();
+  if (revMode) for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
+    const pn = /^- BOM revision of: (.+)$/m.exec(t)?.[1]?.trim(), cl1 = /^- CL1: (.*)$/m.exec(t)?.[1]?.trim(), id = /^id: (\S+)$/m.exec(t)?.[1];
+    if (pn && cl1 !== undefined && id) existingRev.set(pn + "\0" + cl1, { id, base: p.split("/").pop()!.replace(/\.md$/i, ""), path: p, uid: /^uid: (\S+)$/m.exec(t)?.[1] ?? "" });
+  }
+  const revPns = o.update ? partPns : newParts;
+  const revReq = revMode ? revPns.flatMap((pn) => (inventory.get(pn) ?? []).filter((r) => !existingRev.has(pn + "\0" + r.cl1)).map((r) => ({ key: "r:" + pn + "\0" + r.cl1, prefix: o.classes["Object"]!.prefix, created: "", guid: pn + " " + r.cl1 }))) : [];
   const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...revReq, ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
   const ids = allocateIds(idReq, highest);
   const uids = allocateUids(idReq.map((r) => ({ key: r.key, created: "", guid: r.guid, author: "" })), { authorMap: {}, fallbackCode: o.authorCode, unmappedNames: [""] }, taken, bomStampOf(o.runDate));
@@ -428,7 +435,8 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
 
   // D-0127, D-0135: one note per CL1 revision a BOM names, in the folder of the part number's note
   const revInfo = new Map<string, { id: string; base: string; path: string; uid: string }>();
-  if (revMode) for (const pn of newParts) for (const r of inventory.get(pn) ?? []) {
+  if (revMode) for (const pn of revPns) for (const r of inventory.get(pn) ?? []) {
+    const had = existingRev.get(pn + "\0" + r.cl1); if (had) { revInfo.set(pn + "\0" + r.cl1, had); continue; }
     const key = "r:" + pn + "\0" + r.cl1, pnPath = info.get(pn)!.path, path = names.claim(pnPath.slice(0, pnPath.lastIndexOf("/")), safeName(`${pn} ${r.cl1}`, `${pn} ${r.cl1}`), ".md");
     revInfo.set(pn + "\0" + r.cl1, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, uid: uids.get(key)!.uid });
   }
