@@ -429,7 +429,8 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
 
   /* Graph and canvas share one set of view settings (filters, hops, relationship kinds, grouping). Presentation only. */
   function checkGroup(title: string, options: Array<[string, string]>, on: (v: string) => boolean, toggle: (v: string, checked: boolean) => void): HTMLElement {
-    return h("fieldset", { class: "vs" }, h("legend", {}, title), ...options.map(([v, label]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: on(v), onchange: (e: Event) => { toggle(v, (e.target as HTMLInputElement).checked); draw(); } }), " " + label)));
+    const all = (c: boolean): void => { for (const [v] of options) if (on(v) !== c) toggle(v, c); draw(); };   // D-0143: every list can be set all-on or all-off
+    return h("fieldset", { class: "vs" }, h("legend", {}, title), h("button", { class: "sm", title: "Select all", onclick: () => all(true) }, "All"), h("button", { class: "sm", title: "Select none", onclick: () => all(false) }, "None"), ...options.map(([v, label]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: on(v), onchange: (e: Event) => { toggle(v, (e.target as HTMLInputElement).checked); draw(); } }), " " + label)));
   }
   const num = (v: string, d: number): number => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : d; };
 
@@ -488,6 +489,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   function vRels(): HTMLElement {
     const pane = h("div", { class: "pane" }, h("h2", {}, "Relationships")), kinds = V.edgeKinds(ix!);
     pane.append(h("div", { class: "row" }, h("input", { type: "search", placeholder: "Filter", value: relText, onchange: (e: Event) => { relText = (e.target as HTMLInputElement).value; draw(); } }),
+      h("button", { class: "sm", onclick: () => { relKinds = kinds.map(([k]) => k); draw(); } }, "All"), h("button", { class: "sm", onclick: () => { relKinds = []; draw(); } }, "None"),
       ...kinds.map(([k, n]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: relKinds.includes(k), onchange: (e: Event) => { relKinds = (e.target as HTMLInputElement).checked ? [...relKinds, k] : relKinds.filter((x) => x !== k); draw(); } }), ` ${k} ${n}`))));
     const rows = V.relationshipRows(ix!, relKinds, relText), cap = rows.slice(0, 1500);
     pane.append(h("div", { class: "mut" }, `${rows.length} relationships${rows.length > cap.length ? " (first 1,500 shown)" : ""}`),

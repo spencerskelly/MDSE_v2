@@ -58,7 +58,7 @@ const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
-.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
+.mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
@@ -332,11 +332,11 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
-    const toolbar = h("nav", { class: "tbar", "aria-label": "Workbench functions" }, ...V.TOOLBAR_GROUPS.flatMap((g, gi) => [gi ? h("div", { class: "tg", role: "separator", title: g.label }) : null, ...g.items.map((it) => {
-      const off = !!it.needsEdit && !host.edit, b = h("button", { type: "button", "aria-label": it.label, "aria-pressed": lens === it.lens ? "true" : "false", title: off ? `${it.label}: editing is not available in this window` : `${g.label}: ${it.label}`, disabled: off || undefined }, it.glyph);
-      b.addEventListener("click", () => { if (off) return; if (it.lens === "merge") openMerge(""); else { lens = it.lens; if (it.lens !== "edit") editEl = null; draw(); } });
-      return b;
-    })]));
+    // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
+    const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
+      ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
+    fnSelect.addEventListener("change", () => { const v = (fnSelect as HTMLSelectElement).value as V.Lens; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
+    const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       // A direct, all-relationships canvas launcher on the Workbench home screen.
@@ -387,7 +387,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
-    if (compact) { wrap.classList.add("tb"); wrap.replaceChildren(h("div", { class: "split" }, h("div", { class: "main" }, header, acts, ...(status ? [status] : []), body), toolbar)); }
+    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, toolbar, acts, ...(status ? [status] : []), body); }
     else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
   }
   draw();

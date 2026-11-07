@@ -4491,7 +4491,8 @@ function mountWorkbench(root             , host       = {})      {
 
   /* Graph and canvas share one set of view settings (filters, hops, relationship kinds, grouping). Presentation only. */
   function checkGroup(title        , options                         , on                        , toggle                                       )              {
-    return h("fieldset", { class: "vs" }, h("legend", {}, title), ...options.map(([v, label]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: on(v), onchange: (e       ) => { toggle(v, (e.target                    ).checked); draw(); } }), " " + label)));
+    const all = (c         )       => { for (const [v] of options) if (on(v) !== c) toggle(v, c); draw(); };   // D-0143: every list can be set all-on or all-off
+    return h("fieldset", { class: "vs" }, h("legend", {}, title), h("button", { class: "sm", title: "Select all", onclick: () => all(true) }, "All"), h("button", { class: "sm", title: "Select none", onclick: () => all(false) }, "None"), ...options.map(([v, label]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: on(v), onchange: (e       ) => { toggle(v, (e.target                    ).checked); draw(); } }), " " + label)));
   }
   const num = (v        , d        )         => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : d; };
 
@@ -4550,6 +4551,7 @@ function mountWorkbench(root             , host       = {})      {
   function vRels()              {
     const pane = h("div", { class: "pane" }, h("h2", {}, "Relationships")), kinds = V.edgeKinds(ix );
     pane.append(h("div", { class: "row" }, h("input", { type: "search", placeholder: "Filter", value: relText, onchange: (e       ) => { relText = (e.target                    ).value; draw(); } }),
+      h("button", { class: "sm", onclick: () => { relKinds = kinds.map(([k]) => k); draw(); } }, "All"), h("button", { class: "sm", onclick: () => { relKinds = []; draw(); } }, "None"),
       ...kinds.map(([k, n]) => h("label", { class: "pill" }, h("input", { type: "checkbox", checked: relKinds.includes(k), onchange: (e       ) => { relKinds = (e.target                    ).checked ? [...relKinds, k] : relKinds.filter((x) => x !== k); draw(); } }), ` ${k} ${n}`))));
     const rows = V.relationshipRows(ix , relKinds, relText), cap = rows.slice(0, 1500);
     pane.append(h("div", { class: "mut" }, `${rows.length} relationships${rows.length > cap.length ? " (first 1,500 shown)" : ""}`),
@@ -4639,7 +4641,7 @@ const EC = { ECO_ACTIONS, ecoImpact, ecoDrives, ecoChecks, planCreateEco };
 function setEditRef(ref                )       { SAVED.ref = ref; if (ref) SAVED.mode = "manage"; }
 
 const EDIT_STYLE = `
-.mded .tabs{display:flex;gap:4px;margin:0 0 8px}.mded .tabs button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--bg2);color:var(--fg);cursor:pointer}.mded .tabs button[aria-pressed=true]{border-color:var(--acc);font-weight:600}
+.mded .tabs{display:flex;gap:4px;margin:0 0 8px}.mded .tabs button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--bg2);color:var(--fg);cursor:pointer}.mded .tabs select{width:100%;font-size:13px;padding:4px 6px}
 .mded label.f{display:block;margin:6px 0 2px;font-size:12px;color:var(--mut)}.mded select,.mded input[type=text],.mded input[type=search],.mded textarea{width:100%;box-sizing:border-box}.mded textarea{min-height:80px}
 .mded .pick{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:4px}.mded .pick summary{cursor:pointer;padding:2px 6px;background:var(--bg2);font-size:12px}
 .mded .pick .it{padding:3px 8px;cursor:pointer;border-top:1px solid var(--line);font-size:12.5px}.mded .pick .it:hover{background:var(--bg2)}.mded .pick .it[aria-selected=true]{outline:2px solid var(--acc);outline-offset:-2px}
@@ -4673,7 +4675,9 @@ function editView(c         )              {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m      )       => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]]                         ) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  const modeSel = h("select", { "aria-label": "Edit task", class: "em" }, ...([["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]]                         ).map(([m, label]) => h("option", { value: m, selected: SAVED.mode === m }, label)));   // D-0143: one drop-down in place of eight buttons
+  modeSel.addEventListener("change", () => setMode((modeSel                     ).value        ));
+  tabs.append(modeSel);
   box.append(tabs, body);
   (box                                        ).mdRefresh = ()       => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh                      = null;                                 // redraws only a list, never a form being filled
@@ -5228,7 +5232,7 @@ const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
-.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
+.mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
@@ -5502,11 +5506,11 @@ function mountPanel(root             , host           , opt                     
       return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
-    const toolbar = h("nav", { class: "tbar", "aria-label": "Workbench functions" }, ...V.TOOLBAR_GROUPS.flatMap((g, gi) => [gi ? h("div", { class: "tg", role: "separator", title: g.label }) : null, ...g.items.map((it) => {
-      const off = !!it.needsEdit && !host.edit, b = h("button", { type: "button", "aria-label": it.label, "aria-pressed": lens === it.lens ? "true" : "false", title: off ? `${it.label}: editing is not available in this window` : `${g.label}: ${it.label}`, disabled: off || undefined }, it.glyph);
-      b.addEventListener("click", () => { if (off) return; if (it.lens === "merge") openMerge(""); else { lens = it.lens; if (it.lens !== "edit") editEl = null; draw(); } });
-      return b;
-    })]));
+    // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
+    const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
+      ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
+    fnSelect.addEventListener("change", () => { const v = (fnSelect                     ).value          ; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
+    const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
       // A direct, all-relationships canvas launcher on the Workbench home screen.
@@ -5557,7 +5561,7 @@ function mountPanel(root             , host           , opt                     
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
-    if (compact) { wrap.classList.add("tb"); wrap.replaceChildren(h("div", { class: "split" }, h("div", { class: "main" }, header, acts, ...(status ? [status] : []), body), toolbar)); }
+    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, toolbar, acts, ...(status ? [status] : []), body); }
     else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
   }
   draw();

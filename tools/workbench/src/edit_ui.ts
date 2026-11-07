@@ -25,7 +25,7 @@ export interface EditCtx { getIx(): ModelIndex; getSel(): string; host: EditHost
 export function setEditRef(ref: EdgeRef | null): void { SAVED.ref = ref; if (ref) SAVED.mode = "manage"; }
 
 export const EDIT_STYLE = `
-.mded .tabs{display:flex;gap:4px;margin:0 0 8px}.mded .tabs button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--bg2);color:var(--fg);cursor:pointer}.mded .tabs button[aria-pressed=true]{border-color:var(--acc);font-weight:600}
+.mded .tabs{display:flex;gap:4px;margin:0 0 8px}.mded .tabs button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--bg2);color:var(--fg);cursor:pointer}.mded .tabs select{width:100%;font-size:13px;padding:4px 6px}
 .mded label.f{display:block;margin:6px 0 2px;font-size:12px;color:var(--mut)}.mded select,.mded input[type=text],.mded input[type=search],.mded textarea{width:100%;box-sizing:border-box}.mded textarea{min-height:80px}
 .mded .pick{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:4px}.mded .pick summary{cursor:pointer;padding:2px 6px;background:var(--bg2);font-size:12px}
 .mded .pick .it{padding:3px 8px;cursor:pointer;border-top:1px solid var(--line);font-size:12.5px}.mded .pick .it:hover{background:var(--bg2)}.mded .pick .it[aria-selected=true]{outline:2px solid var(--acc);outline-offset:-2px}
@@ -59,7 +59,9 @@ export function editView(c: EditCtx): HTMLElement {
   const tabs = h("div", { class: "tabs" });
   const body = h("div", {});
   const setMode = (m: Mode): void => { SAVED.mode = m; render(); };
-  for (const [m, label] of [["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]] as Array<[Mode, string]>) tabs.append(h("button", { "aria-pressed": SAVED.mode === m, onclick: () => setMode(m) }, label));
+  const modeSel = h("select", { "aria-label": "Edit task", class: "em" }, ...([["manage", "Relationships"], ["rel", "Add relationship"], ["ports", "Ports"], ["merge", "Merge"], ["elem", "Add element"], ["plm", "Part and links"], ["eco", "ECO"], ["text", "Requirement text"]] as Array<[Mode, string]>).map(([m, label]) => h("option", { value: m, selected: SAVED.mode === m }, label)));   // D-0143: one drop-down in place of eight buttons
+  modeSel.addEventListener("change", () => setMode((modeSel as HTMLSelectElement).value as Mode));
+  tabs.append(modeSel);
   box.append(tabs, body);
   (box as unknown as { mdRefresh: () => void }).mdRefresh = (): void => { if (!SAVED.stale) return; SAVED.stale = false; ix = c.getIx(); from = ix.notes.get(c.getSel()); listRefresh?.(); };
   let listRefresh: (() => void) | null = null;                                 // redraws only a list, never a form being filled

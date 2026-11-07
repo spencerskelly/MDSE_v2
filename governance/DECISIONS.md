@@ -1674,3 +1674,11 @@ Rules: BOM-062 (changed); WKB-064 (new).
 7. **Not verified:** the Power Station categories differ from the words the DVS import used for 231 shared parts; they are offered as unticked changes, not applied.
 
 Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
+
+## D-0143 — The panel chooses a view from a drop-down
+
+2026-11-07 · Spencer · Accepted (owner, chat: "simplify the panels … a dropdown to select a function … select all option for each dropdown")
+
+1. **Built.** The vertical column of icon buttons is replaced by one grouped drop-down of the views (WKB-033 changed); the Edit view's eight task buttons are one drop-down.
+2. **All and None** are on every list of ticked choices in a pane (WKB-065).
+3. **Interpretation.** "A dozen functions as buttons" was read as both the toolbar and the Edit tasks; the owner can narrow it.
