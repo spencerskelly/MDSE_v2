@@ -10,7 +10,7 @@ import { allocateIds, allocateUids } from "./identity.ts";
 import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
-import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomCategoryInTable, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
+import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomCategoryInTable, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -612,11 +612,13 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   if (existingN && !o.update) findings.push({ level: "info", code: "EXISTING", message: `${existingN} part number(s) already have a note in the vault and were left as they are.` });
   const label = o.runDate.slice(0, 16).replace("T", " ").replace(":", ".");
   const order = { error: 0, warn: 1, info: 2 } as const;
+  if (!o.update && o.existing?.hasVault && rulesText === undefined) { findings.push({ level: "info", code: "CATEGORY_RULES_WRITTEN", message: `${CATEGORY_RULES_PATH} was missing, so the built-in category list is written there; edit it to change how later imports sort parts (BOM-044).` }); }   // D-0145
   const sorted = findings.slice().sort((a, b) => order[a.level] - order[b.level]);
   // BOM-027: the findings note shows the first 40 rows of each code and the count of the rest; the callouts in the notes hold the detail
   const shown = new Map<string, number>(), total = new Map<string, number>(); for (const f of sorted) total.set(f.code, (total.get(f.code) ?? 0) + 1);
   const grouped: Finding[] = [];
   for (const f of sorted) { const n = (shown.get(f.code) ?? 0) + 1; shown.set(f.code, n); if (n <= 40) grouped.push(f); else if (n === 41) grouped.push({ level: f.level, code: f.code, message: `… and ${total.get(f.code)! - 40} more with this code (not listed; the count is in the summary).` }); }
+  if (!o.update && o.existing?.hasVault && rulesText === undefined) files.push({ path: CATEGORY_RULES_PATH, content: renderCategoryRules() });
   files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${grouped.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n${skippedSection(parsed.skipped)}` });
   const freshParts = newParts.length;
   return { status: "WRITE_READY", files, findings: sorted, problems,

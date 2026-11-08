@@ -490,6 +490,17 @@ test("the vault's own category list sorts the parts; a bad list is ignored with 
   assert.ok(parseCategoryRules("- Uncategorized: FOO").problems.length === 1 && parseCategoryRules("- Parts: A").rules === null, "words need two characters");
 });
 
+test("a first import writes the category list when the vault has none, and leaves a list the vault has (BOM-044, D-0145)", () => {
+  const H = "Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParent Rev";
+  const g = parseDelimited([H, ["TOP-1", "-A", "01", "TOP ASSEMBLY", "make", "PRODUCTION", "1", "SCR-1", "-A", "01", "SCREW M4", "buy", "PRODUCTION", "", "", "", "", "", "1", "ea", "TOP-1-A01"].join("\t")].join("\n"));
+  const none = buildBom(g, { ...baseOpts, existing: { hasVault: true, files: new Map<string, string>() } }), own = "# mine\n- Widgets: SCREW\n";
+  assert.equal(none.files.find((x) => x.path === CATEGORY_RULES_PATH)?.content, renderCategoryRules());
+  assert.ok(none.findings.some((x) => x.code === "CATEGORY_RULES_WRITTEN"));
+  assert.ok(!buildBom(g, baseOpts).files.some((x) => x.path === CATEGORY_RULES_PATH), "a new vault gets the list from the Base Vault, not from the BOM");
+  const have = buildBom(g, { ...baseOpts, existing: { hasVault: true, files: new Map([[CATEGORY_RULES_PATH, own]]) } });
+  assert.ok(!have.files.some((x) => x.path === CATEGORY_RULES_PATH) && have.files.some((x) => x.path.includes("/Widgets/")), "the vault's own list is used and not rewritten");
+});
+
 test("revisions follow the letter and running-number scheme; anything else is REV_SCHEME (BOM-018, D-0123)", () => {
   assert.deepEqual(bomRevSchemeProblems(["A01", "B02", "B03", "C04"]), [], "the owner's example");
   assert.deepEqual(["A01", "B03", "B02", "C04"].sort(bomRevCompare), ["A01", "B02", "B03", "C04"]);

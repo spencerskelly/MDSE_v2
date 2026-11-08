@@ -1692,3 +1692,10 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 3. **Placement.** The word nearest the start of the description decides (SCREW … CONE WASHER is a screw); the table's order breaks a tie. The two tiers are gone.
 4. **Not merged yet.** PCB and PCBA, Cable and Cable ASM, Product, Product ASM and Product Shipped, and the document-like categories remain as the owner wrote them. The assembly categories can only come from a category column.
 5. **Existing vaults.** The vault's own table is never overwritten (BOM-044): replace its content to use the new words. Notes already imported keep their folders.
+
+## D-0145 — A first BOM import writes the category list when the vault has none
+
+2026-11-07 · Spencer · Accepted (owner, chat: "I deleted the categories file and the new one was not written in")
+
+1. **Cause.** Only a vault update seeded `99_System/06_Config/BOM Categories.md`; a BOM import used the built-in list without writing it.
+2. **Built.** A first BOM import into an existing vault writes the file when the vault lacks it (a new vault gets it from the Base Vault) and reports `CATEGORY_RULES_WRITTEN`. A file the vault has is read and never rewritten. The update scan does not write it.

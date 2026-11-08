@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- BOM import: a first import writes `99_System/06_Config/BOM Categories.md` when the vault has none (`CATEGORY_RULES_WRITTEN`). BOM-044, D-0145
 - BOM categories: the built-in table uses the owner's categories (Panel, Lid and Door are ME Part), the word nearest the start of the description decides, and a table line `- Category also: Name, Name` names a category's other names. BOM-041, BOM-044, BOM-063 (changed), D-0144
 - Workbench panel: views chosen from one grouped drop-down instead of a button column; Edit tasks in a drop-down; All and None on every ticked list. WKB-033 (changed), WKB-065, D-0143
 - BOM update scan reads and writes revision notes: a BOM added to a vault with parts adds new part numbers, new CL1 notes, new CL2 values, lines, manufacturers, descriptions and categories, and removes nothing. BOM-066 (built), D-0142
