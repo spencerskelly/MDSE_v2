@@ -106,7 +106,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # D-0143: the functions are one grouped drop-down, not a column of buttons
             self.assertEqual(pg.locator("select.fn").count(), 1); self.assertEqual(pg.locator("nav.tbar").count(), 0)
-            self.assertEqual(pg.locator("select.fn option").count(), 17)
+            self.assertEqual(pg.locator("select.fn option").count(), 18)
             pg.select_option("select.fn", label="Find similar")
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
@@ -599,3 +599,39 @@ class WorkbenchPlugin(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(sync_playwright is None or not MAIN.exists(), "playwright or built plugin unavailable")
+class KeywordsLens(unittest.TestCase):
+    def test_keywords_lens_previews_a_word_and_applies_it_to_the_category_list_and_the_parts(self):
+        import subprocess, json
+        out = subprocess.run(["node", "--experimental-strip-types", "--no-warnings", str(ROOT / "testing/oracles/make_bom_vault.ts")], capture_output=True, text=True, check=True).stdout
+        notes = json.loads(out); errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 1000})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.select_option("select.fn", label="Keywords (BOM categories)")
+            pg.wait_for_selector("text=/\\d+ of \\d+ parts are Uncategorized/")
+            pg.wait_for_selector("td b:has-text('WIDGET')")
+            pg.select_option("select[aria-label='Category for WIDGET']", value="ME Part")
+            pg.wait_for_selector("text=/WIDGET → ME Part: places 2 Uncategorized parts; would move 1 placed part/")
+            pg.click("button:has-text('Apply')")
+            pg.wait_for_selector("text=/Added WIDGET to ME Part and set the category on 2 parts/")
+            table = pg.evaluate("window.__notes['99_System/06_Config/BOM Categories.md']")
+            self.assertRegex(table, r"(?m)^- ME Part: .*\bWIDGET\b")
+            cats = pg.evaluate("() => Object.entries(window.__notes).filter(([p, t]) => /^partNumber: \"?P[0-9]/m.test(t) && /^bomCategory:/m.test(t)).map(([p, t]) => [/^partNumber: \"?(P\\d+)/m.exec(t)[1], /^bomCategory: (.*)$/m.exec(t)[1]])")
+            self.assertEqual(sorted(c for c in cats if c[1] == "ME Part"), [["P2", "ME Part"], ["P3", "ME Part"]])
+            pg.click("button:has-text('Undo')")
+            pg.wait_for_function("() => !/\\bWIDGET\\b/.test(window.__notes['99_System/06_Config/BOM Categories.md'] || '')", timeout=4000)
+            self.assertEqual(errors, [])
+            b.close()

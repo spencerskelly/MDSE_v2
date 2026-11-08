@@ -1699,3 +1699,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 
 1. **Cause.** Only a vault update seeded `99_System/06_Config/BOM Categories.md`; a BOM import used the built-in list without writing it.
 2. **Built.** A first BOM import into an existing vault writes the file when the vault lacks it (a new vault gets it from the Base Vault) and reports `CATEGORY_RULES_WRITTEN`. A file the vault has is read and never rewritten. The update scan does not write it.
+
+## D-0146 — Keyword review in the Workbench
+
+2026-11-08 · Spencer · Accepted (owner, chat: "id like to work in obsidian")
+
+1. **Built.** A Keywords view in the Review group of the Workbench panel (WKB-066, WKB-067) for sorting Uncategorized BOM parts by description word, with a preview of each word's effect and an undoable Apply.
+2. **Why a preview.** On the 14,563-part vault of 2026-11-07, adding CABLE to Cable ASM places 991 parts and moves 314 placed parts, and RESISTOR places 358 and moves 2; the first needs a look before it is applied.
+3. **Not built.** Moving notes into the new category folder, a findings table and an import diff (proposed, awaiting the owner).
+4. **Size.** Indexing the 35,194 files took about 4 seconds in Node and grouping 0.3 seconds. Obsidian's own load time has not been measured.

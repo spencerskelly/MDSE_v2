@@ -171,6 +171,8 @@ function hostFor(plugin: any): any {
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path: string, change: any) => plugin.updateNote(path, change),
+    categoryRules: () => plugin.files.get(WB.CATEGORY_RULES_PATH) ?? null,
+    applyCategoryWord: (word: string, category: string, paths: string[]) => plugin.applyCategoryWord(word, category, paths),
     editRelationship: (ref: unknown) => plugin.editRelationship(ref),
     edit: {
       files: () => plugin.files,
@@ -474,6 +476,44 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /* ---- Review actions (D-0025): the only edits to model notes ---- */
+  /** D-0146: add a word to a category in the vault's category list and set that category on the parts it places. One undo puts every file back. */
+  async applyCategoryWord(word: string, category: string, paths: string[]): Promise<{ message: string; undo: () => Promise<string> }> {
+    const w = word.trim().toUpperCase(), cat = category.trim();
+    if (!/^[A-Z][A-Z0-9]+$/.test(w)) throw new Error(`"${word}" is not a single word.`);
+    if (!cat || /[\\/:*?"<>|]/.test(cat)) throw new Error("The category name cannot be used as a folder name.");
+    const done: Array<{ path: string; before: string | null; after: string }> = [];
+    const table = this.files.get(WB.CATEGORY_RULES_PATH) ?? null;
+    let next: string;
+    if (table === null) { const r = WB.DEFAULT_CATEGORY_RULES.map((x) => ({ ...x, words: [...x.words] })); const t = r.find((x) => x.category === cat); if (t) { if (!t.words.includes(w)) t.words.push(w); } else r.push({ category: cat, words: [w] }); next = WB.renderCategoryRules(r); }
+    else {
+      const lines = table.split("\n"), at = lines.findIndex((l) => { const m = /^- (.+?): (.*)$/.exec(l); return !!m && m[1]!.trim() === cat; });
+      if (at >= 0) { if (!lines[at]!.split(/\s+/).includes(w)) lines[at] = lines[at]!.replace(/\s*$/, "") + " " + w; }
+      else { let last = -1; lines.forEach((l, i) => { if (/^- .+: /.test(l) && !/ also: /.test(l)) last = i; }); lines.splice(last + 1, 0, `- ${cat}: ${w}`); }
+      next = lines.join("\n");
+    }
+    const tf = this.app.vault.getAbstractFileByPath(WB.CATEGORY_RULES_PATH);
+    const checked = WB.parseCategoryRules(next); if (checked.problems?.length) throw new Error("The category list would have problems: " + checked.problems.join("; "));
+    if (tf) { let before = ""; await this.app.vault.process(tf, (t: string) => { before = t; return next; }); done.push({ path: WB.CATEGORY_RULES_PATH, before, after: next }); }
+    else { await ensureFolder(this.app, WB.CATEGORY_RULES_PATH.split("/").slice(0, -1).join("/")); await this.app.vault.create(WB.CATEGORY_RULES_PATH, next); done.push({ path: WB.CATEGORY_RULES_PATH, before: null, after: next }); }
+    this.files.set(WB.CATEGORY_RULES_PATH, next);
+    let set = 0;
+    for (const p of paths) {
+      const f = this.app.vault.getAbstractFileByPath(p); if (!f) continue;
+      let before = "", after = "";
+      await this.app.vault.process(f, (t: string) => { before = t; const r = MDSE.setFrontmatterField(t, "bomCategory", cat); after = r.changed ? r.text : t; return after; });
+      if (after !== before) { done.push({ path: p, before, after }); this.files.set(p, after); set++; }
+    }
+    this.laterRebuild(200);
+    const undo = async (): Promise<string> => {
+      for (const d of done.slice().reverse()) {
+        const f = this.app.vault.getAbstractFileByPath(d.path); if (!f) continue;
+        if (d.before === null) { await this.app.vault.delete(f); this.files.delete(d.path); continue; }
+        await this.app.vault.process(f, (cur: string) => (cur === d.after ? d.before! : cur)); this.files.set(d.path, d.before);
+      }
+      this.laterRebuild(200); return "Undone.";
+    };
+    return { message: `Added ${w} to ${cat} and set the category on ${set} part${set === 1 ? "" : "s"}.`, undo };
+  }
   async updateNote(path: string, change: any): Promise<{ message: string; undo: () => Promise<string> }> {
     const note = this.ix?.notes.get(path), file = this.app.vault.getAbstractFileByPath(path);
     if (!note || !file) throw new Error("That note is not in the index. Refresh and try again.");

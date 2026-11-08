@@ -400,6 +400,132 @@ function bomOwnedHash(noteText        )         {
   return sha256Text(`${yaml.join("\n")}\n--\n${owned}`).slice(0, 16);
 }
 
+/* ../../importer/src/bom_category.ts */
+/* BOM part classification (D-0072, D-0122): a level from `bomRole` and a category (the BOM file's `category` column, else the words of the description).
+ * The two decide the folder `BOM/Parts/<Product|Assembly|Part>/<category>` (BOM-041); `bomCategory`, `bomRole`, `level` and `makeBuy` are the properties a person or a tool queries.
+ * Rules are ordered and the first with a word in the description wins. Words are whole words of letters and digits, upper-cased. */
+                                                                                // also: other names for the same category (D-0144)
+const R = (category        , words        , also           )               => ({ category, words: words.split(" "), ...(also ? { also } : {}) });
+/* D-0144: the categories are the owner's own (the Power Station BOM, 2026-11-07). The word nearest the start of the description decides, since a description starts with what the part is (SCREW MACH ... CONE WASHER is a screw); the table's order breaks a tie between two categories that share a word. */
+const DEFAULT_CATEGORY_RULES                 = [
+  R("Terminal Block", "BLOCK"),
+  R("Cable Mgmt", "CLAMP TIE"),
+  R("Schematic", "SCHEMATIC SCH"),
+  R("Gerber", "GERBER"),
+  R("EE BOM", "BOM"),
+  R("Manual", "MANUAL INSTRUCTIONS"),
+  R("Firmware", "FIRMWARE SOFTWARE"),
+  R("Requirements", "REQUIREMENTS"),
+  R("Label", "LABEL LBL DECAL NAMEPLATE"),
+  R("Cable ASM", "CBL CORDSET"),
+  R("Tubing", "TUBING SHRINK SLEEVE"),
+  R("Adhesive", "ADH ADHESIVE TAPE FOAM COMPOUND SEAL COATING"),
+  R("Packaging", "SHIPPING BUBBLE WRAP BAG STRAP STRAPS STRAPPING"),
+  R("Nut", "NUT"),
+  R("Washer", "WASHER SPLOCK SPLIT"),
+  R("Bolt", "BOLT"),
+  R("Stud", "STUD"),
+  R("Spacer", "SPACER STANDOFF SPCR"),
+  R("Rivet", "RIVET"),
+  R("Screw", "SCREW SCR MACH PHP PPH"),
+  R("Lug", "LUG"),
+  R("Crimp", "CRIMP"),
+  R("Connector", "CONNECTOR CONN SHROUD HSG HSNG HOUSING PIN"),
+  R("Bracket", "BRKT BRACKET SHELF"),
+  R("Gasket", "GASKET GSKT"),
+  R("Bus Bar", "BAR BUSBAR"),
+  R("Switch", "SWITCH"),
+  R("Fan", "FAN"),
+  R("Fuse Holder", "HOLDER"),
+  R("Fuse", "FUSE"),
+  R("Heatsink", "HEATSINK"),
+  R("Transformer", "XFMR TRANSFORMER"),
+  R("Inductor", "INDUCTOR CHOKE"),
+  R("Capacitor", "CAPACITOR CAP"),
+  R("Sensor", "SENSOR TRANSDUCER THERMISTOR"),
+  R("Fitting", "FITTING"),
+  R("ME Part", "PANEL LID DOOR BAFFLE ENCL ENCLOSURE DUCTING", ["Panel", "Lid", "Door"]),
+  R("PCBA", "PCBA"),
+  R("PCB", "PCB"),
+  R("Wire", "WIRE PVC IRRADPVC CORD"),
+  R("Contactor", "CONTACTOR"),
+  R("IGBT", "IGBT"),
+  R("Display", "DSPL DISPLAY"),
+  R("Power Supply", "PWRSPLY CONVERTER"),
+  R("Bushing", "BUSHING"),
+  R("Isolator", "ISOLATOR INSOLATION"),
+];
+const NO_CATEGORY = "Uncategorized";
+                                                   
+                                        
+                                                
+
+function bomCategoryOf(description        , rules                 = DEFAULT_CATEGORY_RULES)         {
+  for (const x of description.toUpperCase().match(/[A-Z][A-Z0-9]+/g) ?? []) for (const r of rules) if (r.words.includes(x)) return r.category;   // D-0144: earliest word wins
+  return NO_CATEGORY;
+}
+/** final: has child lines and no parent in the BOMs read; sub: has both; part: no child lines, used somewhere; unused: neither. */
+const bomRoleOf = (hasChildren         , hasParent         )          => (hasChildren ? (hasParent ? "sub" : "final") : hasParent ? "part" : "unused");
+/** BOM-061: `make` and `buy` as read from the source column (case and outer spaces ignored); anything else, or nothing, is `other`. */
+const bomMakeBuyOf = (source        )          => { const t = source.trim().toLowerCase(); return t === "buy" || t === "make" ? t : "other"; };
+/** BOM-042: final is product, sub is assembly, part and unused are part. */
+const bomLevelOf = (role         )           => (role === "final" ? "product" : role === "sub" ? "assembly" : "part");
+const LEVEL_FOLDER                           = { product: "Product", assembly: "Assembly", part: "Part" };
+/** BOM-062 (D-0141): the category a BOM file names. The table's spelling when it has the category (case ignored); otherwise the name as written, trimmed and made safe for a folder name, with the first spelling met kept for every later case variant (`seen`). Empty gives null. "Uncategorized" is accepted. */
+function bomNamedCategory(named        , rules                , seen                      )                {
+  const t = named.trim().replace(/\s+/g, " "); if (!t) return null;
+  const k = t.toLowerCase();
+  if (k === NO_CATEGORY.toLowerCase()) return NO_CATEGORY;
+  const inTable = rules.find((r) => r.category.toLowerCase() === k || r.also?.some((a) => a.toLowerCase() === k))?.category;
+  if (inTable) return inTable;
+  const safe = t.replace(/[\\/:*?"<>|#^[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60); if (!safe) return null;
+  if (!seen) return safe;
+  if (!seen.has(k)) seen.set(k, safe);
+  return seen.get(k) ;
+}
+/** True when the category is one the table knows (so it needs no new-category notice). */
+const bomCategoryInTable = (named        , rules                )          => { const k = named.trim().toLowerCase(); return k === NO_CATEGORY.toLowerCase() || rules.some((r) => r.category.toLowerCase() === k || !!r.also?.some((a) => a.toLowerCase() === k)); };
+/** The folder of a part under `dir` (default BOM): level, then category (BOM-041). */
+const bomPartFolder = (dir        , level          , category        )         => `${dir}/Parts/${LEVEL_FOLDER[level]}/${category}`;
+
+/** D-0076: the vault's own copy of the table. A person edits it in Obsidian; the importer reads it from the vault each run. */
+const CATEGORY_RULES_PATH = "99_System/06_Config/BOM Categories.md";
+function renderCategoryRules(rules                 = DEFAULT_CATEGORY_RULES)         {
+  return [
+    "# BOM categories", "",
+    "The importer sorts each BOM part into a folder by the words of its description (`BOM/Parts/<Product|Assembly|Part>/<category>`) and writes the category as `bomCategory`. A BOM file may carry a `category` column; a part with a value there uses it, if it is a category below.",
+    "Edit this list to change how parts are sorted. A note already in the vault keeps its folder; the BOM update scan offers its new `bomCategory`.", "",
+    "One rule per line, written `- Category name: WORD WORD WORD`. The category name is also the folder name.",
+    "Rules are tried from the top. The first rule with one of its words in the description wins, so put the more specific rule higher.",
+    "Words are whole words of letters and digits, upper or lower case. A part no rule matches is `Uncategorized`.",
+    "The same category may appear on more than one line. Only lines that start with a dash and a space are rules.",
+    "The word nearest the start of the description decides (a description starts with what the part is); when two categories share a word, the one higher in the list wins.",
+    "A line `- Category also: Name, Name` makes those names the same category: a BOM file that names one of them is filed under Category.", "",
+    ...rules.flatMap((r) => [`- ${r.category}: ${r.words.join(" ")}`, ...(r.also?.length ? [`- ${r.category} also: ${r.also.join(", ")}`] : [])]), "",
+  ].join("\n");
+}
+/** The rules in a vault's category file, or null with the reason when the file is not usable. Never partial: one bad line and the defaults are used, so a typo cannot silently move parts. */
+function parseCategoryRules(text        )                                                       {
+  const rules                 = [], problems           = [];
+  text.replace(/\r\n/g, "\n").split("\n").forEach((line, i) => {
+    const m = /^- (.+?): (.*)$/.exec(line); if (!m) return;
+    const also = /^(.+) also$/.exec(m[1] .trim());
+    if (also) {   // D-0144: other names for a category
+      const target = rules.find((r) => r.category === also[1] .trim()), names = m[2] .split(",").map((x) => x.trim()).filter(Boolean);
+      if (!target) problems.push(`line ${i + 1}: "${also[1]}" is not a category above this line`); else if (!names.length || names.some((n) => /[\\/:*?"<>|]/.test(n))) problems.push(`line ${i + 1}: "${m[2]}" is not a list of names`); else target.also = [...(target.also ?? []), ...names];
+      return;
+    }
+    const category = m[1] .trim(), words = (m[2] .toUpperCase().match(/[A-Z0-9]+/g) ?? []);
+    if (/[\\/:*?"<>|]/.test(category) || /^\.+$/.test(category)) problems.push(`line ${i + 1}: "${category}" cannot be a folder name`);
+    else if (category === NO_CATEGORY) problems.push(`line ${i + 1}: "${NO_CATEGORY}" is what no match gets; it cannot have words`);
+    else if (!words.length) problems.push(`line ${i + 1}: "${category}" has no words`);
+    else if (words.some((w) => !/^[A-Z][A-Z0-9]+$/.test(w))) problems.push(`line ${i + 1}: a word must start with a letter and have two or more characters (${words.filter((w) => !/^[A-Z][A-Z0-9]+$/.test(w)).join(", ")})`);
+    else rules.push({ category, words });
+  });
+  if (!rules.length && !problems.length) problems.push("no rule lines found");
+  return { rules: problems.length ? null : rules, problems };
+}
+
 /* sysml_lang.ts */
 /* Recognizes the SysML v2 textual notation by the language catalog (governance/language/catalog.json): which construct a
  * statement is, from its leading keywords. Not a parser: it classifies a statement head so nothing valid is reported as
@@ -1404,12 +1530,12 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                                                                                  
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
+                                                                                                                                                                                                                               
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "similar", "compare", "merge", "edit"] },
-  { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
+  { id: "model", label: "Model", lenses: ["dashboard", "tables", "review", "keywords"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 /** The panel's vertical toolbar: every lens once, in task groups (feature request 2026-10-29). Individual functions live here; a view's own options sit at the top of that view. `needsEdit` buttons show disabled where the host cannot edit. */
@@ -1419,12 +1545,12 @@ const TOOLBAR_GROUPS                                                            
   { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
   { id: "trace", label: "Trace", items: [{ lens: "structure", glyph: "⌥", label: "Structure" }, { lens: "design", glyph: "◇", label: "Design types" }, { lens: "internal", glyph: "◫", label: "Internal structure" }, { lens: "functional", glyph: "ƒ", label: "Function" }, { lens: "states", glyph: "◉", label: "States" }, { lens: "requirements", glyph: "✓", label: "Requirements" }] },
   { id: "edit", label: "Create and edit", items: [{ lens: "edit", glyph: "✎", label: "Edit", needsEdit: true }, { lens: "merge", glyph: "⊕", label: "Merge notes", needsEdit: true }] },
-  { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }] },
+  { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }, { lens: "keywords", glyph: "⌘", label: "Keywords (BOM categories)" }] },
   { id: "canvas", label: "Canvas", items: [{ lens: "layout", glyph: "⊞", label: "Auto-layout and refresh" }] },
 ];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
-const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar";
+const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
 
                                                                                                                                                    
                                         
@@ -3953,6 +4079,102 @@ function findSimilar(ix            , path        , opt                       = {
 /** The kinds that have at least one similar note, for the lens's kind filter. */
 const similarKinds = (r               )           => [...new Set(r.groups.map((g) => g.kind))].sort();
 
+/* keywords.ts */
+/* D-0146: keyword review. The parts a BOM import left in Uncategorized, grouped by the word their description starts with (a description starts with what the part is), each group with the category the PLACED parts that start the same way carry.
+ * Read-only and derived from the index: a suggestion is shown only with the evidence for it (how many placed parts, what share), never as a fact. */
+
+const UNCATEGORIZED = "Uncategorized";
+                        
+                                                                                        
+              
+                                                                            
+                  
+                     
+                                                                                          
+                           
+                                                             
+                                                       
+                                                                                 
+                
+ 
+                                                                                                                                                
+
+const WORD = /[A-Za-z][A-Za-z0-9]+/g;
+const wordsOf = (s        )           => (s.toUpperCase().match(WORD) ?? []);
+
+function keywordGroups(ix            , o                                                                  = {})                {
+  const minEvidence = o.minEvidence ?? 3, splitBelow = o.splitBelow ?? 0.8, splitAt = o.splitAt ?? 10;
+  // a part is a part-number note (it carries bomCategory); its description lives on the part number's own note or on a revision note
+  const desc = new Map                (), cat = new Map                                            ();
+  for (const n of ix.notes.values()) {
+    if (n.meta.mergedInto) continue;
+    const pn = String(n.meta.partNumber ?? "").trim(); if (!pn) continue;
+    const d = String(n.meta.description ?? "").trim(); if (d && !desc.has(pn)) desc.set(pn, d);
+    const c = String(n.meta.bomCategory ?? "").trim(); if (c && !cat.has(pn)) cat.set(pn, { path: n.path, category: c });
+  }
+  const placed                                               = [], open                                                       = [];
+  const byCategory = new Map                ();
+  for (const [pn, { path, category }] of cat) {
+    byCategory.set(category, (byCategory.get(category) ?? 0) + 1);
+    const words = wordsOf(desc.get(pn) ?? "");
+    if (category === UNCATEGORIZED) open.push({ pn, path, words }); else placed.push({ words, category });
+  }
+  const evidenceFor = (match                          )                                             => {
+    const m = new Map                (); for (const p of placed) if (match(p.words)) m.set(p.category, (m.get(p.category) ?? 0) + 1);
+    return [...m].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+  };
+  const head = new Map                     ();
+  for (const p of open) { const k = p.words[0] ?? "(no description)"; (head.get(k) ?? head.set(k, []).get(k) ).push(p); }
+  const groups                 = [];
+  const make = (key        , items             , ev                                            )               => {
+    const total = ev.reduce((a, e) => a + e.count, 0), top = ev[0];
+    const ok = !!top && total >= minEvidence;
+    return { key, parts: items.map((p) => p.path), examples: items.slice(0, 3).map((p) => p.pn), suggested: ok ? top .category : null, evidence: ev, share: ok ? top .count / total : 0 };
+  };
+  for (const [k, items] of head) {
+    const ev = evidenceFor((w) => w[0] === k), total = ev.reduce((a, e) => a + e.count, 0), share = total ? ev[0] .count / total : 1;
+    if (items.length >= splitAt && total >= minEvidence && share < splitBelow) {   // the head word is not decisive: split by the second word
+      const second = new Map                     (); for (const p of items) { const s = p.words[1] ?? ""; (second.get(s) ?? second.set(s, []).get(s) ).push(p); }
+      for (const [s, sub] of second) groups.push(make(s ? `${k} ${s}` : k, sub, s ? evidenceFor((w) => w[0] === k && w[1] === s) : ev));
+    } else groups.push(make(k, items, ev));
+  }
+  groups.sort((a, b) => b.parts.length - a.parts.length || a.key.localeCompare(b.key));
+  return { total: cat.size, uncategorized: open.length, groups, byCategory: [...byCategory].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count) };
+}
+
+/* ---- What adding a word to a category would do ---------------------------------------------------------------- */
+
+                       
+                                                  
+                 
+                                                                                                                                                                                                           
+                                                
+                     
+                                                          
+                        
+ 
+/** Add `word` to `category` in a copy of `rules` and count what the table would then do to every part (the same matching the import uses). */
+function previewWord(ix            , rules                , word        , category        )              {
+  const w = word.trim().toUpperCase(), next = rules.map((r) => ({ ...r, words: [...r.words] }));
+  let target = next.find((r) => r.category === category); if (!target) { target = { category, words: [] }; next.push(target); }
+  if (!target.words.includes(w)) target.words.push(w);
+  const desc = new Map                (), cat = new Map                                            ();
+  for (const n of ix.notes.values()) {
+    if (n.meta.mergedInto) continue;
+    const pn = String(n.meta.partNumber ?? "").trim(); if (!pn) continue;
+    const d = String(n.meta.description ?? "").trim(); if (d && !desc.has(pn)) desc.set(pn, d);
+    const c = String(n.meta.bomCategory ?? "").trim(); if (c && !cat.has(pn)) cat.set(pn, { path: n.path, category: c });
+  }
+  const moved = new Map                (), placedPaths           = []; let movedTotal = 0;
+  for (const [pn, { path, category: now }] of cat) {
+    const d = desc.get(pn) ?? ""; if (!wordsOf(d).includes(w)) continue;   // only a part with the word can change
+    const was = bomCategoryOf(d, rules), will = bomCategoryOf(d, next);
+    if (will === was || will !== category) continue;
+    if (now === "Uncategorized" || now === NO_CATEGORY) placedPaths.push(path); else { moved.set(now, (moved.get(now) ?? 0) + 1); movedTotal++; }
+  }
+  return { placed: placedPaths.length, placedPaths, movedTotal, moved: [...moved].map(([from, count]) => ({ from, count })).sort((a, b) => b.count - a.count) };
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -5185,6 +5407,8 @@ function editView(c         )              {
 
 
 
+
+
                                                                                                                        
                      
                                
@@ -5212,6 +5436,9 @@ function editView(c         )              {
                                                               
                                                                                                            
                          
+                                                                                                                                                                       
+                                  
+                                                                                                                                 
                                                             
                   
                                                                                           
@@ -5412,6 +5639,38 @@ function mountPanel(root             , host           , opt                     
     if (rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${rows.length - shown.length} more. Open the table in the main window.`));
     return box;
   }
+  /* D-0146: the parts a BOM import left in Uncategorized, by the word their description starts with. Pick a category for a word, see what it would do, then apply. */
+  let kwPick = new Map                (), kwOpen = "", kwFilter = "";
+  function keywordsView()              {
+    const box = h("div", {}), text = host.categoryRules?.() ?? null, parsed = text === null ? { rules: DEFAULT_CATEGORY_RULES, problems: []             } : parseCategoryRules(text);
+    const rules = parsed.rules ?? DEFAULT_CATEGORY_RULES, k = keywordGroups(ix ), cats = [...new Set([...rules.map((r) => r.category), ...k.byCategory.map((c) => c.category)])].filter((c) => c !== UNCATEGORIZED).sort();
+    box.append(h("div", { class: "callout" }, h("b", {}, `${k.uncategorized} of ${k.total} parts are Uncategorized`), " — grouped by the first word of the description. Pick a category for a word to see how many parts it would place and how many already-placed parts it would move; Apply adds the word to the category list and files the parts it places. Parts keep their folders; a re-import files new parts by the new list.", text === null && host.applyCategoryWord ? " The vault has no category list yet: Apply writes one." : ""));
+    if (parsed.problems?.length) box.append(h("div", { class: "callout" }, h("b", {}, "The category list has problems: "), parsed.problems.join("; ")));
+    const f = h("input", { type: "search", placeholder: "Filter words", value: kwFilter, "aria-label": "Filter words" })                    ;
+    f.addEventListener("input", () => { kwFilter = f.value; draw(); }); box.append(f);
+    const groups = k.groups.filter((g) => !kwFilter || g.key.includes(kwFilter.toUpperCase())), shown = groups.slice(0, compact ? 40 : 300);
+    const rows = shown.map((g) => {
+      const sel = h("select", { "aria-label": `Category for ${g.key}` }, h("option", { value: "" }, "— category —"), ...cats.map((c) => h("option", { value: c, selected: (kwPick.get(g.key) ?? "") === c }, c)), h("option", { value: "\u0000new" }, "New category…"))                     ;
+      sel.addEventListener("change", () => { let c = sel.value; if (c === "\u0000new") { c = (typeof prompt === "function" ? prompt(`New category for ${g.key}`) ?? "" : "").trim(); } if (c) kwPick.set(g.key, c); else kwPick.delete(g.key); kwOpen = c ? g.key : ""; draw(); });
+      const word = g.key.split(" ")[0] , why = g.evidence.slice(0, 2).map((e) => `${e.category} ${e.count}`).join(", ");
+      const tr = [h("tr", {}, h("td", {}, h("b", {}, g.key)), h("td", {}, String(g.parts.length)), h("td", {}, g.examples.map((e) => { const p = ix .byName.get(e.toLowerCase()); return p ? link(p) : e; }).flatMap((x, i) => i ? [", ", x] : [x])), h("td", { class: "mut" }, why || "—"), h("td", {}, sel))];
+      const c = kwPick.get(g.key);
+      if (c && kwOpen === g.key) {
+        const pv = previewWord(ix , rules, word, c);
+        const moved = pv.movedTotal ? `would move ${pv.movedTotal} placed part${pv.movedTotal === 1 ? "" : "s"} (${pv.moved.slice(0, 4).map((m) => `${m.count} from ${m.from}`).join(", ")}${pv.moved.length > 4 ? ", …" : ""})` : "moves no placed part";
+        tr.push(h("tr", {}, h("td", { colspan: "5" }, h("b", {}, `${word} → ${c}: `), `places ${pv.placed} Uncategorized part${pv.placed === 1 ? "" : "s"}; ${moved}. `, host.applyCategoryWord ? h("button", { class: "sm", title: "Add the word to the category list and set the category on the parts it places", disabled: pv.placed === 0 || undefined, onclick: () => applyWord(word, c, pv.placedPaths) }, "Apply") : null, host.addToCanvas || host.openPickCanvas ? h("button", { class: "sm", onclick: async () => { msg = (await host.openPickCanvas?.(g.parts, `${g.key} (Uncategorized)`, false, false, false)) ?? ""; draw(); } }, "Open the parts as a canvas") : null)));
+      }
+      return tr;
+    }).flat();
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Word"), h("th", {}, "Parts"), h("th", {}, "Examples"), h("th", {}, "Placed parts that start so"), h("th", {}, "Category"))), h("tbody", {}, ...rows)));
+    if (groups.length > shown.length) box.append(h("div", { class: "more" }, `… ${groups.length - shown.length} more words. Filter to find them.`));
+    return box;
+  }
+  async function applyWord(word        , category        , paths          )                {
+    if (!host.applyCategoryWord) return;
+    try { const r = await host.applyCategoryWord(word, category, paths); msg = r.message; undo = r.undo; kwPick.delete(word); kwOpen = ""; } catch (e) { msg = "Not applied: " + String((e         )?.message ?? e); undo = null; }
+    draw();
+  }
   async function run(path        , change            )                {
     if (!host.updateNote) return;
     if (change.kind === "removeFlag" && typeof confirm === "function" && !confirm(`Resolve this flag and remove it from the note?\n\n${change.title}`)) return;
@@ -5548,6 +5807,7 @@ function mountPanel(root             , host           , opt                     
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
+      else if (lens === "keywords") body.append(keywordsView());
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
@@ -5582,7 +5842,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -5757,6 +6017,8 @@ function hostFor(plugin     )      {
     saveCanvas: () => plugin.saveWithPicker(),
     hasPreview: () => !!plugin.preview,
     updateNote: (path        , change     ) => plugin.updateNote(path, change),
+    categoryRules: () => plugin.files.get(WB.CATEGORY_RULES_PATH) ?? null,
+    applyCategoryWord: (word        , category        , paths          ) => plugin.applyCategoryWord(word, category, paths),
     editRelationship: (ref         ) => plugin.editRelationship(ref),
     edit: {
       files: () => plugin.files,
@@ -6060,6 +6322,44 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /* ---- Review actions (D-0025): the only edits to model notes ---- */
+  /** D-0146: add a word to a category in the vault's category list and set that category on the parts it places. One undo puts every file back. */
+  async applyCategoryWord(word        , category        , paths          )                                                            {
+    const w = word.trim().toUpperCase(), cat = category.trim();
+    if (!/^[A-Z][A-Z0-9]+$/.test(w)) throw new Error(`"${word}" is not a single word.`);
+    if (!cat || /[\\/:*?"<>|]/.test(cat)) throw new Error("The category name cannot be used as a folder name.");
+    const done                                                                = [];
+    const table = this.files.get(WB.CATEGORY_RULES_PATH) ?? null;
+    let next        ;
+    if (table === null) { const r = WB.DEFAULT_CATEGORY_RULES.map((x) => ({ ...x, words: [...x.words] })); const t = r.find((x) => x.category === cat); if (t) { if (!t.words.includes(w)) t.words.push(w); } else r.push({ category: cat, words: [w] }); next = WB.renderCategoryRules(r); }
+    else {
+      const lines = table.split("\n"), at = lines.findIndex((l) => { const m = /^- (.+?): (.*)$/.exec(l); return !!m && m[1] .trim() === cat; });
+      if (at >= 0) { if (!lines[at] .split(/\s+/).includes(w)) lines[at] = lines[at] .replace(/\s*$/, "") + " " + w; }
+      else { let last = -1; lines.forEach((l, i) => { if (/^- .+: /.test(l) && !/ also: /.test(l)) last = i; }); lines.splice(last + 1, 0, `- ${cat}: ${w}`); }
+      next = lines.join("\n");
+    }
+    const tf = this.app.vault.getAbstractFileByPath(WB.CATEGORY_RULES_PATH);
+    const checked = WB.parseCategoryRules(next); if (checked.problems?.length) throw new Error("The category list would have problems: " + checked.problems.join("; "));
+    if (tf) { let before = ""; await this.app.vault.process(tf, (t        ) => { before = t; return next; }); done.push({ path: WB.CATEGORY_RULES_PATH, before, after: next }); }
+    else { await ensureFolder(this.app, WB.CATEGORY_RULES_PATH.split("/").slice(0, -1).join("/")); await this.app.vault.create(WB.CATEGORY_RULES_PATH, next); done.push({ path: WB.CATEGORY_RULES_PATH, before: null, after: next }); }
+    this.files.set(WB.CATEGORY_RULES_PATH, next);
+    let set = 0;
+    for (const p of paths) {
+      const f = this.app.vault.getAbstractFileByPath(p); if (!f) continue;
+      let before = "", after = "";
+      await this.app.vault.process(f, (t        ) => { before = t; const r = MDSE.setFrontmatterField(t, "bomCategory", cat); after = r.changed ? r.text : t; return after; });
+      if (after !== before) { done.push({ path: p, before, after }); this.files.set(p, after); set++; }
+    }
+    this.laterRebuild(200);
+    const undo = async ()                  => {
+      for (const d of done.slice().reverse()) {
+        const f = this.app.vault.getAbstractFileByPath(d.path); if (!f) continue;
+        if (d.before === null) { await this.app.vault.delete(f); this.files.delete(d.path); continue; }
+        await this.app.vault.process(f, (cur        ) => (cur === d.after ? d.before  : cur)); this.files.set(d.path, d.before);
+      }
+      this.laterRebuild(200); return "Undone.";
+    };
+    return { message: `Added ${w} to ${cat} and set the category on ${set} part${set === 1 ? "" : "s"}.`, undo };
+  }
   async updateNote(path        , change     )                                                            {
     const note = this.ix?.notes.get(path), file = this.app.vault.getAbstractFileByPath(path);
     if (!note || !file) throw new Error("That note is not in the index. Refresh and try again.");

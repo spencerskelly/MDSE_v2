@@ -10,7 +10,7 @@ const rd = (p) => fs.readFileSync(path.join(here, p), "utf8");
 const strip = (s) => s.replace(/\nif \(typeof module !== "undefined"\)[^\n]*\n?$/, "\n");
 const CORE = strip(rd("../core/src/mdse_core.js"));
 const CLASSES = JSON.stringify(JSON.parse(rd("../core/src/classes.json")));
-const ORDER = ["../../importer/src/sha256", "../../core/src/bom_own", "sysml_lang","sysml_scan", "index", "views", "canvas", "edit", "edit_plm", "edit_eco", "canvas_draw", "edit_rel", "edit_port", "merge_ops", "compare", "similar", "edit_help", "vault_files", "ui", "edit_ui", "panel"];
+const ORDER = ["../../importer/src/sha256", "../../core/src/bom_own", "../../importer/src/bom_category", "sysml_lang","sysml_scan", "index", "views", "canvas", "edit", "edit_plm", "edit_eco", "canvas_draw", "edit_rel", "edit_port", "merge_ops", "compare", "similar", "keywords", "edit_help", "vault_files", "ui", "edit_ui", "panel"];
 const exportsOf = (code) => [...code.matchAll(/^export (?:async )?(?:function|const|class|interface|type)\s+(\w+)/gm)].map((m) => m[1]);
 function bundle(withPlugin) {
   const names = new Map(); const parts = [];
@@ -25,7 +25,7 @@ function bundle(withPlugin) {
       .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
     parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
   }
-  const api = "{ mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff }";
+  const api = "{ mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules }";
   return `const WB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 }
 const wb = bundle();

@@ -8,6 +8,8 @@ import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
 import { MAX_PICK, relatedNotes, commonRelated } from "./canvas.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
+import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
+import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
 import { editView, setEditRef, editRefresh, markEditStale, setEditMode, setMergeWith, EDIT_STYLE } from "./edit_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
@@ -38,6 +40,9 @@ export interface PanelHost {
   /** Review actions. Resolves to a message and a way back. */
   updateNote?(path: string, change: NoteChange): Promise<{ message: string; undo: () => Promise<string> }>;
   hasPreview?(): boolean;
+  /** D-0146: the text of the vault's BOM category list (null when the vault has none), and the change that adds a word to a category and files the parts it places. */
+  categoryRules?(): string | null;
+  applyCategoryWord?(word: string, category: string, paths: string[]): Promise<{ message: string; undo: () => Promise<string> }>;
   /** Editing (D-0030). Absent = the Edit lens is hidden. */
   edit?: EditHost;
   /** From a table in the main window: open this relationship in the panel's Edit lens. */
@@ -238,6 +243,38 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${rows.length - shown.length} more. Open the table in the main window.`));
     return box;
   }
+  /* D-0146: the parts a BOM import left in Uncategorized, by the word their description starts with. Pick a category for a word, see what it would do, then apply. */
+  let kwPick = new Map<string, string>(), kwOpen = "", kwFilter = "";
+  function keywordsView(): HTMLElement {
+    const box = h("div", {}), text = host.categoryRules?.() ?? null, parsed = text === null ? { rules: DEFAULT_CATEGORY_RULES, problems: [] as string[] } : parseCategoryRules(text);
+    const rules = parsed.rules ?? DEFAULT_CATEGORY_RULES, k = keywordGroups(ix!), cats = [...new Set([...rules.map((r) => r.category), ...k.byCategory.map((c) => c.category)])].filter((c) => c !== UNCATEGORIZED).sort();
+    box.append(h("div", { class: "callout" }, h("b", {}, `${k.uncategorized} of ${k.total} parts are Uncategorized`), " — grouped by the first word of the description. Pick a category for a word to see how many parts it would place and how many already-placed parts it would move; Apply adds the word to the category list and files the parts it places. Parts keep their folders; a re-import files new parts by the new list.", text === null && host.applyCategoryWord ? " The vault has no category list yet: Apply writes one." : ""));
+    if (parsed.problems?.length) box.append(h("div", { class: "callout" }, h("b", {}, "The category list has problems: "), parsed.problems.join("; ")));
+    const f = h("input", { type: "search", placeholder: "Filter words", value: kwFilter, "aria-label": "Filter words" }) as HTMLInputElement;
+    f.addEventListener("input", () => { kwFilter = f.value; draw(); }); box.append(f);
+    const groups = k.groups.filter((g) => !kwFilter || g.key.includes(kwFilter.toUpperCase())), shown = groups.slice(0, compact ? 40 : 300);
+    const rows = shown.map((g) => {
+      const sel = h("select", { "aria-label": `Category for ${g.key}` }, h("option", { value: "" }, "— category —"), ...cats.map((c) => h("option", { value: c, selected: (kwPick.get(g.key) ?? "") === c }, c)), h("option", { value: "\u0000new" }, "New category…")) as HTMLSelectElement;
+      sel.addEventListener("change", () => { let c = sel.value; if (c === "\u0000new") { c = (typeof prompt === "function" ? prompt(`New category for ${g.key}`) ?? "" : "").trim(); } if (c) kwPick.set(g.key, c); else kwPick.delete(g.key); kwOpen = c ? g.key : ""; draw(); });
+      const word = g.key.split(" ")[0]!, why = g.evidence.slice(0, 2).map((e) => `${e.category} ${e.count}`).join(", ");
+      const tr = [h("tr", {}, h("td", {}, h("b", {}, g.key)), h("td", {}, String(g.parts.length)), h("td", {}, g.examples.map((e) => { const p = ix!.byName.get(e.toLowerCase()); return p ? link(p) : e; }).flatMap((x, i) => i ? [", ", x] : [x])), h("td", { class: "mut" }, why || "—"), h("td", {}, sel))];
+      const c = kwPick.get(g.key);
+      if (c && kwOpen === g.key) {
+        const pv = previewWord(ix!, rules, word, c);
+        const moved = pv.movedTotal ? `would move ${pv.movedTotal} placed part${pv.movedTotal === 1 ? "" : "s"} (${pv.moved.slice(0, 4).map((m) => `${m.count} from ${m.from}`).join(", ")}${pv.moved.length > 4 ? ", …" : ""})` : "moves no placed part";
+        tr.push(h("tr", {}, h("td", { colspan: "5" }, h("b", {}, `${word} → ${c}: `), `places ${pv.placed} Uncategorized part${pv.placed === 1 ? "" : "s"}; ${moved}. `, host.applyCategoryWord ? h("button", { class: "sm", title: "Add the word to the category list and set the category on the parts it places", disabled: pv.placed === 0 || undefined, onclick: () => applyWord(word, c, pv.placedPaths) }, "Apply") : null, host.addToCanvas || host.openPickCanvas ? h("button", { class: "sm", onclick: async () => { msg = (await host.openPickCanvas?.(g.parts, `${g.key} (Uncategorized)`, false, false, false)) ?? ""; draw(); } }, "Open the parts as a canvas") : null)));
+      }
+      return tr;
+    }).flat();
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Word"), h("th", {}, "Parts"), h("th", {}, "Examples"), h("th", {}, "Placed parts that start so"), h("th", {}, "Category"))), h("tbody", {}, ...rows)));
+    if (groups.length > shown.length) box.append(h("div", { class: "more" }, `… ${groups.length - shown.length} more words. Filter to find them.`));
+    return box;
+  }
+  async function applyWord(word: string, category: string, paths: string[]): Promise<void> {
+    if (!host.applyCategoryWord) return;
+    try { const r = await host.applyCategoryWord(word, category, paths); msg = r.message; undo = r.undo; kwPick.delete(word); kwOpen = ""; } catch (e) { msg = "Not applied: " + String((e as Error)?.message ?? e); undo = null; }
+    draw();
+  }
   async function run(path: string, change: NoteChange): Promise<void> {
     if (!host.updateNote) return;
     if (change.kind === "removeFlag" && typeof confirm === "function" && !confirm(`Resolve this flag and remove it from the note?\n\n${change.title}`)) return;
@@ -374,6 +411,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
+      else if (lens === "keywords") body.append(keywordsView());
       else if (lens === "pick") body.append(pickView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());

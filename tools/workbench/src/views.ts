@@ -568,12 +568,12 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "pick" | "common" | "layout" | "compare" | "merge" | "edit" | "similar";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "keywords" | "pick" | "common" | "layout" | "compare" | "merge" | "edit" | "similar";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string; lenses: Lens[] }> = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "similar", "compare", "merge", "edit"] },
-  { id: "model", label: "Model", lenses: ["dashboard", "tables", "review"] },
+  { id: "model", label: "Model", lenses: ["dashboard", "tables", "review", "keywords"] },
   { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
 ];
 /** The panel's vertical toolbar: every lens once, in task groups (feature request 2026-10-29). Individual functions live here; a view's own options sit at the top of that view. `needsEdit` buttons show disabled where the host cannot edit. */
@@ -583,12 +583,12 @@ export const TOOLBAR_GROUPS: Array<{ id: string; label: string; items: ToolbarIt
   { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
   { id: "trace", label: "Trace", items: [{ lens: "structure", glyph: "⌥", label: "Structure" }, { lens: "design", glyph: "◇", label: "Design types" }, { lens: "internal", glyph: "◫", label: "Internal structure" }, { lens: "functional", glyph: "ƒ", label: "Function" }, { lens: "states", glyph: "◉", label: "States" }, { lens: "requirements", glyph: "✓", label: "Requirements" }] },
   { id: "edit", label: "Create and edit", items: [{ lens: "edit", glyph: "✎", label: "Edit", needsEdit: true }, { lens: "merge", glyph: "⊕", label: "Merge notes", needsEdit: true }] },
-  { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }] },
+  { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }, { lens: "keywords", glyph: "⌘", label: "Keywords (BOM categories)" }] },
   { id: "canvas", label: "Canvas", items: [{ lens: "layout", glyph: "⊞", label: "Auto-layout and refresh" }] },
 ];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
-export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar";
+export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
 export type TableCell = Cell | Cell[] | string;
