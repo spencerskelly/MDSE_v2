@@ -596,6 +596,100 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_indented_bom_folds_by_assembly_all_and_level_and_keeps_its_state(self):
+        """D-0150, WKB-069: each assembly in the Structure table folds; Expand all, Collapse all and Show to level work; the state survives a redraw."""
+        def note(i, title, kids=()):
+            hp = "hasPart: [" + ", ".join(f'"[[{k}]]"' for k in kids) + "]\n" if kids else ""
+            return f"10_Model/{title}.md", f"---\ntype: Object\nid: OBJ-0000{i}\nuid: 20261109000000{i}fold\nstatus: Draft\n{hp}tags: []\n---\n# {title}\n"
+        notes = dict([note(1, "Top", ["A", "B", "C"]), note(2, "A", ["A1", "A2"]), note(3, "B", ["B1"]), note(4, "C"), note(5, "A1"), note(6, "A2"), note(7, "B1")])
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("p => { window.__files[p] = '{}'; window.__dirs['99_System/22_Views'] = 1; }", "99_System/22_Views/Workbench Preview 1.canvas")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("window.__ev['file-open']({ path: '10_Model/Top.md', extension: 'md' })")
+            pg.wait_for_selector("header >> text=Top")
+            pg.select_option("select.fn", label="Structure")
+            pg.wait_for_selector("button:has-text('Expand all parts')")
+            rows = lambda: pg.evaluate("[...document.querySelectorAll('details.sec')].find(d => d.textContent.startsWith('Structure of')).querySelectorAll('tbody tr').length")
+            names = lambda: pg.evaluate("[...[...document.querySelectorAll('details.sec')].find(d => d.textContent.startsWith('Structure of')).querySelectorAll('tbody tr')].map(r => r.querySelector('.olc').textContent.replace(/[\\u25be\\u25b8]/g, '').replace(/\\(\\+\\d+\\)/, '').trim())")
+            self.assertEqual(names(), ["Top", "A", "A1", "A2", "B", "B1", "C"], "everything is open to start with, as before")
+            self.assertEqual(pg.locator("button.oltg").count(), 3, "the root, A and B can fold; leaves have no toggle")
+
+            # fold one assembly
+            pg.locator("button.oltg").nth(1).click()
+            self.assertEqual(names(), ["Top", "A", "B", "B1", "C"])
+            self.assertEqual(pg.locator("button.oltg").nth(1).get_attribute("aria-expanded"), "false")
+            self.assertIn("(+2)", pg.locator("tbody tr").nth(1).inner_text(), "a folded row says how many lines it hides")
+            self.assertIn("5 of 7 rows shown", pg.inner_text("div.row:has(button:has-text('Expand all parts'))"))
+
+            # Collapse all, Expand all, Show to level
+            pg.click("button:has-text('Collapse all parts')")
+            self.assertEqual(names(), ["Top", "A", "B", "C"], "the note and its direct parts")
+            pg.click("button:has-text('Expand all parts')")
+            self.assertEqual(rows(), 7)
+            pg.select_option("select[aria-label='Show down to level']", label="Level 1")
+            self.assertEqual(rows(), 4)
+            self.assertEqual(pg.evaluate("document.querySelector(\"select[aria-label='Show down to level']\").value"), "", "the picker goes back to its prompt")
+            pg.select_option("select[aria-label='Show down to level']", label="Level 2 (all)")
+            self.assertEqual(rows(), 7)
+
+            # the folded state survives a redraw (the index re-reads) and the CSV still has every row
+            pg.locator("button.oltg").nth(1).click()
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.evaluate("window.__ev['file-open']({ path: '10_Model/A.md', extension: 'md' })")
+            pg.wait_for_selector("header >> text=A")
+            pg.evaluate("window.__ev['file-open']({ path: '10_Model/Top.md', extension: 'md' })")
+            pg.wait_for_selector("header >> text=Top")
+            self.assertEqual(names(), ["Top", "A", "B", "B1", "C"], "A is still folded after another note was shown and this one came back")
+        self.assertEqual(errors, [])
+
+    def test_main_window_structure_table_draws_a_system_of_over_a_thousand_rows(self):
+        """D-0151, WKB-070: 6 boards of 200 parts under one system is 1,207 rows; the main-window table draws all of them and the folds work on it."""
+        def note(i, title, kids=()):
+            hp = "hasPart: [" + ", ".join(f'"[[{k}]]"' for k in kids) + "]\n" if kids else ""
+            return f"10_Model/{title}.md", f"---\ntype: Object\nid: OBJ-{i:05d}\nuid: 202611090000{i:05d}big\nstatus: Draft\n{hp}tags: []\n---\n# {title}\n"
+        notes, n, boards = {}, 1, [f"Board{a}" for a in range(6)]
+        for a in range(6):
+            kids = [f"P{a}-{k}" for k in range(200)]
+            n += 1; k_, v_ = note(n, boards[a], kids); notes[k_] = v_
+            for kk in kids:
+                n += 1; k_, v_ = note(n, kk); notes[k_] = v_
+        k_, v_ = note(1, "System", boards); notes[k_] = v_
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(30000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("p => { window.__files[p] = '{}'; window.__dirs['99_System/22_Views'] = 1; }", "99_System/22_Views/Workbench Preview 1.canvas")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("window.__ev['file-open']({ path: '10_Model/System.md', extension: 'md' })")
+            pg.wait_for_selector("header >> text=System")
+            pg.select_option("select.fn", label="Structure")
+            pg.click("button:has-text('Table in main window')")
+            pg.wait_for_function("[...document.querySelectorAll('table')].some(t => t.querySelectorAll('tbody tr').length > 1200)")
+            tables = lambda: pg.evaluate("[...document.querySelectorAll('table')].map(t => t.querySelectorAll('tbody tr').length)")
+            self.assertEqual(tables()[2], 1207, "every row, with none cut and no 'not drawn' message")
+            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.more')].some(e => /not drawn/.test(e.textContent))"), False)
+            pg.evaluate("(() => { const bs = [...document.querySelectorAll('button')].filter(b => b.textContent === 'Collapse all parts'); bs[bs.length - 1].click(); })()")
+            self.assertEqual(tables()[2], 7, "the system and its 6 boards")
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()

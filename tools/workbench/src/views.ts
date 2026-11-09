@@ -6,7 +6,7 @@ import type { Edge, EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import { compareNotes, uniqueParts } from "./compare.ts";
 
-export interface TreeNode { path: string | null; label: string; detail: string; kind: string; qty: number; children: TreeNode[]; cycle?: boolean; more?: number }
+export interface TreeNode { path: string | null; label: string; detail: string; kind: string; qty: number; children: TreeNode[]; cycle?: boolean; more?: number; /** parts under this node not walked because the depth limit was reached (D-0150) */ cut?: number }
 const node = (path: string | null, label: string, kind = "", detail = "", qty = 1): TreeNode => ({ path, label, detail, kind, qty, children: [] });
 const nm = (ix: ModelIndex, p: string | null, fallback: string): string => (p ? ix.notes.get(p)?.title ?? fallback : fallback);
 
@@ -21,15 +21,18 @@ export function qtyOf(label: string): number {
 const OWNED = ["hasPart", "hasPort", "hasAction", "hasState", "hasFlow"];
 const CONTAIN = ["hasPart", "hasPort", "hasAction", "hasState", "specializes"];
 
+/** How far the Structure view walks: levels of parts below the note, and parts listed under one assembly. Both the Structure table and the offline page's parts tree use these (D-0151, WKB-070); a cut is said in the table (D-0150). */
+export const LIMIT_LEVELS = 10, LIMIT_PER_PARENT = 200;
+
 /* ---- Structure ------------------------------------------------------------------------------------------------ */
 export interface StructureResult { tree: TreeNode; supers: string[]; subs: string[]; untyped: string[] }
-export function structure(ix: ModelIndex, root: string, maxDepth = 6, perParent = 40, kinds: string[] = OWNED): StructureResult {
+export function structure(ix: ModelIndex, root: string, maxDepth = LIMIT_LEVELS, perParent = LIMIT_PER_PARENT, kinds: string[] = OWNED): StructureResult {
   const walk = (p: string, label: string, kind: string, mult: string, stack: string[]): TreeNode => {
     const n = ix.notes.get(p)!;
     const t = node(p, label || n.title, kind, mult, qtyOf(mult));
     if (stack.includes(p)) { t.cycle = true; return t; }
-    if (stack.length >= maxDepth) return t;
     const kids = outgoing(ix, p).filter((e) => kinds.includes(e.kind));
+    if (stack.length >= maxDepth) { if (kids.length) t.cut = kids.length; return t; }
     for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [measuredText(e.detail)])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
@@ -592,7 +595,7 @@ export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "no
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
 export type TableCell = Cell | Cell[] | string;
-export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string }
+export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string; /** D-0150: rows are depth-first and each has a `level`; the first column's cell can be folded and unfolded */ outline?: boolean }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
 export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
@@ -602,13 +605,17 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
   const out: TableData[] = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
-    const st = structure(ix, sel, o.tree === "direct" ? 1 : 6, 40, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
+    const st = structure(ix, sel, o.tree === "direct" ? 1 : LIMIT_LEVELS, LIMIT_PER_PARENT, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
     const walk = (t: TreeNode, level: number): void => {
       flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
+      /* D-0150: say so when parts are left out, instead of ending the list quietly */
+      const cut = o.tree === "direct" ? 0 : t.cut ?? 0;                      // the direct view stops at one level on purpose
+      const why = t.more ? `… ${t.more} more parts under this assembly not shown (limit ${LIMIT_PER_PARENT} per assembly)` : cut ? `… ${cut} parts under this one not shown (limit ${LIMIT_LEVELS} levels)` : "";
+      if (why) flat.push({ level: String(level + 1), name: { text: "\u00a0\u00a0".repeat(level + 1) + why, cls: "gap" }, role: "", mult: "", type: "", id: "", note: "" });
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const direct = o.tree === "direct", b = bom(ix, sel, direct ? 1 : 12);
     out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });

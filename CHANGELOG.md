@@ -4,6 +4,9 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Workbench: the indented BOM folds by assembly, with Expand all parts, Collapse all parts and Show to level; the table says how many parts it leaves out. WKB-069, D-0150
+- Workbench: the Structure view walks 10 levels and 200 parts under one assembly (was 6 and 40), in the table and the offline Parts tree; the main-window table draws up to 5,000 rows (was 1,000). WKB-070, D-0151
+
 ## 2026-11-08 — Release 0.10.0: sales source, Product BOM report
 
 - Workbench: Structure lens button "Export Product BOM report (CSV)": an indented BOM of the selected note from the vault notes, with level, part number, description, quantity per parent, revision, category, make/buy and manufacturer and part number, as a CSV for Excel. WKB-068, D-0148

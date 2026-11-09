@@ -319,7 +319,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
 
   function vStructure(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
-    const r = V.structure(ix!, sel, 6, 40, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
+    const r = V.structure(ix!, sel, V.LIMIT_LEVELS, V.LIMIT_PER_PARENT, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
     pane.append(section("tree", "Parts tree", [r.tree.children.length ? treeView(r.tree) : empty("This definition owns no parts."), r.untyped.length ? h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")) : null], { count: r.tree.children.length }));
     if (note(sel)!.meta.partNumber || (ix!.out.get(sel) ?? []).some((e) => e.kind === "hasPart")) {
       const rbtn = h("button", { title: "An indented bill of materials for this product, as a CSV file that opens in Excel" }, "Export Product BOM report (CSV)"), rmsg = h("span", { class: "mut" }, "");

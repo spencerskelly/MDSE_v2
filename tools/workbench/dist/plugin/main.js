@@ -968,7 +968,7 @@ const incoming = (ix            , path        )         => ix.inn.get(path) ?? [
 
 
 
-                                                                                                                                                          
+                                                                                                                                                                                                                                                             
 const node = (path               , label        , kind = "", detail = "", qty = 1)           => ({ path, label, detail, kind, qty, children: [] });
 const nm = (ix            , p               , fallback        )         => (p ? ix.notes.get(p)?.title ?? fallback : fallback);
 
@@ -983,15 +983,18 @@ function qtyOf(label        )         {
 const OWNED = ["hasPart", "hasPort", "hasAction", "hasState", "hasFlow"];
 const CONTAIN = ["hasPart", "hasPort", "hasAction", "hasState", "specializes"];
 
+/** How far the Structure view walks: levels of parts below the note, and parts listed under one assembly. Both the Structure table and the offline page's parts tree use these (D-0151, WKB-070); a cut is said in the table (D-0150). */
+const LIMIT_LEVELS = 10, LIMIT_PER_PARENT = 200;
+
 /* ---- Structure ------------------------------------------------------------------------------------------------ */
                                                                                                  
-function structure(ix            , root        , maxDepth = 6, perParent = 40, kinds           = OWNED)                  {
+function structure(ix            , root        , maxDepth = LIMIT_LEVELS, perParent = LIMIT_PER_PARENT, kinds           = OWNED)                  {
   const walk = (p        , label        , kind        , mult        , stack          )           => {
     const n = ix.notes.get(p) ;
     const t = node(p, label || n.title, kind, mult, qtyOf(mult));
     if (stack.includes(p)) { t.cycle = true; return t; }
-    if (stack.length >= maxDepth) return t;
     const kids = outgoing(ix, p).filter((e) => kinds.includes(e.kind));
+    if (stack.length >= maxDepth) { if (kids.length) t.cut = kids.length; return t; }
     for (const e of kids.slice(0, perParent)) t.children.push(!e.to ? node(null, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, `: ${e.toSymbol} (not in vault)`, qtyOf(e.label)) : walk(e.to, e.label.replace(/\[.*$/, "").replace(/^(in|out|inout) /, ""), e.kind, (/\[.*\]/.exec(e.label) ?? [measuredText(e.detail)])[0], [...stack, p]));
     if (kids.length > perParent) t.more = kids.length - perParent;
     return t;
@@ -1554,7 +1557,7 @@ const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && 
 
                                                                                                                                                    
                                         
-                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                                                         
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix            , paths          )         => paths.map((p) => C(ix, p));
                                                                                                                                                                                                                                                                                                                                                                                                              
@@ -1564,13 +1567,17 @@ function lensTables(ix            , lens      , sel        , o              = {}
   const out              = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
-    const st = structure(ix, sel, o.tree === "direct" ? 1 : 6, 40, ["hasPart"]), flat                                   = [];
+    const st = structure(ix, sel, o.tree === "direct" ? 1 : LIMIT_LEVELS, LIMIT_PER_PARENT, ["hasPart"]), flat                                   = [];
     const walk = (t          , level        )       => {
       flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
+      /* D-0150: say so when parts are left out, instead of ending the list quietly */
+      const cut = o.tree === "direct" ? 0 : t.cut ?? 0;                      // the direct view stops at one level on purpose
+      const why = t.more ? `… ${t.more} more parts under this assembly not shown (limit ${LIMIT_PER_PARENT} per assembly)` : cut ? `… ${cut} parts under this one not shown (limit ${LIMIT_LEVELS} levels)` : "";
+      if (why) flat.push({ level: String(level + 1), name: { text: "\u00a0\u00a0".repeat(level + 1) + why, cls: "gap" }, role: "", mult: "", type: "", id: "", note: "" });
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const direct = o.tree === "direct", b = bom(ix, sel, direct ? 1 : 12);
     out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
@@ -1654,6 +1661,79 @@ function lensTables(ix            , lens      , sel        , o              = {}
     }
   }
   return out;
+}
+
+/* outline.ts */
+/* Expand and collapse over a table whose rows are in depth-first order and each carry a level (D-0150, WKB-069).
+ * Pure functions: the panel decides what to draw, this decides which rows are visible. A collapsed row hides every
+ * row below it until the next row at its own level or higher. State is a set of row keys, not row numbers, so it
+ * survives a refresh that re-reads the vault. */
+
+                                                                                                                                                                                      
+                   
+                                                   
+                  
+                                                                                                                           
+                
+                                                                                
+                  
+                                                                         
+                  
+                                  
+              
+ 
+
+function buildOutline(rows                         )          {
+  const level = rows.map((r) => (Number.isFinite(r.level) && r.level >= 0 ? Math.floor(r.level) : 0));
+  const key           = [], below = new Array        (rows.length).fill(0), parts = new Array        (rows.length).fill(0);
+  const stack           = [], seen = new Map                ();           // stack[l] = key of the latest row at level l
+  for (let i = 0; i < rows.length; i++) {
+    const l = level[i] ;
+    stack.length = Math.min(stack.length, l);                            // leaving deeper levels
+    const parent = l > 0 ? (stack[l - 1] ?? "") : "";
+    const base = parent + "/" + rows[i] .id, n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    const k = base + "#" + n;
+    key.push(k); stack[l] = k;
+  }
+  /* rows below: every following row with a higher level, up to the next row at this level or higher */
+  for (let i = 0; i < rows.length; i++) { let j = i + 1, real = 0; while (j < rows.length && level[j]  > level[i] ) { if (!rows[j] .notice) real++; j++; } below[i] = j - i - 1; parts[i] = real; }
+  /* the deepest level of a real row: a notice does not add a level */
+  const max = rows.reduce((m, r, i) => (r.notice ? m : Math.max(m, level[i] )), 0);
+  return { level, key, below, parts, max };
+}
+
+/** Row numbers to draw, given the keys of the collapsed rows. A leaf is never hidden by its own key. */
+function visibleRows(o         , collapsed                     )           {
+  const out           = [];
+  for (let i = 0; i < o.level.length; i++) {
+    out.push(i);
+    if (o.parts[i]  > 0 && collapsed.has(o.key[i] )) i += o.below[i] ;
+  }
+  return out;
+}
+
+/** Collapse every row that has rows below it and sits at level `n` or deeper, so levels 0..n are shown. `n` = 1 shows the
+ *  root and its direct parts; Collapse all is that. The root is never collapsed. */
+function collapseFromLevel(o         , n        )              {
+  const from = Math.max(1, Math.floor(n));
+  const s = new Set        ();
+  for (let i = 0; i < o.level.length; i++) if (o.parts[i]  > 0 && o.level[i]  >= from) s.add(o.key[i] );
+  return s;
+}
+
+/** Flip one row. Rows with nothing below them do not toggle. */
+function toggled(o         , collapsed                     , row        )              {
+  const s = new Set(collapsed);
+  if (o.parts[row]  === 0) return s;
+  const k = o.key[row] ;
+  if (s.has(k)) s.delete(k); else s.add(k);
+  return s;
+}
+
+/** The deepest level currently shown when `collapsed` is applied; used to keep the "show levels" choice in step. */
+function shownDepth(o         , collapsed                     )         {
+  return visibleRows(o, collapsed).reduce((m, i) => Math.max(m, o.level[i] ), 0);
 }
 
 /* canvas.ts */
@@ -2874,7 +2954,7 @@ function bomReportCsv(r           )         {
 
 
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const V = { qtyOf, structure, measuredOf, bom, bomCategoryOfNote, bomByCategory, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, LIMIT_LEVELS, structure, measuredOf, bom, bomCategoryOfNote, bomByCategory, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
 
 const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
                                                  
@@ -4685,7 +4765,7 @@ function mountWorkbench(root             , host       = {})      {
 
   function vStructure()              {
     const miss = needNote(); if (miss) return miss;
-    const r = V.structure(ix , sel, 6, 40, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel) .title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
+    const r = V.structure(ix , sel, V.LIMIT_LEVELS, V.LIMIT_PER_PARENT, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel) .title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
     pane.append(section("tree", "Parts tree", [r.tree.children.length ? treeView(r.tree) : empty("This definition owns no parts."), r.untyped.length ? h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")) : null], { count: r.tree.children.length }));
     if (note(sel) .meta.partNumber || (ix .out.get(sel) ?? []).some((e) => e.kind === "hasPart")) {
       const rbtn = h("button", { title: "An indented bill of materials for this product, as a CSV file that opens in Excel" }, "Export Product BOM report (CSV)"), rmsg = h("span", { class: "mut" }, "");
@@ -5496,6 +5576,7 @@ function editView(c         )              {
 
 
 
+const OL = { buildOutline, visibleRows, collapseFromLevel, toggled, shownDepth };
 
 
 
@@ -5555,7 +5636,7 @@ const PANEL_STYLE = `
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
-.mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}
+.mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
 .mdp .chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.mdp .chips label{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;cursor:pointer}
 .mdw.mdm{display:block;height:100%;overflow:auto}.mdm header{display:flex}.mdm .body{padding:10px 16px}.mdm table{font-size:13.5px}.mdm .cellist a{display:block}
 .mdp .cellist a,.mdm .cellist a{display:block}.mdp .msg{padding:6px 10px;color:var(--mut);font-size:12px}
@@ -5591,7 +5672,8 @@ function mountPanel(root             , host           , opt                     
   let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
-  const CAP = compact ? 25 : 1000;
+  const CAP = compact ? 25 : 5000;
+  const outlineState = new Map                     ();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map                 ();                                                // open/closed state of each folding section, kept across redraws
   function sec(key        , title        , body         , o                                              = {})              {
     const k = lens + ":" + key, d = h("details", { class: "sec", open: secs.get(k) ?? o.open ?? true }, h("summary", {}, title, o.count !== undefined ? h("span", { class: "mut" }, ` (${o.count})`) : null), ...body);
@@ -5605,13 +5687,43 @@ function mountPanel(root             , host           , opt                     
     const wrapSec = ()              => { const kids = [...box.childNodes]; return sec(t.id, t.title || "Table", kids           , { count: t.rows.length }); };
     if (t.note) box.append(h("div", { class: "mut", style: "font-size:12px;margin-bottom:4px" }, t.note));
     if (!t.rows.length) { box.append(empty(t.empty)); return t.title ? wrapSec() : box; }
-    const shown = t.rows.slice(0, CAP);
     const tick = (r                             )              => {
       const p = rowNote(t, r); if (!p) return h("td", {});
       return h("td", {}, h("input", { type: "checkbox", "aria-label": "Tick for the canvas", checked: rowTicks.has(p), onchange: (e       ) => { if ((e.target                    ).checked) rowTicks.add(p); else rowTicks.delete(p); if (tickCount) tickCount.textContent = `${rowTicks.size} ticked`; } }));
     };
-    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), h("tbody", {}, ...shown.map((r) => h("tr", {}, tickable ? tick(r) : null, ...cols.map((c) => h("td", {}, cellNode(r[c.key]))))))));
-    if (t.rows.length > shown.length) box.append(h("div", { class: "more" }, `… ${t.rows.length - shown.length} more. Open the table in the main window to see all ${t.rows.length}.`));
+    /* D-0150: an outline table (the indented BOM) can fold each assembly, fold or unfold everything, or show down to one level */
+    const okey = [lens, sel, t.id, tree].join("|");
+    const lvlOf = (r                             )         => Number(cellText(r.level));
+    const first = cols[0] ? cols[0].key : "";
+    const ol = t.outline && first ? OL.buildOutline(t.rows.map((r) => { const c = r[first], one = c && typeof c === "object" && !Array.isArray(c) ? c : null; return { level: lvlOf(r), id: one?.path ?? cellText(c).replace(/^\u00a0+/, ""), notice: one?.cls === "gap" }; })) : null;
+    const folded = ()              => outlineState.get(okey) ?? new Set        ();
+    const tbody = h("tbody", {}), moreEl = h("div", { class: "more" }), status = h("span", { class: "mut" });
+    const rowEl = (i        )              => {
+      const r = t.rows[i] ;
+      return h("tr", {}, tickable ? tick(r) : null, ...cols.map((c, ci) => h("td", {}, ol && ci === 0 ? outlineCell(i, r[c.key]) : cellNode(r[c.key]))));
+    };
+    const outlineCell = (i        , cell                         )              => {
+      const o = ol , parts = o.parts[i] , open = !folded().has(o.key[i] );
+      const label = cell && typeof cell === "object" && !Array.isArray(cell) ? { ...cell, text: cell.text.replace(/^\u00a0+/, "") } : cell;
+      const tg = parts ? h("button", { class: "oltg", "aria-expanded": String(open), title: open ? `Fold the ${parts} part line(s) under this one` : `Unfold the ${parts} part line(s) under this one`, onclick: () => { outlineState.set(okey, OL.toggled(o, folded(), i)); paint(); } }, open ? "\u25be" : "\u25b8") : h("span", { class: "oltg" }, "");
+      return h("span", { class: "olc", style: `padding-left:${o.level[i]  * 14}px` }, tg, cellNode(label), !open ? h("span", { class: "mut" }, ` (+${parts})`) : null);
+    };
+    function paint()       {
+      const vis = ol ? OL.visibleRows(ol, folded()) : t.rows.map((_, i) => i), shown = vis.slice(0, CAP);
+      tbody.replaceChildren(...shown.map(rowEl));
+      moreEl.textContent = vis.length > shown.length ? (compact ? `\u2026 ${vis.length - shown.length} more. Open the table in the main window to see all ${vis.length}.` : `\u2026 ${vis.length - shown.length} more rows not drawn (limit ${CAP}). Fold assemblies or use Show to level to reach them; Export CSV has every row.`) : "";
+      moreEl.style.display = moreEl.textContent ? "" : "none";
+      if (ol) status.textContent = vis.length === t.rows.length ? `${t.rows.length} rows` : `${vis.length} of ${t.rows.length} rows shown`;
+    }
+    if (ol && ol.max > 0) {
+      const levels = h("select", { "aria-label": "Show down to level", title: "Show the parts down to this level and fold everything below", onchange: (e       ) => { const el = e.target                     , n = Number(el.value); el.value = ""; if (n) { outlineState.set(okey, OL.collapseFromLevel(ol, n)); paint(); } } }, h("option", { value: "" }, "Show to level\u2026"), ...Array.from({ length: ol.max }, (_, k) => h("option", { value: String(k + 1) }, k + 1 === ol.max ? `Level ${k + 1} (all)` : `Level ${k + 1}`)));
+      box.append(h("div", { class: "row", style: "display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0" },
+        h("button", { class: "sm", title: "Unfold every assembly in this table: show every level of parts (the Expand all above folds page sections, not parts)", onclick: () => { outlineState.set(okey, new Set()); paint(); } }, "Expand all parts"),
+        h("button", { class: "sm", title: "Fold every assembly in this table: show only this note and its direct parts (the Collapse all above folds page sections, not parts)", onclick: () => { outlineState.set(okey, OL.collapseFromLevel(ol, 1)); paint(); } }, "Collapse all parts"),
+        levels, status));
+    }
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), tbody));
+    box.append(moreEl); paint();
     if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
   }

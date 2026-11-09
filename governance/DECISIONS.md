@@ -1741,3 +1741,28 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 1. **Found.** On a real product BOM (the Power Station, checked outside the repository) two part numbers carry different categories on different lines: one is Cable ASM on 4 lines and Cable Mgmt on 19, the other Stud on 1 and Cable Mgmt on 1. The importer files each part under the latest line's category and said nothing.
 2. **Built.** The finding `CATEGORY_CONFLICT` (warn) lists each such part, the category it is filed under and the lines per category (first 15, then a count). The filing is unchanged. Categories that differ only in case are one category.
 
+## D-0150 — The indented BOM folds by assembly
+
+2026-11-09 · Spencer · Accepted (owner, chat: "expand and collapse the BOM table for each assembly … expand all or collapse all … keep the total BOM quantities view")
+
+1. **What.** In the Workbench Structure lens, the "Structure of …" table (the indented BOM) gets a fold control on every row that has parts under it. Three buttons sit above it: **Expand all parts**, **Collapse all parts** and **Show to level…** (a drop-down, Level 1 to the deepest level). WKB-069.
+2. **Start state.** Everything open, as before.
+3. **Collapse all parts** shows the selected note and its direct parts. The selected note's own control can still fold it by hand.
+4. **State.** Kept for the session for each selected note and table, by the row's path of parts and not by row number, so it survives a refresh and other rows moving. Nothing is written to the vault.
+5. **The rolled-up Parts list stays** as it is (total quantity of each part under the note), beside the indented table (owner: keep it).
+6. **Parts left out are now said.** The table showed at most 40 parts under one assembly and 6 levels and ended there without a sign (the count was computed and never drawn). A row now says how many are not shown and why. The limits were raised the same day (D-0151). The direct-parts view stops at one level on purpose and says nothing. The Product BOM report (D-0148) has its own limit and is unchanged.
+7. **CSV.** Export is the whole table whatever is folded.
+8. **Where.** The Obsidian panel and the main-window table. The offline page's Parts tree already folds each node and is unchanged.
+9. **Open.** "Adjust the view as needed" for the indented BOM is not yet specified (which choices: depth, limits, columns, sort, filters). Asked of the owner.
+
+## D-0151 — The Structure view walks 10 levels and 200 parts under one assembly
+
+2026-11-09 · Spencer · Accepted (owner, chat: "increase the limits to 10 levels and 200 parts per level … mainly for PCBAs within a system, but apply it everywhere")
+
+1. **What.** The Structure view lists parts down to 10 levels below the selected note (was 6) and up to 200 parts under one assembly (was 40). WKB-070.
+2. **Reading of "200 parts per level".** The existing limit counts the parts listed under one assembly, so the new one does too: a board with 200 parts lists all 200, and every other assembly has its own 200. It is not a total per level of the whole tree. If a total per level was meant, say so.
+3. **Everywhere.** One function (`structure()`) and two constants serve the Structure table and the offline page's Parts tree, so both change together. Not changed because they are different limits: the canvases (200 cards on a canvas, a readability limit), the rolled-up Parts list (12 levels), where used (8), design types (8), the Product BOM report (20 levels, 50,000 rows).
+4. **Cut-off notice.** When a tree still reaches a limit, the table says how many parts it left out (D-0150).
+5. **Rows drawn.** A system now exceeds the old 1,000-row limit of the main-window table, and the table said "open the table in the main window" while already in it. The main-window table now draws up to 5,000 rows and, past that, says how many it did not draw and how to reach them (fold, Show to level, or the CSV, which has every row). The side panel still draws 25 rows.
+6. **Measured.** On 3,016 synthetic rows in headless Chromium the main-window table draws in 0.6 s and Collapse all parts takes 0.02 s. Not measured in Obsidian.
+
