@@ -5,6 +5,7 @@ import type { CanvasResult } from "./canvas.ts";
 import { buildIndexAsync } from "./index.ts";
 import type { ModelIndex, Note } from "./index.ts";
 import * as V from "./views.ts";
+import * as BR from "./bom_report.ts";
 import * as PL from "./edit_plm.ts";
 import { GUIDE } from "./guide.ts";
 
@@ -320,6 +321,16 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const miss = needNote(); if (miss) return miss;
     const r = V.structure(ix!, sel, 6, 40, ["hasPart"]), pane = h("div", { class: "pane" }, h("h2", {}, "Structure of " + note(sel)!.title), h("div", { class: "mut" }, "What this definition is made of: its parts, down through the assembly. Ports are under Internal, actions under Function, states under States, specialization under Design types."), canvasButton("Structure"), secBar());
     pane.append(section("tree", "Parts tree", [r.tree.children.length ? treeView(r.tree) : empty("This definition owns no parts."), r.untyped.length ? h("div", { class: "gap" }, "Untyped: " + r.untyped.join(", ")) : null], { count: r.tree.children.length }));
+    if (note(sel)!.meta.partNumber || (ix!.out.get(sel) ?? []).some((e) => e.kind === "hasPart")) {
+      const rbtn = h("button", { title: "An indented bill of materials for this product, as a CSV file that opens in Excel" }, "Export Product BOM report (CSV)"), rmsg = h("span", { class: "mut" }, "");
+      rbtn.addEventListener("click", () => {
+        const rep = BR.bomReport(ix!, sel), n = note(sel)!;
+        if (rep.rows.length < 2) { rmsg.textContent = " This note has no part lines to report."; return; }
+        download(`${(String(n.meta.partNumber ?? "") || n.name).replace(/[\\/:*?"<>|]/g, "_")} BOM.csv`, BR.bomReportCsv(rep));
+        rmsg.textContent = ` ${rep.rows.length - 1} lines${rep.truncated ? " (cut off at the row or depth limit)" : ""}${rep.rows.some((x) => x.problem) ? "; some lines are marked in the Note column" : ""}.`;
+      });
+      pane.append(section("bomreport", "Product BOM report", [h("div", { class: "mut" }, "Indented BOM in BOM order with quantity per parent, revision, category, make/buy and sources. Built from the notes in this vault."), h("div", { class: "row" }, rbtn, rmsg)], { open: true }));
+    }
     const b = V.bom(ix!, sel);
     if (b.length) pane.append(section("bom", "Parts list (rolled up)", [tableOf([["t", "Part"], ["q", "Quantity", true], ["u", "Unit"], ["d", "Depth", true]], b.map((x) => [lnk(x.path, x.title), String(Math.round(x.qty * 1000) / 1000), x.unit, String(x.depth)])),
       h("button", { onclick: () => download("parts-list.csv", ["part,quantity,unit,depth", ...b.map((x) => [x.title, x.qty, x.unit, x.depth].map(csvCell).join(","))].join("\n")) }, "Export CSV")], { count: b.length, open: b.length < 60 }));

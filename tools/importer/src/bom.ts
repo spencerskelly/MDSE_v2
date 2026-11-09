@@ -11,6 +11,9 @@ import { safeName, NameRegistry, IdentScope, usageIdent } from "./naming.ts";
 import { renderNote, flagCallout, yamlScalar } from "./notes.ts";
 import { bomOwnedHash } from "../../core/src/bom_own.ts";
 import { bomCategoryOf, bomRoleOf, bomLevelOf, bomMakeBuyOf, bomNamedCategory, bomCategoryInTable, bomPartFolder, NO_CATEGORY, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules, DEFAULT_CATEGORY_RULES } from "./bom_category.ts";
+import type { SalesTotals, SalesItem } from "./sales.ts";
+import { salesKeys, salesProps } from "./sales.ts";
+import { salesRoleOf, salesCategoryOf } from "./sales_role.ts";
 import type { OutFile, ExistingVault } from "./merge.ts";
 
 export interface Cell { v: string; runs?: Array<{ t: string; strike: boolean }> | null; struck?: boolean; kind?: string }
@@ -262,6 +265,10 @@ export interface BomOptions {
   revisionNotes?: boolean;
   /** D-0098: effectivity dates (from, to) are not imported unless asked for; they play no part in comparing repeated lines. */
   dates?: boolean;
+  /** NetSuite sales totals (NS-01, draft). When given, each part gets `salesRole`, and a sold part gets `avgSalePrice` and `annualVolume`; a sold top-level part takes its product family as category. */
+  sales?: SalesTotals | null;
+  /** File name of the sales ledger, for the flag on a note made from it. */
+  salesSource?: string;
 }
 export interface BomResult {
   status: "WRITE_READY" | "FAILED"; files: OutFile[]; findings: Finding[]; problems: string[];
@@ -407,6 +414,20 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   const partPns = [...latest.keys()].filter((pn) => !drawingPns.has(pn) || okUsage.some((u) => u.child === pn && !bomIsDrawing(u))).sort();
   const newParts = partPns.filter((pn) => !existingBy.has(pn)), newDrawings = [...drawingPns].filter((pn) => (o.update || !existingBy.has(pn)) && latest.has(pn)).sort();
+  // NS-01 (draft): each ledger item joins the part number its name (less a CL1) names, and is totalled per part number. An item that names no part number in the BOMs read, and none in the vault, becomes a spare note of its own.
+  const soldBy = new Map<string, SalesItem>(), salesOnly = new Map<string, SalesItem & { names: string[] }>(), partSet = new Set(partPns), inVaultAlready: string[] = [];
+  const addSale = (a: SalesItem, it: SalesItem): void => { a.netUnits += it.netUnits; a.netRevenueUsd += it.netRevenueUsd; a.netUnitsUsd += it.netUnitsUsd; a.lines += it.lines; a.intercompanyLines += it.intercompanyLines; };
+  if (o.sales) for (const it of o.sales.items.values()) {
+    const keys = salesKeys(it.name), hit = keys.find((k) => partSet.has(k));
+    if (hit) { addSale(soldBy.get(hit) ?? soldBy.set(hit, { name: hit, netUnits: 0, netRevenueUsd: 0, netUnitsUsd: 0, lines: 0, intercompanyLines: 0 }).get(hit)!, it); continue; }
+    const pn = keys[keys.length - 1]!;
+    if (keys.some((k) => existingBy.has(k))) { inVaultAlready.push(it.name); continue; }
+    const a = salesOnly.get(pn) ?? salesOnly.set(pn, { name: pn, netUnits: 0, netRevenueUsd: 0, netUnitsUsd: 0, lines: 0, intercompanyLines: 0, names: [] }).get(pn)!;
+    addSale(a, it); a.names.push(it.name);
+  }
+  const salesNew = [...salesOnly.keys()].sort();
+  if (salesNew.length) findings.push({ level: "info", code: "SALES_NO_BOM", message: `${salesNew.length} sold part number(s) are in no BOM read and not in the vault; each got a spare note flagged for review: ${salesNew.slice(0, 20).join(", ")}${salesNew.length > 20 ? ", ..." : ""}.` });
+  if (inVaultAlready.length) findings.push({ level: "info", code: "SALES_IN_VAULT", message: `${inVaultAlready.length} sold item name(s) are in no BOM read but already have a note in the vault, which was left as it is (run the BOM update scan to refresh its sales values).` });
   // D-0137: revision notes the vault already has (found by the part number and CL1 they name) keep their id, path and uid; a CL1 the vault lacks gets a new note
   const existingRev = new Map<string, { id: string; base: string; path: string; uid: string }>();
   if (revMode) for (const [p, t] of [...(o.existing?.files ?? []), ...o.pending]) {
@@ -415,7 +436,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   }
   const revPns = o.update ? partPns : newParts;
   const revReq = revMode ? revPns.flatMap((pn) => (inventory.get(pn) ?? []).filter((r) => !existingRev.has(pn + "\0" + r.cl1)).map((r) => ({ key: "r:" + pn + "\0" + r.cl1, prefix: o.classes["Object"]!.prefix, created: "", guid: pn + " " + r.cl1 }))) : [];
-  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...revReq, ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
+  const idReq = [...newParts.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...salesNew.map((pn) => ({ key: "p:" + pn, prefix: o.classes["Object"]!.prefix, created: "", guid: pn })), ...revReq, ...newDrawings.filter((pn) => !existingBy.has(pn)).map((pn) => ({ key: "d:" + pn, prefix: o.classes["Document"]!.prefix, created: "", guid: pn }))];
   const ids = allocateIds(idReq, highest);
   const uids = allocateUids(idReq.map((r) => ({ key: r.key, created: "", guid: r.guid, author: "" })), { authorMap: {}, fallbackCode: o.authorCode, unmappedNames: [""] }, taken, bomStampOf(o.runDate));
   const names = new NameRegistry([...(o.existing?.allPaths ?? []), ...(o.existing?.files.keys() ?? []), ...o.pending.map(([p]) => p)]);
@@ -423,13 +444,16 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   // D-0072: which parts have child lines and which are a child somewhere in the file, for the folder and for bomRole
   const childrenOf = new Map<string, number>(), parentOf = new Set<string>();
   for (const u of okUsage) { childrenOf.set(u.parent, (childrenOf.get(u.parent) ?? 0) + 1); parentOf.add(u.child); }
+  const salesIn = (pn: string, l: { name: string }): { sold: boolean; inBom: boolean; hasParent: boolean; description: string } => ({ sold: soldBy.has(pn), inBom: true, hasParent: parentOf.has(pn), description: l.name });
+  // NS-01 (draft): the product family of a sold top-level part comes first, even over a category the BOM file names (the owner's own BOM calls the shipped product "Product Shipped"); then BOM-062, then the words of the description (BOM-041)
+  const catForPn = (pn: string, l: { name: string; category?: string }): string => (o.sales ? salesCategoryOf(salesIn(pn, l)) : null) ?? bomNamedCategory(l.category ?? "", catRules, seenCat) ?? catOf(l.name);
   const info = new Map<string, { id: string; base: string; path: string; fresh: boolean }>();
   for (const pn of [...partPns, ...newDrawings.filter((x) => !partPns.includes(x))]) {
     const ex = existingBy.get(pn);
     if (ex) { info.set(pn, { id: ex.id, base: ex.base, path: o.update ? ex.path : "", fresh: !!o.update }); continue; }
     const l = latest.get(pn)!, key = (drawingPns.has(pn) && !partPns.includes(pn) ? "d:" : "p:") + pn;
     const isD = key.startsWith("d:"), kids = (childrenOf.get(pn) ?? 0) > 0;
-    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, bomLevelOf(bomRoleOf(kids, parentOf.has(pn))), catFor(l)), safeName(pn, pn), ".md");
+    const path = names.claim(isD ? `${dir}/Drawings` : bomPartFolder(dir, bomLevelOf(bomRoleOf(kids, parentOf.has(pn))), catForPn(pn, l)), safeName(pn, pn), ".md");
     info.set(pn, { id: ids.get(key)!, base: path.split("/").pop()!.replace(/\.md$/i, ""), path, fresh: true });
   }
 
@@ -523,7 +547,11 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     const rs = revsSeen.get(pn); if (rs) head.push(`- Revisions in the BOM: ${rs.map((x) => JSON.stringify(x)).join(", ")}; the latest is ${JSON.stringify(l.rev)}`);
     if (l.drawingLocation) head.push(`- Drawing location: ${l.drawingLocation}`);
     const role = bomRoleOf((childrenOf.get(pn) ?? 0) > 0, parentOf.has(pn));
-    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catFor(l)], ["bomRole", role], ["level", bomLevelOf(role)], ["makeBuy", bomMakeBuyOf(l.source ?? "")]];   // D-0072, BOM-061
+    const extra: Array<[string, string]> = isDoc ? [] : [["bomCategory", catForPn(pn, l)], ["bomRole", role], ["level", bomLevelOf(role)], ["makeBuy", bomMakeBuyOf(l.source ?? "")]];   // D-0072, BOM-061
+    if (o.sales && !isDoc) {   // NS-01 (draft)
+      const sr = salesRoleOf(salesIn(pn, l)); if (sr) extra.push(["salesRole", sr]);
+      const sold = soldBy.get(pn); if (sold) { const sp = salesProps(sold, o.sales.months); if (sp.avgSalePrice !== null) extra.push(["avgSalePrice", String(sp.avgSalePrice)]); extra.push(["annualVolume", String(sp.annualVolume)]); }
+    }
     if (!revMode) sources.forEach((src, i) => { if (src.mfr) extra.push([`manufacturer${i + 1}`, src.mfr]); if (src.mpn) extra.push([`mfgPn${i + 1}`, src.mpn]); });
     const older = revisionReview.filter((r) => r.parent === pn);
     // D-0107: a part an assembly calls at a revision older than the latest gets one line saying which revision the assembly calls; the vault uses the latest.
@@ -602,6 +630,11 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
       if (named && !bomCategoryInTable(named, catRules)) { badCat.set(c, (badCat.get(c) ?? 0) + 1); const w = catWords.get(c) ?? new Map<string, number>(); for (const x of new Set(l.name.toLowerCase().split(/[^a-z]+/).filter((y) => y.length > 2 && !STOP.has(y)))) w.set(x, (w.get(x) ?? 0) + 1); catWords.set(c, w); }
       if (bomMakeBuyOf(src) === "other") { const k = src || "(blank)"; otherMb.set(k, (otherMb.get(k) ?? 0) + 1); }   // BOM-061
     }
+    // D-0149: one part number carries one category (the latest line's); say where the lines disagree so the BOM can be fixed at its source
+    const catLines = new Map<string, Map<string, number>>();
+    for (const u of okUsage) { const c = (u.childCategory ?? "").trim(); if (!c) continue; const m = catLines.get(u.child) ?? catLines.set(u.child, new Map()).get(u.child)!; m.set(c, (m.get(c) ?? 0) + 1); }
+    const clash = [...catLines].filter(([, m]) => new Set([...m.keys()].map((k) => k.toLowerCase())).size > 1).sort((a, b) => a[0] < b[0] ? -1 : 1);
+    if (clash.length) findings.push({ level: "warn", code: "CATEGORY_CONFLICT", message: `${clash.length} part number(s) have different categories on different BOM lines; each is filed under one category (the latest line's, BOM-062). Fix the BOM or choose one: ${clash.slice(0, 15).map(([pn, m]) => `${pn} (filed ${catFor(latest.get(pn) ?? { name: "" })}): ${[...m].sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).map(([k, v]) => `${k} on ${v} line${v > 1 ? "s" : ""}`).join(", ")}`).join("; ")}${clash.length > 15 ? "; …" : ""}.` });
     if (badCat.size) findings.push({ level: "info", code: "CATEGORY_NEW", message: `${[...badCat.values()].reduce((a, b) => a + b, 0)} part(s) are sorted by a category the BOM names that is not in the category list; it is used as written (BOM-062, D-0141): ${[...badCat].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")}.` });
     if (catWords.size) findings.push({ level: "info", code: "CATEGORY_WORDS", message: `Description words common in each new category, to help choose keywords for placing parts without a category (BOM-063): ${[...catWords].map(([k, w]) => `${k}: ${[...w].filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([x, n]) => `${x} ${n}`).join(", ") || "none repeated"}`).join("; ")}.` });
     if (otherMb.size) findings.push({ level: "info", code: "MAKEBUY_OTHER", message: `makeBuy is "other" for ${[...otherMb.values()].reduce((a, b) => a + b, 0)} part(s); the source values read were: ${[...otherMb].sort((x, y) => y[1] - x[1]).map(([k, v]) => `${JSON.stringify(k)} ${v}`).join("; ")} (BOM-061).` });
@@ -616,6 +649,16 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const sorted = findings.slice().sort((a, b) => order[a.level] - order[b.level]);
   // BOM-027: the findings note shows the first 40 rows of each code and the count of the rest; the callouts in the notes hold the detail
   const shown = new Map<string, number>(), total = new Map<string, number>(); for (const f of sorted) total.set(f.code, (total.get(f.code) ?? 0) + 1);
+  // NS-01 (draft): a sold part number that no BOM read lists becomes a spare note (owner decision: a spare until more kinds of element are identified). Level part, no category, flagged for review.
+  for (const pn of salesNew) {
+    const so = salesOnly.get(pn)!, id = ids.get("p:" + pn)!, sp = salesProps(so, o.sales!.months), itemNames = [...new Set(so.names)].sort();
+    const path = names.claim(bomPartFolder(dir, "part", NO_CATEGORY), safeName(pn, pn), ".md");
+    const extra: Array<[string, string]> = [["bomCategory", NO_CATEGORY], ["bomRole", "unused"], ["level", "part"], ["makeBuy", "other"], ["salesRole", "spare"]];
+    if (sp.avgSalePrice !== null) extra.push(["avgSalePrice", String(sp.avgSalePrice)]); extra.push(["annualVolume", String(sp.annualVolume)]);
+    const sysml = `package ${id.replace("-", "_")} {\n    part def P_${pn.replace(/[^A-Za-z0-9]/g, "_")} {\n        attribute partNumber = ${JSON.stringify(pn)};\n    }\n}\n`;
+    const flags = [flagCallout("flagImport", `Part number ${pn} is in no BOM read`, `\`${o.salesSource ?? "sales ledger"}\``, [`Made from the sales ledger as a spare (NS-01). The part number is the ledger item name${itemNames.length > 1 ? "s" : ""} ${itemNames.map((n) => JSON.stringify(n)).join(", ")} with any trailing CL1 removed: confirm it. Description, source and structure are unknown until a BOM lists the part.`])];
+    files.push({ path, content: bomStamp(renderNote({ type: "Object", subtype: "part", id, uid: uids.get("p:" + pn)!.uid, eaType: "BOM", title: pn, relFields: [], extraFields: extra, partNumber: pn, bodyText: "", flags, sourceLines: [`- BOM Part Number: ${pn}`, `- Sales ledger item names: ${itemNames.join(", ")}`, "- No BOM lists this part number; it is named by the sales ledger only."], sysml, sourceRole: "authoritative-model", primarySymbol: bomSymOf(id, pn) }), o.salesSource ?? o.sourceName, o.runDate.slice(0, 10)) });
+  }
   const grouped: Finding[] = [];
   for (const f of sorted) { const n = (shown.get(f.code) ?? 0) + 1; shown.set(f.code, n); if (n <= 40) grouped.push(f); else if (n === 41) grouped.push({ level: f.level, code: f.code, message: `… and ${total.get(f.code)! - 40} more with this code (not listed; the count is in the summary).` }); }
   if (!o.update && o.existing?.hasVault && rulesText === undefined) files.push({ path: CATEGORY_RULES_PATH, content: renderCategoryRules() });

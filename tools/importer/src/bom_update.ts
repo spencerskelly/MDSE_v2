@@ -292,6 +292,7 @@ const labelsOf = (t: string): string[] => [...(/^- Revisions in the BOM under th
 const altLines = (t: string): string[] => sourceSection(t).split("\n").filter((l) => /^- Alternates for line /.test(l));
 const lineNo = (d: Decl): string => ATTR(d.lines, "line") || "?";
 
+const SALES_KEYS = ["salesRole", "avgSalePrice", "annualVolume"];
 export function scanRevisionUpdate(grid: Grid, o: BomOptions): UpdateScan {
   const result = buildBom(grid, { ...o, update: true, revisionNotes: true }), dir = o.dir ?? "BOM";
   const out: UpdateScan = { items: [], holds: [], unchanged: 0, result, generated: new Map(), current: new Map(), replaced: new Map(), shape: "revision" };
@@ -321,6 +322,8 @@ export function scanRevisionUpdate(grid: Grid, o: BomOptions): UpdateScan {
       const cO = prop(old, "bomCategory"), cG = prop(gen, "bomCategory");
       if (cG && cG !== cO) { if (!cO || cO === "Uncategorized") add("CATEGORY", f.path, pn, `${pn}: category ${cG}${cO ? ` (the vault has ${cO})` : ""}`, cO, cG, "bomCategory", "add"); else add("CATEGORY", f.path, pn, `${pn}: category differs: vault ${cO}, file ${cG}`, cO, cG, "bomCategory", "change"); }
       for (const k of ["level", "makeBuy"]) { const vO = prop(old, k), vG = prop(gen, k); if (vG && (!vO || (k === "makeBuy" && vO === "other" && vG !== "other"))) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}`, vO, vG, k, "add"); }
+      // NS-01: the sales ledger owns salesRole, avgSalePrice and annualVolume; a missing value is added and a different one is a change (the page leaves changes unticked, D-0057)
+      if (o.sales) for (const k of SALES_KEYS) { const vO = prop(old, k), vG = prop(gen, k); if (vG && vG !== vO) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}${vO ? ` (the vault has ${vO})` : ""}`, vO, vG, k, vO ? "change" : "add"); }
     }
     if (rev) {
       const pO = splitSysml(sysmlOf(old) ?? ""), pG = splitSysml(sysmlOf(gen) ?? "");
@@ -368,7 +371,7 @@ export function applyRevisionUpdate(scan: UpdateScan, o: ApplyOptions): ApplyRes
       const all2 = [...mine, ...mfrList(yg.mfr).filter((x) => !have.has(pairKey(x))).map((x) => ({ k: next++, m: x.m, p: x.p }))];
       note = setYamlOwned(note, null, all2.flatMap((x) => [...(x.m ? [[`manufacturer${x.k}`, x.m] as [string, string]] : []), ...(x.p ? [[`mfgPn${x.k}`, x.p] as [string, string]] : [])]));
     }
-    for (const it of items) if (it.key && (it.category === "CATEGORY" || it.category === "PART_ATTRIBUTES") && /^(bomCategory|level|makeBuy)$/.test(it.key)) {
+    for (const it of items) if (it.key && (it.category === "CATEGORY" || it.category === "PART_ATTRIBUTES") && /^(bomCategory|level|makeBuy|salesRole|avgSalePrice|annualVolume)$/.test(it.key)) {
       const ls = note.split("\n"), close = ls.indexOf("---", 1), at = ls.findIndex((l, i) => i < close && l.startsWith(it.key + ":")), line = `${it.key}: ${yamlScalar(it.after)}`;
       if (at >= 0) ls[at] = line; else { const t = ls.findIndex((l, i) => i < close && /^(sourceRole|primarySymbol):/.test(l)); ls.splice(t >= 0 ? t : close, 0, line); }
       note = ls.join("\n");

@@ -4,6 +4,11 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+## 2026-11-08 — Release 0.10.0: sales source, Product BOM report
+
+- Workbench: Structure lens button "Export Product BOM report (CSV)": an indented BOM of the selected note from the vault notes, with level, part number, description, quantity per parent, revision, category, make/buy and manufacturer and part number, as a CSV for Excel. WKB-068, D-0148
+- BOM import: `CATEGORY_CONFLICT` finding when one part number has different categories on different BOM lines (filed under the latest line's, as before). BOM-062, D-0149
+- BOM import: an optional NetSuite sales-actuals file. Each BOM part gets `salesRole` (product, spare, PIA); a sold part gets `avgSalePrice` and `annualVolume` over the whole file; a sold top-level part is filed under its family (Charger, BMID, Kit); a sold part number in no BOM gets a spare note. Customer columns are never read. The update scan adds the values to existing notes. `properties.json` 1.4. BOM-067, BOM-041 and BOM-062 (exceptions), D-0147
 - Workbench: Keywords view for Uncategorized BOM parts, with a preview of each word and an undoable Apply to the category list and the parts. WKB-066, WKB-067, D-0146
 - BOM import: a first import writes `99_System/06_Config/BOM Categories.md` when the vault has none (`CATEGORY_RULES_WRITTEN`). BOM-044, D-0145
 - BOM categories: the built-in table uses the owner's categories (Panel, Lid and Door are ME Part), the word nearest the start of the description decides, and a table line `- Category also: Name, Name` names a category's other names. BOM-041, BOM-044, BOM-063 (changed), D-0144

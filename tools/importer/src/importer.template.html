@@ -54,6 +54,7 @@ ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
   <div class="row"><label class="btn">Choose .qeax<input id="qeax" type="file" accept=".qeax,.qea,.sqlite,.db"></label><span id="srcStatus" class="mut">No file chosen.</span></div><div id="srcOut"></div></div>
  <div class="sub"><h3 style="margin-top:0">Bill of materials (.xlsx, .csv, .tsv)</h3>
   <div class="row"><label class="btn">Choose BOM<input id="bomFile" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt"></label><span id="bomStatus" class="mut">No file chosen.</span></div><div id="bomOut"></div>
+  <div class="row"><label class="btn alt">Choose sales ledger (optional)<input id="salesFile" type="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt"></label><span id="salesStatus" class="mut">No file chosen. Adds salesRole, avgSalePrice and annualVolume to BOM parts; customer columns are never read.</span></div><div id="salesOut"></div>
   <p class="mut" style="margin:8px 0 0">Two layouts are read: the <b>flat</b> export (one row per parent→child line) and the <b>redline</b> sheet (levels 0–7, struck-out old values; .xlsx only). Only the latest revision of each part is imported.</p></div>
 </div></section>
 
@@ -118,7 +119,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 const log = (m) => { $("log").textContent += m + "\n"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));          // lets the browser repaint between heavy steps
 $("build").textContent = BUILD + " · toolset " + RELEASE;
-let source = null, bom = null, vaultHandle = null, person = null;
+let source = null, bom = null, sales = null, vaultHandle = null, person = null;
 
 /* ---- Step 1: who ------------------------------------------------------------------------------------------------------- */
 const store = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* private window: asked again next time */ } } };
@@ -186,6 +187,29 @@ $("bomFile").addEventListener("change", async (ev) => {
     $("bomStatus").innerHTML = errs.length || !p.usages.length ? `<span class=bad>${esc(f.name)} cannot be imported</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1024).toFixed(0)} KiB`;
     if (!errs.length && p.usages.length) bom = { file: f, grid, warnings }; refreshButtons(); log(`bom ${f.name}: ${p.layout}, ${p.usages.length} lines`);
   } catch (e) { $("bomStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("bom error: " + e.message); }
+});
+async function readSalesFile(f) {   // first sheet that parses, or the delimited text
+  const name = f.name.toLowerCase();
+  if (/\.xlsx?m?$/.test(name)) {
+    if (/\.xls$/.test(name)) throw new Error("Old .xls files are not supported. Save the sheet as .xlsx or .csv.");
+    const wb = await XlsxReader.readXlsx(await f.arrayBuffer()); let last = null;
+    for (const s of wb.sheets) { const t = parseSales(s.rows); last = t; if (t.items.size) return t; }
+    if (last) return last; throw new Error(`${f.name} has no sheets.`);
+  }
+  const buf = new Uint8Array(await f.arrayBuffer()); let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (_) { text = new TextDecoder("windows-1252").decode(buf); }
+  return parseSales(parseDelimited(text));
+}
+$("salesFile").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0]; sales = null; $("salesOut").innerHTML = ""; if (!f) { refreshButtons(); return; }
+  $("salesStatus").textContent = "Reading…";
+  try {
+    const t = await readSalesFile(f), errs = t.findings.filter((x) => x.level === "error");
+    $("salesOut").innerHTML = `<table><tr><td>Items</td><td>${t.items.size}</td></tr><tr><td>Window</td><td>${esc(t.firstPeriod || "?")} to ${esc(t.lastPeriod || "?")} (${t.months} months)</td></tr><tr><td>Charge lines skipped</td><td>${t.nonPart.length}</td></tr></table>` +
+      (errs.length ? `<p class="bad">${errs.map((x) => esc(x.message)).join("<br>")}</p>` : "");
+    $("salesStatus").innerHTML = errs.length || !t.items.size ? `<span class=bad>${esc(f.name)} cannot be used</span>` : `<span class=ok>${esc(f.name)}</span> · ${(f.size / 1024).toFixed(0)} KiB`;
+    if (!errs.length && t.items.size) sales = { file: f, totals: t }; refreshButtons(); log(`sales ${f.name}: ${t.items.size} items, ${t.months} months`);
+  } catch (e) { $("salesStatus").innerHTML = `<span class=bad>${esc(e.message)}</span>`; log("sales error: " + e.message); }
 });
 
 /* ---- Step 3: destination ----------------------------------------------------------------------------------------------- */
@@ -354,7 +378,7 @@ async function assemble(existing, writeStage) {
       eaTitles.push(p.split("/").pop().replace(/\.md$/i, ""));
       for (const re of [/^- EA alias: (.+)$/m, /^- (?:PN|Part Number): (.+)$/m]) { const m = re.exec(t); if (m && m[1].trim()) eaTitles.push(m[1].trim()); }
     }
-    bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles, revisionNotes: true });
+    bomRes = buildBom(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: code, classes: CLASSES, existing, pending: pend, eaTitles, revisionNotes: true, sales: sales ? sales.totals : null, salesSource: sales ? sales.file.name : undefined });
     const s = bomRes.summary, errs = bomRes.findings.filter((f) => f.level === "error"), warns = bomRes.findings.filter((f) => f.level === "warn");
     summaryHtml += `<h3>Bill of materials (${esc(s.layout)})</h3><table><tr><th>Status</th><td>${bomRes.status}</td></tr><tr><td>New part notes</td><td>${s.parts} · ${s.usages} usages · ${s.drawings} drawing references · ${s.alternates} alternate sources</td></tr>` +
       `<tr><td>Already in the vault</td><td>${s.existing}</td></tr><tr><td>Not imported (latest revision unknown)</td><td>${s.skippedParts}</td></tr><tr><td>Child pinned at an older revision</td><td>${s.conflicts}</td></tr>` +
@@ -362,7 +386,7 @@ async function assemble(existing, writeStage) {
       (bomRes.problems.length ? `<p class="bad">${bomRes.problems.map(esc).join("<br>")}</p>` : "");
     if (bomRes.status === "WRITE_READY") files.push(...bomRes.files);
     log(`BOM ${bomRes.status}: ${JSON.stringify(bomRes.summary)}`);
-  } else stageAt(2, 1, "No BOM chosen; skipped");
+  } else { stageAt(2, 1, "No BOM chosen; skipped"); if (sales) summaryHtml += `<p class="warn">The sales ledger was not used: it is read together with a BOM.</p>`; }
   stageAt(3, 0, "Assembling the vault…", true); await tick();
   if (!source && !existing) files.push(...initVaultFiles(BASEVAULT, { runDate, vaultName, code, release: RELEASE, person: { name: person.name, timezone: tz() } }));
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -543,7 +567,7 @@ $("bomScan").addEventListener("click", async () => {
   try {
     $("bomApply").disabled = true; bomScanned = null; $("bomUpdOut").innerHTML = ""; $("bomUpdStatus").textContent = "Scanning the BOM against the vault. A large file takes a minute or two…"; await tick(); await rescanVault();
     const fp = await fileSha256(bom.file), runDate = localIso();
-    const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [], revisionNotes: true });
+    const sc = scanBomUpdate(bom.grid, { sourceName: bom.file.name, fingerprint: fp, runDate, authorCode: person.code, classes: CLASSES, existing: { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) }, pending: [], revisionNotes: true, sales: sales ? sales.totals : null, salesSource: sales ? sales.file.name : undefined });
     if (sc.result.status !== "WRITE_READY") { $("bomUpdStatus").innerHTML = `<span class=bad>${esc(sc.result.problems.join(" ") || "The BOM cannot be read.")}</span>`; return; }
     bomScanned = sc; sc.runDate = runDate; sc.hiddenIds = [];
     const KIND_TEXT = { add: "Additions", change: "Changes", remove: "Removals" }, kindN = { add: 0, change: 0, remove: 0 }; for (const it of sc.items) kindN[it.kind]++;

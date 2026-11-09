@@ -1708,3 +1708,36 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 2. **Why a preview.** On the 14,563-part vault of 2026-11-07, adding CABLE to Cable ASM places 991 parts and moves 314 placed parts, and RESISTOR places 358 and moves 2; the first needs a look before it is applied.
 3. **Not built.** Moving notes into the new category folder, a findings table and an import diff (proposed, awaiting the owner).
 4. **Size.** Indexing the 35,194 files took about 4 seconds in Node and grouping 0.3 seconds. Obsidian's own load time has not been measured.
+
+## D-0147 — The NetSuite sales ledger is a source for the BOM importer
+
+2026-11-08 · Spencer · Accepted (owner, chat: "Let's make the updates we've discussed")
+
+1. **Source.** The importer reads a NetSuite sales-actuals export alongside a BOM (BOM-067). It may be imported again; the sales properties are refreshed, nothing else changes.
+2. **Values.** `avgSalePrice` and `annualVolume` come from the whole file: net units, net USD revenue over net USD units, and units per year over the file's months. No range is stored.
+3. **No customer data.** The customer columns are never read; the vault holds none (DAT-002).
+4. **`salesRole`.** `product` = a sold top-level part in a product family; `spare` = any other sold part, including a sold part number found in no BOM (a spare note is made for it until more element kinds are identified); `PIA` = not sold and used in an assembly; no value = not sold and top-level. Intercompany sales are listed in the findings and not counted.
+5. **Category follows family** for a sold top-level part: `Charger` (Procore, GSE and the other charger families), `BMID` (Posiguard, and a kit whose name says BMID), `Kit` (pedestals and other non-core kits, and any kit not used as a child). This is an exception to the word-nearest-start placement of BOM-041/D-0144 and to the BOM `category` column of BOM-062, for these parts only (GOV-033).
+6. **Open.** `PKG PGRM SYS CTRL PROCORE 30KW` is a Charger by the family rule until the owner looks at the part. The join of a ledger item name to a part number (the item name is the part number plus CL1) is inferred and unverified.
+7. **Update scan.** The scan adds a missing sales property to a note already in the vault and offers a different value as a change (unticked, D-0057).
+
+## D-0148 — The Product BOM report
+
+2026-11-08 · Spencer · Accepted (owner, chat: answers to the release-scope questions; "CSV opened in Excel")
+
+1. **What.** The Structure lens of the Workbench has an "Export Product BOM report" button. It writes an indented BOM of the selected note as one CSV file (WKB-068).
+2. **Source.** The notes in the open vault, not the source BOM file, so ECO-approved changes and edits are included.
+3. **Columns.** Level, Part Number, Description, Qty (per parent), Unit, Revision, Category, Make/Buy, Manufacturer, Manufacturer Part Number, Note. No rolled-up quantity and no sales columns (owner's choice).
+4. **Format.** CSV for Excel, not .xlsx (owner's choice over a hand-written xlsx writer or a library). The file has a UTF-8 byte-order mark and quoted fields. A part number Excel would change (07802, 5-10) is written as `="07802"` so Excel keeps it as text; any other program reading the file sees that form.
+5. **Drawings.** A line the importer files as a drawing is not a part and is not a row.
+6. **Scope of a run.** One product (or any note with parts) per run.
+7. **Acceptance.** One real product BOM (the Power Station, checked outside the repository): 497 lines match the parsed source line for line in level, part number, quantity, revision and make/buy. Category matches the source column except the Panel, Lid and Door merge (D-0144) and 5 lines where one part number has different categories on different lines (D-0149).
+8. **Different categories on one part.** See D-0149.
+
+## D-0149 — A part with different categories on different BOM lines is reported
+
+2026-11-08 · Spencer · Accepted (owner, chat: "Yes, add a finding")
+
+1. **Found.** On a real product BOM (the Power Station, checked outside the repository) two part numbers carry different categories on different lines: one is Cable ASM on 4 lines and Cable Mgmt on 19, the other Stud on 1 and Cable Mgmt on 1. The importer files each part under the latest line's category and said nothing.
+2. **Built.** The finding `CATEGORY_CONFLICT` (warn) lists each such part, the category it is filed under and the lines per category (first 15, then a count). The filing is unchanged. Categories that differ only in case are one category.
+
