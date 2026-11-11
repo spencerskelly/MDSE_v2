@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Governance: open decision for cache cost and unchecked generated SysML found in the Oct 22 audit chat (unverified here). OD-41
 - Governance: Product is every sold product below the packaging; each Workbench view opens in a new main window (not built). WKB-072, D-0157, OD-39, OD-40
 - Governance: product identity (Charger, BMID, Kit), shippable level optional, no new-product marker. D-0156, OD-39
 - Governance: the Product category is positional (not built) and PLM maps of content are wanted. BOM-041 (changed), D-0155, OD-34, OD-39
