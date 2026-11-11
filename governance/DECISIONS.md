@@ -1798,3 +1798,14 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 4. **Aim of the import.** Not everything is expected to be done during import. The import must bring in the data we have stable and with integrity, so the team has information to build from. Combining PLM and MBSE into one complete MDSE system is a lot of work for the team afterwards.
 5. **Not decided (OD-38).** The intake proposal in the project document `MDSE_Legacy_Source_Intake.md` is a proposal and is not adopted here: the two-layer split (as-run record and result-free test cases), whether recorded results stay in the as-run copy, who assigns steps to requirements, drawing-name matching and the redline subtype, whether DFMEA and the compliance matrix come in the next release, and the policy for part lines that have only a manufacturer part number.
 6. **Measured, not decided.** Profile figures in that document (for example 75 TP sections in the DVT, 11 TP ids used twice for different tests, 57% of 2,325 drawing file names matching a BOM part number after normalizing) come from a sampleset and the owner's uploads; they were not checked beyond that.
+
+## D-0154 — Workbench: single-function icons in the right sidebar; approvers are in Jira
+
+2026-11-10 · Spencer · Accepted (owner, chat 2026-11-10: "I'd prefer the icons on the far right to be single functions we often use. View Canvas, View Table, View Note, and some others we define"; answers to the questions asked)
+
+1. **Icons.** The drop-down of D-0143 solved the original problem of the panel's many views. On top of it, the Workbench gets one icon for each function used often, on the Obsidian right sidebar's icon tabs: View Canvas, View Table, View Note, Find similar, Structure (the indented BOM) and Edit (Part and links, ECO). The owner may add others later ("some others we define"). WKB-071.
+2. **Beside the drop-down.** The icons are shortcuts; the drop-down still lists every view (WKB-033).
+3. **Not built.** Which view each icon opens, and whether each is its own sidebar view or one panel set to a view, are not decided; the first is an implementation choice to settle when it is built.
+4. **Approvers.** Approvers are kept in Jira now, and the owner performs the final merges. The owner checks that the ECO shows approved in Jira before merging an ECO branch into `main`. This settles who an approver is and where the list is kept (GOV-030, OD-25); nothing in the vault repository records the approver list.
+5. **Still open (OD-25).** Whether a merger may merge an ECO he wrote, how a merge is recorded as approval, and how one ECO per note is enforced.
+6. **The other items of the 2026-11-10 review.** Dropped by the owner: the unpushed repository audit of 2026-10-22, the EA export tool `qeax_export.html`, and the stale plan file in `Engineering_Data` (no action). The three branches are merged into `main` and the owner will delete them.

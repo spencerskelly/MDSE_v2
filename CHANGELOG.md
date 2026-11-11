@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Governance: Workbench single-function icons in the right sidebar (not built) and approvers in Jira recorded. WKB-071, GOV-030 (changed), D-0154, OD-25
 - Governance: Publisher decisions recorded (five outputs, scope, content rules). PLM-005 to PLM-008, D-0152, OD-37
 - Governance: legacy test plans and drawing intake direction recorded; the intake proposal stays open. PLM-009, D-0153, OD-38
 - Workbench: the indented BOM folds by assembly, with Expand all parts, Collapse all parts and Show to level; the table says how many parts it leaves out. WKB-069, D-0150
