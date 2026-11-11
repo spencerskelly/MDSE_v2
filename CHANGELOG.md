@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Governance: product identity (Charger, BMID, Kit), shippable level optional, no new-product marker. D-0156, OD-39
 - Governance: the Product category is positional (not built) and PLM maps of content are wanted. BOM-041 (changed), D-0155, OD-34, OD-39
 - Governance: Workbench single-function icons in the right sidebar (not built) and approvers in Jira recorded. WKB-071, GOV-030 (changed), D-0154, OD-25
 - Governance: Publisher decisions recorded (five outputs, scope, content rules). PLM-005 to PLM-008, D-0152, OD-37

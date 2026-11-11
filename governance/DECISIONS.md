@@ -1818,3 +1818,13 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 2. **Keywords.** The owner wants an improved importer keyword indicator built from the category selections in the Power Station BOM (built as the table of D-0144 and the review of D-0146), and will go through the other BOMs applying categories to see whether it improves.
 3. **Not built.** BOM-041 sets the level from `bomRole` (has parts, has a parent); the importer does not look for a shippable level above a Product. The detector and its questions are OD-39.
 4. **Maps of content.** The owner (2026-11-05) wants maps of content (MOCs) added for PLM to help searching, and expects Rovo use to take practice. Not built (item N3 of the next-release change list).
+
+## D-0156 — Product identity: kits, the shippable level and unreleased products
+
+2026-11-10 · Spencer · Accepted (owner, chat 2026-11-10: "I'd like the product identity in the final folder structure or have a clear way to pull up a filtered list of chargers, BMIDs, and Kits")
+
+1. **Goal.** Chargers, BMIDs and Kits can be told apart in the final folder structure, or listed by a clear filter. Today a sold top-level part is filed under its family (BOM-067, D-0147) at `BOM/Parts/Product/<Charger|BMID|Kit>/`, but the Product level holds every BOM root that has parts, not only delivered goods (`bomRoleOf`, `bomLevelOf`), and a family is given only when the ledger shows a sale. Whether the Product level stays and the family sits under it, or Charger, BMID and Kit replace it, is OD-39.
+2. **Kits.** A kit sold separately is a Kit.
+3. **Shippable level.** It may be optional, but the aim is to have one for every delivered good.
+4. **No marker for a new product.** A product not yet released is carried as a prototype-level part (BOM-064) when needed, not as a Product marker.
+5. **Conflict (GOV-033).** The importer gives level Product to the root of a BOM; D-0155 puts the Product one level below the shippable BOM. Both cannot hold where a BOM has a shippable root. OD-39.
