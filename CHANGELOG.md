@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Governance: Publisher decisions recorded (five outputs, scope, content rules). PLM-005 to PLM-008, D-0152, OD-37
+- Governance: legacy test plans and drawing intake direction recorded; the intake proposal stays open. PLM-009, D-0153, OD-38
 - Workbench: the indented BOM folds by assembly, with Expand all parts, Collapse all parts and Show to level; the table says how many parts it leaves out. WKB-069, D-0150
 - Workbench: the Structure view walks 10 levels and 200 parts under one assembly (was 6 and 40), in the table and the offline Parts tree; the main-window table draws up to 5,000 rows (was 1,000). WKB-070, D-0151
 
