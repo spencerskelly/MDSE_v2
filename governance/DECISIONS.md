@@ -1809,3 +1809,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 4. **Approvers.** Approvers are kept in Jira now, and the owner performs the final merges. The owner checks that the ECO shows approved in Jira before merging an ECO branch into `main`. This settles who an approver is and where the list is kept (GOV-030, OD-25); nothing in the vault repository records the approver list.
 5. **Still open (OD-25).** Whether a merger may merge an ECO he wrote, how a merge is recorded as approval, and how one ECO per note is enforced.
 6. **The other items of the 2026-11-10 review.** Dropped by the owner: the unpushed repository audit of 2026-10-22, the EA export tool `qeax_export.html`, and the stale plan file in `Engineering_Data` (no action). The three branches are merged into `main` and the owner will delete them.
+
+## D-0155 — The Product category is positional; PLM maps of content are wanted
+
+2026-11-08 · Spencer · Accepted (owner, chats 2026-11-05 and 2026-11-08: "This category should be the top of the assembly hierarchy. The only time a product category should have a parent is when it's a level down from the shippable BOM, which includes the packaging"; recorded 2026-11-10 after a review of past chats found it not in the repository)
+
+1. **Product is positional.** `Product` is not a keyword category. It is the top of the assembly hierarchy. A Product has a parent only when it sits one level below the shippable BOM, and the shippable BOM includes the packaging. So a Product does not include packaging materials, which answers OD-34 item (1). BOM-041.
+2. **Keywords.** The owner wants an improved importer keyword indicator built from the category selections in the Power Station BOM (built as the table of D-0144 and the review of D-0146), and will go through the other BOMs applying categories to see whether it improves.
+3. **Not built.** BOM-041 sets the level from `bomRole` (has parts, has a parent); the importer does not look for a shippable level above a Product. The detector and its questions are OD-39.
+4. **Maps of content.** The owner (2026-11-05) wants maps of content (MOCs) added for PLM to help searching, and expects Rovo use to take practice. Not built (item N3 of the next-release change list).
