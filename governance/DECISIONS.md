@@ -1828,3 +1828,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 3. **Shippable level.** It may be optional, but the aim is to have one for every delivered good.
 4. **No marker for a new product.** A product not yet released is carried as a prototype-level part (BOM-064) when needed, not as a Product marker.
 5. **Conflict (GOV-033).** The importer gives level Product to the root of a BOM; D-0155 puts the Product one level below the shippable BOM. Both cannot hold where a BOM has a shippable root. OD-39.
+
+## D-0157 — Product is every sold product below the packaging; each view opens in a new main window
+
+2026-11-10 · Spencer · Accepted (owner, chat 2026-11-10: "Taking all sold products at the level without packaging"; "Any time we select a new view, we should add the view in a new main window")
+
+1. **Product.** The owner takes all sold products at the level without packaging, that is the level below the shippable BOM (D-0155), as the Products. He expects this to also resolve module variants and connector variants, and says each cable assembly could be viewed as a salable kit. Answers OD-39 (a) to (c) in part; the importer is not changed. BOM-041 stays as written until it is built.
+2. **Not checked.** That this settles module and connector variants (the owner says "I think"); how a Product is known without a sales ledger (an import with no ledger would find none); how a sold cable assembly relates to the Kit category of D-0147. OD-39.
+3. **Views.** Selecting a view in the Workbench adds that view in a new main window (the editor area, as the existing "Table in main window" and "Canvas in main window" buttons), so a note can be reviewed and the table or canvas it came from is one step back. WKB-072.
+4. **Conflict (GOV-033).** WKB-033 says the panel reads the chosen view's information below the drop-down, and D-0140 opens a canvas view as a new preview canvas. Item 3 changes the first. The details (every view or only some; a new tab each time or reuse; a tab or a pop-out window; the icons of D-0154) are OD-40.
