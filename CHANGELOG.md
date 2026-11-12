@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Governance: Product keeps Charger, BMID and Kit as categories; V1 behaviours replaced with SysML except discussion posts and text tags; old notes are re-imported. IMP-138, D-0159, OD-39, OD-42, OD-43
 - Workbench: Open note and note links now open in a new tab. Governance: the sales ledger defines the top products. WKB-073, WKB-072, D-0158, OD-39, OD-40
 - Governance: open decision for cache cost and unchecked generated SysML found in the Oct 22 audit chat (unverified here). OD-41
 - Governance: Product is every sold product below the packaging; each Workbench view opens in a new main window (not built). WKB-072, D-0157, OD-39, OD-40

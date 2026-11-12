@@ -1846,3 +1846,13 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 2. **Top products.** The sales ledger defines which products are the top products. They get more attention than legacy equipment. This answers OD-39 (how a Product is known): from the sales ledger. Not decided: how much more attention, what the ledger's format and location are, and what happens with no ledger. OD-39.
 3. **Not checked.** Not run in Obsidian by me; the change is built and unit tests pass, but the tab behaviour is unverified in the app.
 
+## D-0159 — Product keeps Charger/BMID/Kit as categories; V1 behaviours replaced with SysML except discussion posts and text tags; old notes are re-imported
+
+2026-11-11 · Spencer · Accepted (owner, chat 2026-11-11, answers to four questions)
+
+1. **Product level.** Product stays as a level. Charger, BMID and Kit are its categories, so a filtered list of chargers, BMIDs and Kits comes from the category in the folder path. The sales ledger (D-0158) marks which products are sold. Answers the first question of OD-39. Not built.
+2. **V1 behaviours not yet ported.** State entry/do/exit actions and `t_xref` links are replaced by SysML. Discussion posts and `text` tags are kept as note content. Connector name/notes lines stay in the Source section as today. Not built (IMP-138). The owner picked "port discussion posts and text tags too"; the exact shape of the kept content is OD-43.
+3. **Old Source: EA lines.** Notes written before the short form (D-0027) are cleaned by re-importing into a new vault, not by a trim step. No tool is added.
+4. **Pele.** The Mermaid renderer Obsidian Pele is a Later candidate for third-party documentation output, not adopted in P1 (OD-42). The reasons are those in the 2026-10-21 review chat: it does not read SysML, it cannot advance a P1 gate, and Obsidian already renders Mermaid. Not verified here; the review is from that chat.
+5. **Not checked.** Whether connector name/notes should also be dropped, as I proposed in the 2026-10-21 chat; the owner's answer covered the group as a whole. OD-43.
+
