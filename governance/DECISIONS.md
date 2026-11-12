@@ -1856,3 +1856,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 4. **Pele.** The Mermaid renderer Obsidian Pele is a Later candidate for third-party documentation output, not adopted in P1 (OD-42). The reasons are those in the 2026-10-21 review chat: it does not read SysML, it cannot advance a P1 gate, and Obsidian already renders Mermaid. Not verified here; the review is from that chat.
 5. **Not checked.** Whether connector name/notes should also be dropped, as I proposed in the 2026-10-21 chat; the owner's answer covered the group as a whole. OD-43.
 
+## D-0160 — Posts in a body section, tags as a property, connector notes stay; variants are not in the Product list; every selected view opens in a new tab
+
+2026-11-12 · Spencer · Accepted (owner, chat 2026-11-12, answers to OD-43, OD-39 and OD-40)
+
+1. **Discussion posts and `text` tags (OD-43).** Posts are kept in a body section of the note; `text` tags are kept as a property. Connector name and notes lines stay in the Source section as they are today. Answers the first two questions of OD-43. How entry/do/exit and `t_xref` links are written in SysML is still open. IMP-138, not built.
+2. **Variants (OD-39).** A Product does not show its variants. Module variants and connector variants are shown separately, so the product list is not clogged. This answers whether variants are settled: they are not Products. How they are shown separately (their own category, folder or query) is not stated; OD-44.
+3. **Views (OD-40).** When a new view is selected it opens in a new tab, every view and not only the heavier ones, so the person does not lose sight of what they were working on. The owner wrote "window"; D-0158 already settled that a note, canvas or table opens as a tab in the main editor area, and this is read the same way. WKB-072 and WKB-073 (not built for views other than notes, canvases and tables).
+4. **Not checked.** Whether "new window" in the owner's words should instead mean a pop-out window. D-0158 chose a tab; flagged, not re-asked. What the side panel shows once views open elsewhere is still open in OD-40.
+
