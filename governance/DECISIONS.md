@@ -1837,3 +1837,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 2. **Not checked.** That this settles module and connector variants (the owner says "I think"); how a Product is known without a sales ledger (an import with no ledger would find none); how a sold cable assembly relates to the Kit category of D-0147. OD-39.
 3. **Views.** Selecting a view in the Workbench adds that view in a new main window (the editor area, as the existing "Table in main window" and "Canvas in main window" buttons), so a note can be reviewed and the table or canvas it came from is one step back. WKB-072.
 4. **Conflict (GOV-033).** WKB-033 says the panel reads the chosen view's information below the drop-down, and D-0140 opens a canvas view as a new preview canvas. Item 3 changes the first. The details (every view or only some; a new tab each time or reuse; a tab or a pop-out window; the icons of D-0154) are OD-40.
+
+## D-0158 — Every note, canvas and table opens in a new tab; the sales ledger defines the top products
+
+2026-11-11 · Spencer · Accepted (owner, chat 2026-11-11: "Any time we open a note, canvas, or table, I want it in a new tab"; "The sales ledger should define our top products. These will get more attention than legacy equipment"; "Please add the 'open' in new tab to our toolset")
+
+1. **New tab.** Opening a note, a canvas or a table from the Workbench always makes a new tab in the main editor area, so a view being worked on stays one tab back. This answers OD-40 (a tab, not a pop-out window; a new tab each time, not reuse). Table and canvas buttons already did this; "Open note" and note links did not, and now do (built, `tools/workbench/src/plugin.ts`, WKB-073). WKB-072 is narrowed to what is still not built.
+2. **Top products.** The sales ledger defines which products are the top products. They get more attention than legacy equipment. This answers OD-39 (how a Product is known): from the sales ledger. Not decided: how much more attention, what the ledger's format and location are, and what happens with no ledger. OD-39.
+3. **Not checked.** Not run in Obsidian by me; the change is built and unit tests pass, but the tab behaviour is unverified in the app.
+

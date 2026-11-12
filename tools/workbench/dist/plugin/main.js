@@ -6208,7 +6208,10 @@ class MdseSettingTab extends obsidian.PluginSettingTab {
 /** Host callbacks shared by the panel (right) and the table view (main). */
 function hostFor(plugin     )      {
   return {
-    openNote: (p        ) => plugin.app.workspace.openLinkText(p, "", false),
+    openNote: (p        ) => {                                          // D-0158: every note opens in a new tab, so the view it came from stays one tab back
+      const app = plugin.app, file = app.vault.getAbstractFileByPath(p) ?? app.metadataCache.getFirstLinkpathDest(p, "");
+      if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
+    },
     openTable: (lens        ) => plugin.openTable(lens),
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
