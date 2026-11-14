@@ -345,13 +345,16 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
 
   /* ---- views ---- */
   async openPanel() {
-    let leaf = this.app.workspace.getLeavesOfType(PANEL)[0];
+    const ws = this.app.workspace, wantWindow = this.settings.popout && typeof ws.openPopoutLeaf === "function";
+    let leaf = ws.getLeavesOfType(PANEL)[0];
+    // Obsidian restores the panel in the sidebar from the saved layout; reusing that leaf is why a pop-out never appeared. Move it.
+    const inSidebar = (l: any): boolean => { const r = l?.getRoot?.(); return !!r && (r === ws.rightSplit || r === ws.leftSplit); };
+    if (leaf && wantWindow && inSidebar(leaf)) { try { leaf.detach?.(); } catch { /* already gone */ } leaf = null; }
     if (!leaf) {
-      const win = this.settings.popout && typeof this.app.workspace.openPopoutLeaf === "function";
-      leaf = win ? this.app.workspace.openPopoutLeaf({ size: { width: 480, height: 820 } }) : this.app.workspace.getRightLeaf(false);
+      leaf = wantWindow ? ws.openPopoutLeaf({ size: { width: 480, height: 820 } }) : ws.getRightLeaf(false);
       await leaf.setViewState({ type: PANEL, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    ws.revealLeaf(leaf);
   }
   async openTable(lens: string) {
     await this.ensureIndex();

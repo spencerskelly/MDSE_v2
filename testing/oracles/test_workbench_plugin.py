@@ -31,7 +31,7 @@ const isDir = (p) => p in window.__dirs;
 const exists = (p) => p in window.__notes || p in window.__files || isDir(p);
 const fileOf = (path) => isDir(path) ? { path, children: Object.keys(window.__files).filter((f) => f.slice(0, f.lastIndexOf('/')) === path).map((f) => ({ path: f, name: f.split('/').pop(), extension: f.split('.').pop() })) } : { path, extension: path.split('.').pop() };
 const read = (f) => window.__notes[f.path] ?? window.__files[f.path];
-const mk = (kind) => ({ kind, view: null, async setViewState(s) { this.view = views[s.type](this); this.type = s.type; if (this.view.setState) await this.view.setState(s.state || {}, {}); await this.view.onOpen(); }, async openFile(f) { window.__opened.push([kind, f.path]); } });
+const mk = (kind) => ({ kind, view: null, getRoot() { return kind === 'right' ? window.__app.workspace.rightSplit : kind === 'popout' ? { popout: true } : window.__app.workspace.rootSplit; }, detach() { for (const k of ['right', 'main', 'popout']) leaves[k] = leaves[k].filter((x) => x !== this); }, async setViewState(s) { this.view = views[s.type](this); this.type = s.type; if (this.view.setState) await this.view.setState(s.state || {}, {}); await this.view.onOpen(); }, async openFile(f) { window.__opened.push([kind, f.path]); } });
 const leaves = { right: [], main: [], popout: [] };
 const rootLeaf = mk('main');
 window.__app = {
@@ -49,11 +49,11 @@ window.__app = {
     on: (ev, fn) => { window.__ev['vault:' + ev] = fn; (window.__evs['vault:' + ev] ||= []).push(fn); return {}; },
   },
   workspace: {
-    rootSplit: {}, getMostRecentLeaf: () => rootLeaf, setActiveLeaf() {},
+    rootSplit: {}, rightSplit: {}, leftSplit: {}, getMostRecentLeaf: () => rootLeaf, setActiveLeaf() {},
     getLeaf: () => { const l = mk('main'); leaves.main.push(l); return l; },
     getRightLeaf: () => { const l = mk('right'); leaves.right.push(l); return l; },
     openPopoutLeaf: () => { const l = mk('popout'); leaves.popout.push(l); return l; },
-    getLeavesOfType: (t) => t === 'canvas' ? window.__opened.filter((o) => o[1].endsWith('.canvas') && o[1] in window.__files).map((o) => ({ view: { file: { path: o[1] }, getViewType: () => 'canvas', containerEl: { isConnected: true } } })) : [...leaves.right, ...leaves.main].filter((l) => l.type === t),
+    getLeavesOfType: (t) => t === 'canvas' ? window.__opened.filter((o) => o[1].endsWith('.canvas') && o[1] in window.__files).map((o) => ({ view: { file: { path: o[1] }, getViewType: () => 'canvas', containerEl: { isConnected: true } } })) : [...leaves.right, ...leaves.main, ...leaves.popout].filter((l) => l.type === t),
     detachLeavesOfType: (t) => { window.__detached = t; }, revealLeaf() {}, onLayoutReady: (cb) => cb(),
     on: (ev, fn) => { if (ev === 'file-menu') window.__menu++; window.__ev[ev] = fn; return {}; },
     openLinkText: async () => {}, getActiveFile: () => window.__active ? fileOf(window.__active) : null,
@@ -191,6 +191,12 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             self.assertEqual(pg.evaluate("[window.__leaves.popout.length, window.__leaves.right.length]"), [1, 0])
             self.assertFalse(pg.evaluate("window.__plugin.settings.popout"), "the command does not change the setting")
+            # a panel restored in the sidebar is moved to a window, not reused
+            pg.evaluate("window.__plugin.settings.popout = false; window.__leaves.popout.length = 0; window.__plugin.openPanel()")
+            pg.wait_for_function("window.__leaves.right.length === 1")
+            pg.evaluate("window.__cmds['open-popout'].callback()")
+            pg.wait_for_function("window.__leaves.popout.length === 1")
+            self.assertEqual(pg.evaluate("window.__leaves.right.length"), 0, "sidebar copy removed")
             b.close()
         self.assertEqual(errors, [])
 
