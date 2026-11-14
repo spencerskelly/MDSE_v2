@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Workbench (experiment branch only): the panel can open in a pop-out window. WKB-074, D-0161
 - Governance: posts in a body section, tags as a property, variants not in the Product list, every view opens in a new tab. IMP-138, WKB-072, D-0160, OD-39, OD-40, OD-43, OD-44
 - Governance: Product keeps Charger, BMID and Kit as categories; V1 behaviours replaced with SysML except discussion posts and text tags; old notes are re-imported. IMP-138, D-0159, OD-39, OD-42, OD-43
 - Workbench: Open note and note links now open in a new tab. Governance: the sales ledger defines the top products. WKB-073, WKB-072, D-0158, OD-39, OD-40

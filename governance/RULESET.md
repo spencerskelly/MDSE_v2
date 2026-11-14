@@ -624,6 +624,7 @@ Status: **v2.0-draft**, migrated 2026-10-19 from the owner-reviewed Rules Regist
 - **WKB-071** · Active · P2 · live — The Workbench has a single-function icon for each view used often, on the right sidebar's icon tabs: View Canvas, View Table, View Note, Find similar, Structure and Edit. More may be added. The icons are shortcuts beside the view drop-down of WKB-033, which still lists every view. (D-0154) *Note: Owner-approved 2026-11-10. Not built.*
 - **WKB-072** · Active · P2 · live — Selecting any view opens it in a new tab (opening a note, canvas or table is WKB-073, built), so a person can review a note and return to the table or canvas it came from with little effort. (D-0157, D-0160) *Note: Owner-approved 2026-11-10. Not built. Changes WKB-033, where the panel shows the chosen view below the drop-down; details are OD-40.*
 - **WKB-073** · Active · P2 · live — Opening a note, a canvas or a table from the Workbench always makes a new tab in the main editor area, so a person can go back to the view they were working on. (D-0158) *Note: Owner-approved 2026-11-11. Built for Open note and note links; table and canvas buttons already did this.*
+- **WKB-074** · Proposed · P2 · live — The Workbench panel can open in its own pop-out window instead of the right sidebar, by a setting (default off) and a command. Experiment on branch `experiment/workbench-popout-window`; not on `main`. (D-0161) *Note: Not run in real Obsidian.*
 
 ## AIP — AI processes
 

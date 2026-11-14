@@ -1865,3 +1865,11 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 3. **Views (OD-40).** When a new view is selected it opens in a new tab, every view and not only the heavier ones, so the person does not lose sight of what they were working on. The owner wrote "window"; D-0158 already settled that a note, canvas or table opens as a tab in the main editor area, and this is read the same way. WKB-072 and WKB-073 (not built for views other than notes, canvases and tables).
 4. **Not checked.** Whether "new window" in the owner's words should instead mean a pop-out window. D-0158 chose a tab; flagged, not re-asked. What the side panel shows once views open elsewhere is still open in OD-40.
 
+## D-0161 — Experiment: the Workbench panel can open in a pop-out window (branch only)
+
+2026-11-13 · Spencer · Proposed (owner, chat 2026-11-13: "I'd like to try a branch where we have a pop-out wind instead of a panel")
+
+1. **Experiment.** On branch `experiment/workbench-popout-window`, the Workbench panel can open in its own Obsidian pop-out window instead of the right sidebar: a plugin setting (default off) and the command "Open MDSE Workbench in a pop-out window". It is not on `main` and changes nothing there. WKB-074, Proposed.
+2. **Not checked.** Not run in real Obsidian. A pop-out window is a separate browser window with its own document; the panel code uses no global `document` calls, but behaviour of drop-downs, focus and canvas selection reading from another window is unverified. Tested only against the fake Obsidian API.
+3. **Open if it is kept.** Whether the panel should remember the window position, whether the icons of D-0154 move with it, and whether this replaces the right-sidebar panel or stays a setting. OD-40.
+
