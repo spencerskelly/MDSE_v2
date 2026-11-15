@@ -98,6 +98,7 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     const named = c.subtype.filter(Boolean), sub = named.length ? `subtype: # one of: ${named.join(", ")}` : "subtype:";
     put(`99_System/05_Templates/Template - ${type}.md`, `---\ntype: ${/\s/.test(type) ? JSON.stringify(type) : type}\n${sub}\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n`);
   }
+  put("99_System/05_Templates/Template - ECO.md", ecoTemplate((JSON.parse(readFileSync(join(o.root, "governance/schemas/properties.json"), "utf8")) as { order: string[] }).order));   // MOD-190, D-0164
   put(".gitignore", `# MDSE vault: files that stay on each user's machine and are not committed.
 # Obsidian per-user state (open tabs, layout, appearance, hotkeys, graph filters)
 .obsidian/workspace.json
@@ -127,4 +128,20 @@ desktop.ini
   put("99_System/11_Import/README.md", "# Import\n\nRun records, ledgers and review tables written by the importer. Do not edit; fix the source or the mapping and re-import.\n");
   put("README.md", `# MDSE vault\n\nMarkdown Systems Engineering vault (release ${o.release}). SysML v2 text in the last \`## SysML v2\` block of a note is authoritative; everything else is YAML and Markdown.\n\n- AI tools: start at \`99_System/02_AI/AI_INSTRUCTIONS.md\`.\n- Schemas: \`99_System/03_Schemas\`.\n- Imports: \`99_System/11_Import\`.\n`);
   return Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/** MOD-190: the ECO note the team starts from. Every property is present and empty (MOD-047), in the order of properties.json; the section headings follow MOD-031. */
+const ECO_ROLES = ["director", "manager", "lead", "mechanical", "electrical", "design", "project", "product", "purchasing", "quality", "regulatory", "manufacturing"];
+function ecoTemplate(order: readonly string[] | undefined): string {
+  const fields = order ?? [];
+  const eco = ["jiraKey", "jiraUrl", "ecrDate", "owner", "reason", "branch", "issuedDate", ...ECO_ROLES.flatMap((r) => [`${r}Approver`, `${r}ApprovedOn`]), "approvedOn"];
+  const ranked = [...eco].sort((a, b) => { const x = fields.indexOf(a), y = fields.indexOf(b); return (x < 0 ? 1e6 : x) - (y < 0 ? 1e6 : y) || eco.indexOf(a) - eco.indexOf(b); });
+  return ["---", "type: Info", "subtype: change", "id:", "uid:", "status: Draft", "eaType:", "tags: []", ...ranked.map((k) => `${k}:`), "drives: []", "---", "# <% tp.file.title %>", "",
+    "## Description", "", "What changes and why, in a few lines.", "",
+    "## Items", "", "One row for each part or assembly the ECO changes. The change description is what the part's own note shows as its latest change.", "",
+    "| Item | Action | From | To | Class | Responsible | Change description |", "|---|---|---|---|---|---|---|", "| | | | | | | |", "",
+    "## Affected products", "", "For each product the change reaches: the parents of the changed parts, all the way up, and the decision on each (rev up CL1, CL2 or pin change, keep the old pin, or stop here with the reason).", "",
+    "| Product | Parent | Revision before | Revision after | Decision | Responsible |", "|---|---|---|---|---|---|", "| | | | | | |", "",
+    "## Approvers", "", "Each approver's author code and signing date are the `...Approver` and `...ApprovedOn` properties above. The approval itself is in Jira.", "",
+    "## Notes", "", "## Former ids", ""].join("\n");
 }

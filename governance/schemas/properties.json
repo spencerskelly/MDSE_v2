@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "1.5",
+  "schemaVersion": "1.6",
   "date": "2026-11-14",
-  "decision": "D-0065, D-0124, D-0131, D-0136, D-0147, D-0163",
+  "decision": "D-0065, D-0124, D-0131, D-0136, D-0147, D-0163, D-0164",
   "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool, sales. Owner values: bom, ea, person, tool, sales (the NetSuite sales ledger), and \"bom+person\" for a value the BOM fills at import and a person may change afterwards. A row with `values` is a governed list: the value is one of them, and adding a value is a rules edit.",
   "order": [
     "type",
@@ -22,18 +22,32 @@
     "owner",
     "reason",
     "branch",
-    "director",
-    "manager",
-    "lead",
-    "mechanical",
-    "electrical",
-    "design",
-    "project",
-    "product",
-    "purchasing",
-    "quality",
-    "regulatory",
-    "manufacturing",
+    "issuedDate",
+    "directorApprover",
+    "directorApprovedOn",
+    "managerApprover",
+    "managerApprovedOn",
+    "leadApprover",
+    "leadApprovedOn",
+    "mechanicalApprover",
+    "mechanicalApprovedOn",
+    "electricalApprover",
+    "electricalApprovedOn",
+    "designApprover",
+    "designApprovedOn",
+    "projectApprover",
+    "projectApprovedOn",
+    "productApprover",
+    "productApprovedOn",
+    "purchasingApprover",
+    "purchasingApprovedOn",
+    "qualityApprover",
+    "qualityApprovedOn",
+    "regulatoryApprover",
+    "regulatoryApprovedOn",
+    "manufacturingApprover",
+    "manufacturingApprovedOn",
+    "approvedOn",
     "level",
     "sourcing",
     "makeBuy",
@@ -334,87 +348,185 @@
       "source": "NetSuite sales ledger"
     },
     {
-      "name": "director",
+      "name": "directorApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the director role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the director role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "manager",
+      "name": "directorApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the manager role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the director role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "lead",
+      "name": "managerApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the lead role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the manager role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "mechanical",
+      "name": "managerApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the mechanical role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the manager role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "electrical",
+      "name": "leadApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the electrical role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the lead role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "design",
+      "name": "leadApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the design role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the lead role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "project",
+      "name": "mechanicalApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the project role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the mechanical role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "product",
+      "name": "mechanicalApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the product role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the mechanical role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "purchasing",
+      "name": "electricalApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the purchasing role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the electrical role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "quality",
+      "name": "electricalApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the quality role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the electrical role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "regulatory",
+      "name": "designApprover",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the regulatory role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Author code of the person who approves the ECO for the design role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
       "source": "Person, from the Jira approval"
     },
     {
-      "name": "manufacturing",
+      "name": "designApprovedOn",
       "owner": "person",
       "appliesTo": "Info notes of subtype change",
-      "meaning": "Author code of the person who approves the ECO for the manufacturing role, copied from Jira; blank when that role does not approve this ECO (GOV-027, MOD-175, D-0163).",
+      "meaning": "Date that approver signed the approval for the design role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "projectApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the project role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "projectApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the project role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "productApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the product role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "productApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the product role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "purchasingApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the purchasing role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "purchasingApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the purchasing role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "qualityApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the quality role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "qualityApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the quality role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "regulatoryApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the regulatory role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "regulatoryApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the regulatory role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "manufacturingApprover",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Author code of the person who approves the ECO for the manufacturing role, copied from Jira; blank when nobody has been named for that role (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "manufacturingApprovedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date that approver signed the approval for the manufacturing role, YYYY-MM-dd; blank until signed (GOV-027, MOD-175, D-0164).",
+      "source": "Person, from the Jira approval"
+    },
+    {
+      "name": "issuedDate",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date the ECO was issued, YYYY-MM-dd (GOV-026, MOD-175, D-0118). Not the ECR date. Serial numbers are tracked in another system.",
+      "source": "Person"
+    },
+    {
+      "name": "approvedOn",
+      "owner": "person",
+      "appliesTo": "Info notes of subtype change",
+      "meaning": "Date of the whole approval of the ECO, YYYY-MM-dd, copied from Jira; blank while the ECO is open (GOV-027, MOD-175, D-0118). The ECO tab treats an ECO with no value as open (GOV-031).",
       "source": "Person, from the Jira approval"
     }
   ]
