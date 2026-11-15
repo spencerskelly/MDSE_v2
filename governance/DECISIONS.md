@@ -1878,3 +1878,11 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 6. **Latest change (BOM-068).** Every revision note carries `latestChange` and `latestEco`. The ECO note is the source; the Workbench writes the property with the ECO note. Property names and whether the text is the ECO reason or a per-part description are not decided.
 7. **Revision review (WKB-075).** The review is shown from the ECO note: each changed part with its description and link, and for each affected product the parents all the way up with the decision on each. This replaces the idea of a separate review lens. How a reviewer's verdict is recorded is OD-45.
 8. **Built and tested.** Items 1 to 4 are built in the Workbench (plugin and offline page) and the importer; `npm test` passes. Not run in Obsidian by me. Not tested: a canvas or table of tens of thousands of rows on the 60,000-note synthetic vault; with no cap a very large view could be slow or stop the app. Items 5 to 7 are rules only; no code.
+
+## D-0162 — Approvers are documented in the ECO note
+
+2026-11-14 · Spencer · Accepted (owner, chat 2026-11-14: "We can document the approvers in the ECO note")
+
+1. **Approvers in the ECO note.** The ECO note documents who approved the change. This is already the rule for one approver: `approver` (an author code) and `approvedOn` are properties of the change note, copied from Jira, and the approval itself stays in Jira (GOV-026, GOV-027, MOD-175, BOM-051; D-0118). Nothing in those rules changes. WKB-075 now says the ECO note documents the approvers, so the revision review and the approvers are read from one note.
+2. **Not decided, so not changed.** (a) Whether there can be several approvers: `approver` holds one author code today, and a second approver would need a list or a table in the note body. (b) Whether a reviewer's verdict on each part and parent is also kept in the ECO note. The statement is read as approvers only, so OD-45 stays open with an update. (c) GOV-026 and GOV-027 are still Proposed, so they do not bind; this decision does not approve them.
+3. **Not checked.** What the owner wants the approver entry to hold beyond author code and date (for example a role or the Jira approval reference).
