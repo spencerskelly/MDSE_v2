@@ -1,6 +1,6 @@
 /* The Workbench user interface. Plain DOM, no framework, no network. Every string from the vault goes in as text, never
  * as markup. Used unchanged by the standalone page and by the Obsidian plugin; the host supplies what differs. */
-import { toCanvas, pickCanvas, MAX_PICK } from "./canvas.ts";
+import { toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit } from "./canvas.ts";
 import type { CanvasResult } from "./canvas.ts";
 import { buildIndexAsync } from "./index.ts";
 import type { ModelIndex, Note } from "./index.ts";
@@ -162,7 +162,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     if (!t.rows.length) return empty(t.empty);
     const cols = t.columns.filter((c) => c.label), one = (x: V.Cell): Node => (x.path ? lnk(x.path, x.text) : h("span", { class: x.cls ?? "" }, x.text));
     const cell = (c: V.TableCell | undefined): Child => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? h("span", {}, ...c.flatMap((x, i) => [i ? ", " : "", one(x)])) : one(c));
-    return tableOf(cols.map((c) => [c.key, c.label]), t.rows.slice(0, 1000).map((r) => cols.map((c) => cell(r[c.key]))));
+    return tableOf(cols.map((c) => [c.key, c.label]), t.rows.map((r) => cols.map((c) => cell(r[c.key]))));
   }
   const dataSections = (ts: V.TableData[], open = true): HTMLElement[] => ts.map((t) => section(t.id, t.title, [t.note ? h("div", { class: "mut", style: "margin-bottom:4px" }, t.note) : null, dataTable(t)], { count: t.rows.length, open }));
 
@@ -191,7 +191,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const types = [...new Set([...ix!.notes.values()].map((n) => n.type))].sort();
     const found = V.pickRows(ix!, pickText, pickType), notes = found.notes;
     const count = h("span", { class: "mut" }), boxes = new Map<string, HTMLInputElement>();
-    const upd = (): void => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const upd = (): void => { count.textContent = `${pickSel.size} ticked`; };
     const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     pane.append(h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."));
     pane.append(h("div", { class: "row" },
@@ -207,8 +207,8 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       place.addEventListener("click", () => {
         if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
         place.setAttribute("disabled", ""); place.textContent = "Creating…";
-        const r = pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText, group: pickGroup });
-        host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
+        const ask = async (count: number): Promise<number | null> => { for (let t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count))); t !== null; t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count)))) { const n = parseCanvasLimit(t); if (n !== null) return n; } return null; };   // D-0161
+        buildWithLimit(() => pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText, group: pickGroup }), ask).then((r) => r ? host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only part of the ${pickSel.size} ticked notes were placed (the limit you chose).` : m; hasPreview = true; }) : (canvasMsg = "Canvas cancelled."), (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
       });
       bar.append(place);
       if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => { host.saveCanvas!().then((m) => { canvasMsg = m; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); }); bar.append(save); }
@@ -238,7 +238,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.flagged, onchange: (e: Event) => { tableF.flagged = (e.target as HTMLInputElement).checked; redraw(); } }), " flagged"),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.unresolved, onchange: (e: Event) => { tableF.unresolved = (e.target as HTMLInputElement).checked; redraw(); } }), " unresolved"),
       h("button", { onclick: () => download("notes.csv", [["id", "file", "type", "subtype", "title", "status", "folder", "flags", "path"].join(","), ...rows.map((r) => [r.id, r.file, r.type, r.subtype, r.title, r.status, r.folder, r.flags, r.path].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
-    const rows = V.tableRows(ix!, tableF), cap = rows.slice(0, 1000);
+    const rows = V.tableRows(ix!, tableF), cap = rows;
     pane.append(h("div", { class: "mut" }, `${rows.length} notes${rows.length > cap.length ? " (first 1,000 shown)" : ""}`));
     const heads: Array<[string, string, boolean?]> = [["id", "ID"], ["file", "File"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]];
     const toRow = (r: typeof cap[number]): Child[] => [r.id, r.file, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""];
@@ -452,8 +452,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const flip = (list: string[], v: string, on: boolean): string[] => (on ? list.filter((x) => x !== v) : list.includes(v) ? list : [...list, v]);
     return h("details", { class: "vsbox", open: true }, h("summary", {}, "View settings ", h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped: raise max notes or filter)" : ""}${g.hidden ? `, ${g.hidden} hidden by filters` : ""}${g.groups.size ? `, ${g.groups.size} groups` : ""}`)),
       h("div", { class: "row" },
-        h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: spec.depth, style: "width:56px", title: "How many relationship hops from the selected note", onchange: (e: Event) => { set({ depth: num((e.target as HTMLInputElement).value, prof.depth) }); draw(); } })),
-        h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: spec.cap, style: "width:64px", onchange: (e: Event) => { set({ cap: num((e.target as HTMLInputElement).value, prof.cap) }); draw(); } })),
+        h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: spec.depth, style: "width:56px", title: "How many relationship hops from the selected note", onchange: (e: Event) => { set({ depth: num((e.target as HTMLInputElement).value, prof.depth) }); draw(); } })),
         h("label", {}, "folder ", h("input", { type: "search", value: spec.folder, placeholder: "limit to folder", style: "width:170px", onchange: (e: Event) => { set({ folder: (e.target as HTMLInputElement).value.trim() }); draw(); } })),
         h("label", { class: "pill" }, h("input", { type: "checkbox", checked: spec.ghosts, onchange: (e: Event) => { set({ ghosts: (e.target as HTMLInputElement).checked }); } }), " canvas: show references to notes not in the vault"),
         h("button", { onclick: () => { gspec = {}; draw(); } }, "Reset view")),
@@ -468,7 +467,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
   function vGraph(): HTMLElement {
     const miss = needNote(); if (miss) return miss;
     const prof = V.PROFILES.find((p) => p.name === profile)!, spec: V.ViewSpec = { ...V.defaultSpec(prof), ...gspec };
-    const g = V.traverse(ix!, sel, prof, spec.depth, spec.cap, spec), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
+    const g = V.traverse(ix!, sel, prof, spec.depth, Infinity, spec), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
     const xs = placed.map((p) => p.x), ys = placed.map((p) => p.y), pad = 110;
     const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - 40, w = Math.max(...xs) - Math.min(...xs) + pad * 2, hh = Math.max(...ys) - Math.min(...ys) + 100;
     const svg = s("svg", { class: "g", viewBox: `${minX} ${minY} ${Math.max(w, 400)} ${Math.max(hh, 260)}`, role: "img", "aria-label": "Relationship graph" });
@@ -521,7 +520,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const shown = items.filter((i) => (!reviewCat || i.category === reviewCat) && (!reviewSev || i.severity === reviewSev));
     pane.append(h("div", { class: "row" }, sev, h("span", { class: "mut" }, `${shown.length} of ${items.length}`),
       h("button", { onclick: () => download("review.csv", ["severity,category,note,detail", ...shown.map((i) => [i.severity, i.category, i.path, i.message].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
-    const cap = shown.slice(0, 1000);
+    const cap = shown;
     pane.append(tableOf([["s", "Severity"], ["c", "Category"], ["n", "Note"], ["m", "Detail"]], cap.map((i) => [h("span", { class: i.severity === "high" ? "gap" : "" }, i.severity), i.category, i.path ? lnk(i.path) : "", i.message])));
     if (shown.length > cap.length) pane.append(h("div", { class: "mut" }, `${shown.length - cap.length} more not shown`));
     return pane;

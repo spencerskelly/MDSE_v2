@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex } from "../src/index.ts";
-import { addToCanvas, cardAction, collapseLayer, expandLayer, expandAll, cardNotePath, isCollapsed } from "../src/canvas.ts";
+import { addToCanvas, cardAction, collapseLayer, expandLayer, expandAll, withCanvasCap, cardNotePath, isCollapsed } from "../src/canvas.ts";
 import type { CanvasDoc } from "../src/canvas.ts";
 import { classes } from "./harness.ts";
 
@@ -51,7 +51,7 @@ test("expand all opens every layer in one go; collapse all closes the card", () 
   assert.equal(cardAction(open.doc, v, "Cable.md", "expandAll").action, "none", "a card with no parts");
 });
 
-test("expand all stops at the card limit and says so", () => {
+test("expand all places every part; a chosen limit stops it and says so (D-0161)", () => {
   const files = new Map<string, string>([f("OBJ-09000", "Big", parts(...Array.from({ length: 70 }, (_, i) => `A${i}`)))]);
   for (let i = 0; i < 70; i++) {
     files.set(...f(`OBJ-0${1000 + i}`, `A${i}`, parts(`B${i}x`, `B${i}y`)));
@@ -60,6 +60,8 @@ test("expand all stops at the card limit and says so", () => {
   for (let i = 0; i < 70; i++) for (const s of ["x", "y"]) files.set(...f(`OBJ-0${4000 + i * 2 + (s === "x" ? 0 : 1)}`, `C${i}${s}`));
   const big = buildIndex(files, { classes });
   const one = addToCanvas({ nodes: [], edges: [] }, big, null, ["Big.md"]).doc;
-  const r = expandAll(one, big, "Big.md");
-  assert.equal(r.capped, true); assert.ok(r.doc.nodes.length >= 200 && r.doc.nodes.length < 400);
+  const all = expandAll(one, big, "Big.md");
+  assert.equal(all.capped, false); assert.equal(all.doc.nodes.length, 1 + 70 + 140 + 140, "no fixed cap: every layer is placed");
+  const r = withCanvasCap(150, () => expandAll(one, big, "Big.md"));
+  assert.equal(r.capped, true); assert.ok(r.doc.nodes.length >= 150 && r.doc.nodes.length < 400);
 });

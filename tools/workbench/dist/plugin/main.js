@@ -984,7 +984,7 @@ const OWNED = ["hasPart", "hasPort", "hasAction", "hasState", "hasFlow"];
 const CONTAIN = ["hasPart", "hasPort", "hasAction", "hasState", "specializes"];
 
 /** How far the Structure view walks: levels of parts below the note, and parts listed under one assembly. Both the Structure table and the offline page's parts tree use these (D-0151, WKB-070); a cut is said in the table (D-0150). */
-const LIMIT_LEVELS = 10, LIMIT_PER_PARENT = 200;
+const LIMIT_LEVELS = Infinity, LIMIT_PER_PARENT = Infinity;   // D-0161: no level or per-assembly limit (WKB-070 retired)
 
 /* ---- Structure ------------------------------------------------------------------------------------------------ */
                                                                                                  
@@ -1001,7 +1001,7 @@ function structure(ix            , root        , maxDepth = LIMIT_LEVELS, perPar
   };
   const n = ix.notes.get(root) ;
   const supers           = [], seen = new Set        ([root]);
-  for (let cur = root, guard = 0; guard < 20; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; supers.push(e.to ); seen.add(e.to ); cur = e.to ; }
+  for (let cur = root, guard = 0; ; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; supers.push(e.to ); seen.add(e.to ); cur = e.to ; }
   const subs = incoming(ix, root).filter((e) => e.kind === "specializes").map((e) => e.from);
   const untyped = (n.def?.usages ?? []).filter((u) => !u.type && u.kind !== "fork" && u.kind !== "join").map((u) => `${u.kind} ${u.name}`);
   return { tree: walk(root, n.title, "root", "", []), supers, subs, untyped };
@@ -1020,7 +1020,7 @@ const measuredText = (detail        )         => { const m = measuredOf(detail);
 
 /** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. Whole counts and measured amounts
  *  (4.318 Meter) are kept apart by unit, never added together. A quantity of 0 is a document line and adds nothing. */
-function bom(ix            , root        , maxDepth = 12)                                                                                   {
+function bom(ix            , root        , maxDepth = Infinity)                                                                                   {
   const acc = new Map                                                                    ();
   const walk = (p        , mult        , depth        , stack          )       => {
     if (depth > maxDepth || stack.includes(p)) return;
@@ -1044,7 +1044,7 @@ function bomCategoryOfNote(ix            , path        )         {
   return String(base?.meta.bomCategory ?? "").trim();
 }
 /** The parts under `root` (rolled up, as bom()) sorted into the categories they carry; parts with none are "(no category)". */
-function bomByCategory(ix            , root        , maxDepth = 12)                                                                                                                                                                   {
+function bomByCategory(ix            , root        , maxDepth = Infinity)                                                                                                                                                                   {
   const rows = bom(ix, root, maxDepth).map((r) => ({ ...r, category: bomCategoryOfNote(ix, r.path) || "(no category)" }));
   const m = new Map                (); for (const r of rows) m.set(r.category, (m.get(r.category) ?? 0) + 1);
   return { categories: [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)), rows };
@@ -1052,7 +1052,7 @@ function bomByCategory(ix            , root        , maxDepth = 12)             
 
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
                                                                                                                                
-function whereUsed(ix            , target        , maxDepth = 8)                  {
+function whereUsed(ix            , target        , maxDepth = Infinity)                  {
   const roots           = [];
   const up = (p        , stack          )             => {
     const kids             = [];
@@ -1120,7 +1120,7 @@ function behavior(ix            , path        , only                       )    
 /* ---- Design types: the specialization hierarchy, apart from composition and behavior ------------------------------- */
                                                                                                   
 /** What a definition specializes (root first), and the designs that specialize it, each with what it owns. */
-function designTypes(ix            , root        , maxDepth = 8, cap = 400)                    {
+function designTypes(ix            , root        , maxDepth = Infinity, cap = Infinity)                    {
   const chain           = [], seen = new Set        ([root]);
   for (let cur = root, guard = 0; guard < 30; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; chain.unshift(e.to ); seen.add(e.to ); cur = e.to ; }
   const owns = (p        )         => {
@@ -1189,7 +1189,7 @@ function internalStructure(ix            , path        )                 {
                                                                
 const INHERIT_FROM                                       = [["general", "Specialization", "from general (the notes this one specializes)"], ["specific", "Specialization", "from specific (the notes that specialize this one)"], ["parent", "Assembly", "from parent (assemblies this note is a part of)"], ["child", "Assembly", "from child (parts of this note, rolled up)"]];
                                                                                                                                                                                                                                                                                        
-const INHERIT_LIMIT = 400;
+const INHERIT_LIMIT = Infinity;
 /** The ports and parts a note does not declare itself but takes from other notes, each marked with the direction and the note it comes from. A member whose name the note (or a nearer note) already has is not repeated. Specialization and assembly are separate, and each direction is switched on by the caller. */
 function inheritedMembers(ix            , path        , which                        )                    {
   const own = ix.notes.get(path)?.def, res = (t         )                => (t ? ix.bySymbol.get(t) ?? null : null);
@@ -1204,7 +1204,7 @@ function inheritedMembers(ix            , path        , which                   
   };
   const reach = (start        , next                         )                                      => {
     const seen = new Set        ([start]), found                                      = []; let level = [start];
-    for (let depth = 1; level.length && depth <= 12; depth++) { const nxt           = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
+    for (let depth = 1; level.length; depth++) { const nxt           = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
     return found;
   };
   const sort = (a        , b        )         => nm(ix, a, a).localeCompare(nm(ix, b, b));
@@ -1221,7 +1221,7 @@ function inheritedMembers(ix            , path        , which                   
     else {
       const walk = (p        , route        , depth        , guard             )       => {
         for (const part of partsOf(p)) {
-          if (out.length >= INHERIT_LIMIT || depth > 8 || guard.has(part.to)) continue;
+          if (out.length >= INHERIT_LIMIT || guard.has(part.to)) continue;
           const r = route ? `${route}.${part.name}` : part.name;
           add(w, part.to, r, depth, seen);
           walk(part.to, r, depth + 1, new Set([...guard, part.to]));
@@ -1297,28 +1297,28 @@ const muted = (hex        )         => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})
 
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
                                                   
-                                                                                                  
+                                                                                     
 const both = (...kinds          )         => kinds.flatMap((kind) => [{ kind, dir: "out"          }, { kind, dir: "in"          }]);
 const PROFILES            = [
-  { name: "Structure", description: "Parts, ports, actions and states a definition owns, and what it specializes.", steps: [{ kind: "hasPart", dir: "out" }, { kind: "hasPort", dir: "out" }, { kind: "hasAction", dir: "out" }, { kind: "hasState", dir: "out" }, { kind: "specializes", dir: "out" }], depth: 3, cap: 80 },
-  { name: "Where used", description: "Everything that owns, specializes or uses the note, upward.", steps: [{ kind: "hasPart", dir: "in" }, { kind: "hasPort", dir: "in" }, { kind: "hasAction", dir: "in" }, { kind: "hasState", dir: "in" }, { kind: "specializes", dir: "in" }, { kind: "performs", dir: "in" }], depth: 3, cap: 80 },
-  { name: "Requirements", description: "A requirement with what derives, refines, satisfies and verifies it; or an element with its requirements.", steps: [...both("derivedFrom", "refines", "satisfies", "verifies")], depth: 2, cap: 80 },
-  { name: "Verification", description: "Verification cases and the requirements they verify.", steps: both("verifies"), depth: 2, cap: 80 },
-  { name: "Behavior", description: "What performs and owns actions.", steps: [{ kind: "performs", dir: "out" }, { kind: "performs", dir: "in" }, { kind: "hasAction", dir: "out" }, { kind: "hasAction", dir: "in" }, { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }], depth: 2, cap: 80 },
-  { name: "Interfaces", description: "Ports, the port definitions that type them, and the flows they carry.", steps: [{ kind: "hasPort", dir: "out" }, { kind: "hasPort", dir: "in" }, { kind: "hasFlow", dir: "out" }, { kind: "hasFlow", dir: "in" }], depth: 2, cap: 80 },
-  { name: "Allocation", description: "Allocations between elements.", steps: both("allocatedTo"), depth: 2, cap: 80 },
-  { name: "Dependencies", description: "Trace, refine, derive, depends-on and uses links.", steps: both("trace", "refines", "derivedFrom", "dependsOn", "uses"), depth: 2, cap: 80 },
-  { name: "Documentation", description: "Info and other notes that describe an element.", steps: both("describes"), depth: 2, cap: 80 },
-  { name: "Structure trace", description: "Down: parts, ports, specializations. Up: what owns or specializes it.", steps: both("hasPart", "hasPort", "specializes"), depth: 3, cap: 80 },
-  { name: "Functional trace", description: "Functions with who performs them, what they satisfy, and where they are allocated.", steps: [...both("performs", "hasAction", "allocatedTo"), { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }, { kind: "satisfies", dir: "out" }, { kind: "satisfies", dir: "in" }], depth: 2, cap: 80 },
-  { name: "Requirements trace", description: "Requirements with what derives, refines, satisfies, verifies and is allocated against them.", steps: both("derivedFrom", "refines", "satisfies", "verifies", "allocatedTo"), depth: 2, cap: 80 },
-  { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1, cap: 60 },
+  { name: "Structure", description: "Parts, ports, actions and states a definition owns, and what it specializes.", steps: [{ kind: "hasPart", dir: "out" }, { kind: "hasPort", dir: "out" }, { kind: "hasAction", dir: "out" }, { kind: "hasState", dir: "out" }, { kind: "specializes", dir: "out" }], depth: 3 },
+  { name: "Where used", description: "Everything that owns, specializes or uses the note, upward.", steps: [{ kind: "hasPart", dir: "in" }, { kind: "hasPort", dir: "in" }, { kind: "hasAction", dir: "in" }, { kind: "hasState", dir: "in" }, { kind: "specializes", dir: "in" }, { kind: "performs", dir: "in" }], depth: 3 },
+  { name: "Requirements", description: "A requirement with what derives, refines, satisfies and verifies it; or an element with its requirements.", steps: [...both("derivedFrom", "refines", "satisfies", "verifies")], depth: 2 },
+  { name: "Verification", description: "Verification cases and the requirements they verify.", steps: both("verifies"), depth: 2 },
+  { name: "Behavior", description: "What performs and owns actions.", steps: [{ kind: "performs", dir: "out" }, { kind: "performs", dir: "in" }, { kind: "hasAction", dir: "out" }, { kind: "hasAction", dir: "in" }, { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }], depth: 2 },
+  { name: "Interfaces", description: "Ports, the port definitions that type them, and the flows they carry.", steps: [{ kind: "hasPort", dir: "out" }, { kind: "hasPort", dir: "in" }, { kind: "hasFlow", dir: "out" }, { kind: "hasFlow", dir: "in" }], depth: 2 },
+  { name: "Allocation", description: "Allocations between elements.", steps: both("allocatedTo"), depth: 2 },
+  { name: "Dependencies", description: "Trace, refine, derive, depends-on and uses links.", steps: both("trace", "refines", "derivedFrom", "dependsOn", "uses"), depth: 2 },
+  { name: "Documentation", description: "Info and other notes that describe an element.", steps: both("describes"), depth: 2 },
+  { name: "Structure trace", description: "Down: parts, ports, specializations. Up: what owns or specializes it.", steps: both("hasPart", "hasPort", "specializes"), depth: 3 },
+  { name: "Functional trace", description: "Functions with who performs them, what they satisfy, and where they are allocated.", steps: [...both("performs", "hasAction", "allocatedTo"), { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }, { kind: "satisfies", dir: "out" }, { kind: "satisfies", dir: "in" }], depth: 2 },
+  { name: "Requirements trace", description: "Requirements with what derives, refines, satisfies, verifies and is allocated against them.", steps: both("derivedFrom", "refines", "satisfies", "verifies", "allocatedTo"), depth: 2 },
+  { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1 },
 ];
 
 /** What the person chose to see. Empty lists mean "no restriction". Presentation only: it never changes the model. */
                                                                            
-                                                                                                                                                                                            
-const defaultSpec = (p          )           => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, cap: p?.cap ?? 80, collapse: "", collapseOver: 6, ghosts: true });
+                                                                                                                                                                               
+const defaultSpec = (p          )           => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, collapse: "", collapseOver: 6, ghosts: true });
 const specIsDefault = (s                               , p         )          => !s || JSON.stringify({ ...defaultSpec(p), ...s }) === JSON.stringify(defaultSpec(p));
 const CLASSIFIERS                              = [["", "Don't group"], ["type", "Note type"], ["subtype", "Type and subtype"], ["status", "Status"], ["folder", "Folder"], ["eaType", "EA type"]];
 const classOf = (n      , by            )         => by === "type" ? n.type : by === "subtype" ? (n.subtype ? `${n.type}/${n.subtype}` : n.type) : by === "status" ? n.status || "no status" : by === "folder" ? n.folder || "(root)" : by === "eaType" ? n.eaType || "no EA type" : "";
@@ -1326,7 +1326,7 @@ const classOf = (n      , by            )         => by === "type" ? n.type : by
                                                                       
                                                                                                                                                        
 
-function traverse(ix            , start        , p         , depth = p.depth, cap = p.cap, spec                    )              {
+function traverse(ix            , start        , p         , depth = p.depth, cap = Infinity, spec                    )              {
   const sp = { ...defaultSpec(p), ...spec };
   const seen = new Map                ([[start, 0]]), edges         = [], used = new Set      ();
   let frontier = [start], capped = false, hidden = 0;
@@ -1480,7 +1480,7 @@ function dashboard(ix            )            {
     edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, noPort: objectsWithoutPort(ix), warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
 }
 
-function search(ix            , q        , limit = 50)         {
+function search(ix            , q        , limit = Infinity)         {
   const s = q.trim().toLowerCase(); if (!s) return [];
   const hits                        = [];
   for (const n of ix.notes.values()) {
@@ -1493,7 +1493,7 @@ function search(ix            , q        , limit = 50)         {
 }
 
 /** Notes to pick from for a canvas (D-0078): every note whose name, description, id, part number, alias or type holds each word of the text, in name order. `total` counts all matches; `notes` is cut at `limit`. */
-function pickRows(ix            , text        , type = "", limit = 500)                                   {
+function pickRows(ix            , text        , type = "", limit = Infinity)                                   {
   const words = text.toLowerCase().split(/\s+/).filter(Boolean), out         = [];
   for (const n of ix.notes.values()) {
     if (type && n.type !== type) continue;
@@ -1767,7 +1767,7 @@ const SAVED_DIR = "99_System/23_Saved_Views";
 const SPACING = 3;
 /** D-0096: the gap, in card widths across and card heights down, between two cards whose notes are joined by a relationship (SPACING) and between two that are not (SPACING_UNRELATED). */
 const SPACING_UNRELATED = 1;
-const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, GXU = SPACING_UNRELATED * W, GYU = SPACING_UNRELATED * H, MAX_UNRESOLVED = 24;
+const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, GXU = SPACING_UNRELATED * W, GYU = SPACING_UNRELATED * H;
 /** Every pair of notes joined by a resolved relationship, either way, as "a|b" and "b|a" (D-0096). */
 function cvRelatedSet(ix            )              {
   const s = new Set        ();
@@ -1826,7 +1826,7 @@ function structureCanvas(ix            , root        , mode                   ) 
     if (mode === "direct" && d >= 1) continue;
     for (const k of kids.get(p) ?? []) {
       if (depth.has(k.to)) continue;
-      if (depth.size >= MAX_PICK) { capped = true; continue; }
+      if (depth.size >= canvasCapNow()) { capped = true; continue; }
       depth.set(k.to, d + 1); (tree.get(p) ?? tree.set(p, []).get(p) ).push(k.to); queue.push(k.to);
     }
   }
@@ -1852,11 +1852,27 @@ function structureCanvas(ix            , root        , mode                   ) 
 
 /** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
  * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.
- * Not grouped: one grid, at most 6 across. At most MAX_PICK cards; `capped` says some were left off. */
-const MAX_PICK = 200;
+ * Not grouped: one grid, at most 6 across. At most the chosen canvas limit (D-0161); `capped` says some were left off. */
+/** D-0161: no fixed card cap. A canvas with more than CANVAS_WARN_AT cards warns the person, who chooses a limit of up to CANVAS_LIMIT_MAX cards (the Obsidian plugin asks; the builders read the chosen limit here). With nothing chosen a builder places everything. */
+const CANVAS_WARN_AT = 50, CANVAS_LIMIT_MAX = 212;
+let canvasCap = Infinity;
+const canvasCapNow = ()         => canvasCap;
+function withCanvasCap   (n        , fn         )    { const was = canvasCap; canvasCap = n; try { return fn(); } finally { canvasCap = was; } }
+const canvasLimitDefault = (count        )         => Math.min(count, CANVAS_LIMIT_MAX);
+const canvasLimitMessage = (count        )         => `This canvas would hold ${count} elements. More than ${CANVAS_WARN_AT} is slow to draw and hard to read. Choose a limit of up to ${CANVAS_LIMIT_MAX} elements.`;
+/** The limit typed by the person: a whole number from 1 to CANVAS_LIMIT_MAX, else null. */
+function parseCanvasLimit(text        )                { const t = text.trim(); if (!/^\d+$/.test(t)) return null; const n = Number(t); return n >= 1 && n <= CANVAS_LIMIT_MAX ? n : null; }
+/** D-0161: builds the canvas with no limit; when it holds more than CANVAS_WARN_AT elements, asks for a limit (null = the person cancelled) and builds it again within that limit. */
+async function buildWithLimit                             (build         , ask                                           )                    {
+  const r = build();
+  if (r.notes <= CANVAS_WARN_AT) return r;
+  const n = await ask(r.notes);
+  if (n === null) return null;
+  return n >= r.notes ? r : withCanvasCap(n, build);
+}
 const GROUP_PAD = 80, GROUP_COLS = 4;
 function pickCanvas(ix            , paths          , opts                                                        )               {
-  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK);
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, canvasCapNow());
   const nodes               = [], cards               = [], at = new Map                    ();
   const related = cvRelatedSet(ix);
   const grid = (list          , cols        , x0        , y0        , key        )                                    => {      // lays one grid of cards: related neighbours a related gap apart, others the unrelated gap (D-0096); returns the y below it and the right edge
@@ -2126,11 +2142,11 @@ function expandLayer(doc           , ix            , parent        )            
   return { doc: cur, added };
 }
 
-/** Expand all layers (D-0095): expands layer after layer until every part below the card is on the canvas, or the canvas holds MAX_PICK cards (then `capped` is true). A part that is its own ancestor is added once. */
+/** Expand all layers (D-0095): expands layer after layer until every part below the card is on the canvas, or the canvas holds the chosen limit of cards (then `capped` is true). A part that is its own ancestor is added once. */
 function expandAll(doc           , ix            , parent        )                                                     {
   let cur = doc, added = 0, capped = false;
   for (;;) {
-    if (cur.nodes.length >= MAX_PICK) { capped = [...cvBranch(cur, ix, parent).keys()].some((q) => cvMissing(cur, ix, q) > 0); break; }
+    if (cur.nodes.length >= canvasCapNow()) { capped = [...cvBranch(cur, ix, parent).keys()].some((q) => cvMissing(cur, ix, q) > 0); break; }
     const r = expandLayer(cur, ix, parent); if (!r.added) break;
     cur = r.doc; added += r.added;
   }
@@ -2285,7 +2301,6 @@ function autoLayout(doc           , ix            )                             
 }
 
 /** The internal structure of one definition as a canvas (D-0097). The note is one large card; each part is a card inside it; each port is a small card on the edge of the card that owns it, half in and half out. Every object has at least one port: where a definition or a part's type has none, a placeholder "no port" card is drawn so there is always an edge to connect to, and nothing is written to the vault. Wires (connect, bind, flow) are lines between port cards. Parts that a wire joins sit a related gap apart, others the unrelated gap (D-0096). Cards are laid out once; the person moves them by hand afterwards, and Refresh, Auto-layout and Collapse leave them where they are. At most MAX_PARTS parts. */
-const MAX_PARTS = 60;
 function internalCanvas(ix            , path        , inherit                         = [])               {
   const note = ix.notes.get(path);
   if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
@@ -2297,7 +2312,7 @@ function internalCanvas(ix            , path        , inherit                   
   const inh = inherit.length ? inheritedMembers(ix, path, inherit) : [], tagOf = (m                 )         => `↑ ${FROM_TXT[m.from]} · ${link(m.source, ix.notes.get(m.source)?.title ?? m.source)}`;
                                                                            
   const ownParts             = r.parts.map((x) => ({ ...x, key: x.name })), inhParts             = inh.filter((m) => m.kind === "part").map((m, i) => ({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, mult: m.mult, ref: false, ports: portsOfType(ix, m.path), key: `inh${i}`, tag: tagOf(m) }));
-  const allParts = [...ownParts, ...inhParts], parts = allParts.slice(0, MAX_PARTS), inhPorts = inh.filter((m) => m.kind === "port").slice(0, MAX_PARTS), capped = allParts.length > MAX_PARTS || inh.filter((m) => m.kind === "port").length > MAX_PARTS;
+  const allParts = [...ownParts, ...inhParts], parts = allParts.slice(0, canvasCapNow()), inhPorts = inh.filter((m) => m.kind === "port").slice(0, canvasCapNow()), capped = allParts.length > canvasCapNow() || inh.filter((m) => m.kind === "port").length > canvasCapNow();
                                                                                       
   const portText = (q                                                                    )           => ({ label: `${q.name}${q.type ? " : " + (q.conj ? "~" : "") + (ix.notes.get(q.path ?? "")?.title ?? q.type) : ""}`, path: q.path, none: false });
   const placeholder           = { label: "no port", path: null, none: true };
@@ -2357,10 +2372,10 @@ function internalCanvas(ix            , path        , inherit                   
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 function toCanvas(ix            , start        , profile         , spec                    )               {
-  const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;
+  const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth;
   const note = ix.notes.get(start);
   if (!note) throw new Error(`Note not in index: ${start}`);
-  const g = traverse(ix, start, profile, depth, cap, sp);
+  const g = traverse(ix, start, profile, depth, canvasCapNow(), sp);
   const id = new Map                (g.nodes.map((n, i) => [n.path, `n${i}`]));
   const allow = (e      , dir              )          => sp.kinds.length ? sp.kinds.includes(e.kind) : !profile.steps.length || profile.steps.some((s) => s.kind === e.kind && s.dir === dir);
 
@@ -2372,7 +2387,7 @@ function toCanvas(ix            , start        , profile         , spec         
     for (const e of outgoing(ix, n.path)) {
       if (e.to || !allow(e, e.reverse ? "in" : "out")) continue;
       unresolved++;
-      if (ghosts.length < MAX_UNRESOLVED) ghosts.push({ key: `g${ghosts.length}`, text: e.toSymbol, anchor: n.path, edge: e });
+      if (true) ghosts.push({ key: `g${ghosts.length}`, text: e.toSymbol, anchor: n.path, edge: e });
     }
   }
 
@@ -2823,7 +2838,7 @@ function planSetLinks(ix            , files                     , path        , 
 }
 
 /** Notes that can be offered as a target. For `implements`: elements that are not parts. For `describes`: any note except itself. */
-function plmCandidates(ix            , from      , field                            , query        , limit = 50)         {
+function plmCandidates(ix            , from      , field                            , query        , limit = Infinity)         {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean), out         = [];
   for (const n of ix.notes.values()) {
     if (n.path === from.path || n.meta.mergedInto || String(n.meta.status ?? "") === "Retired") continue;
@@ -2964,7 +2979,7 @@ const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"],
                                                                                                                           
 
 /** Every assembly above the items (V.whereUsed, depth 8), once each, with the items it contains and its shallowest depth. */
-function ecoImpact(ix            , items          , maxDepth = 8)                 {
+function ecoImpact(ix            , items          , maxDepth = Infinity)                 {
   const acc = new Map                      ();
   for (const it of items) {
     const walk = (nodes              , depth        )       => {
@@ -4155,7 +4170,7 @@ function compareNotes(ix            , pa        , pb        )                   
 function seenIn(ix            , root        )       {
   const s       = { paths: new Set(), pns: new Set(), titles: new Set() };
   const walk = (p        , depth        )       => {
-    if (s.paths.has(p) || depth > 12) return;
+    if (s.paths.has(p)) return;
     const n = ix.notes.get(p); if (!n) return;
     s.paths.add(p); const pn = pnOf(n).toLowerCase(); if (pn) s.pns.add(pn); const t = titleKey(n); if (t) s.titles.add(t);
     for (const k of kidsOf(ix, p)) walk(k.path, depth + 1);
@@ -4608,7 +4623,7 @@ function mountWorkbench(root             , host       = {})      {
     if (!t.rows.length) return empty(t.empty);
     const cols = t.columns.filter((c) => c.label), one = (x        )       => (x.path ? lnk(x.path, x.text) : h("span", { class: x.cls ?? "" }, x.text));
     const cell = (c                         )        => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? h("span", {}, ...c.flatMap((x, i) => [i ? ", " : "", one(x)])) : one(c));
-    return tableOf(cols.map((c) => [c.key, c.label]), t.rows.slice(0, 1000).map((r) => cols.map((c) => cell(r[c.key]))));
+    return tableOf(cols.map((c) => [c.key, c.label]), t.rows.map((r) => cols.map((c) => cell(r[c.key]))));
   }
   const dataSections = (ts               , open = true)                => ts.map((t) => section(t.id, t.title, [t.note ? h("div", { class: "mut", style: "margin-bottom:4px" }, t.note) : null, dataTable(t)], { count: t.rows.length, open }));
 
@@ -4637,7 +4652,7 @@ function mountWorkbench(root             , host       = {})      {
     const types = [...new Set([...ix .notes.values()].map((n) => n.type))].sort();
     const found = V.pickRows(ix , pickText, pickType), notes = found.notes;
     const count = h("span", { class: "mut" }), boxes = new Map                          ();
-    const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const upd = ()       => { count.textContent = `${pickSel.size} ticked`; };
     const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     pane.append(h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."));
     pane.append(h("div", { class: "row" },
@@ -4653,8 +4668,8 @@ function mountWorkbench(root             , host       = {})      {
       place.addEventListener("click", () => {
         if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
         place.setAttribute("disabled", ""); place.textContent = "Creating…";
-        const r = pickCanvas(ix , [...pickSel], { relations: pickRel, label: pickText, group: pickGroup });
-        host.makeCanvas (r).then((m) => { canvasMsg = r.capped ? `${m} Only the first ${MAX_PICK} of ${pickSel.size} ticked notes were placed.` : m; hasPreview = true; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw());
+        const ask = async (count        )                         => { for (let t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count))); t !== null; t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count)))) { const n = parseCanvasLimit(t); if (n !== null) return n; } return null; };   // D-0161
+        buildWithLimit(() => pickCanvas(ix , [...pickSel], { relations: pickRel, label: pickText, group: pickGroup }), ask).then((r) => r ? host.makeCanvas (r).then((m) => { canvasMsg = r.capped ? `${m} Only part of the ${pickSel.size} ticked notes were placed (the limit you chose).` : m; hasPreview = true; }) : (canvasMsg = "Canvas cancelled."), (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw());
       });
       bar.append(place);
       if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => { host.saveCanvas ().then((m) => { canvasMsg = m; }, (e) => { canvasMsg = "Canvas failed: " + String((e         )?.message ?? e); }).finally(() => draw()); }); bar.append(save); }
@@ -4684,7 +4699,7 @@ function mountWorkbench(root             , host       = {})      {
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.flagged, onchange: (e       ) => { tableF.flagged = (e.target                    ).checked; redraw(); } }), " flagged"),
       h("label", {}, h("input", { type: "checkbox", checked: !!tableF.unresolved, onchange: (e       ) => { tableF.unresolved = (e.target                    ).checked; redraw(); } }), " unresolved"),
       h("button", { onclick: () => download("notes.csv", [["id", "file", "type", "subtype", "title", "status", "folder", "flags", "path"].join(","), ...rows.map((r) => [r.id, r.file, r.type, r.subtype, r.title, r.status, r.folder, r.flags, r.path].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
-    const rows = V.tableRows(ix , tableF), cap = rows.slice(0, 1000);
+    const rows = V.tableRows(ix , tableF), cap = rows;
     pane.append(h("div", { class: "mut" }, `${rows.length} notes${rows.length > cap.length ? " (first 1,000 shown)" : ""}`));
     const heads                                    = [["id", "ID"], ["file", "File"], ["type", "Type"], ["title", "Title"], ["status", "Status"], ["folder", "Folder"], ["flags", "Flags", true], ["out", "Out", true], ["inn", "In", true], ["block", "SysML"]];
     const toRow = (r                    )          => [r.id, r.file, r.type + (r.subtype ? "/" + r.subtype : ""), lnk(r.path, r.title), r.status, r.folder, r.flags ? String(r.flags) : "", String(r.out), String(r.inn), r.block ? "yes" : ""];
@@ -4898,8 +4913,7 @@ function mountWorkbench(root             , host       = {})      {
     const flip = (list          , v        , on         )           => (on ? list.filter((x) => x !== v) : list.includes(v) ? list : [...list, v]);
     return h("details", { class: "vsbox", open: true }, h("summary", {}, "View settings ", h("span", { class: "mut" }, `${g.nodes.length} notes, ${g.edges.length} links${g.capped ? " (capped: raise max notes or filter)" : ""}${g.hidden ? `, ${g.hidden} hidden by filters` : ""}${g.groups.size ? `, ${g.groups.size} groups` : ""}`)),
       h("div", { class: "row" },
-        h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: spec.depth, style: "width:56px", title: "How many relationship hops from the selected note", onchange: (e       ) => { set({ depth: num((e.target                    ).value, prof.depth) }); draw(); } })),
-        h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: spec.cap, style: "width:64px", onchange: (e       ) => { set({ cap: num((e.target                    ).value, prof.cap) }); draw(); } })),
+        h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: spec.depth, style: "width:56px", title: "How many relationship hops from the selected note", onchange: (e       ) => { set({ depth: num((e.target                    ).value, prof.depth) }); draw(); } })),
         h("label", {}, "folder ", h("input", { type: "search", value: spec.folder, placeholder: "limit to folder", style: "width:170px", onchange: (e       ) => { set({ folder: (e.target                    ).value.trim() }); draw(); } })),
         h("label", { class: "pill" }, h("input", { type: "checkbox", checked: spec.ghosts, onchange: (e       ) => { set({ ghosts: (e.target                    ).checked }); } }), " canvas: show references to notes not in the vault"),
         h("button", { onclick: () => { gspec = {}; draw(); } }, "Reset view")),
@@ -4914,7 +4928,7 @@ function mountWorkbench(root             , host       = {})      {
   function vGraph()              {
     const miss = needNote(); if (miss) return miss;
     const prof = V.PROFILES.find((p) => p.name === profile) , spec             = { ...V.defaultSpec(prof), ...gspec };
-    const g = V.traverse(ix , sel, prof, spec.depth, spec.cap, spec), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
+    const g = V.traverse(ix , sel, prof, spec.depth, Infinity, spec), placed = V.layoutRadial(g), pos = new Map(placed.map((p) => [p.path, p]));
     const xs = placed.map((p) => p.x), ys = placed.map((p) => p.y), pad = 110;
     const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - 40, w = Math.max(...xs) - Math.min(...xs) + pad * 2, hh = Math.max(...ys) - Math.min(...ys) + 100;
     const svg = s("svg", { class: "g", viewBox: `${minX} ${minY} ${Math.max(w, 400)} ${Math.max(hh, 260)}`, role: "img", "aria-label": "Relationship graph" });
@@ -4967,7 +4981,7 @@ function mountWorkbench(root             , host       = {})      {
     const shown = items.filter((i) => (!reviewCat || i.category === reviewCat) && (!reviewSev || i.severity === reviewSev));
     pane.append(h("div", { class: "row" }, sev, h("span", { class: "mut" }, `${shown.length} of ${items.length}`),
       h("button", { onclick: () => download("review.csv", ["severity,category,note,detail", ...shown.map((i) => [i.severity, i.category, i.path, i.message].map(csvCell).join(","))].join("\n")) }, "Export CSV")));
-    const cap = shown.slice(0, 1000);
+    const cap = shown;
     pane.append(tableOf([["s", "Severity"], ["c", "Category"], ["n", "Note"], ["m", "Detail"]], cap.map((i) => [h("span", { class: i.severity === "high" ? "gap" : "" }, i.severity), i.category, i.path ? lnk(i.path) : "", i.message])));
     if (shown.length > cap.length) pane.append(h("div", { class: "mut" }, `${shown.length - cap.length} more not shown`));
     return pane;
@@ -5672,7 +5686,7 @@ function mountPanel(root             , host           , opt                     
   let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
-  const CAP = compact ? 25 : 5000;
+  const CAP = compact ? 25 : Infinity;
   const outlineState = new Map                     ();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map                 ();                                                // open/closed state of each folding section, kept across redraws
   function sec(key        , title        , body         , o                                              = {})              {
@@ -5746,7 +5760,7 @@ function mountPanel(root             , host           , opt                     
   const ADDABLE = new Set        (["structure", "functional", "states", "requirements", "design", "internal"]);
   function addBar(ts               )                     {
     if (!host.addToCanvas) return null;
-    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p)              => !!p))].slice(0, MAX_PICK);
+    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p)              => !!p))];
     if (!shown.length && lens !== "structure") return null;
     const root = sel && ix .notes.has(sel) ? sel : "", anchor = root || shown[0] ;
     const kidsOf = lens === "structure" && root ? [...new Set(ix .edges.filter((e) => e.kind === "hasPart" && e.from === root && e.to && !e.reverse && e.to !== root && ix .notes.has(e.to)).map((e) => e.to ))] : [];
@@ -5887,7 +5901,7 @@ function mountPanel(root             , host           , opt                     
   function pickView()              {
     const types = [...new Set([...ix .notes.values()].map((n) => n.type))].sort(), found = V.pickRows(ix , pickText, pickType), notes = found.notes;
     const count = h("span", { class: "mut" }), boxes = new Map                          ();
-    const upd = ()       => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const upd = ()       => { count.textContent = `${pickSel.size} ticked`; };
     const tickAll = (on         )       => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     const place = h("button", { class: "sm pri", title: "Add the ticked notes to the canvas preview that is open; nothing already on it moves, and related notes are put next to each other. With none open this makes one. Nothing is saved until you choose Save canvas." }, "Place on canvas");
     place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Placing…", () => host.openPickCanvas ([...pickSel], pickText, pickRel, pickGroup, false)); });
@@ -5950,7 +5964,7 @@ function mountPanel(root             , host           , opt                     
     const types = new Map                (); for (const n of ix .notes.values()) types.set(n.type, (types.get(n.type) ?? 0) + 1);
     const kinds = V.edgeKinds(ix ), flip = (l          , v        , on         )           => (on ? l.filter((x) => x !== v) : l.includes(v) ? l : [...l, v]);
     return h("details", { class: "vsbox" }, h("summary", {}, "Canvas settings"),
-      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: sp.depth, style: "width:48px", onchange: (e       ) => set({ depth: Math.max(1, +(e.target                    ).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e       ) => set({ cap: Math.max(5, +(e.target                    ).value || prof.cap) }) })),
+      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: sp.depth, style: "width:48px", onchange: (e       ) => set({ depth: Math.max(1, +(e.target                    ).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e       ) => set({ cap: Math.max(5, +(e.target                    ).value || prof.cap) }) })),
         h("button", { class: "sm", onclick: () => { spec = {}; draw(); } }, "Reset")),
       h("div", { class: "mut" }, "Note types shown"), h("div", { class: "chips" }, ...[...types].sort().map(([k, n]) => chip(`${k} ${n}`, !sp.hideTypes.includes(k), (on) => { spec = { ...spec, hideTypes: flip(sp.hideTypes, k, on) }; }))),
       h("div", { class: "mut" }, `Relationships followed (none ticked = the ${prof.name} profile's own)`), h("div", { class: "chips" }, ...kinds.map(([k, n]) => chip(`${k} ${n}`, sp.kinds.includes(k), (on) => { spec = { ...spec, kinds: on ? [...sp.kinds, k] : sp.kinds.filter((x) => x !== k) }; }))),
@@ -5981,19 +5995,19 @@ function mountPanel(root             , host           , opt                     
       // "tables" deliberately selects the Everything profile: all relationship kinds,
       // incoming and outgoing, rather than the current lens's restricted trace.
       const allProfile = V.PROFILES.find((p) => p.name === "Everything") ;
-      const allDepth = Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth));
+      const allDepth = Math.max(1, Number(spec.depth ?? allProfile.depth) || allProfile.depth);
       const allControls = h("div", { class: "chips", style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
         h("label", {}, "Connections away ", h("input", {
-          type: "number", min: 1, max: 8, value: allDepth, "aria-label": "All connections canvas depth",
+          type: "number", min: 1, value: allDepth, "aria-label": "All connections canvas depth",
           style: "width:54px", onchange: (e       ) => {
-            spec = { ...spec, depth: Math.max(1, Math.min(8, Number((e.target                    ).value) || allProfile.depth)) };
+            spec = { ...spec, depth: Math.max(1, Number((e.target                    ).value) || allProfile.depth) };
             draw();
           }
         })),
         h("button", { class: "sm pri", disabled: !n || undefined, onclick: (e       ) => {
           const b = e.currentTarget               ;
           busy(b, "Creating…", () => host.openCanvas("tables", {
-            ...spec, depth: Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth)),
+            ...spec, depth: Math.max(1, Number(spec.depth ?? allProfile.depth) || allProfile.depth),
             kinds: [] // Empty = all kinds in the Everything profile.
           }));
         } }, "All connections canvas"));
@@ -6047,7 +6061,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
+return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -6073,6 +6087,8 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                                
                                                                                                                                                              
                                                                                                           
+                                                                                                                                     
+                                                                                                                                                                                                    
                                                                
                                                                        
                                                                                                                                                       
@@ -6151,6 +6167,24 @@ class PickModal extends obsidian.FuzzySuggestModal      {
   getItems() { return this.items; }
   getItemText(x     ) { return this.label(x); }
   onChooseItem(x     ) { this.onPick(x); }
+}
+
+/** D-0161: a canvas of more than 50 elements warns and asks for a limit of up to 212. Closing without choosing cancels the canvas. */
+class LimitModal extends obsidian.Modal {
+  count        ; settle                            ; chosen = false;
+  constructor(app     , count        , settle                            ) { super(app); this.count = count; this.settle = settle; }
+  onOpen() {
+    const el = this.contentEl; el.empty();
+    el.createEl("h3", { text: "Large canvas" });
+    el.createEl("p", { text: WB.canvasLimitMessage(this.count) });
+    let value = String(WB.canvasLimitDefault(this.count));
+    const msg = el.createEl("p", { cls: "setting-item-description" });
+    new obsidian.Setting(el).setName("Limit of elements").setDesc(`1 to ${WB.CANVAS_LIMIT_MAX}`).addText((t     ) => { t.setValue(value).onChange((v        ) => { value = v; }); });
+    const bar = el.createDiv({ cls: "modal-button-container" }), go = bar.createEl("button", { text: "Create canvas", cls: "mod-cta" }), no = bar.createEl("button", { text: "Cancel" });
+    go.addEventListener("click", () => { const n = WB.parseCanvasLimit(value); if (n === null) { msg.setText(`Enter a whole number from 1 to ${WB.CANVAS_LIMIT_MAX}.`); return; } this.chosen = true; this.settle(n); this.close(); });
+    no.addEventListener("click", () => this.close());
+  }
+  onClose() { this.contentEl.empty(); if (!this.chosen) this.settle(null); }
 }
 
 /** The dropdown a drawn canvas line opens (D-0043): the relationship kinds the two notes allow, the inputs that kind takes, and the diff. Closing without Apply cancels. */
@@ -6405,14 +6439,20 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
   }
+  /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
+  askCanvasLimit(count        )                         { return new Promise((resolve) => new LimitModal(this.app, count, resolve).open()); }
+  async limited                             (build         )                  {
+    const r = await WB.buildWithLimit(build, (n) => this.askCanvasLimit(n));
+    return r ? writePreview(this, r       ) : "Canvas cancelled.";
+  }
   async openCanvas(lens        , spec         )                  {
     await this.ensureIndex();
     if (!this.selected || !this.ix.notes.has(this.selected)) throw new Error("Open a model note first.");
-    if (lens === "internal") return writePreview(this, WB.internalCanvas(this.ix, this.selected, (spec       )?.inherit ?? []));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
-    if (lens === "compare") { const o = (spec       )?.other; if (!o || !this.ix.notes.has(o)) throw new Error("Choose the note to compare with first."); return writePreview(this, WB.uniqueCanvas(this.ix, this.selected, o)); }   // D-0104
+    if (lens === "internal") return this.limited(() => WB.internalCanvas(this.ix, this.selected , (spec       )?.inherit ?? []));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
+    if (lens === "compare") { const o = (spec       )?.other; if (!o || !this.ix.notes.has(o)) throw new Error("Choose the note to compare with first."); return this.limited(() => WB.uniqueCanvas(this.ix, this.selected , o)); }   // D-0104
     const prof = WB.PROFILES.find((p) => p.name === WB.LENS_PROFILE[lens]);
     if (!prof) throw new Error("No canvas for this view.");
-    return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
+    return this.limited(() => WB.toCanvas(this.ix, this.selected , prof, spec       ));
   }
 
   /** D-0089: the canvas the person has open in the main window: the last canvas that was in front, else the preview. */
@@ -6487,18 +6527,19 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openStructureCanvas(path        , mode                   )                  {
     await this.ensureIndex();
     if (!this.ix.notes.has(path)) throw new Error("Select a note first.");
-    return writePreview(this, WB.structureCanvas(this.ix, path, mode));
+    return this.limited(() => WB.structureCanvas(this.ix, path, mode));
   }
 
   /** D-0140: picked notes always open a new canvas; "Add to canvas" is the way to add to the open one (D-0083). */
   async openPickCanvas(paths          , label        , relations         , group         , replace         )                  {
     await this.ensureIndex();
-    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
+    return this.limited(() => WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
   async addToCanvasPreview(anchor               , paths          , relations = true, replace = false, rowUnder                = null)                  {
     await this.ensureIndex();
+    if (paths.length > WB.CANVAS_WARN_AT) { const n = await this.askCanvasLimit(paths.length); if (n === null) return "Canvas cancelled."; paths = paths.slice(0, n); }   // D-0161
     const place = (doc     ) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
     if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is

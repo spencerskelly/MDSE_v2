@@ -92,24 +92,22 @@ test("the Structure table is an outline table, with the level on every row", () 
   assert.equal(V.lensTables(v, "structure", "Top.md", { tree: "full" })[1]!.outline, undefined, "the rolled-up parts list is not an outline");
 });
 
-test("more parts than the limit under one assembly: the table says how many are not shown", () => {
-  const kids = Array.from({ length: V.LIMIT_PER_PARENT + 5 }, (_, i) => `[[Part ${num(i + 1)}]]`);
+test("no limit on parts under one assembly: 205 parts are all listed, with no notice row (D-0161)", () => {
+  const kids = Array.from({ length: 205 }, (_, i) => `[[Part ${num(i + 1)}]]`);
   const v = buildIndex(new Map([f("OBJ-00001", "Big", `hasPart: [${kids.map((k) => `"${k}"`).join(", ")}]\n`), ...kids.map((_, i) => f(`OBJ-${num(i + 2)}`, `Part ${num(i + 1)}`))]), { classes });
-  const rows = V.lensTables(v, "structure", "Big.md", { tree: "full" })[0]!.rows, last = rows[rows.length - 1]!, name = last.name as { text: string; cls?: string };
-  assert.equal(rows.length, 1 + V.LIMIT_PER_PARENT + 1, "the root, the parts up to the limit and one notice");
-  assert.equal(name.text.replace(/^\u00a0+/, ""), `… 5 more parts under this assembly not shown (limit ${V.LIMIT_PER_PARENT} per assembly)`);
-  assert.equal(name.cls, "gap");
-  assert.equal(Number(last.level), 1);
+  const rows = V.lensTables(v, "structure", "Big.md", { tree: "full" })[0]!.rows;
+  assert.equal(rows.length, 1 + 205, "the root and every part");
+  assert.equal(rows.some((r) => (r.name as { cls?: string }).cls === "gap"), false);
 });
 
-test("a tree deeper than the level limit: the last level says parts lie below it, and the direct view does not", () => {
-  const depth = V.LIMIT_LEVELS + 2, chain = Array.from({ length: depth + 1 }, (_, i) => f(`OBJ-${num(i + 1)}`, `L${i}`, i < depth ? `hasPart: ["[[L${i + 1}]]"]\n` : ""));
+test("no limit on levels: a chain of 15 levels is shown in full, and the direct view still stops at one level", () => {
+  const depth = 15, chain = Array.from({ length: depth + 1 }, (_, i) => f(`OBJ-${num(i + 1)}`, `L${i}`, i < depth ? `hasPart: ["[[L${i + 1}]]"]\n` : ""));
   const v = buildIndex(new Map(chain), { classes });
-  const full = V.lensTables(v, "structure", "L0.md", { tree: "full" })[0]!.rows, name = (full[full.length - 1]!.name as { text: string }).text;
-  assert.equal(full.filter((r) => (r.name as { cls?: string }).cls !== "gap").length, V.LIMIT_LEVELS + 1, "the root and every level up to the limit");
-  assert.equal(name.replace(/^\u00a0+/, ""), `… 1 parts under this one not shown (limit ${V.LIMIT_LEVELS} levels)`);
+  const full = V.lensTables(v, "structure", "L0.md", { tree: "full" })[0]!.rows;
+  assert.equal(full.length, depth + 1, "the root and every level");
+  assert.equal(full.some((r) => (r.name as { cls?: string }).cls === "gap"), false);
   const direct = V.lensTables(v, "structure", "L0.md", { tree: "direct" })[0]!.rows;
-  assert.equal(direct.some((r) => (r.name as { cls?: string }).cls === "gap"), false, "the direct view stops at one level on purpose");
+  assert.equal(direct.length, 2, "the direct view stops at one level on purpose");
 });
 
 test("a short tree has no notice rows", () => {
@@ -117,11 +115,6 @@ test("a short tree has no notice rows", () => {
   assert.equal(V.lensTables(v, "structure", "Top.md", { tree: "full" })[0]!.rows.some((r) => (r.name as { cls?: string }).cls === "gap"), false);
 });
 
-test("the limits are 10 levels and 200 parts under one assembly, and the default of structure() uses them (D-0151)", () => {
-  assert.equal(V.LIMIT_LEVELS, 10); assert.equal(V.LIMIT_PER_PARENT, 200);
-  const kids = Array.from({ length: 200 }, (_, i) => `[[Part ${num(i + 1)}]]`);
-  const v = buildIndex(new Map([f("OBJ-00001", "Board", `hasPart: [${kids.map((k) => `"${k}"`).join(", ")}]\n`), ...kids.map((_, i) => f(`OBJ-${num(i + 2)}`, `Part ${num(i + 1)}`))]), { classes });
-  const st = V.structure(v, "Board.md");
-  assert.equal(st.tree.children.length, 200); assert.equal(st.tree.more, undefined, "exactly 200 parts is not a cut");
-  assert.equal(V.lensTables(v, "structure", "Board.md", { tree: "full" })[0]!.rows.some((r) => (r.name as { cls?: string }).cls === "gap"), false);
+test("the Structure limits are gone (D-0161, WKB-070 retired)", () => {
+  assert.equal(V.LIMIT_LEVELS, Infinity); assert.equal(V.LIMIT_PER_PARENT, Infinity);
 });

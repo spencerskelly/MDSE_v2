@@ -315,12 +315,12 @@ test("an assembly already in the vault is not re-read: no repeat flags, only a c
   assert.ok(other.findings.some((f) => f.code === "EXISTING_OTHER_REV" && /Update an existing vault from a BOM/.test(f.message)));
 });
 
-test("the findings note lists at most 40 rows per code and counts the rest (BOM-027)", () => {
+test("the findings note lists every row of a code, with no cap (BOM-027, D-0161)", () => {
   const rows = Array.from({ length: 60 }, (_, i) => `ASM-${i}\tA\t01\tASM\tbuy\tP\t1\tP-${i}\tA\t01\tPART\tbuy\tP\t\t\t\t\t\t0\tea\tx`);
   const r = buildBom(parseDelimited([FLAT_HEAD, ...rows].join("\n")), baseOpts);
   const note = r.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content;
-  assert.equal((note.match(/\| QTY_ZERO \|/g) ?? []).length, 41);
-  assert.match(note, /and 20 more with this code/);
+  assert.equal((note.match(/\| QTY_ZERO \|/g) ?? []).length, 60);
+  assert.doesNotMatch(note, /more with this code/);
   assert.equal(r.findings.filter((f) => f.code === "QTY_ZERO").length, 60);
 });
 

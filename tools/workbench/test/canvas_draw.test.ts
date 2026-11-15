@@ -19,7 +19,7 @@ const req = reqs.find((r) => !outgoing(ix, part.path).some((e) => e.kind === "sa
 
 /** A canvas holding both notes, then a line the person drew between them (an id the Workbench never wrote, like Obsidian's). */
 function withDrawnLine(from: string, to: string): { doc: CanvasDoc; known: Set<string> } {
-  const r = toCanvas(ix, part.path, PROFILES.find((x) => x.name === "Everything") ?? PROFILES[0]!, { depth: 3, cap: 200 });
+  const r = toCanvas(ix, part.path, PROFILES.find((x) => x.name === "Everything") ?? PROFILES[0]!, { depth: 3 });
   const doc: CanvasDoc = JSON.parse(JSON.stringify(r.doc));
   const cardOf = (p: string): string => { const c = doc.nodes.find((n) => cdNotePath(n) === p); if (c) return c.id; doc.nodes.push({ id: "x" + doc.nodes.length, type: "file", x: 0, y: 900, width: 280, height: 90, file: p }); return doc.nodes[doc.nodes.length - 1]!.id; };
   const known = cdEdgeIds(doc);

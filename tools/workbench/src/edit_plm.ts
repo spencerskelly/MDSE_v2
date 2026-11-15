@@ -94,7 +94,7 @@ export function planSetLinks(ix: ModelIndex, files: Map<string, string>, path: s
 }
 
 /** Notes that can be offered as a target. For `implements`: elements that are not parts. For `describes`: any note except itself. */
-export function plmCandidates(ix: ModelIndex, from: Note, field: "implements" | "describes", query: string, limit = 50): Note[] {
+export function plmCandidates(ix: ModelIndex, from: Note, field: "implements" | "describes", query: string, limit = Infinity): Note[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean), out: Note[] = [];
   for (const n of ix.notes.values()) {
     if (n.path === from.path || n.meta.mergedInto || String(n.meta.status ?? "") === "Retired") continue;

@@ -106,7 +106,7 @@ interface Seen { paths: Set<string>; pns: Set<string>; titles: Set<string> }
 function seenIn(ix: ModelIndex, root: string): Seen {
   const s: Seen = { paths: new Set(), pns: new Set(), titles: new Set() };
   const walk = (p: string, depth: number): void => {
-    if (s.paths.has(p) || depth > 12) return;
+    if (s.paths.has(p)) return;
     const n = ix.notes.get(p); if (!n) return;
     s.paths.add(p); const pn = pnOf(n).toLowerCase(); if (pn) s.pns.add(pn); const t = titleKey(n); if (t) s.titles.add(t);
     for (const k of kidsOf(ix, p)) walk(k.path, depth + 1);

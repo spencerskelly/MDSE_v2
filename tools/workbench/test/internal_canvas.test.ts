@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex } from "../src/index.ts";
-import { internalCanvas, refreshCanvas, autoLayout, cardAction, cardNotePath, isInternalId, MAX_PARTS } from "../src/canvas.ts";
+import { internalCanvas, refreshCanvas, autoLayout, cardAction, cardNotePath, isInternalId, withCanvasCap } from "../src/canvas.ts";
 import type { CanvasDoc, CanvasNode } from "../src/canvas.ts";
 import { classes } from "./harness.ts";
 
@@ -82,11 +82,13 @@ test("Refresh, Auto-layout and Collapse leave an internal canvas as it is", () =
   for (const kind of ["toggle", "collapseAll", "collapseLayer", "expandAll"] as const) assert.equal(cardAction(d, ix, "Models/Board.md", kind).action, "none", kind);
 });
 
-test("a missing note gives an empty canvas, and a very large definition is capped", () => {
+test("a missing note gives an empty canvas; a very large definition is whole unless a limit is chosen (D-0161)", () => {
   assert.equal(internalCanvas(ix, "Nope.md").doc.nodes.length, 0);
-  const many = Array.from({ length: MAX_PARTS + 5 }, (_, i) => `  part p${i} : OBJ_5::Lid;`).join("\n");
-  const big = internalCanvas(buildIndex(vault(many), { classes }), "Models/Charger.md");
-  assert.equal(big.capped, true); assert.equal(big.doc.nodes.filter((n) => /^ic\d+$/.test(n.id)).length, MAX_PARTS + 1);
+  const many = Array.from({ length: 65 }, (_, i) => `  part p${i} : OBJ_5::Lid;`).join("\n"), bigIx = buildIndex(vault(many), { classes });
+  const whole = internalCanvas(bigIx, "Models/Charger.md");
+  assert.equal(whole.capped, false); assert.equal(whole.doc.nodes.filter((n) => /^ic\d+$/.test(n.id)).length, 65 + 1);
+  const big = withCanvasCap(60, () => internalCanvas(bigIx, "Models/Charger.md"));
+  assert.equal(big.capped, true); assert.equal(big.doc.nodes.filter((n) => /^ic\d+$/.test(n.id)).length, 60 + 1);
 });
 
 test("Objects with no port are counted on the dashboard and in Review, as a low item, not an error (D-0097)", async () => {

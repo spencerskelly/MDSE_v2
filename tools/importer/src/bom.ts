@@ -154,7 +154,7 @@ export function parseBom(grid: Grid): Parsed {
 }
 
 // ---- resolve and render ---------------------------------------------------------------------------------------------------
-/** D-0059: every row the reader skipped, with its content, not capped (the table above lists at most 40 findings per code). */
+/** D-0059: every row the reader skipped, with its content, not capped (D-0161: the table above lists every finding too). */
 const skippedSection = (s: SkippedRow[]): string => s.length ? `\n## Skipped rows\n\nThese rows were not turned into lines. Their content is kept here (D-0059), so nothing in the file is lost.\n\n| Row | Code | Content |\n|---|---|---|\n${s.map((x) => `| ${x.row} | ${x.code} | ${x.cells.replace(/\|/g, "\\|") || "(blank)"} |`).join("\n")}\n` : "";
 
 /** Appended to the findings that say an earlier BOM's note was left as it is: the way to change it is the update scan, not another import. */
@@ -647,8 +647,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   const order = { error: 0, warn: 1, info: 2 } as const;
   if (!o.update && o.existing?.hasVault && rulesText === undefined) { findings.push({ level: "info", code: "CATEGORY_RULES_WRITTEN", message: `${CATEGORY_RULES_PATH} was missing, so the built-in category list is written there; edit it to change how later imports sort parts (BOM-044).` }); }   // D-0145
   const sorted = findings.slice().sort((a, b) => order[a.level] - order[b.level]);
-  // BOM-027: the findings note shows the first 40 rows of each code and the count of the rest; the callouts in the notes hold the detail
-  const shown = new Map<string, number>(), total = new Map<string, number>(); for (const f of sorted) total.set(f.code, (total.get(f.code) ?? 0) + 1);
+  // BOM-027 (D-0161): the findings note lists every finding; there is no per-code row cap
   // NS-01 (draft): a sold part number that no BOM read lists becomes a spare note (owner decision: a spare until more kinds of element are identified). Level part, no category, flagged for review.
   for (const pn of salesNew) {
     const so = salesOnly.get(pn)!, id = ids.get("p:" + pn)!, sp = salesProps(so, o.sales!.months), itemNames = [...new Set(so.names)].sort();
@@ -660,7 +659,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
     files.push({ path, content: bomStamp(renderNote({ type: "Object", subtype: "part", id, uid: uids.get("p:" + pn)!.uid, eaType: "BOM", title: pn, relFields: [], extraFields: extra, partNumber: pn, bodyText: "", flags, sourceLines: [`- BOM Part Number: ${pn}`, `- Sales ledger item names: ${itemNames.join(", ")}`, "- No BOM lists this part number; it is named by the sales ledger only."], sysml, sourceRole: "authoritative-model", primarySymbol: bomSymOf(id, pn) }), o.salesSource ?? o.sourceName, o.runDate.slice(0, 10)) });
   }
   const grouped: Finding[] = [];
-  for (const f of sorted) { const n = (shown.get(f.code) ?? 0) + 1; shown.set(f.code, n); if (n <= 40) grouped.push(f); else if (n === 41) grouped.push({ level: f.level, code: f.code, message: `… and ${total.get(f.code)! - 40} more with this code (not listed; the count is in the summary).` }); }
+  for (const f of sorted) grouped.push(f);
   if (!o.update && o.existing?.hasVault && rulesText === undefined) files.push({ path: CATEGORY_RULES_PATH, content: renderCategoryRules() });
   files.push({ path: `99_System/11_Import/BOM Findings ${label}.md`, content: `# BOM Findings ${label}\n\nSource \`${o.sourceName}\` (${parsed.layout} layout), SHA-256 \`${o.fingerprint}\`.\n\n| Level | Code | Finding |\n|---|---|---|\n${grouped.map((f) => `| ${f.level} | ${f.code} | ${f.message.replace(/\|/g, "\\|")} |`).join("\n") || "| | | none |"}\n${skippedSection(parsed.skipped)}` });
   const freshParts = newParts.length;

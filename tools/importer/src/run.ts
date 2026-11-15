@@ -38,7 +38,7 @@ export interface ImportOptions {
   runDate: string;                                 // local time, "YYYY-MM-DDTHH:MM:SS"
   lineage: string;                                 // source lineage label, MOD-018 (EA8647)
   authors: AuthorOptions;
-  omitRootPackages: string[];                      // package names that are not folders (MOD-096)
+  /** MOD-174 (D-0161): no folder depth cap by default. A positive number is an explicit opt-in cap: a deeper note then sits in its ancestor at the cap and keeps its package path in a `Package:` line. */
   /** MOD-174 / D-0067: model folders go at most this deep (default 6; 0 = no cap). A deeper note sits in its ancestor at the cap and keeps its package path in a `Package:` line. */
   folderCap?: number;
   /** The person running the import; a new vault also gets their note in 99_System/04_People (BOO-003). */
@@ -165,7 +165,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   };
   const set = (r: LedgerRow, disposition: string, kind: string, diag = "", action = ""): void => { r.disposition = disposition; r.target_semantic_kind = kind; r.diagnostic_code = diag; r.operator_action = action; };
 
-  for (const p of g.packages.values()) { const r = row("t_package", p.id, p.guid, "Package", "", p.parentId, "folder_only"); set(r, "native", "Folder"); r.target_file = ((c) => (c > 0 ? pkgPath(p.id).slice(0, c) : pkgPath(p.id)))(o.folderCap ?? 6).join("/"); }
+  for (const p of g.packages.values()) { const r = row("t_package", p.id, p.guid, "Package", "", p.parentId, "folder_only"); set(r, "native", "Folder"); r.target_file = ((c) => (c > 0 ? pkgPath(p.id).slice(0, c) : pkgPath(p.id)))(o.folderCap ?? 0).join("/"); }
 
   // ---- elements: family -> disposition --------------------------------------------------------------------------
   const drafts: Draft[] = [], byObj = new Map<number, Draft>();
@@ -233,7 +233,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
   };
   const order = [...drafts].sort((a, b) => (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
   for (const d of order) d.baseName = d.existingPath ? d.existingPath.split("/").pop()!.replace(/\.md$/, "") : claim(d.id);   // MOD-170 (D-0068): a model note's file is its id; the name is the `name` property
-  const cap = o.folderCap ?? 6, atCap = (parts: string[]): string[] => (cap > 0 ? parts.slice(0, cap) : parts);
+  const cap = o.folderCap ?? 0, atCap = (parts: string[]): string[] => (cap > 0 ? parts.slice(0, cap) : parts);
   const dirParts = (d: Draft): string[] => atCap(d.parent ? [...dirParts(d.parent), d.parent.baseName] : d.pkgPath);
   const dirOf = (d: Draft): string => dirParts(d).join("/");
   const ownDirOf = (d: Draft): string => [...dirParts(d), d.baseName].join("/");
@@ -739,7 +739,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
       src.push(`- ${k}: ${v.replace(/\s*\n\s*/g, " ")}`);
     }
     src.push(...d.sourceLines);
-    if (o.folderCap !== 0 && d.pkgPath.length > (o.folderCap ?? 6)) src.push(`- Package: ${d.pkgPath.join(" / ")}`);   // the folders stop at the cap (MOD-174); the whole path stays here
+    if ((o.folderCap ?? 0) > 0 && d.pkgPath.length > (o.folderCap ?? 0)) src.push(`- Package: ${d.pkgPath.join(" / ")}`);   // the folders stop at the cap (MOD-174); the whole path stays here
     let bodyExtra = "";
     if (d.entry.disposition === "attachment_link") {
       const docs = g.documents.get(e.guid) ?? [];

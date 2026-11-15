@@ -29,7 +29,7 @@ export const SAVED_DIR = "99_System/23_Saved_Views";
 export const SPACING = 3;
 /** D-0096: the gap, in card widths across and card heights down, between two cards whose notes are joined by a relationship (SPACING) and between two that are not (SPACING_UNRELATED). */
 export const SPACING_UNRELATED = 1;
-const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, GXU = SPACING_UNRELATED * W, GYU = SPACING_UNRELATED * H, MAX_UNRESOLVED = 24;
+const W = 280, H = 90, GX = SPACING * W, GY = SPACING * H, GXU = SPACING_UNRELATED * W, GYU = SPACING_UNRELATED * H;
 /** Every pair of notes joined by a resolved relationship, either way, as "a|b" and "b|a" (D-0096). */
 function cvRelatedSet(ix: ModelIndex): Set<string> {
   const s = new Set<string>();
@@ -88,7 +88,7 @@ export function structureCanvas(ix: ModelIndex, root: string, mode: "direct" | "
     if (mode === "direct" && d >= 1) continue;
     for (const k of kids.get(p) ?? []) {
       if (depth.has(k.to)) continue;
-      if (depth.size >= MAX_PICK) { capped = true; continue; }
+      if (depth.size >= canvasCapNow()) { capped = true; continue; }
       depth.set(k.to, d + 1); (tree.get(p) ?? tree.set(p, []).get(p)!).push(k.to); queue.push(k.to);
     }
   }
@@ -114,11 +114,27 @@ export function structureCanvas(ix: ModelIndex, root: string, mode: "direct" | "
 
 /** Notes the person picked from a search, as a canvas (D-0078): the relationships between the picked notes drawn when asked.
  * Grouped (the default, D-0080): one labelled box per note type, the boxes stacked top to bottom, each a grid at most 4 across; the cards inside are in subtype then name order.
- * Not grouped: one grid, at most 6 across. At most MAX_PICK cards; `capped` says some were left off. */
-export const MAX_PICK = 200;
+ * Not grouped: one grid, at most 6 across. At most the chosen canvas limit (D-0161); `capped` says some were left off. */
+/** D-0161: no fixed card cap. A canvas with more than CANVAS_WARN_AT cards warns the person, who chooses a limit of up to CANVAS_LIMIT_MAX cards (the Obsidian plugin asks; the builders read the chosen limit here). With nothing chosen a builder places everything. */
+export const CANVAS_WARN_AT = 50, CANVAS_LIMIT_MAX = 212;
+let canvasCap = Infinity;
+export const canvasCapNow = (): number => canvasCap;
+export function withCanvasCap<T>(n: number, fn: () => T): T { const was = canvasCap; canvasCap = n; try { return fn(); } finally { canvasCap = was; } }
+export const canvasLimitDefault = (count: number): number => Math.min(count, CANVAS_LIMIT_MAX);
+export const canvasLimitMessage = (count: number): string => `This canvas would hold ${count} elements. More than ${CANVAS_WARN_AT} is slow to draw and hard to read. Choose a limit of up to ${CANVAS_LIMIT_MAX} elements.`;
+/** The limit typed by the person: a whole number from 1 to CANVAS_LIMIT_MAX, else null. */
+export function parseCanvasLimit(text: string): number | null { const t = text.trim(); if (!/^\d+$/.test(t)) return null; const n = Number(t); return n >= 1 && n <= CANVAS_LIMIT_MAX ? n : null; }
+/** D-0161: builds the canvas with no limit; when it holds more than CANVAS_WARN_AT elements, asks for a limit (null = the person cancelled) and builds it again within that limit. */
+export async function buildWithLimit<R extends { notes: number }>(build: () => R, ask: (count: number) => Promise<number | null>): Promise<R | null> {
+  const r = build();
+  if (r.notes <= CANVAS_WARN_AT) return r;
+  const n = await ask(r.notes);
+  if (n === null) return null;
+  return n >= r.notes ? r : withCanvasCap(n, build);
+}
 const GROUP_PAD = 80, GROUP_COLS = 4;
 export function pickCanvas(ix: ModelIndex, paths: string[], opts: { relations: boolean; label: string; group?: boolean }): CanvasResult {
-  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, MAX_PICK);
+  const chosen = paths.filter((p) => ix.notes.has(p)), use = chosen.slice(0, canvasCapNow());
   const nodes: CanvasNode[] = [], cards: CanvasNode[] = [], at = new Map<string, CanvasNode>();
   const related = cvRelatedSet(ix);
   const grid = (list: string[], cols: number, x0: number, y0: number, key: number): { bottom: number; right: number } => {      // lays one grid of cards: related neighbours a related gap apart, others the unrelated gap (D-0096); returns the y below it and the right edge
@@ -388,11 +404,11 @@ export function expandLayer(doc: CanvasDoc, ix: ModelIndex, parent: string): { d
   return { doc: cur, added };
 }
 
-/** Expand all layers (D-0095): expands layer after layer until every part below the card is on the canvas, or the canvas holds MAX_PICK cards (then `capped` is true). A part that is its own ancestor is added once. */
+/** Expand all layers (D-0095): expands layer after layer until every part below the card is on the canvas, or the canvas holds the chosen limit of cards (then `capped` is true). A part that is its own ancestor is added once. */
 export function expandAll(doc: CanvasDoc, ix: ModelIndex, parent: string): { doc: CanvasDoc; added: number; capped: boolean } {
   let cur = doc, added = 0, capped = false;
   for (;;) {
-    if (cur.nodes.length >= MAX_PICK) { capped = [...cvBranch(cur, ix, parent).keys()].some((q) => cvMissing(cur, ix, q) > 0); break; }
+    if (cur.nodes.length >= canvasCapNow()) { capped = [...cvBranch(cur, ix, parent).keys()].some((q) => cvMissing(cur, ix, q) > 0); break; }
     const r = expandLayer(cur, ix, parent); if (!r.added) break;
     cur = r.doc; added += r.added;
   }
@@ -547,7 +563,6 @@ export function autoLayout(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; mo
 }
 
 /** The internal structure of one definition as a canvas (D-0097). The note is one large card; each part is a card inside it; each port is a small card on the edge of the card that owns it, half in and half out. Every object has at least one port: where a definition or a part's type has none, a placeholder "no port" card is drawn so there is always an edge to connect to, and nothing is written to the vault. Wires (connect, bind, flow) are lines between port cards. Parts that a wire joins sit a related gap apart, others the unrelated gap (D-0096). Cards are laid out once; the person moves them by hand afterwards, and Refresh, Auto-layout and Collapse leave them where they are. At most MAX_PARTS parts. */
-export const MAX_PARTS = 60;
 export function internalCanvas(ix: ModelIndex, path: string, inherit: readonly InheritFrom[] = []): CanvasResult {
   const note = ix.notes.get(path);
   if (!note) return { doc: { nodes: [], edges: [] }, notes: 0, unresolved: 0, capped: false, fileName: "Internal structure.canvas", groups: 0, hidden: 0 };
@@ -559,7 +574,7 @@ export function internalCanvas(ix: ModelIndex, path: string, inherit: readonly I
   const inh = inherit.length ? inheritedMembers(ix, path, inherit) : [], tagOf = (m: InheritedMember): string => `↑ ${FROM_TXT[m.from]} · ${link(m.source, ix.notes.get(m.source)?.title ?? m.source)}`;
   type PartCard = (typeof r.parts)[number] & { key: string; tag?: string };
   const ownParts: PartCard[] = r.parts.map((x) => ({ ...x, key: x.name })), inhParts: PartCard[] = inh.filter((m) => m.kind === "part").map((m, i) => ({ name: m.route ? `${m.route}.${m.name}` : m.name, type: m.type, path: m.path, mult: m.mult, ref: false, ports: portsOfType(ix, m.path), key: `inh${i}`, tag: tagOf(m) }));
-  const allParts = [...ownParts, ...inhParts], parts = allParts.slice(0, MAX_PARTS), inhPorts = inh.filter((m) => m.kind === "port").slice(0, MAX_PARTS), capped = allParts.length > MAX_PARTS || inh.filter((m) => m.kind === "port").length > MAX_PARTS;
+  const allParts = [...ownParts, ...inhParts], parts = allParts.slice(0, canvasCapNow()), inhPorts = inh.filter((m) => m.kind === "port").slice(0, canvasCapNow()), capped = allParts.length > canvasCapNow() || inh.filter((m) => m.kind === "port").length > canvasCapNow();
   type PortSpec = { label: string; path: string | null; none: boolean; tag?: string };
   const portText = (q: { name: string; type: string; path: string | null; conj: boolean }): PortSpec => ({ label: `${q.name}${q.type ? " : " + (q.conj ? "~" : "") + (ix.notes.get(q.path ?? "")?.title ?? q.type) : ""}`, path: q.path, none: false });
   const placeholder: PortSpec = { label: "no port", path: null, none: true };
@@ -619,10 +634,10 @@ export function internalCanvas(ix: ModelIndex, path: string, inherit: readonly I
 
 /** `spec` is the person's view settings (filters, hops, relationship kinds, grouping); omitted means the profile's defaults. */
 export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?: Partial<ViewSpec>): CanvasResult {
-  const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth, cap = sp.cap;
+  const sp = { ...defaultSpec(profile), ...spec }, depth = sp.depth;
   const note = ix.notes.get(start);
   if (!note) throw new Error(`Note not in index: ${start}`);
-  const g = traverse(ix, start, profile, depth, cap, sp);
+  const g = traverse(ix, start, profile, depth, canvasCapNow(), sp);
   const id = new Map<string, string>(g.nodes.map((n, i) => [n.path, `n${i}`]));
   const allow = (e: Edge, dir: "out" | "in"): boolean => sp.kinds.length ? sp.kinds.includes(e.kind) : !profile.steps.length || profile.steps.some((s) => s.kind === e.kind && s.dir === dir);
 
@@ -634,7 +649,7 @@ export function toCanvas(ix: ModelIndex, start: string, profile: Profile, spec?:
     for (const e of outgoing(ix, n.path)) {
       if (e.to || !allow(e, e.reverse ? "in" : "out")) continue;
       unresolved++;
-      if (ghosts.length < MAX_UNRESOLVED) ghosts.push({ key: `g${ghosts.length}`, text: e.toSymbol, anchor: n.path, edge: e });
+      if (true) ghosts.push({ key: `g${ghosts.length}`, text: e.toSymbol, anchor: n.path, edge: e });
     }
   }
 

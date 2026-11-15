@@ -22,7 +22,7 @@ const OWNED = ["hasPart", "hasPort", "hasAction", "hasState", "hasFlow"];
 const CONTAIN = ["hasPart", "hasPort", "hasAction", "hasState", "specializes"];
 
 /** How far the Structure view walks: levels of parts below the note, and parts listed under one assembly. Both the Structure table and the offline page's parts tree use these (D-0151, WKB-070); a cut is said in the table (D-0150). */
-export const LIMIT_LEVELS = 10, LIMIT_PER_PARENT = 200;
+export const LIMIT_LEVELS = Infinity, LIMIT_PER_PARENT = Infinity;   // D-0161: no level or per-assembly limit (WKB-070 retired)
 
 /* ---- Structure ------------------------------------------------------------------------------------------------ */
 export interface StructureResult { tree: TreeNode; supers: string[]; subs: string[]; untyped: string[] }
@@ -39,7 +39,7 @@ export function structure(ix: ModelIndex, root: string, maxDepth = LIMIT_LEVELS,
   };
   const n = ix.notes.get(root)!;
   const supers: string[] = [], seen = new Set<string>([root]);
-  for (let cur = root, guard = 0; guard < 20; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; supers.push(e.to!); seen.add(e.to!); cur = e.to!; }
+  for (let cur = root, guard = 0; ; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; supers.push(e.to!); seen.add(e.to!); cur = e.to!; }
   const subs = incoming(ix, root).filter((e) => e.kind === "specializes").map((e) => e.from);
   const untyped = (n.def?.usages ?? []).filter((u) => !u.type && u.kind !== "fork" && u.kind !== "join").map((u) => `${u.kind} ${u.name}`);
   return { tree: walk(root, n.title, "root", "", []), supers, subs, untyped };
@@ -58,7 +58,7 @@ const measuredText = (detail: string): string => { const m = measuredOf(detail);
 
 /** Rolled-up parts list: how many of each definition sit under the root, multiplying through the assembly. Whole counts and measured amounts
  *  (4.318 Meter) are kept apart by unit, never added together. A quantity of 0 is a document line and adds nothing. */
-export function bom(ix: ModelIndex, root: string, maxDepth = 12): Array<{ path: string; title: string; qty: number; depth: number; unit: string }> {
+export function bom(ix: ModelIndex, root: string, maxDepth = Infinity): Array<{ path: string; title: string; qty: number; depth: number; unit: string }> {
   const acc = new Map<string, { path: string; qty: number; depth: number; unit: string }>();
   const walk = (p: string, mult: number, depth: number, stack: string[]): void => {
     if (depth > maxDepth || stack.includes(p)) return;
@@ -82,7 +82,7 @@ export function bomCategoryOfNote(ix: ModelIndex, path: string): string {
   return String(base?.meta.bomCategory ?? "").trim();
 }
 /** The parts under `root` (rolled up, as bom()) sorted into the categories they carry; parts with none are "(no category)". */
-export function bomByCategory(ix: ModelIndex, root: string, maxDepth = 12): { categories: Array<{ name: string; count: number }>; rows: Array<{ path: string; title: string; qty: number; depth: number; unit: string; category: string }> } {
+export function bomByCategory(ix: ModelIndex, root: string, maxDepth = Infinity): { categories: Array<{ name: string; count: number }>; rows: Array<{ path: string; title: string; qty: number; depth: number; unit: string; category: string }> } {
   const rows = bom(ix, root, maxDepth).map((r) => ({ ...r, category: bomCategoryOfNote(ix, r.path) || "(no category)" }));
   const m = new Map<string, number>(); for (const r of rows) m.set(r.category, (m.get(r.category) ?? 0) + 1);
   return { categories: [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)), rows };
@@ -90,7 +90,7 @@ export function bomByCategory(ix: ModelIndex, root: string, maxDepth = 12): { ca
 
 /* ---- Where used ----------------------------------------------------------------------------------------------- */
 export interface WhereUsedResult { tree: TreeNode; roots: string[]; references: Array<{ path: string; kind: string; label: string }> }
-export function whereUsed(ix: ModelIndex, target: string, maxDepth = 8): WhereUsedResult {
+export function whereUsed(ix: ModelIndex, target: string, maxDepth = Infinity): WhereUsedResult {
   const roots: string[] = [];
   const up = (p: string, stack: string[]): TreeNode[] => {
     const kids: TreeNode[] = [];
@@ -158,7 +158,7 @@ export function behavior(ix: ModelIndex, path: string, only?: "actions" | "state
 /* ---- Design types: the specialization hierarchy, apart from composition and behavior ------------------------------- */
 export interface DesignTypesResult { chain: string[]; tree: TreeNode; siblings: string[]; total: number }
 /** What a definition specializes (root first), and the designs that specialize it, each with what it owns. */
-export function designTypes(ix: ModelIndex, root: string, maxDepth = 8, cap = 400): DesignTypesResult {
+export function designTypes(ix: ModelIndex, root: string, maxDepth = Infinity, cap = Infinity): DesignTypesResult {
   const chain: string[] = [], seen = new Set<string>([root]);
   for (let cur = root, guard = 0; guard < 30; guard++) { const e = outgoing(ix, cur).find((x) => x.kind === "specializes" && x.to && !seen.has(x.to)); if (!e) break; chain.unshift(e.to!); seen.add(e.to!); cur = e.to!; }
   const owns = (p: string): string => {
@@ -227,7 +227,7 @@ export function internalStructure(ix: ModelIndex, path: string): InternalResult 
 export type InheritFrom = "general" | "specific" | "parent" | "child";
 export const INHERIT_FROM: Array<[InheritFrom, string, string]> = [["general", "Specialization", "from general (the notes this one specializes)"], ["specific", "Specialization", "from specific (the notes that specialize this one)"], ["parent", "Assembly", "from parent (assemblies this note is a part of)"], ["child", "Assembly", "from child (parts of this note, rolled up)"]];
 export interface InheritedMember { kind: "port" | "part"; name: string; type: string; path: string | null; conj: boolean; mult: string; from: InheritFrom; /** the note that declares it */ source: string; /** for a child: the parts passed through, `a.b` */ route: string; depth: number }
-const INHERIT_LIMIT = 400;
+const INHERIT_LIMIT = Infinity;
 /** The ports and parts a note does not declare itself but takes from other notes, each marked with the direction and the note it comes from. A member whose name the note (or a nearer note) already has is not repeated. Specialization and assembly are separate, and each direction is switched on by the caller. */
 export function inheritedMembers(ix: ModelIndex, path: string, which: readonly InheritFrom[]): InheritedMember[] {
   const own = ix.notes.get(path)?.def, res = (t?: string): string | null => (t ? ix.bySymbol.get(t) ?? null : null);
@@ -242,7 +242,7 @@ export function inheritedMembers(ix: ModelIndex, path: string, which: readonly I
   };
   const reach = (start: string, next: (p: string) => string[]): Array<{ p: string; depth: number }> => {
     const seen = new Set<string>([start]), found: Array<{ p: string; depth: number }> = []; let level = [start];
-    for (let depth = 1; level.length && depth <= 12; depth++) { const nxt: string[] = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
+    for (let depth = 1; level.length; depth++) { const nxt: string[] = []; for (const c of level) for (const n of next(c)) if (!seen.has(n)) { seen.add(n); found.push({ p: n, depth }); nxt.push(n); } level = nxt; }
     return found;
   };
   const sort = (a: string, b: string): number => nm(ix, a, a).localeCompare(nm(ix, b, b));
@@ -259,7 +259,7 @@ export function inheritedMembers(ix: ModelIndex, path: string, which: readonly I
     else {
       const walk = (p: string, route: string, depth: number, guard: Set<string>): void => {
         for (const part of partsOf(p)) {
-          if (out.length >= INHERIT_LIMIT || depth > 8 || guard.has(part.to)) continue;
+          if (out.length >= INHERIT_LIMIT || guard.has(part.to)) continue;
           const r = route ? `${route}.${part.name}` : part.name;
           add(w, part.to, r, depth, seen);
           walk(part.to, r, depth + 1, new Set([...guard, part.to]));
@@ -335,28 +335,28 @@ export const muted = (hex: string): string => { const m = /^#([0-9a-f]{2})([0-9a
 
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
 export interface Step { kind: string; dir: "out" | "in" }
-export interface Profile { name: string; description: string; steps: Step[]; depth: number; cap: number }
+export interface Profile { name: string; description: string; steps: Step[]; depth: number }
 const both = (...kinds: string[]): Step[] => kinds.flatMap((kind) => [{ kind, dir: "out" as const }, { kind, dir: "in" as const }]);
 export const PROFILES: Profile[] = [
-  { name: "Structure", description: "Parts, ports, actions and states a definition owns, and what it specializes.", steps: [{ kind: "hasPart", dir: "out" }, { kind: "hasPort", dir: "out" }, { kind: "hasAction", dir: "out" }, { kind: "hasState", dir: "out" }, { kind: "specializes", dir: "out" }], depth: 3, cap: 80 },
-  { name: "Where used", description: "Everything that owns, specializes or uses the note, upward.", steps: [{ kind: "hasPart", dir: "in" }, { kind: "hasPort", dir: "in" }, { kind: "hasAction", dir: "in" }, { kind: "hasState", dir: "in" }, { kind: "specializes", dir: "in" }, { kind: "performs", dir: "in" }], depth: 3, cap: 80 },
-  { name: "Requirements", description: "A requirement with what derives, refines, satisfies and verifies it; or an element with its requirements.", steps: [...both("derivedFrom", "refines", "satisfies", "verifies")], depth: 2, cap: 80 },
-  { name: "Verification", description: "Verification cases and the requirements they verify.", steps: both("verifies"), depth: 2, cap: 80 },
-  { name: "Behavior", description: "What performs and owns actions.", steps: [{ kind: "performs", dir: "out" }, { kind: "performs", dir: "in" }, { kind: "hasAction", dir: "out" }, { kind: "hasAction", dir: "in" }, { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }], depth: 2, cap: 80 },
-  { name: "Interfaces", description: "Ports, the port definitions that type them, and the flows they carry.", steps: [{ kind: "hasPort", dir: "out" }, { kind: "hasPort", dir: "in" }, { kind: "hasFlow", dir: "out" }, { kind: "hasFlow", dir: "in" }], depth: 2, cap: 80 },
-  { name: "Allocation", description: "Allocations between elements.", steps: both("allocatedTo"), depth: 2, cap: 80 },
-  { name: "Dependencies", description: "Trace, refine, derive, depends-on and uses links.", steps: both("trace", "refines", "derivedFrom", "dependsOn", "uses"), depth: 2, cap: 80 },
-  { name: "Documentation", description: "Info and other notes that describe an element.", steps: both("describes"), depth: 2, cap: 80 },
-  { name: "Structure trace", description: "Down: parts, ports, specializations. Up: what owns or specializes it.", steps: both("hasPart", "hasPort", "specializes"), depth: 3, cap: 80 },
-  { name: "Functional trace", description: "Functions with who performs them, what they satisfy, and where they are allocated.", steps: [...both("performs", "hasAction", "allocatedTo"), { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }, { kind: "satisfies", dir: "out" }, { kind: "satisfies", dir: "in" }], depth: 2, cap: 80 },
-  { name: "Requirements trace", description: "Requirements with what derives, refines, satisfies, verifies and is allocated against them.", steps: both("derivedFrom", "refines", "satisfies", "verifies", "allocatedTo"), depth: 2, cap: 80 },
-  { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1, cap: 60 },
+  { name: "Structure", description: "Parts, ports, actions and states a definition owns, and what it specializes.", steps: [{ kind: "hasPart", dir: "out" }, { kind: "hasPort", dir: "out" }, { kind: "hasAction", dir: "out" }, { kind: "hasState", dir: "out" }, { kind: "specializes", dir: "out" }], depth: 3 },
+  { name: "Where used", description: "Everything that owns, specializes or uses the note, upward.", steps: [{ kind: "hasPart", dir: "in" }, { kind: "hasPort", dir: "in" }, { kind: "hasAction", dir: "in" }, { kind: "hasState", dir: "in" }, { kind: "specializes", dir: "in" }, { kind: "performs", dir: "in" }], depth: 3 },
+  { name: "Requirements", description: "A requirement with what derives, refines, satisfies and verifies it; or an element with its requirements.", steps: [...both("derivedFrom", "refines", "satisfies", "verifies")], depth: 2 },
+  { name: "Verification", description: "Verification cases and the requirements they verify.", steps: both("verifies"), depth: 2 },
+  { name: "Behavior", description: "What performs and owns actions.", steps: [{ kind: "performs", dir: "out" }, { kind: "performs", dir: "in" }, { kind: "hasAction", dir: "out" }, { kind: "hasAction", dir: "in" }, { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }], depth: 2 },
+  { name: "Interfaces", description: "Ports, the port definitions that type them, and the flows they carry.", steps: [{ kind: "hasPort", dir: "out" }, { kind: "hasPort", dir: "in" }, { kind: "hasFlow", dir: "out" }, { kind: "hasFlow", dir: "in" }], depth: 2 },
+  { name: "Allocation", description: "Allocations between elements.", steps: both("allocatedTo"), depth: 2 },
+  { name: "Dependencies", description: "Trace, refine, derive, depends-on and uses links.", steps: both("trace", "refines", "derivedFrom", "dependsOn", "uses"), depth: 2 },
+  { name: "Documentation", description: "Info and other notes that describe an element.", steps: both("describes"), depth: 2 },
+  { name: "Structure trace", description: "Down: parts, ports, specializations. Up: what owns or specializes it.", steps: both("hasPart", "hasPort", "specializes"), depth: 3 },
+  { name: "Functional trace", description: "Functions with who performs them, what they satisfy, and where they are allocated.", steps: [...both("performs", "hasAction", "allocatedTo"), { kind: "includes", dir: "out" }, { kind: "extendedBy", dir: "out" }, { kind: "satisfies", dir: "out" }, { kind: "satisfies", dir: "in" }], depth: 2 },
+  { name: "Requirements trace", description: "Requirements with what derives, refines, satisfies, verifies and is allocated against them.", steps: both("derivedFrom", "refines", "satisfies", "verifies", "allocatedTo"), depth: 2 },
+  { name: "Everything", description: "Every relationship, both directions.", steps: [], depth: 1 },
 ];
 
 /** What the person chose to see. Empty lists mean "no restriction". Presentation only: it never changes the model. */
 export type Classifier = "" | "type" | "subtype" | "status" | "folder" | "eaType";
-export interface ViewSpec { kinds: string[]; hideTypes: string[]; hideStatuses: string[]; folder: string; depth: number; cap: number; collapse: Classifier; collapseOver: number; ghosts: boolean }
-export const defaultSpec = (p?: Profile): ViewSpec => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, cap: p?.cap ?? 80, collapse: "", collapseOver: 6, ghosts: true });
+export interface ViewSpec { kinds: string[]; hideTypes: string[]; hideStatuses: string[]; folder: string; depth: number; collapse: Classifier; collapseOver: number; ghosts: boolean }
+export const defaultSpec = (p?: Profile): ViewSpec => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, collapse: "", collapseOver: 6, ghosts: true });
 export const specIsDefault = (s: Partial<ViewSpec> | undefined, p: Profile): boolean => !s || JSON.stringify({ ...defaultSpec(p), ...s }) === JSON.stringify(defaultSpec(p));
 export const CLASSIFIERS: Array<[Classifier, string]> = [["", "Don't group"], ["type", "Note type"], ["subtype", "Type and subtype"], ["status", "Status"], ["folder", "Folder"], ["eaType", "EA type"]];
 export const classOf = (n: Note, by: Classifier): string => by === "type" ? n.type : by === "subtype" ? (n.subtype ? `${n.type}/${n.subtype}` : n.type) : by === "status" ? n.status || "no status" : by === "folder" ? n.folder || "(root)" : by === "eaType" ? n.eaType || "no EA type" : "";
@@ -364,7 +364,7 @@ export const classOf = (n: Note, by: Classifier): string => by === "type" ? n.ty
 export interface GroupInfo { label: string; members: string[]; type: string }
 export interface GraphResult { nodes: Array<{ path: string; depth: number }>; edges: Edge[]; capped: boolean; groups: Map<string, GroupInfo>; hidden: number }
 
-export function traverse(ix: ModelIndex, start: string, p: Profile, depth = p.depth, cap = p.cap, spec?: Partial<ViewSpec>): GraphResult {
+export function traverse(ix: ModelIndex, start: string, p: Profile, depth = p.depth, cap = Infinity, spec?: Partial<ViewSpec>): GraphResult {
   const sp = { ...defaultSpec(p), ...spec };
   const seen = new Map<string, number>([[start, 0]]), edges: Edge[] = [], used = new Set<Edge>();
   let frontier = [start], capped = false, hidden = 0;
@@ -518,7 +518,7 @@ export function dashboard(ix: ModelIndex): Dashboard {
     edgeKinds: edgeKinds(ix), dangling: ix.edges.filter((e) => !e.to && e.via === "sysml").length, orphans, noPort: objectsWithoutPort(ix), warnings, parser: ix.parser, skipped: ix.skipped, requirements: { total: t.total, satisfied: t.satisfied, verified: t.verified } };
 }
 
-export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
+export function search(ix: ModelIndex, q: string, limit = Infinity): Note[] {
   const s = q.trim().toLowerCase(); if (!s) return [];
   const hits: Array<[number, Note]> = [];
   for (const n of ix.notes.values()) {
@@ -531,7 +531,7 @@ export function search(ix: ModelIndex, q: string, limit = 50): Note[] {
 }
 
 /** Notes to pick from for a canvas (D-0078): every note whose name, description, id, part number, alias or type holds each word of the text, in name order. `total` counts all matches; `notes` is cut at `limit`. */
-export function pickRows(ix: ModelIndex, text: string, type = "", limit = 500): { notes: Note[]; total: number } {
+export function pickRows(ix: ModelIndex, text: string, type = "", limit = Infinity): { notes: Note[]; total: number } {
   const words = text.toLowerCase().split(/\s+/).filter(Boolean), out: Note[] = [];
   for (const n of ix.notes.values()) {
     if (type && n.type !== type) continue;

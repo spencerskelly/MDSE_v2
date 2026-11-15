@@ -15,7 +15,7 @@ export interface EcoCheck { level: "error" | "warn"; item: string; text: string 
 export interface EcoImpactRow { path: string; title: string; partNumber: string; revision: string; depth: number; via: string[] }
 
 /** Every assembly above the items (V.whereUsed, depth 8), once each, with the items it contains and its shallowest depth. */
-export function ecoImpact(ix: ModelIndex, items: string[], maxDepth = 8): EcoImpactRow[] {
+export function ecoImpact(ix: ModelIndex, items: string[], maxDepth = Infinity): EcoImpactRow[] {
   const acc = new Map<string, EcoImpactRow>();
   for (const it of items) {
     const walk = (nodes: V.TreeNode[], depth: number): void => {

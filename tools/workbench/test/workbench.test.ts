@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, MAX_PICK, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -162,7 +162,7 @@ test("canvas export: valid JSON Canvas, file cards for notes, text cards for mis
   assert.equal(PREVIEW_DIR, "99_System/22_Views"); assert.equal(SAVED_DIR, "99_System/23_Saved_Views"); assert.equal(PREVIEW_PATH, "99_System/22_Views/Workbench Preview.canvas");
   JSON.parse(JSON.stringify(r.doc));
   const alloc = toCanvas(ix, p, V.PROFILES.find((x) => x.name === "Allocation")!);
-  assert.ok(alloc.unresolved === 51 && alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text" && !cdNotePath(n)).length <= 24, "unresolved cards are capped");
+  assert.ok(alloc.unresolved === 51 && !alloc.capped && alloc.doc.nodes.filter((n) => n.type === "text" && !cdNotePath(n)).length === 51, "every unresolved reference gets a card (D-0161)");
 });
 
 test("canvas export on a full imported vault links notes both ways", () => {
@@ -361,7 +361,7 @@ ${body}
   assert.ok(has("Engine.md", "Act.md", "performs"), "owned software role performs the action");
   assert.ok(has("UseCase.md", "Act.md", "dependsOn"), "definition-scoped dependency resolves local source");
   assert.ok(!local.edges.some((e) => e.kind === "allocatedTo" && !e.to), "no orphaned allocation ghost");
-  const canvas = toCanvas(local, "Req.md", V.PROFILES.find((p) => p.name === "Everything")!, { depth: 2, cap: 20 });
+  const canvas = toCanvas(local, "Req.md", V.PROFILES.find((p) => p.name === "Everything")!, { depth: 2 });
   const labels = canvas.doc.edges.map((e) => e.label ?? "");
   assert.ok(labels.some((x) => x.includes("allocated to")), "canvas draws the allocation");
   assert.ok(labels.some((x) => x.includes("verifies")), "canvas draws the verification");
@@ -404,7 +404,7 @@ ${members}
   const own = x.out.get("UseCase.md") ?? [];
   assert.deepEqual(own.map(e => e.kind).sort(), ["dependsOn", "hasAction", "hasAction", "refines"].sort());
   assert.ok(own.every(e => e.to && e.to !== "UseCase.md"), "all typed endpoints resolve");
-  const cc = toCanvas(x, "UseCase.md", V.PROFILES.find(p => p.name === "Everything")!, { depth: 1, cap: 10 });
+  const cc = toCanvas(x, "UseCase.md", V.PROFILES.find(p => p.name === "Everything")!, { depth: 1 });
   assert.equal(cc.doc.edges.length, 4, "Canvas includes distinct action, refinement and prerequisite links");
   assert.equal(cc.unresolved, 0, "No unsupported or imaginary endpoints");
   assert.ok(cc.doc.edges.some(e => e.label === "refines"), "need refinement gets an explicit canvas kind");
@@ -452,7 +452,7 @@ test("a search for a word or phrase lists the notes with it in the name or descr
   assert.equal(pickCanvas(ix, picked, { relations: false, label: "charger" }).doc.edges.length, 0);
   const all = pickCanvas(ix, [...ix.notes.keys()], { relations: true, label: "" });
   assert.ok(all.doc.edges.length > 0, "the model's relationships between ticked notes are drawn");
-  assert.equal(all.doc.nodes.filter((n) => n.type !== "group").length, Math.min(MAX_PICK, ix.notes.size)); assert.equal(all.capped, ix.notes.size > MAX_PICK);
+  assert.equal(all.doc.nodes.filter((n) => n.type !== "group").length, ix.notes.size); assert.equal(all.capped, false, "no fixed cap (D-0161)");
   assert.equal(pickCanvas(ix, ["nope.md"], { relations: true, label: "x" }).doc.nodes.length, 0, "a path not in the index is skipped");
   const boxes = r.doc.nodes.filter((n) => n.type !== "group").map((n) => [n.x, n.y, n.x + n.width, n.y + n.height]); // no two cards overlap
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i]!, b = boxes[j]!; assert.ok(a[2]! <= b[0]! || b[2]! <= a[0]! || a[3]! <= b[1]! || b[3]! <= a[1]!, "cards do not overlap"); }
@@ -470,12 +470,12 @@ test("spacing depends on the pair: cards of related notes are three card sizes a
   const all = [...ix.notes.keys()];
   assert.ok(check(pickCanvas(ix, all, { relations: false, label: "", group: false }).doc, "pick, ungrouped") > 0, "the sample has related notes among those picked");
   check(pickCanvas(ix, all, { relations: false, label: "", group: true }).doc, "pick, grouped");
-  check(toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 }).doc, "view from a note");
+  check(toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3 }).doc, "view from a note");
   check(structureCanvas(ix, byTitle("Charger"), "full").doc, "structure");
   const added = addToCanvas({ nodes: [], edges: [] }, ix, null, all.slice(0, 60)).doc; check(added, "add to canvas");
   check(autoLayout(added, ix).doc, "auto-layout");
   // a view from a note puts the kinds of note in rows, top to bottom (D-0102): of two related notes of different kinds, the lower tier is above
-  const tv = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3, cap: 200 });
+  const tv = toCanvas(ix, byTitle("Charger"), V.PROFILES.find((p) => p.name === "Everything")!, { depth: 3 });
   const cardsOf = tv.doc.nodes.map((n) => ({ n, p: cdNotePath(n as never) })).filter((c) => c.p && ix.notes.has(c.p));
   let ordered = 0;
   for (const a of cardsOf) for (const b of cardsOf) {
@@ -757,4 +757,22 @@ test("compare lists what differs between two notes and shows the structure down 
   assert.ok(rows.some((x) => /^    Die A: revision differs/.test(x)), "down to the part that differs");
   assert.ok(!rows.some((x) => /Cable|Plug/.test(x)), "parts that match are not listed");
   assert.equal(compareNotes(v, "Charger A.md", "Charger A.md")!.same, true);
+});
+
+test("a canvas of more than 50 elements asks for a limit of up to 212, and is built again within it (D-0161)", async () => {
+  assert.equal(CANVAS_WARN_AT, 50); assert.equal(CANVAS_LIMIT_MAX, 212);
+  assert.equal(parseCanvasLimit("212"), 212); assert.equal(parseCanvasLimit(" 50 "), 50); assert.equal(parseCanvasLimit("213"), null); assert.equal(parseCanvasLimit("0"), null); assert.equal(parseCanvasLimit("12.5"), null); assert.equal(parseCanvasLimit("abc"), null);
+  const built: Array<number> = [];
+  const build = (n: number) => () => { built.push(n); return { notes: n }; };
+  let asked = 0;
+  const few = await buildWithLimit(build(50), async () => { asked++; return 10; });
+  assert.equal(asked, 0, "50 elements: no question"); assert.equal(few!.notes, 50);
+  const cancelled = await buildWithLimit(build(80), async () => { asked++; return null; });
+  assert.equal(asked, 1); assert.equal(cancelled, null, "cancelling builds nothing");
+  built.length = 0;
+  const all = await buildWithLimit(build(80), async (count) => { assert.equal(count, 80); return 100; });
+  assert.equal(built.length, 1, "a limit above the count keeps the first build"); assert.equal(all!.notes, 80);
+  built.length = 0;
+  await buildWithLimit(build(300), async () => 212);
+  assert.equal(built.length, 2, "a smaller limit builds again within it");
 });

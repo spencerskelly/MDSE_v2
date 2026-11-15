@@ -7,7 +7,7 @@ import type { EdgeRef, ModelIndex, Note } from "./index.ts";
 import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
 import * as OL from "./outline.ts";
-import { MAX_PICK, relatedNotes, commonRelated } from "./canvas.ts";
+import { relatedNotes, commonRelated } from "./canvas.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
@@ -103,7 +103,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
-  const CAP = compact ? 25 : 5000;
+  const CAP = compact ? 25 : Infinity;
   const outlineState = new Map<string, Set<string>>();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map<string, boolean>();                                                // open/closed state of each folding section, kept across redraws
   function sec(key: string, title: string, body: Child[], o: { count?: number | string; open?: boolean } = {}): HTMLElement {
@@ -177,7 +177,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const ADDABLE = new Set<V.Lens>(["structure", "functional", "states", "requirements", "design", "internal"]);
   function addBar(ts: V.TableData[]): HTMLElement | null {
     if (!host.addToCanvas) return null;
-    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p): p is string => !!p))].slice(0, MAX_PICK);
+    const shown = [...new Set(ts.flatMap((t) => t.rows.map((r) => rowNote(t, r))).filter((p): p is string => !!p))];
     if (!shown.length && lens !== "structure") return null;
     const root = sel && ix!.notes.has(sel) ? sel : "", anchor = root || shown[0]!;
     const kidsOf = lens === "structure" && root ? [...new Set(ix!.edges.filter((e) => e.kind === "hasPart" && e.from === root && e.to && !e.reverse && e.to !== root && ix!.notes.has(e.to)).map((e) => e.to!))] : [];
@@ -318,7 +318,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   function pickView(): HTMLElement {
     const types = [...new Set([...ix!.notes.values()].map((n) => n.type))].sort(), found = V.pickRows(ix!, pickText, pickType), notes = found.notes;
     const count = h("span", { class: "mut" }), boxes = new Map<string, HTMLInputElement>();
-    const upd = (): void => { count.textContent = `${pickSel.size} ticked${pickSel.size > MAX_PICK ? ` (a canvas takes the first ${MAX_PICK})` : ""}`; };
+    const upd = (): void => { count.textContent = `${pickSel.size} ticked`; };
     const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
     const place = h("button", { class: "sm pri", title: "Add the ticked notes to the canvas preview that is open; nothing already on it moves, and related notes are put next to each other. With none open this makes one. Nothing is saved until you choose Save canvas." }, "Place on canvas");
     place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Placing…", () => host.openPickCanvas!([...pickSel], pickText, pickRel, pickGroup, false)); });
@@ -381,7 +381,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const types = new Map<string, number>(); for (const n of ix!.notes.values()) types.set(n.type, (types.get(n.type) ?? 0) + 1);
     const kinds = V.edgeKinds(ix!), flip = (l: string[], v: string, on: boolean): string[] => (on ? l.filter((x) => x !== v) : l.includes(v) ? l : [...l, v]);
     return h("details", { class: "vsbox" }, h("summary", {}, "Canvas settings"),
-      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, max: 8, value: sp.depth, style: "width:48px", onchange: (e: Event) => set({ depth: Math.max(1, +(e.target as HTMLInputElement).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e: Event) => set({ cap: Math.max(5, +(e.target as HTMLInputElement).value || prof.cap) }) })),
+      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: sp.depth, style: "width:48px", onchange: (e: Event) => set({ depth: Math.max(1, +(e.target as HTMLInputElement).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e: Event) => set({ cap: Math.max(5, +(e.target as HTMLInputElement).value || prof.cap) }) })),
         h("button", { class: "sm", onclick: () => { spec = {}; draw(); } }, "Reset")),
       h("div", { class: "mut" }, "Note types shown"), h("div", { class: "chips" }, ...[...types].sort().map(([k, n]) => chip(`${k} ${n}`, !sp.hideTypes.includes(k), (on) => { spec = { ...spec, hideTypes: flip(sp.hideTypes, k, on) }; }))),
       h("div", { class: "mut" }, `Relationships followed (none ticked = the ${prof.name} profile's own)`), h("div", { class: "chips" }, ...kinds.map(([k, n]) => chip(`${k} ${n}`, sp.kinds.includes(k), (on) => { spec = { ...spec, kinds: on ? [...sp.kinds, k] : sp.kinds.filter((x) => x !== k) }; }))),
@@ -412,19 +412,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       // "tables" deliberately selects the Everything profile: all relationship kinds,
       // incoming and outgoing, rather than the current lens's restricted trace.
       const allProfile = V.PROFILES.find((p) => p.name === "Everything")!;
-      const allDepth = Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth));
+      const allDepth = Math.max(1, Number(spec.depth ?? allProfile.depth) || allProfile.depth);
       const allControls = h("div", { class: "chips", style: "display:flex;align-items:center;gap:8px;flex-wrap:wrap" },
         h("label", {}, "Connections away ", h("input", {
-          type: "number", min: 1, max: 8, value: allDepth, "aria-label": "All connections canvas depth",
+          type: "number", min: 1, value: allDepth, "aria-label": "All connections canvas depth",
           style: "width:54px", onchange: (e: Event) => {
-            spec = { ...spec, depth: Math.max(1, Math.min(8, Number((e.target as HTMLInputElement).value) || allProfile.depth)) };
+            spec = { ...spec, depth: Math.max(1, Number((e.target as HTMLInputElement).value) || allProfile.depth) };
             draw();
           }
         })),
         h("button", { class: "sm pri", disabled: !n || undefined, onclick: (e: Event) => {
           const b = e.currentTarget as HTMLElement;
           busy(b, "Creating…", () => host.openCanvas("tables", {
-            ...spec, depth: Math.max(1, Math.min(8, Number(spec.depth ?? allProfile.depth) || allProfile.depth)),
+            ...spec, depth: Math.max(1, Number(spec.depth ?? allProfile.depth) || allProfile.depth),
             kinds: [] // Empty = all kinds in the Everything profile.
           }));
         } }, "All connections canvas"));

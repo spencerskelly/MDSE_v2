@@ -22,6 +22,8 @@ declare const WB: {
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
   cardAction: (doc: any, ix: any, parent: string, kind: string) => { doc: any; action: "collapsed" | "expanded" | "none"; changed: number; capped: boolean };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
+  buildWithLimit: <R extends { notes: number }>(build: () => R, ask: (count: number) => Promise<number | null>) => Promise<R | null>;
+  canvasLimitMessage: (count: number) => string; canvasLimitDefault: (count: number) => number; parseCanvasLimit: (text: string) => number | null; CANVAS_WARN_AT: number; CANVAS_LIMIT_MAX: number;
   PREVIEW_DIR: string; PREVIEW_PATH: string; SAVED_DIR: string;
   edAuthor: (yaml: string) => string; edgeRefOfId: (id: string) => any;
   cdEdgeIds: (doc: any) => Set<string>; cdDrawnLines: (doc: any, known: Set<string>) => Array<{ id: string; from: string | null; to: string | null }>;
@@ -100,6 +102,24 @@ class PickModal extends obsidian.FuzzySuggestModal<any> {
   getItems() { return this.items; }
   getItemText(x: any) { return this.label(x); }
   onChooseItem(x: any) { this.onPick(x); }
+}
+
+/** D-0161: a canvas of more than 50 elements warns and asks for a limit of up to 212. Closing without choosing cancels the canvas. */
+class LimitModal extends obsidian.Modal {
+  count: number; settle: (n: number | null) => void; chosen = false;
+  constructor(app: any, count: number, settle: (n: number | null) => void) { super(app); this.count = count; this.settle = settle; }
+  onOpen() {
+    const el = this.contentEl; el.empty();
+    el.createEl("h3", { text: "Large canvas" });
+    el.createEl("p", { text: WB.canvasLimitMessage(this.count) });
+    let value = String(WB.canvasLimitDefault(this.count));
+    const msg = el.createEl("p", { cls: "setting-item-description" });
+    new obsidian.Setting(el).setName("Limit of elements").setDesc(`1 to ${WB.CANVAS_LIMIT_MAX}`).addText((t: any) => { t.setValue(value).onChange((v: string) => { value = v; }); });
+    const bar = el.createDiv({ cls: "modal-button-container" }), go = bar.createEl("button", { text: "Create canvas", cls: "mod-cta" }), no = bar.createEl("button", { text: "Cancel" });
+    go.addEventListener("click", () => { const n = WB.parseCanvasLimit(value); if (n === null) { msg.setText(`Enter a whole number from 1 to ${WB.CANVAS_LIMIT_MAX}.`); return; } this.chosen = true; this.settle(n); this.close(); });
+    no.addEventListener("click", () => this.close());
+  }
+  onClose() { this.contentEl.empty(); if (!this.chosen) this.settle(null); }
 }
 
 /** The dropdown a drawn canvas line opens (D-0043): the relationship kinds the two notes allow, the inputs that kind takes, and the diff. Closing without Apply cancels. */
@@ -354,14 +374,20 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
   }
+  /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
+  askCanvasLimit(count: number): Promise<number | null> { return new Promise((resolve) => new LimitModal(this.app, count, resolve).open()); }
+  async limited<R extends { notes: number }>(build: () => R): Promise<string> {
+    const r = await WB.buildWithLimit(build, (n) => this.askCanvasLimit(n));
+    return r ? writePreview(this, r as any) : "Canvas cancelled.";
+  }
   async openCanvas(lens: string, spec: unknown): Promise<string> {
     await this.ensureIndex();
     if (!this.selected || !this.ix.notes.has(this.selected)) throw new Error("Open a model note first.");
-    if (lens === "internal") return writePreview(this, WB.internalCanvas(this.ix, this.selected, (spec as any)?.inherit ?? []));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
-    if (lens === "compare") { const o = (spec as any)?.other; if (!o || !this.ix.notes.has(o)) throw new Error("Choose the note to compare with first."); return writePreview(this, WB.uniqueCanvas(this.ix, this.selected, o)); }   // D-0104
+    if (lens === "internal") return this.limited(() => WB.internalCanvas(this.ix, this.selected!, (spec as any)?.inherit ?? []));   // D-0097: parts inside the note, ports on its edge; saved per object, next to it
+    if (lens === "compare") { const o = (spec as any)?.other; if (!o || !this.ix.notes.has(o)) throw new Error("Choose the note to compare with first."); return this.limited(() => WB.uniqueCanvas(this.ix, this.selected!, o)); }   // D-0104
     const prof = WB.PROFILES.find((p) => p.name === WB.LENS_PROFILE[lens]);
     if (!prof) throw new Error("No canvas for this view.");
-    return writePreview(this, WB.toCanvas(this.ix, this.selected, prof, spec));
+    return this.limited(() => WB.toCanvas(this.ix, this.selected!, prof, spec as any));
   }
 
   /** D-0089: the canvas the person has open in the main window: the last canvas that was in front, else the preview. */
@@ -436,18 +462,19 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async openStructureCanvas(path: string, mode: "direct" | "full"): Promise<string> {
     await this.ensureIndex();
     if (!this.ix.notes.has(path)) throw new Error("Select a note first.");
-    return writePreview(this, WB.structureCanvas(this.ix, path, mode));
+    return this.limited(() => WB.structureCanvas(this.ix, path, mode));
   }
 
   /** D-0140: picked notes always open a new canvas; "Add to canvas" is the way to add to the open one (D-0083). */
   async openPickCanvas(paths: string[], label: string, relations: boolean, group: boolean, replace: boolean): Promise<string> {
     await this.ensureIndex();
-    return writePreview(this, WB.pickCanvas(this.ix, paths, { relations, label, group }));
+    return this.limited(() => WB.pickCanvas(this.ix, paths, { relations, label, group }));
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
   async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false, rowUnder: string | null = null): Promise<string> {
     await this.ensureIndex();
+    if (paths.length > WB.CANVAS_WARN_AT) { const n = await this.askCanvasLimit(paths.length); if (n === null) return "Canvas cancelled."; paths = paths.slice(0, n); }   // D-0161
     const place = (doc: any) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
     if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is

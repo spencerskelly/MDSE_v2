@@ -445,7 +445,7 @@ test("MOD-174 / D-0067: a folder cap puts deeper notes in their ancestor and kee
   assert.ok(moved.length > 0, "a note whose package path is cut keeps the whole path");
   assert.ok(model(free).every((f) => !/^- Package: /m.test(f.content)), "with no cap nothing is cut, so no line is needed");
   assert.ok(new Set(model(capped).map((f) => f.path.toLowerCase())).size === model(capped).length, "paths stay unique");
-  const dflt = await run(); assert.ok(model(dflt).every((f) => depth(f.path) <= 6), "the default cap is 6");
+  const dflt = await run(); assert.equal(model(dflt).length, model(free).length); assert.ok(model(dflt).some((f) => depth(f.path) > 1) && model(dflt).every((f) => !/^- Package: /m.test(f.content)), "the default has no cap (D-0161)");
 });
 
 test("a translated note's file is its id; name, aliases and partNumber are properties (MOD-170 to MOD-173, D-0068)", async () => {
