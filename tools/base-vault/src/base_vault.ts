@@ -98,7 +98,9 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     const named = c.subtype.filter(Boolean), sub = named.length ? `subtype: # one of: ${named.join(", ")}` : "subtype:";
     put(`99_System/05_Templates/Template - ${type}.md`, `---\ntype: ${/\s/.test(type) ? JSON.stringify(type) : type}\n${sub}\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n`);
   }
-  put("99_System/05_Templates/Template - ECO.md", ecoTemplate((JSON.parse(readFileSync(join(o.root, "governance/schemas/properties.json"), "utf8")) as { order: string[] }).order));   // MOD-190, D-0164
+  const ecoOrder = (JSON.parse(readFileSync(join(o.root, "governance/schemas/properties.json"), "utf8")) as { order: string[] }).order;
+  put("99_System/05_Templates/Template - ECO.md", ecoTemplate(ecoOrder));   // MOD-190, D-0164
+  put("ECO/ECO-00001.md", ecoExample(ecoOrder));                              // MOD-189, MOD-191, D-0165
   put(".gitignore", `# MDSE vault: files that stay on each user's machine and are not committed.
 # Obsidian per-user state (open tabs, layout, appearance, hotkeys, graph filters)
 .obsidian/workspace.json
@@ -130,18 +132,44 @@ desktop.ini
   return Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
-/** MOD-190: the ECO note the team starts from. Every property is present and empty (MOD-047), in the order of properties.json; the section headings follow MOD-031. */
+/** MOD-190, MOD-191: the ECO note the team starts from, and the one example. Every property is present (MOD-047), in the order of properties.json; the section headings follow MOD-031. */
 const ECO_ROLES = ["director", "manager", "lead", "mechanical", "electrical", "design", "project", "product", "purchasing", "quality", "regulatory", "manufacturing"];
-function ecoTemplate(order: readonly string[] | undefined): string {
-  const fields = order ?? [];
-  const eco = ["jiraKey", "jiraUrl", "ecrDate", "owner", "reason", "branch", "issuedDate", ...ECO_ROLES.flatMap((r) => [`${r}Approver`, `${r}ApprovedOn`]), "approvedOn"];
-  const ranked = [...eco].sort((a, b) => { const x = fields.indexOf(a), y = fields.indexOf(b); return (x < 0 ? 1e6 : x) - (y < 0 ? 1e6 : y) || eco.indexOf(a) - eco.indexOf(b); });
-  return ["---", "type: Info", "subtype: change", "id:", "uid:", "status: Draft", "eaType:", "tags: []", ...ranked.map((k) => `${k}:`), "drives: []", "---", "# <% tp.file.title %>", "",
+const ECO_KEYS = ["name", "jiraKey", "jiraUrl", "ecrDate", "owner", "reason", "branch", "issuedDate", ...ECO_ROLES.flatMap((r) => [`${r}Approver`, `${r}ApprovedOn`]), "approvedOn"];
+const yamlText = (v: string): string => (/^[A-Za-z0-9][A-Za-z0-9 ._()\/-]*$/.test(v) && !/^(true|false|null|yes|no|on|off)$/i.test(v) && !/^[\d.]+$/.test(v) ? v : JSON.stringify(v));
+function ecoNote(order: readonly string[], head: Record<string, string>, values: Record<string, string>, title: string, body: string[], drives: boolean): string {
+  const keys = ECO_KEYS.filter((k) => k !== "name" || values.name);
+  const ranked = [...keys].sort((a, b) => { const x = order.indexOf(a), y = order.indexOf(b); return (x < 0 ? 1e6 : x) - (y < 0 ? 1e6 : y) || keys.indexOf(a) - keys.indexOf(b); });
+  const fixed = Object.entries(head).map(([k, v]) => `${k}:${v ? " " + v : ""}`);
+  const line = (k: string): string => (values[k] ? `${k}: ${yamlText(values[k]!)}` : `${k}:`);
+  return ["---", ...fixed, ...ranked.map(line), ...(drives ? ["drives: []"] : []), "---", `# ${title}`, "", ...body, ""].join("\n");
+}
+const ecoHead = (over: Record<string, string> = {}): Record<string, string> => ({ type: "Info", subtype: "change", id: "", uid: "", status: "Draft", eaType: "", tags: "[]", ...over });
+function ecoTemplate(order: readonly string[]): string {
+  return ecoNote(order, ecoHead(), {}, "<% tp.file.title %>", [
     "## Description", "", "What changes and why, in a few lines.", "",
     "## Items", "", "One row for each part or assembly the ECO changes. The change description is what the part's own note shows as its latest change.", "",
     "| Item | Action | From | To | Class | Responsible | Change description |", "|---|---|---|---|---|---|---|", "| | | | | | | |", "",
     "## Affected products", "", "For each product the change reaches: the parents of the changed parts, all the way up, and the decision on each (rev up CL1, CL2 or pin change, keep the old pin, or stop here with the reason).", "",
     "| Product | Parent | Revision before | Revision after | Decision | Responsible |", "|---|---|---|---|---|---|", "| | | | | | |", "",
     "## Approvers", "", "Each approver's author code and signing date are the `...Approver` and `...ApprovedOn` properties above. The approval itself is in Jira.", "",
-    "## Notes", "", "## Former ids", ""].join("\n");
+    "## Notes", "", "## Former ids"], true);
+}
+/** MOD-191: one ECO note with fictional data, so the team can see a finished one. Its parts, people, dates and Jira link are made up, and it links no note. */
+function ecoExample(order: readonly string[]): string {
+  const title = "EXAMPLE Replace the connector housing on the Demo Charger";
+  return ecoNote(order, ecoHead({ id: "ECO-00001", uid: "20260112090000000doejane------", tags: "[example]" }), {
+    name: title, jiraKey: "EX-101", jiraUrl: "https://example.com/browse/EX-101", ecrDate: "2026-01-12", owner: "doejane------", reason: "Example only: the housing cracks when the connector is inserted in cold weather", branch: "EX-101", issuedDate: "2026-01-30",
+    managerApprover: "roesam-------", managerApprovedOn: "2026-01-26", mechanicalApprover: "poealex------", mechanicalApprovedOn: "2026-01-27", qualityApprover: "doejane------", qualityApprovedOn: "2026-01-28", approvedOn: "2026-01-28" }, title, [
+    "> **Example with fictional data.** The parts, people, dates and Jira link below are made up. Nothing here is real. Retire this note when the team no longer needs it.", "",
+    "## Description", "", "The Demo Charger's connector housing cracks in cold-weather insertion tests. The housing wall is made thicker, which is a change to fit, form and function (CL1). The power module that uses the housing then points at the new housing revision.", "",
+    "## Items", "", "One row for each part or assembly the ECO changes. In a real ECO the Item column links each part's note.", "",
+    "| Item | Action | From | To | Class | Responsible | Change description |", "|---|---|---|---|---|---|---|",
+    "| EX-1001 Demo connector housing | Alter (CL1) | A01 | B02 | CL1 | poealex------ | Wall thickness raised from 2.0 mm to 2.5 mm to stop cracking in cold-weather insertion. |",
+    "| EX-3000 Demo power module | Alter (CL2) | B02 | B03 | CL2 | poealex------ | Now uses housing revision B02. No change to its own fit, form or function. |", "",
+    "## Affected products", "", "For each product the change reaches: the parents of the changed parts, all the way up, and the decision on each.", "",
+    "| Product | Parent | Revision before | Revision after | Decision | Responsible |", "|---|---|---|---|---|---|",
+    "| EX-9000 Demo Charger | EX-3000 Demo power module | B02 | B03 | CL2: only the housing pin changes | poealex------ |",
+    "| EX-9000 Demo Charger | EX-9000 Demo Charger | C04 | C04 | Stop here: no fit, form or function change at the product | roesam------- |", "",
+    "## Approvers", "", "Each approver's author code and signing date are the `...Approver` and `...ApprovedOn` properties above. The approval itself is in Jira.", "",
+    "## Notes", "", "## Former ids"], false);
 }

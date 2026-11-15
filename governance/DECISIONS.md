@@ -1906,3 +1906,12 @@ Rules: BOM-066 (built); BOM-026, BOM-022 (unchanged).
 4. **ECO template (MOD-190).** `Template - ECO` in the base vault, listed above. Added to `tools/base-vault/src/base_vault.ts` and tested. The ECO tab does not write the same note yet: its Items table has five columns and it has no Affected products section. Items and Affected products carry the change description and decisions of WKB-075 and BOM-068; the template shows where they go, and the tools that fill them are not built.
 5. **Changed.** `properties.json` 1.6, which now also lists `issuedDate` and `approvedOn` (decided in D-0118, missing from the schema until now: part of OD-29); MOD-175, WKB-075; new MOD-190.
 6. **Not checked.** The template in Obsidian with Templater (the id and uid are left empty as in the other class templates; the Workbench fills them when it makes a note, not Templater); a real ECO written by the team.
+
+## D-0165 — The base vault ships the ECO folder with one example ECO note
+
+2026-11-14 · Spencer · Accepted (owner, chat 2026-11-14: "Yes, include the folder with a single ECO note that includes fictional data")
+
+1. **Folder and example.** The base vault has the `ECO` folder (MOD-189) with one note, `ECO/ECO-00001.md`, made from `Template - ECO` (MOD-190) with fictional data (MOD-191). It shows a finished ECO: two changed parts (one CL1, one CL2) with change descriptions, the parents up to one product with a decision on each, three approvers with signing dates, and the overall approval date. Added to `tools/base-vault/src/base_vault.ts`, tested in `tools/importer/test/eco_template.test.ts`.
+2. **Made up.** Part numbers `EX-nnnn`, people (author codes for Jane Doe, Sam Roe and Alex Poe), dates and the Jira link (`example.com`) are fictional (DAT-002). The items are plain text, not links, and the note has no `drives` line, so it adds no unresolved reference to Review (the property check allows a relationship field only with links in it).
+3. **Consequences.** The example takes id `ECO-00001`, so the first real ECO is `ECO-00002` (MOD-007). It is a model note in a new vault: dashboard and Review counts include it until it is retired. The fictional author codes have no person notes.
+4. **Not checked.** How the Workbench and the importer's update scan treat it in a real vault; the tests only check the base-vault output and the importer fixtures. Whether the example should have a status other than Draft, and whether "retire" is the right way to remove it (REG-006 says notes are retired, not deleted; that rule is Unreviewed).
