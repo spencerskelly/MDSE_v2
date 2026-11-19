@@ -6236,6 +6236,9 @@ class MdseSettingTab extends obsidian.PluginSettingTab {
     this.containerEl.empty();
     new obsidian.Setting(this.containerEl).setName("Default folder for saved canvases").setDesc("Canvas previews are never kept automatically. Save canvas offers this folder first, then your recent and project folders.")
       .addText((t     ) => t.setPlaceholder(WB.SAVED_DIR).setValue(this.plugin.settings.defaultFolder).onChange(async (v        ) => { this.plugin.settings.defaultFolder = v.trim().replace(/\/+$/, "") || WB.SAVED_DIR; await this.plugin.saveSettings(); }));
+    new obsidian.Setting(this.containerEl).setName("Open Workbench in a pop-out window")
+      .setDesc("Use a separate Obsidian window for the Workbench. The regular command follows this preference; the explicit pop-out command always requests a window.")
+      .addToggle((t     ) => t.setValue(this.plugin.settings.popout).onChange(async (v         ) => { this.plugin.settings.popout = v; await this.plugin.saveSettings(); }));
   }
 }
 
@@ -6306,7 +6309,7 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files                      = new Map(); ix      = null; building                       = null; apps           = new Set(); selected = ""; rebuildTimer      = null;
-  preview                                                                                       = null; previews                                                                                             = new Map(); previewSeq = 0; settings                                                = { defaultFolder: "", lastFolder: "" };
+  preview                                                                                       = null; previews                                                                                             = new Map(); previewSeq = 0; settings                                                                 = { defaultFolder: "", lastFolder: "", popout: false };
   author = ""; drawTimer      = null; drawBusy              = new Set(); drawQueue                = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -6426,10 +6429,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   onFileOpen(f     ) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a     ) => a.select(f.path)); } }
 
   /* ---- views ---- */
-  async openPanel() {
-    let leaf = this.app.workspace.getLeavesOfType(PANEL)[0];
-    if (!leaf) { leaf = this.app.workspace.getRightLeaf(false); await leaf.setViewState({ type: PANEL, active: true }); }
-    this.app.workspace.revealLeaf(leaf);
+  async openPanel(forcePopout = false) {
+    const ws = this.app.workspace;
+    const requested = forcePopout || this.settings.popout;
+    const wantPopout = requested && typeof ws.openPopoutLeaf === "function";
+    const leaves        = ws.getLeavesOfType(PANEL) || [];
+    const inSidebar = (l     ) => { const root = l?.getRoot?.(); return root === ws.rightSplit || root === ws.leftSplit; };
+    let leaf = leaves.find((l     ) => wantPopout ? !inSidebar(l) : inSidebar(l));
+    if (!leaf) {
+      // Moving a panel between an Obsidian side pane and a pop-out requires a new leaf.
+      // Remove the previous panel before opening a replacement to avoid duplicate Workbenches.
+      for (const old of leaves) old.detach?.();
+      leaf = wantPopout ? ws.openPopoutLeaf({ size: { width: 480, height: 820 } }) : ws.getRightLeaf(false);
+      await leaf.setViewState({ type: PANEL, active: true });
+    }
+    ws.revealLeaf(leaf);
+    if (requested && !wantPopout) new obsidian.Notice("MDSE: this Obsidian version does not support pop-out windows; opened in sidebar.");
   }
   async openTable(lens        ) {
     await this.ensureIndex();
@@ -6685,14 +6700,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /* ---- lifecycle ---- */
   async onload() {
     const saved = (await this.loadData()) ?? {};
-    this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || "") };
+    this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || ""), popout: !!saved.popout };
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf     ) => new PanelView(leaf, this));
     this.registerView(TABLE, (leaf     ) => new TableView(leaf, this));
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk         , fn                  )          => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder        , only                        , fn                     ) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x     ) => x[1], (x     ) => fn(x[0])).open();
-    this.addCommand({ id: "open", name: "Open MDSE Workbench (right panel)", callback: () => this.openPanel() });
+    this.addCommand({ id: "open", name: "Open MDSE Workbench", callback: () => this.openPanel() });
+    this.addCommand({ id: "open-popout", name: "Open MDSE Workbench in a pop-out window", callback: () => this.openPanel(true) });
     this.addCommand({ id: "edit-canvas-line", name: "Edit the relationship selected on the canvas", checkCallback: (chk         ) => {
       const refs = this.canvasSelectionRefs(); if (!refs.length) return false;
       if (!chk) { if (refs.length > 1) new obsidian.Notice("Several lines are selected; editing the first."); this.editRelationship(refs[0]); }
