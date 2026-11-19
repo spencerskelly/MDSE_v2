@@ -1,0 +1,46 @@
+name: Temporary MDSE branch retirement
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  retire:
+    if: github.event.head_commit.message == 'ops: retire archived MDSE development branches'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Assert exact heads, archive immutable commits, delete old branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(
+            "experiment/workbench-popout-window|28ed6ca6cf30cf1f9f28c8a3a7bb9dbc05b5a19a|archive/2026-11-19/workbench-popout-original"
+            "feature/bom-shared-revision-review-20261025|354b2c205c5837fba67a7926652443fa63e01e5e|archive/2026-11-19/bom-revision-review"
+            "feature/workbench-popout-current-main-20261119|a7beee4793bececf60f8c440f3c26e09aee08720|archive/2026-11-19/workbench-popout-integrated"
+          )
+          # Check every remote branch before changing any of them.
+          for row in "${branches[@]}"; do
+            IFS='|' read -r branch expected tag <<< "$row"
+            actual=$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Ref changed or missing: $branch ($actual != $expected)"; exit 1
+            fi
+            if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null; then
+              echo "::error::Archive tag already exists: $tag"; exit 1
+            fi
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for row in "${branches[@]}"; do
+            IFS='|' read -r branch expected tag <<< "$row"
+            git fetch origin "$expected"
+            git tag -a "$tag" "$expected" -m "Archived from $branch before single-main cleanup on 2026-11-19"
+            git push origin "refs/tags/$tag"
+            git push origin --delete "$branch"
+            echo "Archived $branch at $expected as $tag, then deleted remote branch"
+          done
