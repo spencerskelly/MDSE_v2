@@ -4,6 +4,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX extension (draft PR #4, unmerged): resolved relationship results now offer **↗ Workflow…** in the Note, Find similar and Common related views, opening the target note in an independent workflow tab while preserving the source view.
 - Review-branch UX prototype (draft PR #4, unmerged): Document/Define/Structure/Verify work areas, ranked N-of-N through 1-of-N related-element discovery, workflow-aware temporary Canvas candidates with Keep/Dismiss and safe Save, automatic scratch-preview discovery, new-tab workflow opening, per-view Follow/Pin, and explicit Open in workflow from selected items and note menus. Source tests pass; full generated-artifact/runtime release gates remain open. See [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). This entry does not claim a release or new governance decision.
 
 - Governance: posts in a body section, tags as a property, variants not in the Product list, every view opens in a new tab. IMP-138, WKB-072, D-0160, OD-39, OD-40, OD-43, OD-44
