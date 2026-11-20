@@ -25,7 +25,7 @@ export interface PanelHost {
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
   /** Show related notes as temporary candidates on a new scratch Canvas, never writing an existing saved Canvas. */
-  discoverRelated?(sources: string[]): Promise<string>;
+  discoverRelated?(sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }): Promise<string>;
   /** Promote or dismiss cards selected on a discovery preview; only kept cards are saved. */
   keepSelectedDiscovery?(): Promise<string>;
   dismissSelectedDiscovery?(): Promise<string>;
@@ -91,7 +91,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
-  let workArea: "document" | "define" | "structure" | "verify" = "document", reviewReturn: V.Lens = "note", searchText = "";
+  let workArea: "document" | "define" | "structure" | "verify" = "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
   let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
@@ -421,6 +421,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     // Review is contextual; the importer stays external and publishing remains under Document.
     const lensArea = (v: V.Lens): typeof workArea | null => {
       if (v === "review") return null;
+      // Discovery and canvas utilities are cross-workflow; they must not reset an active work-area filter.
+      if (["common", "pick", "similar", "layout", "compare"].includes(v)) return workArea;
       // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
       if (v === "requirements" && workArea === "verify") return "verify";
       if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
@@ -501,9 +503,11 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       acts.append(allControls);
       if (host.discoverRelated && n) {
         const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
-        const b = h("button", { class: "sm pri", title: "Explore all directly related notes on a scratch Canvas; temporary candidates are omitted from saved views" }, "Discover neighbors");
-        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated!(sources)));
-        acts.append(b);
+        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
+        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated!(sources, { workflow: workArea, all: discoveryAll })));
+        acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+            onchange: (e: Event) => { discoveryAll = (e.target as HTMLInputElement).checked; draw(); } }), " All relationships"));
       }
       if (host.hasPreview?.()) {
         for (const [label, action] of [["Keep selected", host.keepSelectedDiscovery], ["Dismiss selected", host.dismissSelectedDiscovery]] as const) {
