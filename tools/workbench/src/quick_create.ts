@@ -36,7 +36,7 @@ export function planPlainNote(template: QuickTemplate, title: string, folder: st
   const name = title.trim().replace(/\s+/g, " ");
   if (!name || name === "." || name === ".." || /[\\/:*?"<>|\[\]#^]/.test(name)) return invalid("Enter a file-safe note title without path separators or reserved characters.");
   const parent = folder.trim().replace(/^\/+|\/+$/g, "");
-  if (parent.split("/").some((p) => p === "." || p === ".." || !p || /[\\:*?"<>|\[\]#^]/.test(p))) return invalid("Choose a vault folder, not a relative or invalid path.");
+  if (parent && parent.split("/").some((p) => p === "." || p === ".." || !p || /[\\:*?"<>|\[\]#^]/.test(p))) return invalid("Choose a vault folder, not a relative or invalid path.");
   const path = (parent ? parent + "/" : "") + name + ".md";
   if ([...existing].some((p) => p.toLowerCase() === path.toLowerCase())) return invalid("A note already exists at " + path + ".");
   const after = "# " + name + "\n\n" + (template.sections ?? []).map((x) => "## " + x + "\n\n").join("");
