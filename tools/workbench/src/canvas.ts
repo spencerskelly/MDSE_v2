@@ -219,9 +219,11 @@ export function clearDiscovery(doc: CanvasDoc): CanvasDoc {
 export function discoveryOverlay(doc: CanvasDoc, ix: ModelIndex, sources: string[], limit = 24): { doc: CanvasDoc; shown: number; available: number } {
   const kept = clearDiscovery(doc), given = [...new Set(sources)].filter((p) => ix.notes.has(p));
   if (!given.length) return { doc: kept, shown: 0, available: 0 };
-  const related = commonRelated(ix, given);
+  const related = given.length === 1
+    ? relatedNotes(ix, given[0]!).map((r) => r.path)
+    : ((r) => [...r.all, ...r.some].map((x) => x.path))(commonRelated(ix, given));
   const onCanvas = new Set(kept.nodes.map(cardNotePath).filter((p): p is string => !!p));
-  const candidates = [...related.all, ...related.some].map((x) => x.path).filter((p) => !onCanvas.has(p));
+  const candidates = related.filter((p) => !onCanvas.has(p));
   const chosen = candidates.slice(0, Math.max(0, Math.floor(limit)));
   if (!chosen.length) return { doc: kept, shown: 0, available: candidates.length };
   const before = new Set(kept.nodes.map((n) => n.id));
