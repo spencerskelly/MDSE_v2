@@ -74,6 +74,16 @@ export interface PanelApp {
   lens(): V.Lens; selected(): string; destroy(): void;
 }
 
+export type EngineeringWorkflow = "document" | "define" | "structure" | "verify";
+export const WORKFLOW_ENTRY_LENS: Record<EngineeringWorkflow, V.Lens> = {
+  document: "note", define: "functional", structure: "structure", verify: "requirements",
+};
+/** Opens the explicit target item in a separate Workbench tab, without changing this view. */
+export function openInNewWorkflow(host: Pick<PanelHost, "openWorkflow">, area: EngineeringWorkflow, itemPath: string): Promise<void> {
+  if (!itemPath || !host.openWorkflow) return Promise.reject(new Error("Choose a governed engineering item before opening a workflow."));
+  return host.openWorkflow(area, WORKFLOW_ENTRY_LENS[area], itemPath);
+}
+
 /** Context isolation: pinned views, active editing, and unresolved paths must never silently change the selected item. */
 export function followSelection(ix: ModelIndex | null, current: string, proposed: string | null | undefined, pinned: boolean, editing: boolean): string {
   return !pinned && !editing && !!proposed && !!ix?.notes.has(proposed) ? proposed : current;
@@ -434,6 +444,22 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("button", { type: "button", "aria-pressed": pinned,
         title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
       pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
+    if (n && host.openWorkflow) contextMode.append(
+      h("label", { class: "mut", style: "font-size:12px", title: "Open the selected engineering item in a separate, pinned Workbench tab without replacing this view" },
+        "Open item in ", h("select", {
+          "aria-label": "Open selected item in new workflow tab",
+          onchange: (e: Event) => {
+            const pick = e.target as HTMLSelectElement;
+            const area = pick.value as EngineeringWorkflow; pick.value = "";
+            if (!area) return;
+            void openInNewWorkflow(host, area, n.path).catch((err) => {
+              msg = "Could not open new workflow: " + String((err as Error)?.message ?? err); draw();
+            });
+          }
+        },
+        h("option", { value: "", selected: true }, "new workflow tab…"),
+        ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]] as const)
+          .map(([label, id]) => h("option", { value: id }, label)))));
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
       contextMode);
@@ -481,7 +507,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       draw();
     };
     const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
-      ...([["Document", "document", "note"], ["Define", "define", "functional"], ["Structure", "structure", "structure"], ["Verify", "verify", "requirements"]] as const)
+      ...([["Document", "document", WORKFLOW_ENTRY_LENS.document], ["Define", "define", WORKFLOW_ENTRY_LENS.define], ["Structure", "structure", WORKFLOW_ENTRY_LENS.structure], ["Verify", "verify", WORKFLOW_ENTRY_LENS.verify]] as const)
         .map(([label, id, next]) => h("button", {
           type: "button", "aria-pressed": workArea === id,
           title: id === "verify" ? "Requirements verification trace; test plans and execution are not yet implemented" : undefined,
