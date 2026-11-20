@@ -162,7 +162,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
-  let memberOwner = "", memberFilter = "", memberLimit = 40;
+  let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
@@ -290,7 +290,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
   }
   function memberInspector(n: Note): HTMLElement {
-    if (memberOwner !== n.path) { memberOwner = n.path; memberFilter = ""; memberLimit = 40; }
+    if (memberOwner !== n.path) { memberOwner = n.path; memberFilter = ""; memberLimit = 40; expandedMembers.clear(); }
     const members = MN.memberDetails(ix!, n.path), query = memberFilter.toLowerCase();
     const matches = members.filter((m) => !query ||
       [m.kind, m.name, m.type, m.head, m.doc, ...m.subsets, ...m.redefines,
@@ -304,7 +304,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     area.append(h("div", { class: "mut", style: "font-size:11px" },
       `Showing ${visible.length} of ${matches.length} matching usages (${members.length} total). Each usage remains owned by this note.`));
     for (const m of visible) {
-      const d = h("details", { class: "member-entry" },
+      const d = h("details", { class: "member-entry", open: expandedMembers.has(m.key) },
         h("summary", {}, tag(m.kind), " ", h("b", {}, m.name), " ",
           h("span", { class: "mut" }, [m.ref ? "ref" : "", m.dir, m.mult, m.type ? ": " + m.type : "(untyped)"].filter(Boolean).join(" ")),
           m.connections.length ? h("span", { class: "mut" }, ` · ${m.connections.length} explicit connection(s)`) : null));
@@ -328,7 +328,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           h("div", { class: "mut" }, h("code", {}, c.statement)),
           other.path ? h("div", {}, "Endpoint type: ", link(other.path), relatedWorkflow(other.path)) : null));
       }
-      d.append(info); area.append(d);
+      d.append(info);
+      d.addEventListener("toggle", () => {
+        if ((d as HTMLDetailsElement).open) expandedMembers.add(m.key);
+        else expandedMembers.delete(m.key);
+      });
+      area.append(d);
     }
     if (matches.length > memberLimit)
       area.append(h("button", { class: "sm", onclick: () => { memberLimit += 40; draw(); } }, `Show next ${Math.min(40, matches.length - memberLimit)} members`));
