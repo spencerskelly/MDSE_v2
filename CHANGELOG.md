@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX increment (unmerged): preview eligible native SysML relationships and direction *before* creating a governed note by indexing the hypothetical new file in memory. No implicit links or changes to the original index; final relationship still requires a separate explicit post-create Apply. Real Obsidian acceptance pending.
+
 - Review-branch UX increment (unmerged): contextual creation from a selected engineering note offers an optional second **Review relationship** dialog with eligible native SysML direction/type, diff, explicit Apply and independent Undo. Creating a note does not silently link it, and canceling connection leaves the note independent. Runtime acceptance pending.
 
 - Review-branch UX increment (unmerged): contextual **+ New…** menu in each work area. Document supports ordinary Markdown Daily, Meeting, Transcript and Engineering notes without UID/SysML; the other work areas use the existing governed model creation planner (ID, UID, SysML, preview, Apply and Undo). Base Vault now generates the matching four ordinary Templater-compatible templates. Not accepted in real Obsidian; see [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md).
