@@ -9,6 +9,7 @@ import * as V from "./views.ts";
 import * as OL from "./outline.ts";
 import { relatedNotes, commonRelated } from "./canvas.ts";
 import * as QC from "./quick_create.ts";
+import * as MN from "./member_nav.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
@@ -105,6 +106,8 @@ const PANEL_STYLE = `
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
 .mdw .relation-workflow{margin-left:6px;max-width:110px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:5px;background:var(--bg2);color:var(--fg)}
+.mdw .member-search{width:100%;box-sizing:border-box;padding:5px 7px;margin:4px 0 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .member-entry{border-bottom:1px solid var(--line);padding:5px 0}.mdw .member-entry summary{cursor:pointer;font-size:12.5px;white-space:normal}.mdw .member-info{padding:6px 10px;font-size:12px;overflow-wrap:anywhere}.mdw .member-info code{white-space:pre-wrap}.mdw .member-link{padding:4px 0;border-top:1px dashed var(--line)}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
@@ -159,6 +162,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let memberOwner = "", memberFilter = "", memberLimit = 40;
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
@@ -285,6 +289,51 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("objects without a port", String(d.noPort)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
       bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
   }
+  function memberInspector(n: Note): HTMLElement {
+    if (memberOwner !== n.path) { memberOwner = n.path; memberFilter = ""; memberLimit = 40; }
+    const members = MN.memberDetails(ix!, n.path), query = memberFilter.toLowerCase();
+    const matches = members.filter((m) => !query ||
+      [m.kind, m.name, m.type, m.head, m.doc, ...m.subsets, ...m.redefines,
+        ...m.props.map((p) => p.name + " " + p.value), ...m.connections.map((c) => c.statement)]
+        .some((s) => s.toLowerCase().includes(query)));
+    const visible = matches.slice(0, memberLimit), area = h("div", {});
+    area.append(h("label", { class: "mut" }, "Filter members / connections ",
+      h("input", { class: "member-search", type: "search", value: memberFilter,
+        placeholder: "Name, port, connected endpoint, SysML…",
+        onchange: (e: Event) => { memberFilter = (e.target as HTMLInputElement).value; memberLimit = 40; draw(); } })));
+    area.append(h("div", { class: "mut", style: "font-size:11px" },
+      `Showing ${visible.length} of ${matches.length} matching usages (${members.length} total). Each usage remains owned by this note.`));
+    for (const m of visible) {
+      const d = h("details", { class: "member-entry" },
+        h("summary", {}, tag(m.kind), " ", h("b", {}, m.name), " ",
+          h("span", { class: "mut" }, [m.ref ? "ref" : "", m.dir, m.mult, m.type ? ": " + m.type : "(untyped)"].filter(Boolean).join(" ")),
+          m.connections.length ? h("span", { class: "mut" }, ` · ${m.connections.length} explicit connection(s)`) : null));
+      const info = h("div", { class: "member-info" });
+      if (m.type) info.append(h("div", {}, "Type definition: ", m.typePath ? link(m.typePath) : h("span", { class: "gap" }, m.type + " (not in vault)"),
+        m.typePath ? relatedWorkflow(m.typePath) : null));
+      else info.append(h("div", { class: "gap" }, "Untyped usage — no type definition to navigate to."));
+      info.append(h("div", {}, "Declaration: ", h("code", {}, m.head)));
+      if (m.ref || m.conj || m.end) info.append(h("div", { class: "mut" }, [m.ref ? "reference usage" : "", m.conj ? "conjugated type" : "", m.end ? "interface end" : ""].filter(Boolean).join(" · ")));
+      if (m.subsets.length) info.append(h("div", {}, "Subsets: " + m.subsets.join(", ")));
+      if (m.redefines.length) info.append(h("div", {}, "Redefines: " + m.redefines.join(", ")));
+      if (m.doc) info.append(h("div", { style: "white-space:pre-wrap" }, "Documentation: " + m.doc));
+      for (const p of m.props) info.append(h("div", {}, h("code", {}, p.name + " = " + p.value)));
+      if (!m.connections.length) info.append(h("div", { class: "mut" }, "No explicit connect, bind or flow involving this usage."));
+      for (const c of m.connections) {
+        const other = c.otherEnd;
+        info.append(h("div", { class: "member-link" },
+          h("div", {}, tag(c.kind + (c.form && c.form !== "plain" ? " / " + c.form : "")), " ",
+            h("b", {}, c.thisEnd.text), " ↔ ", h("b", {}, other.text),
+            other.resolved ? null : h("span", { class: "gap" }, " (unresolved endpoint)")),
+          h("div", { class: "mut" }, h("code", {}, c.statement)),
+          other.path ? h("div", {}, "Endpoint type: ", link(other.path), relatedWorkflow(other.path)) : null));
+      }
+      d.append(info); area.append(d);
+    }
+    if (matches.length > memberLimit)
+      area.append(h("button", { class: "sm", onclick: () => { memberLimit += 40; draw(); } }, `Show next ${Math.min(40, matches.length - memberLimit)} members`));
+    return area;
+  }
   function noteView(): HTMLElement {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
@@ -304,7 +353,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
       box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
     }
-    if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
+    if (n.def?.usages.length) box.append(sec("usages", "Members and explicit connections", [memberInspector(n)], { count: n.def.usages.length }));
     return box;
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
