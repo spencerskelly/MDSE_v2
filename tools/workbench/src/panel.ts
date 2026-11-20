@@ -234,7 +234,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
   /* D-0092: compare the selected note with another: what differs, and the structure down to the parts that differ. */
-  function openCompare(other: string): void { cmpOther = other; lens = "compare"; editEl = null; draw(); }
+  function openCompare(other: string): void { pinned = true; cmpOther = other; lens = "compare"; editEl = null; draw(); }
   function compareBar(): HTMLElement {
     const found = V.pickRows(ix!, cmpText, "", 60).notes.filter((x) => x.path !== sel);
     const pick = h("select", { "aria-label": "Note to compare with", style: "max-width:100%", onchange: (e: Event) => { cmpOther = (e.target as HTMLSelectElement).value; draw(); } },
@@ -439,7 +439,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       contextMode);
     const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
       const items = g.lenses.filter((k) => (k !== "edit" && k !== "merge") || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k)![1]] as const), here = g.lenses.includes(lens);
-      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
+      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
     // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
