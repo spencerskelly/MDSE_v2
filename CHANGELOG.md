@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX increment (unmerged): expandable and filterable **Members and explicit connections** inspector. Distinguishes owner-local usages from reusable type definitions and shows only explicit `connect`/`bind`/`flow` endpoints, including unresolved references. Member detail persists across 40-at-a-time paging; viewing typed definitions preserves the original workspace. Source-only; real Obsidian acceptance pending.
+
 - Review-branch UX increment (unmerged): preview eligible native SysML relationships and direction *before* creating a governed note by indexing the hypothetical new file in memory. No implicit links or changes to the original index; final relationship still requires a separate explicit post-create Apply. Real Obsidian acceptance pending.
 
 - Review-branch UX increment (unmerged): contextual creation from a selected engineering note offers an optional second **Review relationship** dialog with eligible native SysML direction/type, diff, explicit Apply and independent Undo. Creating a note does not silently link it, and canceling connection leaves the note independent. Runtime acceptance pending.
