@@ -15,7 +15,7 @@ declare const WB: {
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
-  discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number) => { doc: any; shown: number; available: number };
+  discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number, mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => { doc: any; shown: number; available: number };
   clearDiscovery: (doc: any) => any;
   keepDiscoveryCandidates: (doc: any, ix: any, paths: string[]) => { doc: any; kept: number };
   dismissDiscoveryCandidates: (doc: any, paths: string[]) => { doc: any; dismissed: number };
@@ -197,7 +197,7 @@ function hostFor(plugin: any): any {
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
-    discoverRelated: (sources: string[]) => plugin.discoverRelatedOnCanvas(sources),
+    discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
     keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
     dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
@@ -518,7 +518,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /** Preview related candidates on a new scratch Canvas; never modify an existing saved canvas. */
-  async discoverRelatedOnCanvas(paths: string[]): Promise<string> {
+  async discoverRelatedOnCanvas(paths: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } = { workflow: "document", all: false }): Promise<string> {
     await this.ensureIndex();
     const sources = [...new Set(paths)].filter((p) => this.ix.notes.has(p));
     if (!sources.length) return "Select a governed engineering note first.";
@@ -531,12 +531,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const kept = WB.clearDiscovery(current);
     const anchored = WB.addToCanvas(kept, this.ix, sources[0]!, sources).doc;
-    const result = WB.discoveryOverlay(anchored, this.ix, sources);
+    const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, mode);
     const name = String(this.ix.notes.get(sources[0]!)?.title ?? "Engineering elements").slice(0, 65).replace(/[\\/:*?"<>|#^[\]]/g, " ");
     const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
       fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
       capped: result.shown < result.available, groups: 0 });
-    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available. Select candidate cards, then Keep or Dismiss in Workbench; Save excludes temporary candidates.`;
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Select candidate cards, then Keep or Dismiss in Workbench; Save excludes temporary candidates.`;
   }
 
   /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
