@@ -611,6 +611,33 @@ test("discovery candidates are visible in scratch views but never survive save u
   assert.deepEqual(discoveryOverlay(base, ix, ["unknown.md"]).doc, base, "invalid sources never alter the Canvas");
 });
 
+test("workflow discovery filters candidates, retains ranking and permits all relationships", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 6).map((n) => n.path);
+  assert.equal(paths.length, 6);
+  const [source, second, doc, def, structure, verify] = paths as [string, string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(source, doc, "describes"), edge(source, def, "satisfies"),
+    edge(source, structure, "hasPart"), edge(source, verify, "verifies"),
+    edge(second, verify, "verifies"), edge(second, def, "satisfies"),
+  ] } as unknown as typeof ix;
+  const base = pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc;
+  const names = (workflow: "document" | "define" | "structure" | "verify", all = false): string[] =>
+    discoveryOverlay(base, fixture, [source], 24, { workflow, all }).doc.nodes
+      .filter(isDiscoveryNode).map((n) => cdNotePath(n)!).sort();
+  assert.deepEqual(names("document"), [doc]);
+  assert.deepEqual(names("define"), [def]);
+  assert.deepEqual(names("structure"), [structure]);
+  assert.deepEqual(names("verify"), [verify]);
+  assert.deepEqual(names("structure", true), [doc, def, structure, verify].sort(), "All override must not hide cross-workflow connections");
+  const r = commonRelated(fixture, [source, second], ["verifies"]);
+  assert.deepEqual(r.all.map((x) => x.path), [verify]);
+  assert.deepEqual(r.some, [], "filtered overlap is based on matching kinds only");
+  const multi = discoveryOverlay(base, fixture, [source, second], 24, { workflow: "verify" });
+  assert.deepEqual(multi.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)), [verify]);
+  assert.deepEqual(clearDiscovery(multi.doc), base, "switching discovery context cannot change kept content");
+});
+
 test("notes related to two or more chosen notes are listed, with the kinds that join each (D-0084)", () => {
   const c = byTitle("Charger"), rel = relatedNotes(ix, c).map((r) => r.path), pair = [c, rel[0]!];
   const r = commonRelated(ix, pair);
