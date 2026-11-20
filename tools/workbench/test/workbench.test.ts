@@ -28,6 +28,23 @@ test("Open in workflow launches independent tabs with the exact selected enginee
   await assert.rejects(openInNewWorkflow(host, "define", ""), /Choose a governed engineering item/);
 });
 
+test("related-result workflow handoff opens the linked target, not the source note", async () => {
+  const pair = [...ix.notes.keys()].slice(0, 2);
+  assert.equal(pair.length, 2);
+  const [source, related] = pair as [string, string];
+  const events: Array<[string, string, string]> = [];
+  const host = { openWorkflow: async (area: "document" | "define" | "structure" | "verify", lens: V.Lens, path: string) => {
+    events.push([area, lens, path]);
+  } };
+  const original = { selected: source, area: "structure", pinned: true, lens: "structure" };
+  await openInNewWorkflow(host, "verify", related);
+  await openInNewWorkflow(host, "document", related);
+  assert.deepEqual(events, [["verify", "requirements", related], ["document", "note", related]]);
+  assert.ok(events.every((e) => e[2] !== source), "navigate to the related item, never the current source");
+  assert.deepEqual(original, { selected: source, area: "structure", pinned: true, lens: "structure" },
+    "the originating item, work area and pin state remain untouched");
+});
+
 test("Workbench Follow and Pin isolate selection and protect active editing", () => {
   const paths = [...ix.notes.keys()].slice(0, 2);
   assert.equal(paths.length, 2);
