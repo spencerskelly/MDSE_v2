@@ -64,8 +64,9 @@ export function contextLinkChoices(ix: ModelIndex, files: Map<string, string>, o
 }
 
 /** Evaluate a *proposed*, not-yet-written governed note against the selected existing note.
- * Builds an ephemeral model index from the exact new-file content; neither the passed index nor
- * the vault file map is mutated. Relationship eligibility is re-evaluated after creation.
+ * Parse only the source and hypothetical target into a two-note index. This avoids rescanning
+ * a vault with tens of thousands of notes on every modal Preview. Neither the cached index nor
+ * the vault file map is mutated. Eligibility is re-evaluated after creation.
  * No relationship is automatically attached or stored in the proposed note. */
 import { buildIndex } from "./index.ts";
 export interface PreviewContextLinkResult { choices: ContextLinkChoice[]; message: string; createdPath: string | null }
@@ -78,8 +79,9 @@ export function previewContextLinks(ix: ModelIndex, files: Map<string, string>, 
     return none("No governed source element selected. This new note will remain independent.");
   const candidate = plan.writes[0]!;
   if (files.has(candidate.path)) return none("The proposed note already exists. Preview again.");
-  const simulated = new Map(files);
-  simulated.set(candidate.path, candidate.after);
+  const simulated = new Map<string, string>([
+    [origin, files.get(origin)!], [candidate.path, candidate.after],
+  ]);
   const stagedIndex = buildIndex(simulated);
   if (!stagedIndex.notes.has(candidate.path) || !stagedIndex.notes.get(candidate.path)?.def)
     return none("The proposed note has no native SysML definition to relate.");
