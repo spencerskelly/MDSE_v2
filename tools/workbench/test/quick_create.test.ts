@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices } from "../src/quick_create.ts";
+import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks } from "../src/quick_create.ts";
 import { planAddElement, planAddRelationship } from "../src/edit.ts";
 import { buildIndex } from "../src/index.ts";
 import { buildBaseVault } from "../../base-vault/src/base_vault.ts";
@@ -111,4 +111,47 @@ test("contextual creation does not create SysML relationships without a separate
   assert.deepEqual(contextLinkChoices(buildIndex(saved, { classes }), saved, source.path, plain.writes[0]!.path), [],
     "ordinary Markdown is not silently promoted to a governed model relationship");
   assert.deepEqual(contextLinkChoices(ix, saved, source.path, source.path), [], "self links are not proposed");
+});
+
+test("pre-create context preview inspects a virtual governed note and never writes relationships", () => {
+  const author = "skellyspencer", now = new Date("2026-11-20T12:30:00");
+  const files = new Map<string, string>();
+  const parent = planAddElement(buildIndex(files, { classes }), classes, {
+    type: "Requirement", subtype: "functional", title: "Safety threshold",
+    folder: "20_Model", author, now,
+  });
+  assert.deepEqual(parent.problems, []);
+  files.set(parent.writes[0]!.path, parent.writes[0]!.after);
+  const origin = parent.writes[0]!.path;
+  const ix = buildIndex(files, { classes });
+  const child = planAddElement(ix, classes, {
+    type: "Verification", subtype: "test", title: "Safety threshold verification",
+    folder: "70_Verify", author, now,
+  });
+  const frozen = [...files.entries()];
+  const proposals = previewContextLinks(ix, files, origin, child);
+  assert.equal(proposals.createdPath, child.writes[0]!.path);
+  assert.ok(proposals.choices.length > 0);
+  assert.equal(proposals.choices[0]!.rel, "verify", "a native verify relationship is emphasized over generic dependencies");
+  const verifies = proposals.choices.filter((c) => c.rel === "verify");
+  assert.equal(verifies.length, 1);
+  assert.equal(verifies[0]!.from, child.writes[0]!.path);
+  assert.equal(verifies[0]!.to, origin);
+  assert.deepEqual([...files.entries()], frozen, "in-memory preview does not change vault file contents");
+  assert.equal(ix.notes.has(child.writes[0]!.path), false, "the original model index is not mutated");
+  assert.ok(!files.has(child.writes[0]!.path), "preview does not create the note");
+  assert.deepEqual(child.writes.map((w) => w.path), [child.writes[0]!.path],
+    "the creation plan contains no link writes");
+
+  const repeated = previewContextLinks(ix, files, origin, child);
+  assert.deepEqual(repeated, proposals, "repeated preview stays deterministic with the same plan and files");
+  assert.deepEqual(previewContextLinks(ix, files, "", child).choices, [], "no selected governed source, no link proposals");
+  assert.deepEqual(previewContextLinks(ix, files, origin,
+    { writes: [], problems: ["invalid"] }).choices, [], "invalid creation plan gives no proposals");
+  const existing = new Map(files); existing.set(child.writes[0]!.path, child.writes[0]!.after);
+  assert.deepEqual(previewContextLinks(ix, existing, origin, child).choices, [],
+    "a note already in the file map must not be treated as hypothetical");
+  const plain = planPlainNote(quickTemplate("meeting")!, "Safety meeting", "Documents", new Set(files.keys()));
+  assert.deepEqual(previewContextLinks(ix, files, origin, plain).choices, [],
+    "ordinary Markdown cannot acquire a native SysML relationship in creation preview");
 });
