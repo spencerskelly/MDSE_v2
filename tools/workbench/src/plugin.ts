@@ -15,6 +15,10 @@ declare const WB: {
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
+  discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number) => { doc: any; shown: number; available: number };
+  clearDiscovery: (doc: any) => any;
+  keepDiscoveryCandidates: (doc: any, ix: any, paths: string[]) => { doc: any; kept: number };
+  dismissDiscoveryCandidates: (doc: any, paths: string[]) => { doc: any; dismissed: number };
   cardNotePath: (node: any) => string | null;
   structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
@@ -90,7 +94,13 @@ async function savePreview(plugin: any, folder: string): Promise<string> {
   const base = rec.fileName.replace(/\.canvas$/, "");
   let path = `${folder}/${base}.canvas`;
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
-  const saved = await app.vault.create(path, await app.vault.read(src));
+  const raw = await app.vault.read(src);
+  let doc: any;
+  try { doc = JSON.parse(raw); if (!Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) throw new Error("invalid Canvas data"); }
+  catch { throw new Error("Cannot save an invalid Canvas preview."); }
+  // Never publish discovery candidates: retain kept card positions and other Canvas metadata.
+  const cleaned = WB.clearDiscovery(doc);
+  const saved = await app.vault.create(path, JSON.stringify({ ...doc, nodes: cleaned.nodes, edges: cleaned.edges }, null, 2));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
   await mainLeaf(app).openFile(saved);
   return `Saved to ${path}`;
@@ -187,6 +197,9 @@ function hostFor(plugin: any): any {
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
+    discoverRelated: (sources: string[]) => plugin.discoverRelatedOnCanvas(sources),
+    keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
+    dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
@@ -502,6 +515,46 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
     return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+  }
+
+  /** Preview related candidates on a new scratch Canvas; never modify an existing saved canvas. */
+  async discoverRelatedOnCanvas(paths: string[]): Promise<string> {
+    await this.ensureIndex();
+    const sources = [...new Set(paths)].filter((p) => this.ix.notes.has(p));
+    if (!sources.length) return "Select a governed engineering note first.";
+    const target = this.canvasTarget();
+    let current: any = { nodes: [], edges: [] };
+    if (target) {
+      try { await target.leaf?.view?.save?.(); } catch { /* Canvas view may not expose save */ }
+      const file = this.app.vault.getAbstractFileByPath(target.path);
+      if (file) current = parseDoc(await this.app.vault.read(file));
+    }
+    const kept = WB.clearDiscovery(current);
+    const anchored = WB.addToCanvas(kept, this.ix, sources[0]!, sources).doc;
+    const result = WB.discoveryOverlay(anchored, this.ix, sources);
+    const name = String(this.ix.notes.get(sources[0]!)?.title ?? "Engineering elements").slice(0, 65).replace(/[\\/:*?"<>|#^[\]]/g, " ");
+    const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
+      fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
+      capped: result.shown < result.available, groups: 0 });
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available. Select candidate cards, then Keep or Dismiss in Workbench; Save excludes temporary candidates.`;
+  }
+
+  /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
+  async changeSelectedDiscovery(action: "keep" | "dismiss"): Promise<string> {
+    await this.ensureIndex();
+    const t = this.canvasTarget();
+    if (!t || !this.previews.has(t.path)) return "Open an MDSE discovery preview first.";
+    const paths = this.selectedCardPaths();
+    if (!paths.length) return "Select one or more discovery candidate cards first.";
+    let changed = 0;
+    await this.editTarget(t, (text) => {
+      const original = parseDoc(text);
+      const r = action === "keep" ? WB.keepDiscoveryCandidates(original, this.ix, paths) : WB.dismissDiscoveryCandidates(original, paths);
+      changed = action === "keep" ? r.kept : r.dismissed;
+      if (!changed) return null;
+      return JSON.stringify({ ...original, nodes: r.doc.nodes, edges: r.doc.edges }, null, 2);
+    });
+    return changed ? `${action === "keep" ? "Kept" : "Dismissed"} ${changed} candidate(s). ${action === "keep" ? "They will be included when you save this canvas." : "Kept cards were not changed."}` : "No temporary candidates were selected.";
   }
 
   /* ---- saving a preview ---- */
