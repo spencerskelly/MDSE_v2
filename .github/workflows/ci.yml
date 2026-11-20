@@ -38,6 +38,37 @@ jobs:
       - name: Single-file importer is rebuilt from source
         run: npm run check:importer
 
+  # Temporary one-shot Pass 09 repair. On the approved review branch only,
+  # regenerate stale Workbench artifacts and restore the prior CI definition.
+  repair-workbench-artifacts:
+    name: Regenerate Workbench artifacts (one-shot)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'ux/pass08-workarea-prototype-20261119'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Build and commit only generated artifacts, removing this temporary job
+        env:
+          REVIEW_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          npm run build:workbench
+          git show HEAD^:.github/workflows/ci.yml > .github/workflows/ci.yml
+          git add -- .github/workflows/ci.yml tools/workbench/dist/mdse_workbench.html tools/workbench/dist/plugin/main.js
+          if git diff --cached --quiet; then
+            echo "No output or workflow changes to commit."
+          else
+            git -c user.name='MDSE CI' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'build(workbench): regenerate review-branch outputs'
+            git push origin "HEAD:refs/heads/$REVIEW_BRANCH"
+          fi
+
   workbench-validation:
     name: Workbench build, tests and generated output
     runs-on: ubuntu-24.04
