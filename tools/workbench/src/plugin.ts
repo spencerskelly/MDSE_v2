@@ -120,6 +120,83 @@ class PickModal extends obsidian.FuzzySuggestModal<any> {
   onChooseItem(x: any) { this.onPick(x); }
 }
 
+/** Optional second transaction after creating a model note. Neither cancellation nor simply
+ * opening this dialog writes SysML. Existing relationship validation owns the actual change. */
+class ContextLinkModal extends obsidian.Modal {
+  plugin: any; origin: string; created: string;
+  constructor(plugin: any, origin: string, created: string) { super(plugin.app); this.plugin = plugin; this.origin = origin; this.created = created; }
+  onOpen() {
+    const p = this.plugin, el = this.contentEl;
+    el.empty();
+    el.createEl("h3", { text: "Review a relationship" });
+    el.createEl("p", { cls: "setting-item-description",
+      text: "The new note is already saved and remains independent. A relationship changes SysML only if you separately preview and apply it." });
+    const ix = WB.buildIndex(p.files, { classes: CLASSES }); // Includes the newly created file, without waiting for the async UI refresh.
+    const choices = WB.contextLinkChoices(ix, p.files, this.origin, this.created);
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    if (!choices.length) {
+      el.createEl("p", { text: "No writable native SysML relationship is valid between these two notes. No link was added." });
+      buttons.createEl("button", { text: "Done" }).onclick = () => this.close();
+      return;
+    }
+    const titleOf = (path: string): string => ix.notes.get(path)?.title ?? path;
+    let selected = "", name = "", mult = "", plan: any = null;
+    const info = el.createEl("p", { cls: "setting-item-description" });
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const choose = new obsidian.Setting(el).setName("Relationship and direction")
+      .setDesc("The arrow shows which note owns the native relationship statement.")
+      .addDropdown((d: any) => {
+        d.addOption("", "Select a relationship…");
+        choices.forEach((c: any, i: number) => d.addOption(String(i), titleOf(c.from) + " → " + titleOf(c.to) + " · " + c.label));
+        d.setValue("").onChange((v: string) => { selected = v; name = ""; mult = ""; refresh(); });
+      });
+    const nameSetting = new obsidian.Setting(el).setName("Usage name (optional)")
+      .addText((x: any) => x.onChange((v: string) => { name = v; refresh(); }));
+    const multSetting = new obsidian.Setting(el).setName("Multiplicity (optional)")
+      .addText((x: any) => x.setPlaceholder("e.g. 1..*").onChange((v: string) => { mult = v; refresh(); }));
+    const apply = buttons.createEl("button", { text: "Apply relationship", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Leave unlinked" }).onclick = () => this.close();
+    const refresh = () => {
+      plan = null; apply.disabled = true; preview.setText("");
+      const c = selected === "" ? null : choices[Number(selected)];
+      nameSetting.settingEl.style.display = c?.inputs.includes("name") ? "" : "none";
+      multSetting.settingEl.style.display = c?.inputs.includes("mult") ? "" : "none";
+      info.setText(c?.help ?? "Select a valid direction and relationship kind. The new note stays unlinked until Apply.");
+      if (!c) return;
+      plan = WB.planAddRelationship(ix, p.files, { rel: c.rel, from: c.from, to: c.to,
+        name, mult, usageKind: c.usageKind });
+      if (plan.problems.length || !plan.writes.length) {
+        info.setText(plan.problems[0] ?? "No change can be written."); return;
+      }
+      const w = plan.writes[0], d = WB.edDiff(w.before, w.after);
+      preview.setText([w.path, ...d.removed.map((x: string) => "- " + x),
+        ...d.added.map((x: string) => "+ " + x)].join("\n"));
+      apply.disabled = false;
+    };
+    apply.onclick = async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true;
+      try {
+        const res = await p.applyPlan(plan); // Independent, compare-before-write transaction with Undo.
+        const notice = document.createDocumentFragment(), undo = document.createElement("button");
+        undo.textContent = "Undo"; undo.style.marginLeft = "0.5em";
+        undo.onclick = async () => {
+          undo.disabled = true;
+          try { new obsidian.Notice("MDSE relationship: " + (await res.undo())); }
+          catch (e: any) { new obsidian.Notice("MDSE relationship undo failed: " + String(e?.message ?? e), 8000); }
+        };
+        notice.append("MDSE relationship: " + res.message + " ", undo);
+        new obsidian.Notice(notice, 15000);
+        this.close();
+      } catch (e: any) {
+        plan = null; info.setText("Relationship not applied: " + String(e?.message ?? e) + ". Close or select again to preview.");
+      }
+    };
+    void choose; refresh();
+  }
+}
+
 /** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
  * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
 class QuickCreateModal extends obsidian.Modal {
@@ -177,7 +254,18 @@ class QuickCreateModal extends obsidian.Modal {
         };
         notice.append("MDSE: " + result.message + " ", undoButton);
         new obsidian.Notice(notice, 15000);
-        this.close();
+        // Creating the note is complete. Link approval, if offered, is a separate operation.
+        const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
+          ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
+        if (!linkOptions.length) { this.close(); return; }
+        preview.setText("Created: " + createdPath + "\n\nNo SysML relationship has been added.");
+        status.setText("You may leave this note independent or separately review a native relationship to " +
+          (p.ix.notes.get(this.origin)?.title ?? this.origin) + ".");
+        buttons.replaceChildren();
+        buttons.createEl("button", { text: "Review relationship…", cls: "mod-cta" }).onclick = () => {
+          this.close(); new ContextLinkModal(p, this.origin, createdPath).open();
+        };
+        buttons.createEl("button", { text: "Done — leave unlinked" }).onclick = () => this.close();
       } catch (err: any) {
         status.setText("Could not create: " + String(err?.message ?? err) + ". Preview again.");
         plan = null; see.disabled = false;
