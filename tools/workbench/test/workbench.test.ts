@@ -2,11 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
+import { followSelection } from "../src/panel.ts";
 import { importedVault, classes } from "./harness.ts";
 
 const files = await importedVault();
 const ix = buildIndex(files, { classes, parserReport: files.get("99_System/11_Import/Parser Check.md") });
 const byTitle = (t: string): string => [...ix.notes.values()].find((n) => n.title === t)!.path;
+
+test("Workbench Follow and Pin isolate selection and protect active editing", () => {
+  const paths = [...ix.notes.keys()].slice(0, 2);
+  assert.equal(paths.length, 2);
+  const [current, next] = paths as [string, string];
+  assert.equal(followSelection(ix, current, next, false, false), next, "Follow tracks a valid selected element");
+  assert.equal(followSelection(ix, current, next, true, false), current, "Pin ignores other selections");
+  assert.equal(followSelection(ix, current, next, false, true), current, "Edit never loses its current element");
+  assert.equal(followSelection(ix, current, "unresolved.md", false, false), current, "unknown elements cannot steal context");
+  assert.equal(followSelection(ix, current, null, false, false), current, "empty selection preserves context");
+  assert.equal(followSelection(null, current, next, false, false), current, "no loaded index cannot change context");
+});
 
 test("index reads every governed note and reports the parser as not run", () => {
   assert.ok(ix.notes.size >= 25);
