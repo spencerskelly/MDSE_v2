@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote } from "../src/quick_create.ts";
-import { planAddElement } from "../src/edit.ts";
+import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices } from "../src/quick_create.ts";
+import { planAddElement, planAddRelationship } from "../src/edit.ts";
 import { buildIndex } from "../src/index.ts";
 import { buildBaseVault } from "../../base-vault/src/base_vault.ts";
 import { classes } from "./harness.ts";
@@ -68,4 +68,47 @@ test("Base Vault ships plain note templates matching the quick-create catalog", 
     assert.ok(!file!.includes("## SysML v2") && !file!.includes("uid:"));
     for (const section of t.sections ?? []) assert.ok(file!.includes("## " + section));
   }
+});
+
+test("contextual creation does not create SysML relationships without a separate approved plan", () => {
+  const author = "skellyspencer", now = new Date("2026-11-20T12:30:00");
+  const original = new Map<string, string>();
+  const parent = planAddElement(buildIndex(original, { classes }), classes,
+    { type: "Requirement", subtype: "functional", title: "Output safe", folder: "20_Model", author, now });
+  assert.deepEqual(parent.problems, []);
+  const source = parent.writes[0]!;
+  original.set(source.path, source.after);
+  const child = planAddElement(buildIndex(original, { classes }), classes,
+    { type: "Verification", subtype: "test", title: "Output safe test", folder: "70_Verify", author, now });
+  assert.deepEqual(child.problems, []);
+  const added = child.writes[0]!;
+  assert.equal(child.writes.length, 1, "creation only writes its own new file");
+  assert.equal(original.get(source.path), source.after, "creation planning never modifies the selected parent");
+  assert.deepEqual(contextLinkChoices(buildIndex(original, { classes }), original, source.path, added.path), [],
+    "uncommitted new notes have no writable relationship choices");
+
+  const saved = new Map(original); saved.set(added.path, added.after);
+  const ix = buildIndex(saved, { classes }), snapshot = new Map(saved);
+  const choices = contextLinkChoices(ix, saved, source.path, added.path);
+  assert.ok(choices.length, "saving the note enables independent relationship proposals");
+  const verify = choices.find((c) => c.rel === "verify");
+  assert.ok(verify, "verification case to requirement has native verify available");
+  assert.equal(verify!.from, added.path, "the direction must be from verification to requirement");
+  assert.equal(verify!.to, source.path);
+  assert.ok(!choices.some((c) => c.rel === "verify" && c.from === source.path),
+    "invalid reverse verification direction is not shown");
+  assert.deepEqual(saved, snapshot, "listing proposals does not edit the vault");
+
+  const link = planAddRelationship(ix, saved, { rel: verify!.rel, from: verify!.from, to: verify!.to });
+  assert.deepEqual(link.problems, []);
+  assert.equal(link.writes.length, 1, "relationship approval writes separately");
+  assert.equal(link.writes[0]!.path, added.path, "the native statement is owned by the verification note");
+  assert.notEqual(link.writes[0]!.after, saved.get(added.path));
+  assert.equal(saved.get(added.path), added.after, "even relationship preview makes no edit until Apply");
+
+  const plain = planPlainNote(quickTemplate("meeting")!, "Test meeting", "Documents", new Set(saved.keys()));
+  saved.set(plain.writes[0]!.path, plain.writes[0]!.after);
+  assert.deepEqual(contextLinkChoices(buildIndex(saved, { classes }), saved, source.path, plain.writes[0]!.path), [],
+    "ordinary Markdown is not silently promoted to a governed model relationship");
+  assert.deepEqual(contextLinkChoices(ix, saved, source.path, source.path), [], "self links are not proposed");
 });
