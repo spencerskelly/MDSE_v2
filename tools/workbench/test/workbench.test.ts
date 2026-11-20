@@ -611,6 +611,36 @@ test("discovery candidates are visible in scratch views but never survive save u
   assert.deepEqual(discoveryOverlay(base, ix, ["unknown.md"]).doc, base, "invalid sources never alter the Canvas");
 });
 
+test("successive discovery selections retain kept cards and replace only temporary neighbors", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 5).map((n) => n.path);
+  assert.equal(paths.length, 5);
+  const [source, keptNeighbor, temporary, nextCandidate, unrelated] = paths as [string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(source, keptNeighbor, "hasPart"), edge(source, temporary, "hasPort"),
+    edge(keptNeighbor, nextCandidate, "hasPart"), edge(unrelated, temporary, "describes"),
+  ] } as unknown as typeof ix;
+  const base = pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc;
+  const first = discoveryOverlay(base, fixture, [source], 24, { workflow: "structure" });
+  assert.deepEqual(first.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)).sort(), [keptNeighbor, temporary].sort());
+  const retained = keepDiscoveryCandidates(first.doc, fixture, [keptNeighbor]);
+  assert.equal(retained.kept, 1);
+  const positioned = { ...retained.doc, nodes: retained.doc.nodes.map((n) =>
+    cdNotePath(n) === keptNeighbor ? { ...n, x: n.x + 37, y: n.y - 13 } : n) };
+  const before = positioned.nodes.filter((n) => !isDiscoveryNode(n));
+  const next = discoveryOverlay(positioned, fixture, [keptNeighbor], 24, { workflow: "structure" });
+  assert.deepEqual(next.doc.nodes.filter((n) => !isDiscoveryNode(n)), before,
+    "switching the selected kept card never moves or replaces kept cards");
+  assert.deepEqual(next.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)), [nextCandidate],
+    "old temporary candidates disappear and new relevant candidates appear");
+  const saved = clearDiscovery(next.doc);
+  assert.deepEqual(saved.nodes, before, "saving the refreshed preview excludes all discovery candidates");
+  const ids = new Set(saved.nodes.map((n) => n.id));
+  assert.ok(saved.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)));
+  assert.deepEqual(base, pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc,
+    "an earlier Canvas is not changed by refreshing its scratch copy");
+});
+
 test("workflow discovery filters candidates, retains ranking and permits all relationships", () => {
   const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 6).map((n) => n.path);
   assert.equal(paths.length, 6);
