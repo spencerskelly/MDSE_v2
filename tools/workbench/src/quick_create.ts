@@ -43,3 +43,22 @@ export function planPlainNote(template: QuickTemplate, title: string, folder: st
   return { summary: 'Create ordinary Markdown note "' + name + '" at ' + path + " (no SysML or governed UID).",
     writes: [{ path, before: null, after }], problems: [] };
 }
+
+/** Eligible context relationships are proposals only; nothing is written until a second
+ * explicit preview + Apply. Both native directions are considered because SysML relationship
+ * ownership and endpoint order depend on the two modeled definitions. */
+import type { ModelIndex } from "./index.ts";
+import { cdChoices } from "./canvas_draw.ts";
+export interface ContextLinkChoice { rel: string; label: string; from: string; to: string; help: string; inputs: readonly string[]; usageKind: string }
+export function contextLinkChoices(ix: ModelIndex, files: Map<string, string>, origin: string, created: string): ContextLinkChoice[] {
+  if (!origin || !created || origin === created || !ix.notes.has(origin) || !ix.notes.has(created)) return [];
+  const out: ContextLinkChoice[] = [];
+  for (const [from, to] of [[origin, created], [created, origin]]) {
+    for (const choice of cdChoices(ix, files, from, to)) {
+      if (!choice.ok) continue;
+      out.push({ rel: choice.rel.id, label: choice.rel.label, from, to,
+        help: choice.rel.help, inputs: choice.rel.inputs, usageKind: choice.usageKind });
+    }
+  }
+  return out;
+}
