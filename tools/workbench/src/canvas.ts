@@ -182,10 +182,10 @@ export function cardNotePath(node: CanvasNode | undefined): string | null {
 }
 
 /** Notes related to `path` (D-0082): every resolved relationship either way, as the other note's path with the kinds that join them. */
-export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string; kinds: string[] }> {
-  const by = new Map<string, Set<string>>();
+export function relatedNotes(ix: ModelIndex, path: string, kinds?: readonly string[]): Array<{ path: string; kinds: string[] }> {
+  const by = new Map<string, Set<string>>(), allow = kinds ? new Set(kinds) : null;
   for (const e of ix.edges) {
-    if (!e.to || e.reverse) continue;
+    if (!e.to || e.reverse || (allow && !allow.has(e.kind))) continue;
     const other = e.from === path ? e.to : e.to === path ? e.from : null;
     if (other && other !== path && ix.notes.has(other) && !ix.notes.get(other)!.meta.mergedInto) (by.get(other) ?? by.set(other, new Set()).get(other)!).add(e.kind);
   }
@@ -193,13 +193,26 @@ export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string
 }
 
 /** Notes related to selected notes (D-0084 / UX discovery). `all` touch every selected source; `some` touch 1..N-1 sources, ranked most to least common. Each source counts once regardless of how many edges join it to a candidate. Selected and retired notes are excluded. */
-export function commonRelated(ix: ModelIndex, paths: string[]): { all: Array<{ path: string; by: Array<{ from: string; kinds: string[] }> }>; some: Array<{ path: string; count: number; by: Array<{ from: string; kinds: string[] }> }> } {
-  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p).map((r) => [r.path, r.kinds] as const))] as const);
+export function commonRelated(ix: ModelIndex, paths: string[], kinds?: readonly string[]): { all: Array<{ path: string; by: Array<{ from: string; kinds: string[] }> }>; some: Array<{ path: string; count: number; by: Array<{ from: string; kinds: string[] }> }> } {
+  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p, kinds).map((r) => [r.path, r.kinds] as const))] as const);
   const count = new Map<string, Array<{ from: string; kinds: string[] }>>();
   for (const [p, m] of per) for (const [q, kinds] of m) if (!given.includes(q)) (count.get(q) ?? count.set(q, []).get(q)!).push({ from: p, kinds });
   const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).sort((a, b) => b.count - a.count || ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
 }
+
+/** Workbench-area discovery filters. These govern candidate discovery only, never model meaning.
+ * Always provide an unrestricted option because a focused view is not a complete relationship audit. */
+export type DiscoveryArea = "document" | "define" | "structure" | "verify";
+export const DISCOVERY_KINDS: Record<DiscoveryArea, readonly string[]> = {
+  document: ["describes", "trace", "dependsOn", "uses", "references", "supersedes"],
+  define: ["hasRequirement", "hasAction", "hasState", "satisfies", "refines", "derivedFrom",
+    "performs", "allocatedTo", "specializes", "includes", "extendedBy", "dependsOn", "has"],
+  structure: ["hasPart", "hasPort", "hasFlow", "references", "specializes", "allocatedTo",
+    "implements", "has", "connects", "binds", "hasState"],
+  verify: ["verifies", "hasVerification", "satisfies", "derivedFrom", "refines",
+    "trace", "allocatedTo", "hasRequirement", "dependsOn"],
+};
 
 /** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
 export const DISCOVERY_PREFIX = "mdse-discovery:";
@@ -216,12 +229,14 @@ export function clearDiscovery(doc: CanvasDoc): CanvasDoc {
 /** Overlay up to `limit` related notes on a copy of a kept view, preserving all prior card positions.
  * For multiple sources the N-of-N / ... / 1-of-N order comes from commonRelated.
  * Temporary status is encoded in card IDs, not in model notes or extra Canvas schema fields. */
-export function discoveryOverlay(doc: CanvasDoc, ix: ModelIndex, sources: string[], limit = 24): { doc: CanvasDoc; shown: number; available: number } {
+export function discoveryOverlay(doc: CanvasDoc, ix: ModelIndex, sources: string[], limit = 24,
+  mode: { workflow?: DiscoveryArea; all?: boolean } = {}): { doc: CanvasDoc; shown: number; available: number } {
   const kept = clearDiscovery(doc), given = [...new Set(sources)].filter((p) => ix.notes.has(p));
   if (!given.length) return { doc: kept, shown: 0, available: 0 };
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
   const related = given.length === 1
-    ? relatedNotes(ix, given[0]!).map((r) => r.path)
-    : ((r) => [...r.all, ...r.some].map((x) => x.path))(commonRelated(ix, given));
+    ? relatedNotes(ix, given[0]!, kinds).map((r) => r.path)
+    : ((r) => [...r.all, ...r.some].map((x) => x.path))(commonRelated(ix, given, kinds));
   const onCanvas = new Set(kept.nodes.map(cardNotePath).filter((p): p is string => !!p));
   const candidates = related.filter((p) => !onCanvas.has(p));
   const chosen = candidates.slice(0, Math.max(0, Math.floor(limit)));
