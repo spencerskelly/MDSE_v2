@@ -2,17 +2,27 @@
 
 Viewer for an MDSE vault (read-only except two Review actions, D-0025). One TypeScript core, two shells: an offline HTML page and an Obsidian plugin.
 
-**Rules:** RULESET.md section WKB, plus MOD. **State: built (version 0.8.0); edits: Review actions (D-0025) and the Edit lens (D-0030, D-0031, D-0128, D-0133).** D-0019 records the design.
+**Rules:** RULESET.md section WKB, plus MOD. Workbench editing exists in source (D-0025, D-0030, D-0031, D-0128, D-0133); full real-Obsidian and release acceptance is still pending. The four-workflow redesign is **review-branch source only**, not an installed release. Follow [the canonical toolset build/update and acceptance procedure](../../docs/TOOLSET_UPDATE.md) before deploying.
+
+## Current UX prototype — Document / Define / Structure / Verify
+
+The review branch `ux/pass08-workarea-prototype-20261119` introduces four work areas, global governed-note search, workflow-specific discovery with **All relationships** override, ranked multi-card neighbors (N-of-N through 1-of-N), and a temporary Canvas discovery overlay. Candidate cards can be **Kept** or **Dismissed**; saving intentionally strips unkept candidates. Auto-discovery follows selections of kept cards in a scratch discovery preview only; ordinary/saved Canvases are not auto-refreshed. Canvas placement is visual only and does not create SysML relationships.
+
+Workflow and function switching defaults to **a new Workbench editor tab**, preserving existing notes, Canvas tabs, and the originating Workbench. The user may choose **current Workbench** instead. Per-view **Follow / Pin** controls isolate selection; editing pins the selected engineering item. **Open item in new workflow tab** from the selected-item header, and **Open in MDSE workflow…** on a governed note's file context menu, carry that item into Document (Note), Define (Functional), Structure (Structure), or Verify (Requirements) in a new tab.
+
+**Not implemented/accepted yet:** contextual quick-create template launcher; general document Markdown search; end-to-end Verify execution and Document publishing; member-level relationship discovery; full runtime Obsidian acceptance. Existing element templates are generated under `99_System/05_Templates` by Base Vault. Do not conflate source unit tests with installed plugin acceptance.
+
+**Legacy walkthrough note:** the detailed command and Canvas instructions below describe the pre-four-workflow interfaces where their labels differ. Verify the current branch's commands against runtime before using screenshots or documenting final UI acceptance.
 
 ## Run it
 
 - **Page:** `npm run build:workbench`, then open `tools/workbench/dist/mdse_workbench.html`. Choose "Open vault folder" (Chromium browsers), "Choose folder (any browser)", or "Open MDSE.zip", or drop a folder or zip on the page. Nothing leaves the browser.
-- **Obsidian, new or existing vault:** the importer ships this plugin in the base vault and its "Update vault configuration" step installs or upgrades it in an existing vault without a data source (D-0024).
-- **Obsidian, by hand:** copy `tools/workbench/dist/plugin/` (`main.js`, `manifest.json`, `styles.css`) to `<vault>/.obsidian/plugins/mdse-workbench/`, enable it, then use the ribbon icon or the command "Open MDSE Workbench (right panel)". The plugin is tested in Chromium against a fake Obsidian API (`testing/oracles/test_workbench_plugin.py`); it has not been run in real Obsidian yet.
+- **Obsidian, new or existing vault:** use the importer built *after* the Workbench (`npm run build`) and its Step 4 **Preview vault update** before **Apply**. It installs the paired controlled Workbench payload and settings. See [toolset update](../../docs/TOOLSET_UPDATE.md).
+- **Obsidian, by hand (isolated pilot only):** back up the staging vault's `mdse-workbench` plugin folder, then copy the three files from `tools/workbench/dist/plugin/` into `<vault>/.obsidian/plugins/mdse-workbench/`, restart/reload and test. This does not update Bootstrap's controlled lock, schemas or importer. When Bootstrap lock verification is active, prefer the paired importer update; never forge the lock to accommodate a manual swap. The historical pop-out mode has limited owner-reported real-Obsidian acceptance ([evidence](POPOUT_ACCEPTANCE.md)), but the new four-workflow prototype has **not** been owner-tested.
 
 ## In Obsidian: right panel, main-window table and canvas
 
-There is no Workbench browser. Obsidian's file explorer picks the note; the Workbench is a panel in the **right sidebar** that shows the note you have open and follows it as you click through the vault (untick "follow the selected note" in the main-window table to pin one). Tables and canvases open in the **main window** for the selected note and lens.
+Obsidian's file explorer remains the file browser. In the legacy UI, the Workbench is a panel in the **right sidebar** that shows the note you have open and follows it as you click through the vault (untick "follow the selected note" in the main-window table to pin one). Tables and canvases open in the **main window** for the selected note and lens.
 
 - **Lenses (buttons at the top of the panel):** Dashboard (vault counts and bars), Note (metadata, flags, relationships, SysML), Tables, Structure trace, Functional trace, Requirements trace, Review.
 - **Folding the indented BOM (D-0150):** in the Structure view the "Structure of …" table has a ▾/▸ control on every row that has parts under it (a folded row shows how many it hides). **Expand all parts**, **Collapse all parts** (the note and its direct parts) and **Show to level…** set the whole table. It starts open; the state is kept while you work and never written to the vault. The rolled-up Parts list below it is unchanged. The table has no level or part limit (D-0161); the main-window table draws every row, the side panel 25. CSV exports every row. Tested in Chromium against the fake Obsidian API; not yet run in real Obsidian.
