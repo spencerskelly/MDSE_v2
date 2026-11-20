@@ -19,6 +19,8 @@ export interface PanelHost {
   openNote(path: string): void;
   /** Open the table for a lens in the main window. */
   openTable(lens: V.Lens): void;
+  /** Open an independent Workbench editor tab without replacing an open note, Canvas or other workflow. */
+  openWorkflow?(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): Promise<void>;
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
@@ -60,6 +62,9 @@ export interface PanelApp {
   /** The note cards chosen on a canvas, in the order chosen (D-0084). Two or more open the Common related lens; one is the same as select. */
   setCanvasSelection(paths: string[]): void;
   setLens(lens: V.Lens): void;
+  /** Restore a workflow tab's own state, independent of other open Workbench tabs. */
+  setWorkflow(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): void;
+  area(): "document" | "define" | "structure" | "verify";
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
   lens(): V.Lens; selected(): string; destroy(): void;
@@ -85,14 +90,15 @@ const PANEL_STYLE = `
 .mdw button.sm{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw button.sm:hover{border-color:var(--acc)}.mdw button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 `;
 
-export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens } = { mode: "panel" }): PanelApp {
+export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens; area?: "document" | "define" | "structure" | "verify"; selected?: string; fixedContext?: boolean } = { mode: "panel" }): PanelApp {
   const compact = opt.mode === "panel";
   const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE;
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
-  let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
-  let workArea: "document" | "define" | "structure" | "verify" = "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
-  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
+  let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
+  let workArea: "document" | "define" | "structure" | "verify" = opt.area ?? "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
+  let workflowOpenMode: "tab" | "current" = "tab";
+  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
   const link = (p: string | null | undefined, label?: string, cls = ""): Node => {
@@ -416,7 +422,14 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
     const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
       ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
-    fnSelect.addEventListener("change", () => { const v = (fnSelect as HTMLSelectElement).value as V.Lens; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
+    fnSelect.addEventListener("change", () => {
+      const v = (fnSelect as HTMLSelectElement).value as V.Lens;
+      if (v === "merge") { openMerge(""); return; }
+      const area = lensArea(v) ?? workArea;
+      if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
+        void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+      } else { workArea = area; lens = v; if (v !== "edit") editEl = null; draw(); }
+    });
     // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
     // Review is contextual; the importer stays external and publishing remains under Document.
     const lensArea = (v: V.Lens): typeof workArea | null => {
@@ -433,6 +446,11 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     // The Review lens retains the prior work area so returning is predictable.
     if (lens !== "review") workArea = lensArea(lens)!;
     const goArea = (area: typeof workArea, next: V.Lens): void => {
+      if (area === workArea && next === lens) return;
+      if (workflowOpenMode === "tab" && host.openWorkflow) {
+        void host.openWorkflow(area, next, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+        return;
+      }
       workArea = area;
       lens = next;
       if (next !== "edit") editEl = null;
@@ -451,6 +469,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           else { reviewReturn = lens; lens = "review"; }
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
+    const opening = h("label", { class: "mut", title: "Choose whether switching workflows or functions opens a new tab or replaces the current Workbench view" },
+      "Open tools in ", h("select", { "aria-label": "Workflow opening behavior",
+        onchange: (e: Event) => { workflowOpenMode = (e.target as HTMLSelectElement).value as "tab" | "current"; draw(); } },
+        h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
+        h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
+    workareas.append(opening);
     // Reuse the existing ranked model-note search for this first navigation increment.
     // Full search unification, structured result metadata and performance tests remain separate passes.
     const searchInput = h("input", { type: "search", "aria-label": "Search engineering information",
@@ -555,12 +579,18 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     editRelationship(ref) { openEditor(ref); },
     select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
     setCanvasSelection(paths) {
+      if (pinned) return; // Dedicated workflow tabs retain their original context.
       const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
       if (paths.length === 1) { if (lens === "common") lens = "note"; if (!pinned && (!ix || ix.notes.has(paths[0]!))) sel = paths[0]!; }
       else if (paths.length >= 2) lens = "common";
       editEl = lens === "edit" ? editEl : null; draw();
     },
     setLens(l) { lens = l; editEl = null; draw(); },
+    setWorkflow(area, nextLens, selected) {
+      workArea = area; lens = nextLens; if (selected) sel = selected;
+      editEl = null; draw();
+    },
+    area: () => workArea,
     lens: () => lens, selected: () => sel,
     destroy() { wrap.remove(); style.remove(); },
   };
