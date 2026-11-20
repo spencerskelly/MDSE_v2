@@ -33,11 +33,11 @@ The older "Workbench not built" and "Phase 3 editing not started" descriptions a
 
 ## Four-workflow UX being developed
 
-- **Document:** engineering note and content investigation; full Markdown search, contextual template launcher and publishing are not yet fully implemented.
+- **Document:** engineering note and content investigation; the first contextual **+ New…** launcher now supports ordinary Daily, Meeting, Transcript and Engineering Note templates without SysML identity, plus governed Document creation. Full ordinary-Markdown search and publishing remain open.
 - **Define:** needs, requirements, behavior/functions and semantic trace/editing.
 - **Structure:** parts, BOMs, configurations, interfaces, ports and connections.
 - **Verify:** requirement coverage and verification relationships; test-plan/execution workflow remains to be built.
-- **Shared interaction:** selected item and global governed-note search; ranked shared-neighbor discovery from N-of-N to 1-of-N; temporary/kept/dismissed candidates on scratch Canvases, workflow filters and All relationships; explicit modeled relationship editing.
+- **Shared interaction:** workflow-specific **+ New…** menus for model records (using the validated element planner) and plain documentation (no UID/SysML); selected item and global governed-note search; ranked shared-neighbor discovery from N-of-N to 1-of-N; temporary/kept/dismissed candidates on scratch Canvases, workflow filters and All relationships; explicit modeled relationship editing.
 - **Workspace preservation:** changing workflows or functions defaults to a *new* Workbench tab; a choice exists to reuse the current Workbench. Per-view Follow / Pin isolates the selection; Edit pins the item. A selected element can be opened directly in any workflow through the Workbench header or a governed note's context menu.
 
 All of these statements concern review-branch **source**, not an installed or runtime-accepted release. See [Workbench README](../tools/workbench/README.md) and [update and acceptance checklist](TOOLSET_UPDATE.md).
