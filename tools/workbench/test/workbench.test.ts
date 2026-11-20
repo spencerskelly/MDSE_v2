@@ -2,12 +2,31 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
-import { followSelection } from "../src/panel.ts";
+import { followSelection, openInNewWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
 import { importedVault, classes } from "./harness.ts";
 
 const files = await importedVault();
 const ix = buildIndex(files, { classes, parserReport: files.get("99_System/11_Import/Parser Check.md") });
 const byTitle = (t: string): string => [...ix.notes.values()].find((n) => n.title === t)!.path;
+
+test("Open in workflow launches independent tabs with the exact selected engineering item", async () => {
+  const path = byTitle("Charger"), prior = { path, workflow: "document", lens: "note", pinned: true };
+  const calls: Array<[string, string, string]> = [];
+  const host = { openWorkflow: async (area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string) =>
+    { calls.push([area, lens, selected]); } };
+  for (const area of ["document", "define", "structure", "verify"] as const) await openInNewWorkflow(host, area, path);
+  assert.deepEqual(calls, [
+    ["document", "note", path], ["define", "functional", path],
+    ["structure", "structure", path], ["verify", "requirements", path],
+  ], "each new workflow starts on the right engineering view with the same selected element");
+  assert.deepEqual(WORKFLOW_ENTRY_LENS, {
+    document: "note", define: "functional", structure: "structure", verify: "requirements",
+  });
+  assert.deepEqual(prior, { path, workflow: "document", lens: "note", pinned: true },
+    "the source tab's selected element, lens and pin state are never modified");
+  await assert.rejects(openInNewWorkflow({}, "document", path), /Choose a governed engineering item/);
+  await assert.rejects(openInNewWorkflow(host, "define", ""), /Choose a governed engineering item/);
+});
 
 test("Workbench Follow and Pin isolate selection and protect active editing", () => {
   const paths = [...ix.notes.keys()].slice(0, 2);
