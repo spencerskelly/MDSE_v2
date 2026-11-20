@@ -221,21 +221,36 @@ class QuickCreateModal extends obsidian.Modal {
     const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
     preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
     const status = el.createEl("p", { cls: "setting-item-description" });
+    const relationshipPreview = el.createDiv();
+    relationshipPreview.style.maxHeight = "220px"; relationshipPreview.style.overflow = "auto";
     const buttons = el.createDiv({ cls: "modal-button-container" });
     const see = buttons.createEl("button", { text: "Preview" });
     const apply = buttons.createEl("button", { text: "Create", cls: "mod-cta" }); apply.disabled = true;
     buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     let plan: any = null;
-    function invalidate() { plan = null; apply.disabled = true; preview.setText(""); status.setText("Preview required before creating."); }
+    function invalidate() { plan = null; apply.disabled = true; preview.setText(""); relationshipPreview.empty(); status.setText("Preview required before creating."); }
     invalidate();
     see.addEventListener("click", () => {
       const existing = new Set<string>([...p.files.keys(), ...[...p.ix.notes.keys()]]);
       plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
         WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      relationshipPreview.empty();
       if (plan.problems.length) {
         status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
       }
       preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
+      if (t.kind === "governed") {
+        const proposals = WB.previewContextLinks(p.ix, p.files, this.origin, plan);
+        relationshipPreview.createEl("h4", { text: "Potential relationships — preview only" });
+        relationshipPreview.createEl("p", { cls: "setting-item-description", text: proposals.message });
+        for (const c of proposals.choices.slice(0, 12)) {
+          const source = c.from === this.origin ? "Selected element" : "New element";
+          const target = c.to === this.origin ? "Selected element" : "New element";
+          relationshipPreview.createEl("div", { text: source + " → " + target + " · " + c.label });
+        }
+        if (proposals.choices.length > 12)
+          relationshipPreview.createEl("p", { cls: "setting-item-description", text: "And " + (proposals.choices.length - 12) + " more valid options after creation." });
+      }
       status.setText(plan.summary); apply.disabled = false;
     });
     apply.addEventListener("click", async () => {
@@ -256,6 +271,7 @@ class QuickCreateModal extends obsidian.Modal {
         notice.append("MDSE: " + result.message + " ", undoButton);
         new obsidian.Notice(notice, 15000);
         // Creating the note is complete. Link approval, if offered, is a separate operation.
+        relationshipPreview.empty(); // Replace hypothetical candidates with the actual post-creation validation.
         const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
           ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
         if (!linkOptions.length) { this.close(); return; }
