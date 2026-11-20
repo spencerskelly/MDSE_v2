@@ -12,6 +12,7 @@ declare const CLASSES: any;
 declare const MDSE: any;
 declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
+  WORKFLOW_ENTRY_LENS: Record<"document" | "define" | "structure" | "verify", string>;
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
@@ -801,6 +802,18 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("file-menu", (menu: any, f: any) => {
       if (f?.extension !== "md") return;
       menu.addItem((i: any) => i.setTitle("Show in MDSE Workbench").setIcon("network").onClick(async () => { await this.openPanel(); await this.ensureIndex(); this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); }));
+      menu.addItem((i: any) => i.setTitle("Open in MDSE workflow…").setIcon("copy-plus").onClick(async () => {
+        try {
+          await this.ensureIndex();
+          if (!this.ix?.notes.has(f.path)) { new obsidian.Notice("MDSE: this file is not a governed model note.", 6000); return; }
+          const choices = (["document", "define", "structure", "verify"] as const).map((area) => ({
+            area, lens: WB.WORKFLOW_ENTRY_LENS[area], label: area.charAt(0).toUpperCase() + area.slice(1),
+          }));
+          new PickModal(this.app, "Open note in new MDSE workflow tab", choices, (x: any) => x.label,
+            (x: any) => { void this.openWorkflowTab(x.area, x.lens, f.path).catch((e: any) =>
+              new obsidian.Notice("MDSE: could not open workflow: " + String(e?.message ?? e), 8000)); }).open();
+        } catch (e: any) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
+      }));
       menu.addItem((i: any) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
