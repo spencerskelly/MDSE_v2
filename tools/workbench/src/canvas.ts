@@ -201,6 +201,58 @@ export function commonRelated(ix: ModelIndex, paths: string[]): { all: Array<{ p
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
 }
 
+/** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
+export const DISCOVERY_PREFIX = "mdse-discovery:";
+const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
+export const isDiscoveryNode = (n: CanvasNode): boolean => n.id.startsWith(DISCOVERY_PREFIX);
+
+/** Remove all temporary candidates and every line touching one. Never moves kept cards. */
+export function clearDiscovery(doc: CanvasDoc): CanvasDoc {
+  const temporary = new Set(doc.nodes.filter(isDiscoveryNode).map((n) => n.id));
+  return { nodes: doc.nodes.filter((n) => !temporary.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !temporary.has(e.fromNode) && !temporary.has(e.toNode)).map((e) => ({ ...e })) };
+}
+
+/** Overlay up to `limit` related notes on a copy of a kept view, preserving all prior card positions.
+ * For multiple sources the N-of-N / ... / 1-of-N order comes from commonRelated.
+ * Temporary status is encoded in card IDs, not in model notes or extra Canvas schema fields. */
+export function discoveryOverlay(doc: CanvasDoc, ix: ModelIndex, sources: string[], limit = 24): { doc: CanvasDoc; shown: number; available: number } {
+  const kept = clearDiscovery(doc), given = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  if (!given.length) return { doc: kept, shown: 0, available: 0 };
+  const related = commonRelated(ix, given);
+  const onCanvas = new Set(kept.nodes.map(cardNotePath).filter((p): p is string => !!p));
+  const candidates = [...related.all, ...related.some].map((x) => x.path).filter((p) => !onCanvas.has(p));
+  const chosen = candidates.slice(0, Math.max(0, Math.floor(limit)));
+  if (!chosen.length) return { doc: kept, shown: 0, available: candidates.length };
+  const before = new Set(kept.nodes.map((n) => n.id));
+  const placed = addToCanvas(kept, ix, given[0]!, chosen);
+  const renamed = new Map(placed.doc.nodes.filter((n) => !before.has(n.id)).map((n) => [n.id, DISCOVERY_PREFIX + n.id] as const));
+  const nodes = placed.doc.nodes.map((n) => renamed.has(n.id) ? { ...n, id: renamed.get(n.id)!, color: "5", text: (n.text ?? "") + DISCOVERY_MARK } : n);
+  const edges = placed.doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, shown: renamed.size, available: candidates.length };
+}
+
+/** Keep selected temporary cards, retaining their user-adjusted positions. Other candidates stay temporary. */
+export function keepDiscoveryCandidates(doc: CanvasDoc, ix: ModelIndex, paths: string[]): { doc: CanvasDoc; kept: number } {
+  const wanted = new Set(paths), renamed = new Map<string, string>();
+  const nodes = doc.nodes.map((n) => {
+    if (!isDiscoveryNode(n) || !wanted.has(cardNotePath(n) ?? "")) return { ...n };
+    const id = n.id.slice(DISCOVERY_PREFIX.length), path = cardNotePath(n)!;
+    renamed.set(n.id, id);
+    const restored = noteCard(ix, path, id);
+    return { ...n, id, color: restored.color, text: (n.text ?? "").replace(DISCOVERY_MARK, "") };
+  });
+  const edges = doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, kept: renamed.size };
+}
+
+/** Dismiss only the requested temporary candidates, leaving kept cards and other candidates intact. */
+export function dismissDiscoveryCandidates(doc: CanvasDoc, paths: string[]): { doc: CanvasDoc; dismissed: number } {
+  const wanted = new Set(paths), removed = new Set(doc.nodes.filter((n) => isDiscoveryNode(n) && wanted.has(cardNotePath(n) ?? "")).map((n) => n.id));
+  return { doc: { nodes: doc.nodes.filter((n) => !removed.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !removed.has(e.fromNode) && !removed.has(e.toNode)).map((e) => ({ ...e })) }, dismissed: removed.size };
+}
+
 /** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
 // D-0102: layoutTier (below) says which row a note belongs in
 
