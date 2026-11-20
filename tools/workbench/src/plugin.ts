@@ -130,7 +130,8 @@ class QuickCreateModal extends obsidian.Modal {
       text: t.kind === "plain" ? "Ordinary Markdown: no governed ID, UID, SysML model element or automatic relationship." :
         "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
     const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
-    let title = t.id === "daily" ? new Date().toLocaleDateString("en-CA") : "", folder = originFolder, detail = "";
+    const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    let title = t.id === "daily" ? dateLabel : "", folder = originFolder, detail = "";
     new obsidian.Setting(el).setName("Name").addText((x: any) =>
       x.setPlaceholder("New note title").setValue(title).onChange((v: string) => { title = v; invalidate(); }));
     new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
@@ -165,7 +166,15 @@ class QuickCreateModal extends obsidian.Modal {
         const result = await p.applyPlan(plan);
         const file = p.app.vault.getAbstractFileByPath(createdPath);
         if (file) await mainLeaf(p.app).openFile(file);
-        new obsidian.Notice("MDSE: " + result.message, 7000);
+        const notice = document.createDocumentFragment(), undoButton = document.createElement("button");
+        undoButton.textContent = "Undo"; undoButton.style.marginLeft = "0.5em";
+        undoButton.onclick = async () => {
+          undoButton.disabled = true;
+          try { new obsidian.Notice("MDSE: " + (await result.undo())); }
+          catch (err: any) { new obsidian.Notice("MDSE: undo failed: " + String(err?.message ?? err), 8000); }
+        };
+        notice.append("MDSE: " + result.message + " ", undoButton);
+        new obsidian.Notice(notice, 15000);
         this.close();
       } catch (err: any) {
         status.setText("Could not create: " + String(err?.message ?? err) + ". Preview again.");
