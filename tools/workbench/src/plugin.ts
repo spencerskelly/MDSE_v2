@@ -475,8 +475,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
   async openTable(lens: string) {
     await this.ensureIndex();
-    let leaf = this.app.workspace.getLeavesOfType(TABLE)[0];
-    if (!leaf) leaf = mainLeaf(this.app);
+    // Never repurpose an existing table when the engineer opens a different function.
+    const leaf = mainLeaf(this.app);
     await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
