@@ -65,11 +65,11 @@ const PANEL_STYLE = `
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
 .mdp .workareas{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .workareas button{font-size:12px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdp .workareas button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}.mdp .workareas button:disabled{opacity:.48;cursor:not-allowed}.mdp .workareas button.review{margin-left:auto}
-.mdp .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
-.mdp .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
-.mdp .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
-.mdp .searchhits button:hover,.mdp .searchhits button:focus-visible{background:var(--bg)}
-.mdp .searchhits small{display:block;color:var(--mut);font-size:11px}
+.mdw .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdw .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
+.mdw .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
+.mdw .searchhits button:hover,.mdw .searchhits button:focus-visible{background:var(--bg)}
+.mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -520,7 +520,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
     if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, workareas, searchBox, toolbar, acts, ...(status ? [status] : []), body); }
-    else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
+    else wrap.replaceChildren(header, searchBox, lenses, ...(status ? [status] : []), body);
   }
   draw();
 
