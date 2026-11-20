@@ -628,13 +628,13 @@ test("workflow discovery filters candidates, retains ranking and permits all rel
   assert.deepEqual(names("document"), [doc]);
   assert.deepEqual(names("define"), [def]);
   assert.deepEqual(names("structure"), [structure]);
-  assert.deepEqual(names("verify"), [verify]);
+  assert.deepEqual(names("verify"), [def, verify].sort(), "Verify includes verification and requirement-satisfaction context");
   assert.deepEqual(names("structure", true), [doc, def, structure, verify].sort(), "All override must not hide cross-workflow connections");
   const r = commonRelated(fixture, [source, second], ["verifies"]);
   assert.deepEqual(r.all.map((x) => x.path), [verify]);
   assert.deepEqual(r.some, [], "filtered overlap is based on matching kinds only");
   const multi = discoveryOverlay(base, fixture, [source, second], 24, { workflow: "verify" });
-  assert.deepEqual(multi.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)), [verify]);
+  assert.deepEqual(multi.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)).sort(), [def, verify].sort(), "multi-selection retains shared verification and satisfaction context");
   assert.deepEqual(clearDiscovery(multi.doc), base, "switching discovery context cannot change kept content");
 });
 
