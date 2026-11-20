@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX prototype (draft PR #4, unmerged): Document/Define/Structure/Verify work areas, ranked N-of-N through 1-of-N related-element discovery, workflow-aware temporary Canvas candidates with Keep/Dismiss and safe Save, automatic scratch-preview discovery, new-tab workflow opening, per-view Follow/Pin, and explicit Open in workflow from selected items and note menus. Source tests pass; full generated-artifact/runtime release gates remain open. See [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). This entry does not claim a release or new governance decision.
+
 - Governance: posts in a body section, tags as a property, variants not in the Product list, every view opens in a new tab. IMP-138, WKB-072, D-0160, OD-39, OD-40, OD-43, OD-44
 - Governance: Product keeps Charger, BMID and Kit as categories; V1 behaviours replaced with SysML except discussion posts and text tags; old notes are re-imported. IMP-138, D-0159, OD-39, OD-42, OD-43
 - Workbench: Open note and note links now open in a new tab. Governance: the sales ledger defines the top products. WKB-073, WKB-072, D-0158, OD-39, OD-40
