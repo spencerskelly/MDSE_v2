@@ -86,7 +86,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
-  let workArea: "document" | "structure" | "define" = "document", reviewReturn: V.Lens = "note", searchText = "";
+  let workArea: "document" | "define" | "structure" | "verify" = "document", reviewReturn: V.Lens = "note", searchText = "";
   let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
@@ -412,10 +412,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
       ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
     fnSelect.addEventListener("change", () => { const v = (fnSelect as HTMLSelectElement).value as V.Lens; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
-    // UX pass 08A: Document / Structure / Define are the three work areas.
-    // Review is a contextual action; the importer stays a separate application.
+    // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
+    // Review is contextual; the importer stays external and publishing remains under Document.
     const lensArea = (v: V.Lens): typeof workArea | null => {
       if (v === "review") return null;
+      // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
+      if (v === "requirements" && workArea === "verify") return "verify";
       if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
       if (["functional", "states", "design", "requirements", "edit"].includes(v)) return "define";
       return "document";
@@ -430,9 +432,10 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       draw();
     };
     const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
-      ...([["Document", "document", "note"], ["Structure", "structure", "structure"], ["Define", "define", "requirements"]] as const)
+      ...([["Document", "document", "note"], ["Define", "define", "functional"], ["Structure", "structure", "structure"], ["Verify", "verify", "requirements"]] as const)
         .map(([label, id, next]) => h("button", {
           type: "button", "aria-pressed": workArea === id,
+          title: id === "verify" ? "Requirements verification trace; test plans and execution are not yet implemented" : undefined,
           onclick: () => goArea(id, next)
         }, label)),
       h("button", { type: "button", class: "review", "aria-label": "Review findings for current work",
