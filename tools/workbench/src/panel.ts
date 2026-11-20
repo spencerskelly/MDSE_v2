@@ -427,6 +427,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (v === "merge") { openMerge(""); return; }
       const area = lensArea(v) ?? workArea;
       if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
+        (fnSelect as HTMLSelectElement).value = lens; // The current Workbench stays on its original function.
         void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
       } else { workArea = area; lens = v; if (v !== "edit") editEl = null; draw(); }
     });
