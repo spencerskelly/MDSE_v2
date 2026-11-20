@@ -195,6 +195,7 @@ function hostFor(plugin: any): any {
       if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens: string) => plugin.openTable(lens),
+    currentSelection: () => plugin.selected || null,
     openWorkflow: (area: string, lens: string, selected: string) => plugin.openWorkflowTab(area, lens, selected),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
@@ -241,22 +242,24 @@ class PanelView extends obsidian.ItemView {
 
 /** Independent editor-area Workbench. Opening a workflow never repurposes an open file, Canvas, or other Workbench tab. */
 class WorkflowTabView extends obsidian.ItemView {
-  plugin: any; app_: any = null; area = "document"; lens = "note"; selected = "";
+  plugin: any; app_: any = null; area = "document"; lens = "note"; selected = ""; pinned = true;
   constructor(leaf: any, plugin: any) { super(leaf); this.plugin = plugin; }
   getViewType() { return WORKFLOW_TAB; }
   getDisplayText() { return "MDSE " + this.area.charAt(0).toUpperCase() + this.area.slice(1); }
   getIcon() { return "network"; }
-  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected }; }
+  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected, pinned: this.app_?.isPinned?.() ?? this.pinned }; }
   async setState(state: any, result: any) {
     if (state?.area && ["document", "define", "structure", "verify"].includes(state.area)) this.area = state.area;
     if (typeof state?.lens === "string") this.lens = state.lens;
     if (typeof state?.selected === "string") this.selected = state.selected;
+    if (typeof state?.pinned === "boolean") this.pinned = state.pinned;
     this.app_?.setWorkflow?.(this.area, this.lens, this.selected);
+    this.app_?.setPinned?.(this.pinned);
     await super.setState?.(state, result);
   }
   async onOpen() {
     this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
-    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: true });
+    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: this.pinned });
     this.plugin.apps.add(this.app_);
     await this.plugin.attachIndex(this.app_);
   }
