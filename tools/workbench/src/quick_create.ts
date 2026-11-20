@@ -62,3 +62,33 @@ export function contextLinkChoices(ix: ModelIndex, files: Map<string, string>, o
   }
   return out;
 }
+
+/** Evaluate a *proposed*, not-yet-written governed note against the selected existing note.
+ * Builds an ephemeral model index from the exact new-file content; neither the passed index nor
+ * the vault file map is mutated. Relationship eligibility is re-evaluated after creation.
+ * No relationship is automatically attached or stored in the proposed note. */
+import { buildIndex } from "./index.ts";
+export interface PreviewContextLinkResult { choices: ContextLinkChoice[]; message: string; createdPath: string | null }
+export function previewContextLinks(ix: ModelIndex, files: Map<string, string>, origin: string,
+  plan: { writes: Array<{ path: string; before: string | null; after: string }>; problems: string[] }): PreviewContextLinkResult {
+  const none = (message: string): PreviewContextLinkResult => ({ choices: [], message, createdPath: null });
+  if (plan.problems.length || plan.writes.length !== 1 || plan.writes[0]!.before !== null)
+    return none("Preview a valid new governed element before checking relationships.");
+  if (!origin || !ix.notes.has(origin) || !files.has(origin))
+    return none("No governed source element selected. This new note will remain independent.");
+  const candidate = plan.writes[0]!;
+  if (files.has(candidate.path)) return none("The proposed note already exists. Preview again.");
+  const simulated = new Map(files);
+  simulated.set(candidate.path, candidate.after);
+  const stagedIndex = buildIndex(simulated);
+  if (!stagedIndex.notes.has(candidate.path) || !stagedIndex.notes.get(candidate.path)?.def)
+    return none("The proposed note has no native SysML definition to relate.");
+  const choices = contextLinkChoices(stagedIndex, simulated, origin, candidate.path);
+  const priority: Record<string, number> = { verify: 0, satisfy: 1, derivedFrom: 2, perform: 3,
+    owns: 4, specializes: 5, include: 6, extend: 7, allocate: 8, refines: 9, dependsOn: 10 };
+  choices.sort((a, b) => (priority[a.rel] ?? 50) - (priority[b.rel] ?? 50) ||
+    a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.rel.localeCompare(b.rel));
+  return { choices, createdPath: candidate.path, message: choices.length
+    ? "Potential native relationships (not saved). Choose Create, then separately review and Apply a relationship."
+    : "No native SysML relationship is currently eligible. You can create the note independently." };
+}
