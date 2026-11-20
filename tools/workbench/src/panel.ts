@@ -8,6 +8,7 @@ import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
 import * as OL from "./outline.ts";
 import { relatedNotes, commonRelated } from "./canvas.ts";
+import * as QC from "./quick_create.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
@@ -23,6 +24,8 @@ export interface PanelHost {
   openTable(lens: V.Lens): void;
   /** Open an independent Workbench editor tab without replacing an open note, Canvas or other workflow. */
   openWorkflow?(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): Promise<void>;
+  /** Create a document or governed model note from a workflow-specific template, with preview before Apply. */
+  quickCreate?(templateId: string, selectedPath: string): Promise<string>;
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
@@ -543,6 +546,20 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
         h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
     workareas.append(opening);
+    if (host.quickCreate) {
+      const available = QC.quickTemplatesFor(workArea);
+      const menu = h("select", { "aria-label": "New item from workflow template",
+        title: "Create a note using a workflow-specific template. Governed model records require UID, ID and a preview; ordinary Markdown notes do not.",
+        onchange: (e: Event) => {
+          const pick = e.target as HTMLSelectElement, id = pick.value; pick.value = "";
+          if (!id) return;
+          void host.quickCreate!(id, sel).then((result) => { if (result) { msg = result; draw(); } },
+            (err) => { msg = "Could not start New: " + String((err as Error)?.message ?? err); draw(); });
+        } },
+        h("option", { value: "", selected: true }, "+ New…"),
+        ...available.map((t) => h("option", { value: t.id }, t.label + (t.kind === "plain" ? " (Markdown)" : " (model)"))));
+      workareas.append(menu);
+    }
     // Reuse the existing ranked model-note search for this first navigation increment.
     // Full search unification, structured result metadata and performance tests remain separate passes.
     const searchInput = h("input", { type: "search", "aria-label": "Search engineering information",
