@@ -17,6 +17,8 @@ import type { EditHost } from "./edit_ui.ts";
 export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
 export interface PanelHost {
   openNote(path: string): void;
+  /** Current globally selected model item, used only when the engineer explicitly enables Follow. */
+  currentSelection?(): string | null;
   /** Open the table for a lens in the main window. */
   openTable(lens: V.Lens): void;
   /** Open an independent Workbench editor tab without replacing an open note, Canvas or other workflow. */
@@ -65,9 +67,16 @@ export interface PanelApp {
   /** Restore a workflow tab's own state, independent of other open Workbench tabs. */
   setWorkflow(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): void;
   area(): "document" | "define" | "structure" | "verify";
+  isPinned(): boolean;
+  setPinned(pinned: boolean): void;
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
   lens(): V.Lens; selected(): string; destroy(): void;
+}
+
+/** Context isolation: pinned views, active editing, and unresolved paths must never silently change the selected item. */
+export function followSelection(ix: ModelIndex | null, current: string, proposed: string | null | undefined, pinned: boolean, editing: boolean): string {
+  return !pinned && !editing && !!proposed && !!ix?.notes.has(proposed) ? proposed : current;
 }
 
 const PANEL_STYLE = `
@@ -81,6 +90,7 @@ const PANEL_STYLE = `
 .mdw .searchhits button:hover,.mdw .searchhits button:focus-visible{background:var(--bg)}
 .mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
+.mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
@@ -120,7 +130,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
-  function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
+  function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
   const outlineState = new Map<string, Set<string>>();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map<string, boolean>();                                                // open/closed state of each folding section, kept across redraws
@@ -233,7 +243,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return h("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0" }, h("span", { class: "mut" }, "Compare with"),
       h("input", { type: "search", placeholder: "Search by name, id or part number", value: cmpText, "aria-label": "Search for the note to compare with", style: "flex:1;min-width:140px", onchange: (e: Event) => { cmpText = (e.target as HTMLInputElement).value; cmpOther = ""; draw(); } }), pick);
   }
-  function openMerge(other: string): void { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
+  function openMerge(other: string): void { if (!host.edit) return; pinned = true; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
 
   /* ---- lenses ---- */
   function dashboardView(): HTMLElement {
@@ -409,11 +419,24 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
 
   /* ---- shell ---- */
   const busy = (btn: HTMLElement, label: string, job: () => Promise<string>): void => { btn.setAttribute("disabled", ""); btn.textContent = label; job().then((m) => { msg = m; undo = null; }, (e) => { msg = "Failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); };
+  const setContextPinned = (nextPinned: boolean): void => {
+    if (lens === "edit" && !nextPinned) { msg = "Editing keeps this engineering item pinned. Leave Edit to enable Follow."; draw(); return; }
+    pinned = nextPinned;
+    if (!pinned) sel = followSelection(ix, sel, host.currentSelection?.(), false, false);
+    draw();
+  };
   function draw(): void {
     const n = note(sel);
+    const contextMode = h("div", { class: "contextmode", role: "group", "aria-label": "Engineering item selection mode" },
+      h("span", { class: "mut", style: "font-size:12px" }, "Selection:"),
+      h("button", { type: "button", "aria-pressed": !pinned, disabled: lens === "edit" || undefined,
+        title: "Follow engineering items selected in other notes and Canvases", onclick: () => setContextPinned(false) }, "Follow"),
+      h("button", { type: "button", "aria-pressed": pinned,
+        title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
+      pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
-      !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
+      contextMode);
     const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
       const items = g.lenses.filter((k) => (k !== "edit" && k !== "merge") || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k)![1]] as const), here = g.lenses.includes(lens);
       return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
@@ -429,7 +452,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
         (fnSelect as HTMLSelectElement).value = lens; // The current Workbench stays on its original function.
         void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
-      } else { workArea = area; lens = v; if (v !== "edit") editEl = null; draw(); }
+      } else { workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); }
     });
     // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
     // Review is contextual; the importer stays external and publishing remains under Document.
@@ -454,7 +477,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       }
       workArea = area;
       lens = next;
-      if (next !== "edit") editEl = null;
+      if (next === "edit") pinned = true; else editEl = null;
       draw();
     };
     const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
@@ -578,20 +601,23 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   return {
     setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
-    select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
+    select(p) { const next = followSelection(ix, sel, p, pinned, lens === "edit"); if (next === sel) return; sel = next; draw(); },
     setCanvasSelection(paths) {
-      if (pinned) return; // Dedicated workflow tabs retain their original context.
+      if (pinned || lens === "edit") return; // Pinned or editing views are independent of Canvas selection.
       const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
-      if (paths.length === 1) { if (lens === "common") lens = "note"; if (!pinned && (!ix || ix.notes.has(paths[0]!))) sel = paths[0]!; }
+      if (paths.length === 1) { if (lens === "common") lens = "note"; sel = followSelection(ix, sel, paths[0]!, pinned, false); }
       else if (paths.length >= 2) lens = "common";
       editEl = lens === "edit" ? editEl : null; draw();
     },
-    setLens(l) { lens = l; editEl = null; draw(); },
+    setLens(l) { lens = l; if (l === "edit") pinned = true; editEl = null; draw(); },
     setWorkflow(area, nextLens, selected) {
       workArea = area; lens = nextLens; if (selected) sel = selected;
+      if (nextLens === "edit") pinned = true;
       editEl = null; draw();
     },
     area: () => workArea,
+    isPinned: () => pinned,
+    setPinned: (next) => setContextPinned(next),
     lens: () => lens, selected: () => sel,
     destroy() { wrap.remove(); style.remove(); },
   };
