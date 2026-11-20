@@ -587,13 +587,33 @@ test("notes related to two or more chosen notes are listed, with the kinds that 
   const r = commonRelated(ix, pair);
   assert.ok(r.all.every((x) => !pair.includes(x.path) && x.by.length === 2 && x.by.every((b) => b.kinds.length)), "each is joined to both, and the chosen are left out");
   assert.ok(r.all.every((x) => relatedNotes(ix, pair[0]!).some((y) => y.path === x.path) && relatedNotes(ix, pair[1]!).some((y) => y.path === x.path)));
-  assert.deepEqual(r.some, [], "with two chosen, every shared note is in 'all'");
-  // three chosen: all is the intersection, some are joined to two
+  assert.ok(r.some.every((x) => x.count === 1), "with two chosen, partial matches touch exactly one");
+  assert.ok(r.some.every((x) => !pair.includes(x.path)), "selected notes never appear as candidates");
+  // Three chosen: all is the intersection; partial results include both 2-of-3 and 1-of-3.
   const trio = [...ix.notes.keys()].slice(0, 3), t = commonRelated(ix, trio);
-  for (const x of t.all) assert.equal(x.by.length, 3); for (const x of t.some) assert.ok(x.count >= 2 && x.count < 3);
+  for (const x of t.all) assert.equal(x.by.length, 3);
+  for (const x of t.some) assert.ok(x.count >= 1 && x.count < 3);
   assert.deepEqual(commonRelated(ix, [c]).all, [], "one note has no 'common'");
   assert.deepEqual(commonRelated(ix, ["nope.md", "nope2.md"]), { all: [], some: [] });
-  const sorted = r.some.map((x) => x.count); assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "most shared first");
+  const sorted = t.some.map((x) => x.count);
+  assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "partial matches rank from most to least common");
+});
+
+test("discovery candidates are ranked 3-of-3, 2-of-3, 1-of-3 without double counting edges", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 6).map((n) => n.path);
+  assert.equal(paths.length, 6, "fixture has enough live model notes");
+  const [a, b, c, all, two, one] = paths as [string, string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(a, all, "satisfies"), edge(b, all, "verifies"), edge(c, all, "allocatedTo"),
+    edge(a, two, "hasPart"), edge(a, two, "specializes"), edge(b, two, "hasPort"),
+    edge(c, one, "describes"),
+  ] } as unknown as typeof ix;
+  const r = commonRelated(fixture, [a, b, c]);
+  assert.deepEqual(r.all.map((x) => x.path), [all]);
+  assert.deepEqual(r.some.map((x) => [x.path, x.count]), [[two, 2], [one, 1]]);
+  assert.deepEqual(r.some[0]!.by.find((x) => x.from === a)!.kinds, ["hasPart", "specializes"]);
+  assert.deepEqual(commonRelated(fixture, [a, b, c, a]), r, "reselecting an existing source does not change counts");
 });
 
 test("added notes are placed by what they are: parts under the assembly, specializations under the general, requirements under use cases, functions and test cases under requirements, objects under functions (D-0085)", () => {
