@@ -49,9 +49,11 @@ test("member inspector keeps usage identity distinct from typed definition and t
   assert.equal(ctrl.typePath, controller, "typing resolves to the single reusable definition");
   assert.notEqual(ctrl.owner, ctrl.typePath, "the usage is not its definition note");
   assert.match(ctrl.head, /part ctrl/);
-  assert.equal(ctrl.connections.length, 1);
+  assert.equal(ctrl.connections.length, 2, "both valid and unresolved explicit connections remain visible");
   assert.equal(ctrl.connections[0]!.thisEnd.text, "ctrl.signal");
   assert.equal(ctrl.connections[0]!.thisEnd.resolved, true, "typed port exists on the controller");
+  assert.equal(ctrl.connections[1]!.thisEnd.text, "ctrl.absent");
+  assert.equal(ctrl.connections[1]!.thisEnd.resolved, false, "nonexistent ports remain visible as unresolved");
   assert.equal(ctrl.connections[0]!.otherEnd.text, "input");
   assert.equal(ctrl.connections[0]!.otherEnd.resolved, true);
   const input = members.find((m) => m.name === "input")!;
