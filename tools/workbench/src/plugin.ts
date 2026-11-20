@@ -257,7 +257,7 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
-  preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
+  preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -359,20 +359,65 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /** D-0082, D-0084: the note cards chosen on a canvas. Obsidian has no event for it, so the chosen cards are read from the canvas's own `selection` (an undocumented internal) every 300 ms while a canvas has been in front, and after a click or key press.
    *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
   canvasLeaf: any = null; canvasKey = "";
+  discoveryTimer: any = null; discoveryEpoch = 0; discoveryBusy = false;
+
+  /** Refresh only an MDSE discovery preview. Never touch a saved Canvas or a temporary card being inspected.
+   * The debounce epoch prevents stale selections from overwriting newer ones. */
+  async refreshDiscoveryOnSelection(path: string, sources: string[], epoch: number): Promise<void> {
+    if (epoch !== this.discoveryEpoch) return;
+    if (this.discoveryBusy) {
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, sources, epoch); }, 180);
+      return;
+    }
+    const rec = this.previews.get(path), t = this.canvasTarget();
+    if (!rec?.discovery || !t || t.path !== path) return;
+    this.discoveryBusy = true;
+    try {
+      await this.ensureIndex();
+      if (epoch !== this.discoveryEpoch || this.canvasTarget()?.path !== path || !this.previews.get(path)?.discovery) return;
+      await this.editTarget(t, (raw: string) => {
+        if (epoch !== this.discoveryEpoch) return null;
+        const current = parseDoc(raw);
+        const anchored = WB.addToCanvas(WB.clearDiscovery(current), this.ix, sources[0]!, sources).doc;
+        const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, rec.discovery!);
+        const next = { ...current, nodes: result.doc.nodes, edges: result.doc.edges };
+        // Register generated edges before the modify event, preventing false relationship-edit dialogs.
+        for (const id of WB.cdEdgeIds(next)) rec.edgeIds.add(id);
+        return JSON.stringify(next, null, 2);
+      });
+    } catch (e: any) {
+      new obsidian.Notice("MDSE discovery refresh failed: " + String(e?.message ?? e), 8000);
+    } finally { this.discoveryBusy = false; }
+  }
+
   canvasSelection() {
     const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
     if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
     const leaf = this.canvasLeaf, view = leaf?.view; if (!view || view.getViewType?.() !== "canvas" || !view.canvas || (view.containerEl && !view.containerEl.isConnected)) return;
     const sel = view.canvas.selection; if (!sel) return;
     const paths: string[] = [];
+    let candidateSelected = false, allIdsKnown = true;
     for (const node of sel) {
       let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const id: unknown = data?.id ?? node?.id;
+      if (typeof id !== "string") allIdsKnown = false;
+      else if (id.startsWith("mdse-discovery:")) candidateSelected = true;
       const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
       if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
     }
-    const key = paths.join("\n"); if (key === this.canvasKey) return; this.canvasKey = key;
+    const path = String(view.file?.path ?? "");
+    const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
+    if (key === this.canvasKey) return;
+    this.canvasKey = key;
+    clearTimeout(this.discoveryTimer);
+    ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
     this.selected = paths[0]!; this.apps.forEach((a: any) => { a.setCanvasSelection?.(paths); });
+    // Candidate selection is deliberately inert: otherwise clicking Keep could remove its target.
+    if (!candidateSelected && allIdsKnown && this.previews.get(path)?.discovery) {
+      const epoch = this.discoveryEpoch;
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, [...paths], epoch); }, 220);
+    }
   }
   onFileOpen(f: any) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); } }
 
@@ -536,7 +581,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
       fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
       capped: result.shown < result.available, groups: 0 });
-    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Select candidate cards, then Keep or Dismiss in Workbench; Save excludes temporary candidates.`;
+    if (this.preview) this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+    this.canvasKey = ""; // A newly opened preview is a distinct selection context.
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Selecting kept cards refreshes candidates automatically; selecting temporary cards leaves them available for Keep or Dismiss. Save excludes temporary candidates.`;
   }
 
   /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
@@ -729,5 +776,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { ++this.discoveryEpoch; clearTimeout(this.discoveryTimer); clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };
