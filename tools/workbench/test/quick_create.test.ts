@@ -145,6 +145,10 @@ test("pre-create context preview inspects a virtual governed note and never writ
 
   const repeated = previewContextLinks(ix, files, origin, child);
   assert.deepEqual(repeated, proposals, "repeated preview stays deterministic with the same plan and files");
+  const noScan = new Map(files);
+  Object.defineProperty(noScan, Symbol.iterator, { value: () => { throw new Error("Full-vault scan is forbidden in a modal preview"); } });
+  assert.deepEqual(previewContextLinks(ix, noScan, origin, child), proposals,
+    "pre-create preview reads only the two relevant notes and does not iterate the complete vault");
   assert.deepEqual(previewContextLinks(ix, files, "", child).choices, [], "no selected governed source, no link proposals");
   assert.deepEqual(previewContextLinks(ix, files, origin,
     { writes: [], problems: ["invalid"] }).choices, [], "invalid creation plan gives no proposals");
