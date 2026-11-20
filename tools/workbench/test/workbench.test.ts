@@ -117,7 +117,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -580,6 +580,35 @@ test("new notes that relate to each other sit together, and a cluster of them aw
   // a canvas with no note on it: related new notes still sit together, from the origin
   const empty = addToCanvas({ nodes: [], edges: [] }, ix, null, [c, ...rel]);
   assert.equal(empty.added, 1 + rel.length); assert.ok(empty.doc.nodes.every((n) => Math.abs(n.x) <= 4 * 1120 && Math.abs(n.y) <= 4 * 360));
+});
+
+test("discovery candidates are visible in scratch views but never survive save until kept", () => {
+  const c = byTitle("Charger"), base = pickCanvas(ix, [c], { relations: false, label: "", group: false }).doc;
+  const original = JSON.stringify(base), preview = discoveryOverlay(base, ix, [c], 3);
+  assert.equal(JSON.stringify(base), original, "discovery never mutates the existing Canvas");
+  assert.equal(preview.shown, 3);
+  assert.equal(preview.available, relatedNotes(ix, c).length);
+  const candidateCards = preview.doc.nodes.filter(isDiscoveryNode);
+  assert.equal(candidateCards.length, 3);
+  assert.ok(candidateCards.every((n) => n.color === "5" && n.text?.includes("Discovery candidate")));
+  assert.deepEqual(clearDiscovery(preview.doc), base, "saving drops every temporary card and touching line");
+  const chosen = candidateCards[0]!, path = cdNotePath(chosen)!;
+  const moved = { ...preview.doc, nodes: preview.doc.nodes.map((n) => n.id === chosen.id ? { ...n, x: n.x + 17 } : n) };
+  const keep = keepDiscoveryCandidates(moved, ix, [path]);
+  assert.equal(keep.kept, 1);
+  const keptCard = keep.doc.nodes.find((n) => cdNotePath(n) === path)!;
+  assert.ok(!isDiscoveryNode(keptCard) && !keptCard.text?.includes("Discovery candidate"));
+  assert.equal(keptCard.x, chosen.x + 17, "promoting preserves manual Canvas positioning");
+  const saved = clearDiscovery(keep.doc), ids = new Set(saved.nodes.map((n) => n.id));
+  assert.equal(saved.nodes.length, base.nodes.length + 1);
+  assert.ok(saved.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)), "no dangling discovery lines");
+  const other = candidateCards[1]!, dismissed = dismissDiscoveryCandidates(preview.doc, [cdNotePath(other)!]);
+  assert.equal(dismissed.dismissed, 1);
+  assert.equal(dismissed.doc.nodes.filter(isDiscoveryNode).length, 2);
+  assert.equal(clearDiscovery(dismissed.doc).nodes.length, base.nodes.length);
+  const refreshed = discoveryOverlay(preview.doc, ix, [c], 1);
+  assert.equal(refreshed.doc.nodes.filter(isDiscoveryNode).length, 1, "refresh replaces old candidates, not duplicate them");
+  assert.deepEqual(discoveryOverlay(base, ix, ["unknown.md"]).doc, base, "invalid sources never alter the Canvas");
 });
 
 test("notes related to two or more chosen notes are listed, with the kinds that join each (D-0084)", () => {
