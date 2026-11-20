@@ -38,6 +38,23 @@ jobs:
       - name: Single-file importer is rebuilt from source
         run: npm run check:importer
 
+  workbench-validation:
+    name: Workbench build, tests and generated output
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Workbench unit tests
+        run: npm run test:workbench
+      - name: Check committed Workbench output
+        run: npm run check:workbench
+      - name: Verify Workbench can build from source
+        if: always()
+        run: npm run build:workbench
+
   oracles-and-fixtures:
     name: Python oracles, fixtures, browser smoke
     runs-on: ubuntu-24.04
