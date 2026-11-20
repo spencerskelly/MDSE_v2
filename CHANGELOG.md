@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX increment (unmerged): contextual **+ New…** menu in each work area. Document supports ordinary Markdown Daily, Meeting, Transcript and Engineering notes without UID/SysML; the other work areas use the existing governed model creation planner (ID, UID, SysML, preview, Apply and Undo). Base Vault now generates the matching four ordinary Templater-compatible templates. Not accepted in real Obsidian; see [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md).
+
 - Review-branch UX extension (draft PR #4, unmerged): resolved relationship results now offer **↗ Workflow…** in the Note, Find similar and Common related views, opening the target note in an independent workflow tab while preserving the source view.
 - Review-branch UX prototype (draft PR #4, unmerged): Document/Define/Structure/Verify work areas, ranked N-of-N through 1-of-N related-element discovery, workflow-aware temporary Canvas candidates with Keep/Dismiss and safe Save, automatic scratch-preview discovery, new-tab workflow opening, per-view Follow/Pin, and explicit Open in workflow from selected items and note menus. Source tests pass; full generated-artifact/runtime release gates remain open. See [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). This entry does not claim a release or new governance decision.
 
