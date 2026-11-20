@@ -13,6 +13,9 @@ declare const MDSE: any;
 declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
   WORKFLOW_ENTRY_LENS: Record<"document" | "define" | "structure" | "verify", string>;
+  quickTemplate: (id: string) => { id: string; label: string; area: string; kind: "plain" | "governed"; type?: string; subtype?: string } | undefined;
+  planPlainNote: (template: any, title: string, folder: string, existing: ReadonlySet<string>) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
+  planAddElement: (ix: any, classes: any, options: { type: string; subtype: string; title: string; folder: string; text: string; author: string }) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
@@ -115,6 +118,63 @@ class PickModal extends obsidian.FuzzySuggestModal<any> {
   onChooseItem(x: any) { this.onPick(x); }
 }
 
+/** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
+ * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
+class QuickCreateModal extends obsidian.Modal {
+  plugin: any; template: any; origin: string;
+  constructor(plugin: any, template: any, origin: string) { super(plugin.app); this.plugin = plugin; this.template = template; this.origin = origin; }
+  onOpen() {
+    const p = this.plugin, t = this.template, el = this.contentEl;
+    el.empty(); el.createEl("h3", { text: "New " + t.label });
+    el.createEl("p", { cls: "setting-item-description",
+      text: t.kind === "plain" ? "Ordinary Markdown: no governed ID, UID, SysML model element or automatic relationship." :
+        "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
+    const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
+    let title = t.id === "daily" ? new Date().toLocaleDateString("en-CA") : "", folder = originFolder, detail = "";
+    new obsidian.Setting(el).setName("Name").addText((x: any) =>
+      x.setPlaceholder("New note title").setValue(title).onChange((v: string) => { title = v; invalidate(); }));
+    new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
+      .addText((x: any) => x.setValue(folder).onChange((v: string) => { folder = v; invalidate(); }));
+    if (t.kind === "governed") new obsidian.Setting(el).setName("Description / requirement text")
+      .addTextArea((x: any) => x.setValue(detail).onChange((v: string) => { detail = v; invalidate(); }));
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const status = el.createEl("p", { cls: "setting-item-description" });
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    const see = buttons.createEl("button", { text: "Preview" });
+    const apply = buttons.createEl("button", { text: "Create", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    let plan: any = null;
+    function invalidate() { plan = null; apply.disabled = true; preview.setText(""); status.setText("Preview required before creating."); }
+    invalidate();
+    see.addEventListener("click", () => {
+      const existing = new Set<string>([...p.files.keys(), ...[...p.ix.notes.keys()]]);
+      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
+        WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      if (plan.problems.length) {
+        status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
+      }
+      preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
+      status.setText(plan.summary); apply.disabled = false;
+    });
+    apply.addEventListener("click", async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true; see.disabled = true;
+      try {
+        const createdPath = plan.writes[0].path;
+        const result = await p.applyPlan(plan);
+        const file = p.app.vault.getAbstractFileByPath(createdPath);
+        if (file) await mainLeaf(p.app).openFile(file);
+        new obsidian.Notice("MDSE: " + result.message, 7000);
+        this.close();
+      } catch (err: any) {
+        status.setText("Could not create: " + String(err?.message ?? err) + ". Preview again.");
+        plan = null; see.disabled = false;
+      }
+    });
+  }
+}
+
 /** D-0161: a canvas of more than 50 elements warns and asks for a limit of up to 212. Closing without choosing cancels the canvas. */
 class LimitModal extends obsidian.Modal {
   count: number; settle: (n: number | null) => void; chosen = false;
@@ -198,6 +258,7 @@ function hostFor(plugin: any): any {
     openTable: (lens: string) => plugin.openTable(lens),
     currentSelection: () => plugin.selected || null,
     openWorkflow: (area: string, lens: string, selected: string) => plugin.openWorkflowTab(area, lens, selected),
+    quickCreate: (templateId: string, selectedPath: string) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
@@ -470,6 +531,14 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     ws.revealLeaf(leaf);
     if (requested && !wantPopout) new obsidian.Notice("MDSE: this Obsidian version does not support pop-out windows; opened in sidebar.");
+  }
+  /** Show a context-specific creation dialog; source/current workspaces remain intact. */
+  async openQuickCreate(templateId: string, selectedPath: string): Promise<string> {
+    const template = WB.quickTemplate(templateId);
+    if (!template) throw new Error("Unknown creation template: " + templateId);
+    await this.ensureIndex();
+    new QuickCreateModal(this, template, selectedPath).open();
+    return "";
   }
   /** Open a dedicated workflow in a fresh Obsidian editor tab. Never reuse a file or Canvas leaf. */
   async openWorkflowTab(area: string, lens: string, selected: string): Promise<void> {
