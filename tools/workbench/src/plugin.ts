@@ -18,6 +18,7 @@ declare const WB: {
   planAddElement: (ix: any, classes: any, options: { type: string; subtype: string; title: string; folder: string; text: string; author: string }) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
   buildIndex: (files: Map<string, string>, options: unknown) => any;
   contextLinkChoices: (ix: any, files: Map<string, string>, origin: string, created: string) => Array<{ rel: string; label: string; from: string; to: string; help: string; inputs: readonly string[]; usageKind: string }>;
+  previewContextLinks: (ix: any, files: Map<string, string>, origin: string, plan: any) => { choices: Array<{ rel: string; label: string; from: string; to: string }>; message: string; createdPath: string | null };
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
