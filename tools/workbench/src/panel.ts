@@ -65,6 +65,11 @@ const PANEL_STYLE = `
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
 .mdp .workareas{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .workareas button{font-size:12px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdp .workareas button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}.mdp .workareas button:disabled{opacity:.48;cursor:not-allowed}.mdp .workareas button.review{margin-left:auto}
+.mdp .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdp .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
+.mdp .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
+.mdp .searchhits button:hover,.mdp .searchhits button:focus-visible{background:var(--bg)}
+.mdp .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -81,6 +86,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
+  let workArea: "document" | "structure" | "define" = "document", reviewReturn: V.Lens = "note", searchText = "";
   let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
@@ -406,22 +412,61 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
       ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
     fnSelect.addEventListener("change", () => { const v = (fnSelect as HTMLSelectElement).value as V.Lens; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
-    // UX pass 08: first workflow-navigation increment. Import and Publish remain disabled until integrated.
-    // Keep the full function selector below this strip, so no existing lens becomes inaccessible.
-    const area = lens === "edit" || lens === "merge" ? "define" : lens === "review" ? "review" : "explore";
-    const areaButton = (label: string, id: string, next: V.Lens, disabled = false, title = ""): HTMLElement =>
-      h("button", { type: "button", class: id === "review" ? "review" : "", "aria-pressed": area === id,
-        disabled: disabled || undefined, title: title || undefined, onclick: () => {
-          if (disabled) return;
-          if (next === "edit" && !host.edit) return;
-          lens = next; if (next !== "edit") editEl = null; draw();
-        } }, label);
+    // UX pass 08A: Document / Structure / Define are the three work areas.
+    // Review is a contextual action; the importer stays a separate application.
+    const lensArea = (v: V.Lens): typeof workArea | null => {
+      if (v === "review") return null;
+      if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
+      if (["functional", "states", "design", "requirements", "edit"].includes(v)) return "define";
+      return "document";
+    };
+    // Align the active work area when an existing advanced function is chosen.
+    // The Review lens retains the prior work area so returning is predictable.
+    if (lens !== "review") workArea = lensArea(lens)!;
+    const goArea = (area: typeof workArea, next: V.Lens): void => {
+      workArea = area;
+      lens = next;
+      if (next !== "edit") editEl = null;
+      draw();
+    };
     const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
-      areaButton("Explore", "explore", "note"),
-      areaButton("Import", "import", "dashboard", true, "Importer integration is planned; use the existing offline importer"),
-      areaButton("Define", "define", "edit", !host.edit, host.edit ? "" : "Editing is unavailable in this view"),
-      areaButton("Publish", "publish", "dashboard", true, "Document publishing is not implemented"),
-      areaButton("Review", "review", "review"));
+      ...([["Document", "document", "note"], ["Structure", "structure", "structure"], ["Define", "define", "requirements"]] as const)
+        .map(([label, id, next]) => h("button", {
+          type: "button", "aria-pressed": workArea === id,
+          onclick: () => goArea(id, next)
+        }, label)),
+      h("button", { type: "button", class: "review", "aria-label": "Review findings for current work",
+        "aria-pressed": lens === "review", onclick: () => {
+          if (lens === "review") lens = reviewReturn;
+          else { reviewReturn = lens; lens = "review"; }
+          draw();
+        } }, lens === "review" ? "Back from Review" : "Review"));
+    // Reuse the existing ranked model-note search for this first navigation increment.
+    // Full search unification, structured result metadata and performance tests remain separate passes.
+    const searchInput = h("input", { type: "search", "aria-label": "Search engineering information",
+      placeholder: "Search names, aliases, IDs, part numbers or note text…", value: searchText,
+      oninput: (e: Event) => {
+        const inp = e.target as HTMLInputElement, pos = inp.selectionStart;
+        searchText = inp.value;
+        draw();
+        const next = wrap.querySelector(".globalsearch input") as HTMLInputElement | null;
+        next?.focus(); if (pos !== null) next?.setSelectionRange(pos, pos);
+      }
+    });
+    const searchBox = h("div", { class: "globalsearch" }, searchInput);
+    if (ix && searchText.trim()) {
+      const found = V.search(ix, searchText, 21), limited = found.slice(0, 20);
+      const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
+        ...limited.map((hit) => h("button", { type: "button",
+          onclick: () => {
+            sel = hit.path; searchText = ""; workArea = "document"; lens = "note"; editEl = null;
+            host.openNote(hit.path); draw();
+          }
+        }, hit.title, h("small", {}, [hit.id, hit.type, String(hit.meta.partNumber ?? "")].filter(Boolean).join(" · ")))));
+      if (!limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "No matching model notes."));
+      if (found.length > limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "More matches exist; refine the search."));
+      searchBox.append(hits);
+    }
     const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
@@ -474,7 +519,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
-    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, workareas, toolbar, acts, ...(status ? [status] : []), body); }
+    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, workareas, searchBox, toolbar, acts, ...(status ? [status] : []), body); }
     else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
   }
   draw();
