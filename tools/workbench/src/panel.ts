@@ -101,6 +101,7 @@ const PANEL_STYLE = `
 .mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
+.mdw .relation-workflow{margin-left:6px;max-width:110px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:5px;background:var(--bg2);color:var(--fg)}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
@@ -128,6 +129,23 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   };
   const empty = (m: string): HTMLElement => h("div", { class: "empty", style: "padding:16px 0" }, m);
   const tag = (t: string): HTMLElement => h("span", { class: "tag" }, t);
+  /** Per-result workflow handoff; never alters sel, lens, Pin, or the originating view. */
+  const relatedWorkflow = (path: string): HTMLElement | null => {
+    if (!host.openWorkflow || !note(path)) return null;
+    return h("select", { class: "relation-workflow", "aria-label": "Open related element in workflow: " + note(path)!.title,
+      title: "Open this related engineering element in another Workbench tab",
+      onchange: (e: Event) => {
+        const el = e.target as HTMLSelectElement, target = el.value as EngineeringWorkflow;
+        el.value = "";
+        if (!target) return;
+        void openInNewWorkflow(host, target, path).catch((err) => {
+          msg = "Could not open related element: " + String((err as Error)?.message ?? err); draw();
+        });
+      }
+    }, h("option", { value: "", selected: true }, "↗ Workflow…"),
+      ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]] as const)
+        .map(([label, id]) => h("option", { value: id }, label)));
+  };
 
   /* ---- generic table renderer ---- */
   const cellNode = (c: V.TableCell | undefined): Child => {
@@ -273,7 +291,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const rel = (edges: ReturnType<typeof outgoing>, dir: "out" | "in"): HTMLElement => {
       const by = new Map<string, typeof edges>(); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind)!).push(e);
       if (!by.size) return h("div", { class: "mut" }, "None.");
-      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
+      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), other ? relatedWorkflow(other) : null, e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix!, n.path), "out")], { count: outgoing(ix!, n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix!, n.path), "in")], { count: incoming(ix!, n.path).length }));
     const rn = relatedNotes(ix!, n.path);
@@ -281,7 +299,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom!(n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
       const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
-      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
     }
     if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
     return box;
@@ -393,7 +411,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const box = h("div", {}, h("div", { class: "chips" }, h("span", { class: "mut" }, "Relationship"), h("select", { "aria-label": "Relationship kind", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; simKinds = v ? [v] : []; draw(); } }, h("option", { value: "" }, "all"), ...kinds.map((k) => h("option", { value: k, selected: simKinds[0] === k }, k)))));
     if (!r.groups.length) { box.append(h("div", { class: "mut" }, all.groups.length ? "No similar notes for this relationship." : "No other note shares a relationship with this one.")); return box; }
     if (host.addToCanvas) box.append(h("div", { class: "row" }, addBtn(`Add all ${r.peers.length} to canvas`, r.peers.map((x) => x.path), "sm pri")));
-    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via)!.title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via)!.title}` : `${note(g.via)!.title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), " ", tag(note(p)!.type)))], { count: g.peers.length }));
+    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via)!.title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via)!.title}` : `${note(g.via)!.title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), relatedWorkflow(p), " ", tag(note(p)!.type)))], { count: g.peers.length }));
     return box;
   }
 
@@ -403,12 +421,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (given.length < 2) return empty("Choose two or more note cards on the canvas (hold Shift to add to a choice) and the notes related to all of them are listed here.");
     const c = commonRelated(ix!, given), kindsOf = (by: Array<{ from: string; kinds: string[] }>): string => by.map((b) => `${note(b.from)!.title}: ${b.kinds.join(", ")}`).join(" · ");
     const addBtn = (label: string, paths: string[], cls = "sm"): HTMLElement => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas!(given[0]!, paths))); return b; };
-    const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
+    const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
     const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p)!.type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0]!; openMerge(given[1]!); } }, "Merge these two…") : null;
     const cmpBtn = given.length === 2 ? h("button", { class: "sm pri", title: "List what differs between these two notes, with the structure down to the parts that differ", onclick: () => { sel = given[0]!; openCompare(given[1]!); } }, "Compare these two") : null;
     const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), cmpBtn || mergeBtn ? h("div", { class: "row" }, cmpBtn, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
-    box.append(sec("com-some", "Related to fewer than all (most common first)", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: true }));
+    box.append(sec("com-some", "Related to fewer than all (most common first)", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: true }));
     return box;
   }
 
