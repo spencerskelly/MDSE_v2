@@ -24,6 +24,11 @@ export interface PanelHost {
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  /** Show related notes as temporary candidates on a new scratch Canvas, never writing an existing saved Canvas. */
+  discoverRelated?(sources: string[]): Promise<string>;
+  /** Promote or dismiss cards selected on a discovery preview; only kept cards are saved. */
+  keepSelectedDiscovery?(): Promise<string>;
+  dismissSelectedDiscovery?(): Promise<string>;
   /** D-0088: a new canvas of the selected assembly's structure. */
   openStructureCanvas?(path: string, mode: "direct" | "full"): Promise<string>;
   /** D-0088: a new canvas (replacing the preview) of a note and the notes a view shows. */
@@ -494,9 +499,23 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           }));
         } }, "All connections canvas"));
       acts.append(allControls);
+      if (host.discoverRelated && n) {
+        const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
+        const b = h("button", { class: "sm pri", title: "Explore all directly related notes on a scratch Canvas; temporary candidates are omitted from saved views" }, "Discover neighbors");
+        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated!(sources)));
+        acts.append(b);
+      }
+      if (host.hasPreview?.()) {
+        for (const [label, action] of [["Keep selected", host.keepSelectedDiscovery], ["Dismiss selected", host.dismissSelectedDiscovery]] as const) {
+          if (!action) continue;
+          const b = h("button", { class: "sm", title: "Select candidate cards in the scratch Canvas first" }, label);
+          b.addEventListener("click", () => busy(b, "Updating…", () => action()));
+          acts.append(b);
+        }
+      }
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : lens === "compare" ? ({ ...spec, other: cmpOther } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
-      if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
+      if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;
     const body = h("div", { class: "body" });
