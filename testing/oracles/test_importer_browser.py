@@ -167,9 +167,9 @@ class VaultUpdateBrowser(unittest.TestCase):
             pg.click("#updApply")
             pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Vault changed since Preview')")
             self.assertIn("changedInObsidian", pg.evaluate("window.__read('.obsidian/app.json')"))
-            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\\n")
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\n")
             self.assertIsNone(pg.evaluate("window.__read('.obsidian/plugins/mdse-workbench/main.js')"))
-            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
             self.assertTrue(pg.is_disabled("#updApply"))
             self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/CON.md'}, {path:'Docs/trailing. '}, {path:'Docs/a.md'}, {path:'Docs/A.md'}]).length >= 3"))
             self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/Café.md'}, {path:'Docs/Cafe\\u0301.md'}]).length > 0"),
@@ -208,8 +208,8 @@ class VaultUpdateBrowser(unittest.TestCase):
             self.assertEqual(pg.evaluate("window.__read('.obsidian/app.json')"), '{"vimMode": true}')
             self.assertEqual(pg.evaluate("window.__read('.obsidian/community-plugins.json')"), '["templater-obsidian"]')
             self.assertIsNone(pg.evaluate("window.__read('.gitignore')"), "new config files must be removed in rollback")
-            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
-            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\\n")
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\n")
             self.assertTrue(pg.evaluate("""async () => {
               const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('99_System');
               const imp = await d.getDirectoryHandle('11_Import');
