@@ -241,6 +241,71 @@ class WorkbenchPlugin(unittest.TestCase):
             browser.close()
         self.assertEqual(errors, [])
 
+    def test_discovery_turns_off_for_unrelated_selection_and_manual_toggle(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        paths = list(notes)[:3]
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1200, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("""p => {
+                const [origin, neighbor, unrelated] = p;
+                const cp = '99_System/22_Views/Discovery test.canvas';
+                window.__files[cp] = JSON.stringify({
+                    nodes: [
+                        {id:'file1',type:'file',file:origin,x:0,y:0,width:280,height:120},
+                        {id:'file2',type:'file',file:neighbor,x:320,y:0,width:280,height:120},
+                        {id:'mdse-discovery:temp',type:'file',file:unrelated,x:640,y:0,width:280,height:120}
+                    ],
+                    edges: [{id:'a0',fromNode:'file1',toNode:'mdse-discovery:temp',fromSide:'right',toSide:'left',toEnd:'arrow'}]
+                });
+                const view = {file:{path:cp},containerEl:{isConnected:true},getViewType:()=> 'canvas',save:async()=>{},
+                    canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+                window.__plugin.previews.set(cp,{path:cp,fileName:'Discovery test.canvas',edgeIds:new Set(['a0']),discovery:{workflow:'structure',all:true}});
+                window.__plugin.discoveryPath = cp;
+                window.__plugin.discoveryBoundaryPaths = new Set([origin,neighbor]);
+                window.__testing = {cp,origin,neighbor,unrelated,view};
+            }""", paths)
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            pg.evaluate("""() => {
+                const t = window.__testing;
+                t.view.canvas.selection = new Set([{getData:()=>({id:'file2',type:'file',file:t.neighbor})}]);
+                window.__plugin.canvasSelection();
+            }""")
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"), "a directly related selection keeps discovery active")
+            pg.evaluate("""() => {
+                const t = window.__testing;
+                t.view.canvas.selection = new Set([{getData:()=>({id:'outside',type:'file',file:t.unrelated})}]);
+                window.__plugin.canvasSelection();
+            }""")
+            pg.wait_for_function("!window.__plugin.isDiscoveryActive()")
+            pg.wait_for_function("() => JSON.parse(window.__files[window.__testing.cp]).nodes.length === 2")
+            self.assertEqual(pg.evaluate("JSON.parse(window.__files[window.__testing.cp]).edges.length"), 0)
+            self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"), "model notes remain unchanged")
+            pg.evaluate("""() => {
+                const t=window.__testing;
+                window.__plugin.previews.get(t.cp).discovery={workflow:'structure',all:true};
+                window.__plugin.discoveryPath=t.cp;
+                window.__plugin.discoveryBoundaryPaths=new Set([t.origin,t.neighbor]);
+            }""")
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            msg = pg.evaluate("async () => await window.__plugin.stopDiscoveryOnCanvas()")
+            self.assertIn("Discover Related off", msg)
+            self.assertFalse(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_workflow_switch_stays_in_one_sidebar_and_preserves_notes(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         primary = "10_Model/Charger.md"
