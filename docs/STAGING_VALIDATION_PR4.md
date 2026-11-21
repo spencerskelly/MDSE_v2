@@ -22,6 +22,23 @@
 
 The build job regenerated both outputs *at the same source SHA*, verified `check:workbench` and `check:importer`, ran the above tests, and committed only three changed distribution files. Subsequent documentation or smoke-test changes do not alter the embedded runtime. Full CI and Python/browser-oracle evidence must be checked separately.
 
+## Shared-term connection-discovery build (Increment 24)
+
+The current paired tool distributions now include **Find shared terms** and supersede the earlier artifact commit for staging:
+
+| Item | Build evidence |
+|---|---|
+| Synchronized plugin/importer commit | `64308c8734a326827c838a7f37bbc90ad15044fd` |
+| Paired build run | [Actions 44854882175](https://github.com/spencerskelly/MDSE_v2/actions/runs/44854882175), passed |
+| Importer embedded build ID | `ed49787f64` |
+| Workbench tests | **210 passed, 0 failed** |
+| Importer tests | **140 passed, 0 failed** |
+| Core and Bootstrap tests | **15 + 5 passed, 0 failed** |
+| Generated-output consistency | **Workbench and importer checks passed** |
+| Browser-oracle and real Obsidian UX | **Not yet accepted** |
+
+Use this newer build for staging. A matching word is only evidence to consider; selected elements are added to a new grouped Canvas without creating a native relationship. **No changes were made to `main` or the live vault.**
+
 ## Stage the build without changing live
 
 1. In a local `MDSE_v2` checkout, `git fetch origin`, then `git switch ux/pass08-workarea-prototype-20261119` and `git pull --ff-only`. Record `git rev-parse HEAD`; it must contain commit `5735b195` as an ancestor. Run `npm run check:workbench && npm run check:importer`. Do not install from `main`.
