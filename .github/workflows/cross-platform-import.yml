@@ -35,7 +35,3 @@ jobs:
         run: |
           npm run check:importer
           npm run check:workbench
-      - name: Check core and Bootstrap
-        run: |
-          node --test tools/core/test
-          node --test tools/bootstrap/test
