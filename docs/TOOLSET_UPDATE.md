@@ -56,6 +56,8 @@ Review the generated diff and commit **source, tests, documentation and generate
 
 ## Step 3 — Deploy to a *staging copy* of the vault first
 
+**Cross-platform hardening candidate:** For the separate draft hardening branch, read [Windows/macOS importer staging acceptance](CROSS_PLATFORM_IMPORT_ACCEPTANCE.md). It includes preview invalidation, before-image backups for plugin and merged settings, read-back verification, best-effort rollback, and independent NTFS/APFS acceptance criteria. The prototype branch remains a separate baseline until this patch passes review.
+
 **Recommended controlled update:** Build a paired importer and Workbench as above. Open `tools/importer/dist/mdse_importer.html` in a Chromium browser (Chrome/Edge), select the staging vault folder, then use the importer's **Step 4: Preview vault update** and inspect its exact file changes. Only then choose **Apply**.
 
 The updater replaces controlled schemas, templates, plugin lock/config and Workbench runtime as documented in [importer/README](../tools/importer/README.md). It preserves model notes, attachments and user plugin `data.json`; the managed configuration replaced by the updater is archived in `99_System/11_Import/Update <date>/Replaced/` where applicable. The update produces a `Vault Update <date>.md` record. Inspect the preview carefully: managed settings **can** change.

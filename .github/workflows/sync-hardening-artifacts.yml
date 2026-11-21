@@ -1,0 +1,59 @@
+name: Build and test cross-platform hardening (review only)
+# Rebuild after full missing-directory rollback handling for interrupted import files.
+
+on:
+  push:
+    branches: [hardening/cross-platform-import-update-20261120]
+    paths: [.github/workflows/sync-hardening-artifacts.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mdse-hardening-artifacts
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'spencerskelly/MDSE_v2' && github.ref == 'refs/heads/hardening/cross-platform-import-update-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Rebuild paired Workbench and importer
+        run: npm run build
+      - name: Verify generated products
+        run: |
+          npm run check:workbench
+          npm run check:importer
+      - name: Importer and Workbench regression tests
+        run: |
+          npm run test:importer
+          npm run test:workbench
+          npm run test:core
+          npm run test:bootstrap
+      - name: Commit generated output only to hardening branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git add -- tools/workbench/dist/mdse_workbench.html \
+            tools/workbench/dist/plugin/main.js \
+            tools/workbench/dist/plugin/manifest.json \
+            tools/workbench/dist/plugin/styles.css \
+            tools/importer/dist/mdse_importer.html \
+            tools/importer/TRANSLATION.md
+          if git diff --cached --quiet; then echo "Distributions already current"; exit 0; fi
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" || {
+            echo "Branch advanced while building. Refusing mixed revision." >&2; exit 1;
+          }
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "build(hardening): synchronize paired importer and Workbench for OS safety"
+          git push origin "HEAD:$BRANCH"

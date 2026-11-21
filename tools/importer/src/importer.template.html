@@ -268,9 +268,15 @@ function writeClashes(files) {
   }
   return out;
 }
+function unsafeFolderReason() {
+  if (!vaultHandle) return "Choose a writable vault folder.";
+  if (!vaultExists && allPaths.size)
+    return "This folder has existing files but no vault marker (.vault.yaml or .obsidian). Choose the actual vault root or an empty folder; refusing to initialize inside unrelated data.";
+  return "";
+}
 function refreshButtons() {
   const ready = !!person && (!!source || !!bom);
-  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
+  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle && !unsafeFolderReason()); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
   $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
   $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
 }
@@ -278,6 +284,7 @@ $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    pendingUpdate = null; $("updApply").disabled = true;
     await rescanVault(); const files = vaultFiles;
     if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The whole vault will be written into it.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
@@ -452,16 +459,55 @@ $("genCheck").addEventListener("click", async () => {
 /* A name the browser or Windows would refuse (the same rules as safeName): checked before anything is written, so a bad name is listed, not found halfway. */
 const FS_ILLEGAL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufff9-\uffff<>:"\\|?*]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 function fsBadName(c) {
-  if (!c || c === "." || c === ".." || c.length > 255) return "empty, dot or too long";
+  if (!c || c === "." || c === ".." || new TextEncoder().encode(c).length > 255) return "empty, dot or longer than 255 UTF-8 bytes";
   if (FS_ILLEGAL.test(c)) { const m = FS_ILLEGAL.exec(c)[0]; return "contains U+" + m.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0"); }
   if (/[. ]$/.test(c)) return "ends with a dot or space";
   if (/^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])$/i.test(c.split(".")[0])) return "is a Windows device name";
   return "";
 }
+const portablePathKey = (p) => p.normalize("NFC").toLowerCase();
 function badPaths(files) {
-  const out = [];
-  for (const f of files) { for (const c of f.path.split("/")) { const why = fsBadName(c); if (why) { out.push(`${f.path} (“${c}” ${why})`); break; } } }
+  const out = [], seen = new Map();
+  for (const f of files) {
+    const key = portablePathKey(f.path), old = seen.get(key);
+    if (old) { out.push(`${f.path} conflicts with ${old} on a case-insensitive/Unicode-normalizing volume`); continue; }
+    seen.set(key, f.path);
+    for (const c of f.path.split("/")) {
+      const why = fsBadName(c); if (why) { out.push(`${f.path} (“${c}” ${why})`); break; }
+    }
+    // The browser hides the chosen vault root's full OS path. Keep relative paths conservative.
+    if (new TextEncoder().encode(f.path).length > 230)
+      out.push(`${f.path}: relative path exceeds 230 UTF-8 bytes; shorten folders for Windows compatibility`);
+  }
   return out;
+}
+/** Check actual directory spellings before creating ANY output. Windows and most macOS
+ * volumes fold case; macOS can also fold canonically equivalent Unicode names. */
+async function pathNameConflicts(root, paths) {
+  const errors = [], cache = new Map([["", { handle: root, names: null }]]);
+  for (const path of paths) {
+    let prefix = "", dir = root;
+    for (const segment of path.split("/")) {
+      let entry = cache.get(prefix);
+      if (!entry || entry.handle !== dir) { entry = { handle: dir, names: null }; cache.set(prefix, entry); }
+      if (!entry.names) {
+        entry.names = new Map();
+        for await (const [name, h] of dir.entries()) {
+          const key = portablePathKey(name);
+          if (!entry.names.has(key)) entry.names.set(key, { name, h });
+        }
+      }
+      const actual = entry.names.get(portablePathKey(segment));
+      if (!actual) break; // Remaining segments will be newly created.
+      if (actual.name !== segment) {
+        errors.push(`${path}: existing path segment “${actual.name}” differs from requested “${segment}”`);
+        break;
+      }
+      if (actual.h.kind !== "directory") break;
+      dir = actual.h; prefix += "/" + segment;
+    }
+  }
+  return errors;
 }
 const dirCache = new Map();   // folder path -> handle, per root; 23,000 files would otherwise walk the tree 23,000 times
 async function dirFor(root, parts) {
@@ -495,9 +541,96 @@ async function writeFile(root, path, text) {   // text is a string or a Uint8Arr
     }
   }
 }
+/** Read the original bytes of a target (including PDFs/binaries), without creating it. */
+async function existingVaultFile(path) {
+  try {
+    const parts = path.split("/"); let dir = vaultHandle;
+    for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+    return await (await dir.getFileHandle(parts.at(-1))).getFile();
+  } catch (e) {
+    if (e && e.name === "NotFoundError") return null;
+    throw new Error(`Cannot inspect existing target ${path}: ${e && e.message || e}`);
+  }
+}
+const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+/** Apply imported notes and attachments with a recoverable before-image.
+ * A missed permission/race/conflict aborts instead of silently overwriting an edited note.
+ * Recovery archives are intentionally left in place even after successful Apply. */
+async function safeImportWrite(files, originallyScanned, onProgress) {
+  const paths = badPaths(files);
+  if (paths.length) throw new Error("Unsafe Windows/macOS output: " + paths.slice(0, 3).join("; "));
+  const caseConflicts = await pathNameConflicts(vaultHandle, files.map((f) => f.path));
+  if (caseConflicts.length) throw new Error("Case/Unicode collision: " + caseConflicts.slice(0, 3).join("; "));
+  const encode = new TextEncoder(), originals = new Map(), writes = [];
+  for (const f of files) {
+    const file = await existingVaultFile(f.path);
+    if (file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const oldText = originallyScanned.get(f.path);
+      if (oldText !== undefined && /\.md$/i.test(f.path) &&
+          new TextDecoder().decode(bytes) !== oldText)
+        throw new Error("Engineering note was edited during import preparation: " + f.path + ". Rescan before Apply.");
+      const proposed = f.bytes || encode.encode(f.content);
+      if (sameBytes(bytes, proposed)) continue; // Identical output: no write or backup required.
+      originals.set(f.path, bytes);
+    } else originals.set(f.path, null);
+    writes.push(f);
+  }
+  if (!writes.length) return 0;
+  const stamp = localIso().replace("T", " ").replace(/:/g, ".");
+  const backupRoot = `99_System/11_Import/Import ${stamp}/Replaced/`;
+  const backups = [...originals].filter(([, b]) => b !== null).map(([path, bytes]) => ({
+    path: backupRoot + path, bytes
+  }));
+  const archivePaths = backups.map((b) => b.path);
+  const archiveErrors = badPaths(backups).concat(await pathNameConflicts(vaultHandle, archivePaths));
+  if (archiveErrors.length) throw new Error("Unsafe recovery archive: " + archiveErrors.slice(0, 3).join("; "));
+  for (const archive of archivePaths) if (await existingVaultFile(archive))
+    throw new Error("A recovery archive already exists: " + archive + ". Retry without overwriting it.");
+  // Complete and verify ALL before-images before modifying a model file or plugin.
+  for (const b of backups) {
+    await writeFile(vaultHandle, b.path, b.bytes);
+    const f = await existingVaultFile(b.path);
+    if (!f || !sameBytes(new Uint8Array(await f.arrayBuffer()), b.bytes))
+      throw new Error("Recovery archive could not be verified: " + b.path);
+  }
+  const touched = [];
+  try {
+    let n = 0;
+    for (const f of writes) {
+      // Detect an edit occurring after preflight and before a particular write.
+      const current = await existingVaultFile(f.path), old = originals.get(f.path);
+      if ((!current && old !== null) || (current && old === null) ||
+        (current && old !== null && !sameBytes(new Uint8Array(await current.arrayBuffer()), old)))
+        throw new Error("Target changed during import: " + f.path + ". No further writes attempted.");
+      touched.push(f.path);
+      const proposed = f.bytes || encode.encode(f.content);
+      await writeFile(vaultHandle, f.path, proposed);
+      const check = await existingVaultFile(f.path);
+      if (!check || !sameBytes(new Uint8Array(await check.arrayBuffer()), proposed))
+        throw new Error("Import read-back verification failed: " + f.path);
+      noteWritten(f); n++;
+      if (n % 20 === 0 || n === writes.length) { onProgress(n, writes.length); await sleep(0); }
+    }
+    return n;
+  } catch (err) {
+    const failures = [];
+    for (const path of touched.reverse()) {
+      try {
+        const before = originals.get(path);
+        if (before === null) await removeVaultFile(path);
+        else if (before) await writeFile(vaultHandle, path, before);
+        else throw new Error("missing original snapshot");
+      } catch (e) { failures.push(path + ": " + (e.message || e)); }
+    }
+    throw new Error(`Import stopped and attempted rollback: ${err.message || err}.${failures.length ? " INCOMPLETE rollback: " + failures.slice(0, 5).join("; ") : " Original files restored where possible."} Recovery archives remain under ${backupRoot}`);
+  }
+}
 $("genAdd").addEventListener("click", async () => {
   try {
     progStart(STAGES); await rescanVault();
+    const unsafe = unsafeFolderReason();
+    if (unsafe) throw new Error(unsafe);
     const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
     if (vaultExists) {
       if ($("toolUpd").checked) {
@@ -514,21 +647,52 @@ $("genAdd").addEventListener("click", async () => {
     if (bad.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written by the browser; nothing was written.</span><pre>${esc(bad.slice(0, 25).join("\n"))}${bad.length > 25 ? "\n… and " + (bad.length - 25) + " more" : ""}</pre>`; return; }
     const clash = writeClashes(r.files);
     if (clash.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${clash.length} note(s) would replace or duplicate a different note in this folder; nothing was written.</span><pre>${esc(clash.slice(0, 25).join("\n"))}${clash.length > 25 ? "\n… and " + (clash.length - 25) + " more" : ""}</pre>`; return; }
-    if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
-    let n = 0;
-    for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); noteWritten(f); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
-    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`); await rescanVault();
+    if (!confirm(`Write up to ${r.files.length} file(s) into "${vaultHandle.name}"? Existing files will be archived before changes; nothing will be deleted unless recovering a failed write.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
+    const n = await safeImportWrite(r.files, new Map(vaultFiles || []), (done, total) => stageAt(4, done / total, `Writing/verifying files (${done} of ${total})`));
+    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote and verified ${n} changed file(s) into ${esc(vaultHandle.name)}. Recovery copies retained for existing files.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`); await rescanVault();
   } catch (e) { reportFailure(e, "write to folder"); }
 });
 
 /* ---- Maintenance: update an existing vault ----------------------------------------------------------------------------- */
 let pendingUpdate = null;
 async function readVaultFile(path) {
-  try { let dir = vaultHandle; const parts = path.split("/"); for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p); return await (await (await dir.getFileHandle(parts.at(-1))).getFile()).text(); } catch (_) { return null; }
+  try {
+    let dir = vaultHandle;
+    const parts = path.split("/");
+    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p);
+    return await (await (await dir.getFileHandle(parts.at(-1))).getFile()).text();
+  } catch (e) {
+    if (e && e.name === "NotFoundError") return null;
+    throw new Error(`Cannot safely read ${path}: ${e && e.message || e}`);
+  }
+}
+async function removeVaultFile(path) {
+  try {
+    const parts = path.split("/");
+    let dir = vaultHandle;
+    for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+    await dir.removeEntry(parts.at(-1));
+  } catch (e) {
+    // A failing first write may never have created its parent directories.
+    if (!e || e.name !== "NotFoundError") throw e;
+  }
+}
+/** Recheck the snapshot just before Apply. A changed file, a new backup/log file,
+ * or a changed target folder invalidates the preview without writing anything. */
+async function assertFreshUpdate(pending) {
+  if (vaultHandle !== pending.root) throw new Error("Target vault changed since preview. Choose Preview again.");
+  const collisions = badPaths(pending.plan.files);
+  if (collisions.length) throw new Error("Unsafe Windows/macOS path(s): " + collisions.slice(0, 3).join("; "));
+  const nameConflicts = await pathNameConflicts(vaultHandle, pending.plan.files.map((f) => f.path));
+  if (nameConflicts.length) throw new Error("Case/Unicode path conflict: " + nameConflicts.slice(0, 3).join("; "));
+  const conflicts = await verifyVaultUpdatePlan(pending.plan, readVaultFile);
+  if (conflicts.length) throw new Error("Vault changed since Preview: " + conflicts.slice(0, 5).join(", ") + ". Preview again; no files written.");
 }
 $("updPreview").addEventListener("click", async () => {
   await rescanVault();
   try {
+    const unsafe = unsafeFolderReason();
+    if (unsafe) throw new Error(unsafe);
     pendingUpdate = null; $("updApply").disabled = true; $("updStatus").textContent = "Comparing…"; $("updOut").innerHTML = "";
     const res = await planVaultUpdate({ base: BASEVAULT, read: readVaultFile, runDate: localIso() });
     const s = res.summary, shown = res.rows.filter((r) => r.action !== "same");
@@ -536,18 +700,49 @@ $("updPreview").addEventListener("click", async () => {
       (shown.length ? "<table><tr><th>File</th><th>Action</th><th>Why</th></tr>" + shown.map((r) => `<tr><td><code>${esc(r.path)}</code></td><td class="${r.action === "left" ? "mut" : r.action === "replace" ? "warn" : ""}">${r.action}</td><td>${esc(r.reason)}</td></tr>`).join("") + "</table>" : "");
     log(`vault update preview for ${vaultHandle.name}: ${JSON.stringify(s)}`);
     if (res.status === "NO_CHANGES") { $("updStatus").innerHTML = '<span class=ok>Vault configuration is already current. Nothing to do.</span>'; return; }
-    pendingUpdate = res; $("updApply").disabled = false; $("updStatus").innerHTML = `Ready: ${res.files.length} file(s) would be written (including ${s.backups} saved copy/copies and an update note). Nothing has been written yet.`;
-  } catch (e) { reportFailure(e, "preview vault update"); }
+    pendingUpdate = { plan: res, root: vaultHandle };
+    $("updApply").disabled = false; $("updStatus").innerHTML = `Ready: ${res.files.length} file(s) would be written (including ${s.backups} saved copies and an update note). Existing files will be backed up before replacement, and the preview is rechecked at Apply. Nothing has been written yet.`;
+  } catch (e) { $("updStatus").textContent = "Preview blocked: " + (e.message || e); reportFailure(e, "preview vault update"); }
 });
 $("updApply").addEventListener("click", async () => {
   if (!pendingUpdate) return;
+  const pending = pendingUpdate, res = pending.plan, changed = [];
+  pendingUpdate = null; $("updApply").disabled = true; // Cannot double-Apply a snapshot.
   try {
-    const res = pendingUpdate;
-    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { $("updStatus").textContent = "Cancelled."; return; }
-    for (const f of res.files) await writeFile(vaultHandle, f.path, f.bytes || f.content);
-    pendingUpdate = null; $("updApply").disabled = true;
-    $("updStatus").innerHTML = `<span class=ok>Updated: wrote ${res.files.length} file(s). In Obsidian, run “MDSE Bootstrap: Check and repair this vault” (or reload the app) to pick up the new plugins.</span>`; log(`vault update applied: ${res.files.length} files`);
-  } catch (e) { reportFailure(e, "apply vault update"); }
+    await assertFreshUpdate(pending);
+    if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? ${res.summary.backups} existing files will be backed up first. No engineering notes will be changed.`)) {
+      $("updStatus").textContent = "Cancelled."; return;
+    }
+    const isBackup = (path) => /^99_System\/11_Import\/Update [^/]+\/Replaced\//.test(path);
+    // Planner lists backup files first. Verify all backups before mutating any original.
+    for (const f of res.files) {
+      if (!isBackup(f.path)) continue;
+      await writeFile(vaultHandle, f.path, f.content);
+      if ((await readVaultFile(f.path)) !== f.content) throw new Error("Backup verification failed: " + f.path);
+    }
+    for (const f of res.files) {
+      if (isBackup(f.path)) continue;
+      changed.push(f.path); // Also roll back a target if its write/close failed.
+      await writeFile(vaultHandle, f.path, f.content);
+      if ((await readVaultFile(f.path)) !== f.content) throw new Error("Read-back verification failed: " + f.path);
+    }
+    $("updStatus").innerHTML = `<span class=ok>Updated and verified: ${res.files.length} file(s). Run Preview again, then reload Obsidian or run “MDSE Bootstrap: Check and repair this vault”.</span>`;
+    log(`vault update applied/verified: ${res.files.length} files`);
+  } catch (e) {
+    const failures = [];
+    // Best effort: restore original contents or remove newly created targets.
+    // Leave the verified backup directory intact for manual recovery.
+    for (const path of changed.reverse()) {
+      try {
+        const before = res.expected[path];
+        if (before === null) await removeVaultFile(path);
+        else if (typeof before === "string") await writeFile(vaultHandle, path, before);
+        else throw new Error("No snapshot");
+      } catch (error) { failures.push(path + ": " + (error.message || error)); }
+    }
+    $("updStatus").textContent = `Update stopped: ${e.message || e}. ${failures.length ? "Rollback incomplete: " + failures.slice(0, 6).join("; ") : "Written targets restored where possible."} Retain backup folder and the full vault copy.`;
+    log("vault update error: " + (e.message || e) + " · rollback errors: " + JSON.stringify(failures));
+  }
 });
 
 /* ---- Update an existing vault from a BOM (D-0051) ------------------------------------------------------------------------ */

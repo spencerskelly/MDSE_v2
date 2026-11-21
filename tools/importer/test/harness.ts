@@ -1,6 +1,8 @@
 /* Test harness: node:sqlite reader that satisfies ReaderLike, default options, and file helpers. */
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { sep } from "node:path";
 import type { ReaderLike, RawRow } from "../src/ea_source.ts";
 import type { ImportOptions } from "../src/run.ts";
 import { buildBaseVault, allPayloads } from "../../base-vault/src/base_vault.ts";
@@ -15,7 +17,7 @@ export function sqliteReader(file: string): ReaderLike & { close(): void } {
   };
 }
 const json = (p: string): any => JSON.parse(readFileSync(new URL(`../../../${p}`, import.meta.url), "utf8"));
-export const ROOT = new URL("../../../", import.meta.url).pathname;
+export const ROOT = fileURLToPath(new URL("../../../", import.meta.url)) + (fileURLToPath(new URL("../../../", import.meta.url)).endsWith(sep) ? "" : sep);
 
 export function defaultOptions(over: Partial<ImportOptions> = {}): ImportOptions {
   const classes = json("tools/core/src/classes.json");
