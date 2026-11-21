@@ -867,6 +867,41 @@ test("direct parts show only direct parts in every Structure table, and children
   const cold = addChildren({ nodes: [], edges: [] }, v, "Charger.md", ["Cable.md"]); assert.equal(cold.doc.nodes.length, 2, "the parent is put on first");
 });
 
+test("automatically reconciles all visible modeled relationships after adding parts, without moving cards or inventing links", () => {
+  const note = (id: string, title: string, parts = ""): [string, string] => [
+    `${title}.md`,
+    `---
+type: Object
+id: ${id}
+uid: 2026112100000${id.replace(/\\D/g, "").padStart(5, "0")}canvas-auto
+status: Draft
+${parts}tags: []
+---
+# ${title}
+`
+  ];
+  const local = buildIndex(new Map([
+    note("OBJ-00101", "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\\n'),
+    note("OBJ-00102", "Part A", 'hasPart: ["[[Part B]]"]\\n'),
+    note("OBJ-00103", "Part B"),
+    note("OBJ-00104", "Unrelated"),
+  ]), { classes });
+  const original = addToCanvas({ nodes: [], edges: [] }, local, null, ["Assembly.md"]).doc;
+  const placement = addChildren(original, local, "Assembly.md", ["Part A.md", "Part B.md"], { relations: false });
+  assert.equal(placement.doc.edges.length, 0, "placement can leave the canvas without generated lines");
+  const positions = JSON.stringify(placement.doc.nodes.map((n) => [n.id, n.x, n.y]));
+  const synced = refreshCanvas(placement.doc, local, { completeRelationships: true });
+  assert.equal(synced.linesAdded, 3, "the two assembly-to-part and part-to-part modeled relationships appear automatically");
+  assert.equal(JSON.stringify(synced.doc.nodes.map((n) => [n.id, n.x, n.y])), positions, "no cards moved");
+  assert.equal(refreshCanvas(synced.doc, local, { completeRelationships: true }).linesAdded, 0, "repeated reconciliation creates no duplicates");
+  const withUnrelated = addToCanvas(synced.doc, local, null, ["Unrelated.md"], { relations: false }).doc;
+  const again = refreshCanvas(withUnrelated, local, { completeRelationships: true });
+  assert.equal(again.doc.edges.length, 3, "unrelated cards do not create imaginary model relationships");
+  const custom = { id: "manual-line-1", fromNode: again.doc.nodes[0]!.id, toNode: again.doc.nodes.at(-1)!.id, fromSide: "right" as const, toSide: "left" as const, toEnd: "none" as const };
+  const manual = refreshCanvas({ ...again.doc, edges: [...again.doc.edges, custom] }, local, { completeRelationships: true });
+  assert.ok(manual.doc.edges.some((e) => e.id === custom.id), "user-drawn lines are preserved");
+});
+
 test("a retired note is a red card that names the note it went into, and Refresh redraws cards and lines from the vault without moving anything (D-0091)", () => {
   const f = (id: string, title: string, props = "", extra = ""): [string, string] => [`${title}.md`, `---\ntype: Object\nid: ${id}\nuid: 2026102500002${id.replace(/\D/g, "").padStart(4, "0")}refresh-test\nstatus: ${extra ? "Retired" : "Draft"}\n${extra}${props}tags: []\n---\n# ${title}\n`];
   const v1 = buildIndex(new Map([f("OBJ-00001", "Charger", 'hasPart: ["[[Cable]]", "[[Plug]]"]\n'), f("OBJ-00002", "Cable"), f("OBJ-00003", "Plug")]), { classes });
