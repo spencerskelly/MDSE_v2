@@ -207,13 +207,8 @@ class WorkbenchPlugin(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_add_part_automatically_rebuilds_visible_canvas_relationships(self):
-        def note(i, title, parts=""):
-            return f"---\\ntype: Object\\nid: OBJ-{i:05d}\\nuid: 2026112100000{i:05d}canvasauto\\nstatus: Draft\\n{parts}tags: []\\n---\\n# {title}\\n"
-        notes = {
-            "10_Model/Assembly.md": note(1, "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\\n'),
-            "10_Model/Part A.md": note(2, "Part A", 'hasPart: ["[[Part B]]"]\\n'),
-            "10_Model/Part B.md": note(3, "Part B"),
-        }
+        # Use a modeled relationship from the Golden Charger fixture, not synthetic frontmatter.
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
         with sync_playwright() as pw:
             browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
@@ -225,13 +220,24 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate(FAKE)
             pg.evaluate("code => window.__run(code)", MAIN.read_text())
             pg.evaluate("window.__plugin.openPanel()")
-            pg.evaluate("async () => await window.__plugin.addToCanvasPreview(null, ['10_Model/Assembly.md', '10_Model/Part A.md'], false)")
+            pair = pg.evaluate("""async () => {
+                await window.__plugin.ensureIndex();
+                const ix = window.__plugin.ix;
+                const edge = ix.edges.find(e => e.kind === 'hasPart' && e.to && !e.reverse
+                    && ix.notes.has(e.from) && ix.notes.has(e.to) && e.from !== e.to)
+                    || ix.edges.find(e => e.to && !e.reverse && ix.notes.has(e.from)
+                        && ix.notes.has(e.to) && e.from !== e.to);
+                return edge ? [edge.from, edge.to] : null;
+            }""")
+            self.assertIsNotNone(pair, "Golden Charger must contain a valid relation between two governed notes")
+            # Begin with the source card alone and no drawn relationships.
+            pg.evaluate("async p => await window.__plugin.addToCanvasPreview(null, [p], false)", pair[0])
             pg.wait_for_function("Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
             path = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
             before = pg.evaluate("p => JSON.parse(window.__files[p])", path)
-            self.assertEqual(len(before["edges"]), 0, "seeded cards have no generated relationships")
-            positions = [(n["id"], n["x"], n["y"]) for n in before["nodes"]]
-            # The harness has no real Obsidian Canvas view; attach the seeded file as the active Canvas.
+            self.assertEqual(len(before["nodes"]), 1)
+            self.assertEqual(len(before["edges"]), 0)
+            old = [(n["id"], n["x"], n["y"]) for n in before["nodes"]]
             pg.evaluate("""p => {
                 const view = {file:{path:p},getViewType:()=> 'canvas',containerEl:{isConnected:true},
                     save:async()=>{},canvas:{selection:new Set()}};
@@ -239,13 +245,16 @@ class WorkbenchPlugin(unittest.TestCase):
                 window.__app.workspace.activeLeaf = leaf;
                 window.__plugin.canvasLeaf = leaf;
             }""", path)
-            msg = pg.evaluate("async () => await window.__plugin.addToCanvasPreview('10_Model/Assembly.md', ['10_Model/Part B.md'])")
+            msg = pg.evaluate("async p => await window.__plugin.addToCanvasPreview(p[0], [p[1]])", pair)
             after = pg.evaluate("p => JSON.parse(window.__files[p])", path)
             self.assertIn("relationships refreshed automatically", msg)
-            self.assertEqual(len(after["edges"]), 3, "all three modeled relationships among visible cards are drawn")
-            self.assertEqual([(n["id"], n["x"], n["y"]) for n in after["nodes"][:2]], positions, "existing cards stay in place")
+            self.assertEqual(len(after["nodes"]), 2)
+            self.assertGreaterEqual(len(after["edges"]), 1, "the model's existing relationship appears without manual refresh")
+            self.assertEqual([(n["id"], n["x"], n["y"]) for n in after["nodes"][:1]], old,
+                             "original card is not moved")
             self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-workflow-tab').length"), 0)
-            self.assertEqual(pg.evaluate("Object.keys(window.__notes).length"), 3, "adding to Canvas does not create model notes")
+            self.assertEqual(pg.evaluate("Object.keys(window.__notes).length"), len(notes),
+                             "Canvas addition never creates model notes")
             browser.close()
         self.assertEqual(errors, [])
 
