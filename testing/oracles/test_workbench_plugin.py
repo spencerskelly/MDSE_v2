@@ -206,6 +206,65 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_related_note_checkboxes_reflect_canvas_and_update_inclusion(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pair = pg.evaluate("""async () => {
+                await window.__plugin.ensureIndex();
+                const ix = window.__plugin.ix;
+                const edge = ix.edges.find(e => e.to && !e.reverse && ix.notes.has(e.from)
+                    && ix.notes.has(e.to) && e.from !== e.to);
+                return edge ? [edge.from, edge.to, ix.notes.get(edge.to).title] : null;
+            }""")
+            self.assertIsNotNone(pair)
+            origin, neighbor, label = pair
+            canvas = "99_System/22_Views/Membership.canvas"
+            pg.evaluate("""a => {
+                const [origin,neighbor,path] = a;
+                window.__files[path] = JSON.stringify({nodes:[
+                    {id:'one',type:'file',file:origin,x:0,y:0,width:280,height:160},
+                    {id:'two',type:'file',file:neighbor,x:400,y:0,width:280,height:160}
+                ],edges:[]});
+                const view = {file:{path},getViewType:()=> 'canvas',containerEl:{isConnected:true},
+                    save:async()=>{},canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+                window.__plugin.apps.forEach(a=>a.setWorkflow('document','note',origin));
+            }""", [origin, neighbor, canvas])
+            checkbox = pg.get_by_role("checkbox", name="Include " + label).first
+            checkbox.wait_for(state="visible")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && box.checked;
+            }""", arg="Include " + label)
+            checkbox.uncheck()
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 1", arg=canvas)
+            self.assertTrue(pg.evaluate("p => JSON.parse(window.__files[p]).nodes.some(n=>n.file===p)", origin))
+            self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"),
+                             "model notes are not removed")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && !box.checked;
+            }""", arg="Include " + label)
+            checkbox = pg.get_by_role("checkbox", name="Include " + label).first
+            checkbox.check()
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 2", arg=canvas)
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_add_part_automatically_rebuilds_visible_canvas_relationships(self):
         # Use a modeled relationship from the Golden Charger fixture, not synthetic frontmatter.
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
