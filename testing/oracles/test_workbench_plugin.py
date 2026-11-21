@@ -206,6 +206,41 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_add_part_automatically_rebuilds_visible_canvas_relationships(self):
+        def note(i, title, parts=""):
+            return f"---\\ntype: Object\\nid: OBJ-{i:05d}\\nuid: 2026112100000{i:05d}canvasauto\\nstatus: Draft\\n{parts}tags: []\\n---\\n# {title}\\n"
+        notes = {
+            "10_Model/Assembly.md": note(1, "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\\n'),
+            "10_Model/Part A.md": note(2, "Part A", 'hasPart: ["[[Part B]]"]\\n'),
+            "10_Model/Part B.md": note(3, "Part B"),
+        }
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1200, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.evaluate("async () => await window.__plugin.addToCanvasPreview(null, ['10_Model/Assembly.md', '10_Model/Part A.md'], false)")
+            pg.wait_for_function("Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
+            path = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
+            before = pg.evaluate("p => JSON.parse(window.__files[p])", path)
+            self.assertEqual(len(before["edges"]), 0, "seeded cards have no generated relationships")
+            positions = [(n["id"], n["x"], n["y"]) for n in before["nodes"]]
+            msg = pg.evaluate("async () => await window.__plugin.addToCanvasPreview('10_Model/Assembly.md', ['10_Model/Part B.md'])")
+            after = pg.evaluate("p => JSON.parse(window.__files[p])", path)
+            self.assertIn("relationships refreshed automatically", msg)
+            self.assertEqual(len(after["edges"]), 3, "all three modeled relationships among visible cards are drawn")
+            self.assertEqual([(n["id"], n["x"], n["y"]) for n in after["nodes"][:2]], positions, "existing cards stay in place")
+            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-workflow-tab').length"), 0)
+            self.assertEqual(pg.evaluate("Object.keys(window.__notes).length"), 3, "adding to Canvas does not create model notes")
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_workflow_switch_stays_in_one_sidebar_and_preserves_notes(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         primary = "10_Model/Charger.md"
