@@ -29,6 +29,8 @@ export interface PanelHost {
   quickCreate?(templateId: string, selectedPath: string): Promise<string>;
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
+  /** Show one usage and its actual SysML connect/bind/flow endpoints in a new scratch Canvas tab. */
+  openMemberCanvas?(owner: string, key: string): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
@@ -309,6 +311,11 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           h("span", { class: "mut" }, [m.ref ? "ref" : "", m.dir, m.mult, m.type ? ": " + m.type : "(untyped)"].filter(Boolean).join(" ")),
           m.connections.length ? h("span", { class: "mut" }, ` · ${m.connections.length} explicit connection(s)`) : null));
       const info = h("div", { class: "member-info" });
+      if (host.openMemberCanvas) {
+        const btn = h("button", { class: "sm", title: "Visualize only this member's explicit SysML connections in a new scratch Canvas tab" }, "Canvas connections");
+        btn.addEventListener("click", () => busy(btn, "Opening…", () => host.openMemberCanvas!(n.path, m.key)));
+        info.append(h("div", { style: "margin:0 0 6px" }, btn));
+      }
       if (m.type) info.append(h("div", {}, "Type definition: ", m.typePath ? link(m.typePath) : h("span", { class: "gap" }, m.type + " (not in vault)"),
         m.typePath ? relatedWorkflow(m.typePath) : null));
       else info.append(h("div", { class: "gap" }, "Untyped usage — no type definition to navigate to."));
