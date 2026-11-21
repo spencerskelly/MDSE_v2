@@ -7,7 +7,8 @@ on:
       - 'tools/workbench/src/**'
       - 'tools/workbench/test/**'
       - 'tools/importer/src/**'
-      - '.github/workflows/prototype-build.yml'
+      - 'testing/oracles/**'
+      - '.github/workflows/integration-build.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
