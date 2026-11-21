@@ -55,6 +55,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r testing/requirements.txt
           python -m playwright install --with-deps chromium
+      - name: Build Workbench and importer under test
+        run: npm run build
+      - name: Workbench navigation regression tests
+        run: npm run test:workbench
+      - name: Importer TypeScript regression tests
+        run: npm run test:importer
       - name: Oracle tests (note format, core cross-check, QEAX reader, importer in a browser)
         run: npm run test:oracles
       - name: Golden Charger fixture extraction and regression
