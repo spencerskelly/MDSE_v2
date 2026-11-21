@@ -224,6 +224,9 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
+            # This legacy edit regression deliberately opts into in-place tool switching.
+            # New-tab preservation is tested separately; it remains the default for engineers.
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Add relationship")
 
@@ -475,6 +478,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
 
@@ -535,6 +539,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             # compare (D-0092)
             pg.select_option("select.fn", label="Compare notes")
             pg.wait_for_selector("text=Choose the second note above.")
