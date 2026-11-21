@@ -319,7 +319,7 @@ class InterruptedExistingImportBrowser(unittest.TestCase):
             self.assertIn("Injected BOM import interruption", pg.inner_text("#genStatus"))
             self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
             self.assertNotIn("INCOMPLETE rollback", pg.inner_text("#genStatus"))
-            self.assertIsNone(pg.evaluate("window.__readPart('01141-002'"),
+            self.assertIsNone(pg.evaluate("window.__readPart('01141-002')"),
                               "no partially imported part should remain after a successful rollback")
             b.close()
         self.assertEqual(errors, [])
