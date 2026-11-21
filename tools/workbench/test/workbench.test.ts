@@ -873,7 +873,7 @@ test("automatically reconciles all visible modeled relationships after adding pa
     `---
 type: Object
 id: ${id}
-uid: 2026112100000${id.replace(/\\D/g, "").padStart(5, "0")}canvas-auto
+uid: 2026112100000${id.replace(/\D/g, "").padStart(5, "0")}canvas-auto
 status: Draft
 ${parts}tags: []
 ---
@@ -881,8 +881,8 @@ ${parts}tags: []
 `
   ];
   const local = buildIndex(new Map([
-    note("OBJ-00101", "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\\n'),
-    note("OBJ-00102", "Part A", 'hasPart: ["[[Part B]]"]\\n'),
+    note("OBJ-00101", "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\n'),
+    note("OBJ-00102", "Part A", 'hasPart: ["[[Part B]]"]\n'),
     note("OBJ-00103", "Part B"),
     note("OBJ-00104", "Unrelated"),
   ]), { classes });
