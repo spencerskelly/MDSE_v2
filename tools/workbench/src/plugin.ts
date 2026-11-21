@@ -647,6 +647,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
     if (key === this.canvasKey) return;
     this.canvasKey = key;
+    this.apps.forEach((app: any) => app.reloadCanvasIncluded?.());
     clearTimeout(this.discoveryTimer);
     ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
@@ -749,6 +750,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
     const f = this.app.vault.getAbstractFileByPath(t.path);
     if (f) await this.app.vault.process(f, (x: string) => fn(x) ?? x);
+    this.apps.forEach((app: any) => app.reloadCanvasIncluded?.());
   }
   /** D-0091: re-read the vault, then bring the open canvas's note cards and Workbench lines up to date with it. */
   async refreshCanvasView(): Promise<string> {
