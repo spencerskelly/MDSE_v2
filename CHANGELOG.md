@@ -4,6 +4,23 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch connection-discovery increment (unmerged): **Find shared terms** searches governed names, aliases, descriptions, bodies, SysML and identifiers with exact words/AND; shows cross-element-type common-word frequencies and per-type results, excerpts, type facets and selected notes. The default action opens a new type-grouped scratch Canvas with only existing model links; explicit Add to current Canvas is separate. Index builds incrementally; broad result ranking is bounded per type. No automatic relationship inference or edit. See [docs/TERM_CONNECTION_DISCOVERY.md](docs/TERM_CONNECTION_DISCOVERY.md). Real Obsidian acceptance pending.
+
+- Review-branch build synchronization (unmerged): regenerated and committed matching Workbench HTML/plugin and importer HTML at `5735b195`, with `check:workbench`, `check:importer`, 207 Workbench, 140 importer, 15 core and 5 Bootstrap tests passing. Obsidian runtime acceptance remains open; see [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
+
+- Review-branch UX increment (unmerged): **Canvas connections** on an individual SysML member opens a separate scratch Canvas of explicit connectors, bindings and directional flows, with unresolved endpoint markings, shared endpoint cards and 24-line default cap. No new model notes or semantic relationships; Obsidian runtime acceptance still required.
+
+- Review-branch UX increment (unmerged): expandable and filterable **Members and explicit connections** inspector. Distinguishes owner-local usages from reusable type definitions and shows only explicit `connect`/`bind`/`flow` endpoints, including unresolved references. Member detail persists across 40-at-a-time paging; viewing typed definitions preserves the original workspace. Source-only; real Obsidian acceptance pending.
+
+- Review-branch UX increment (unmerged): preview eligible native SysML relationships and direction *before* creating a governed note by indexing the hypothetical new file in memory. No implicit links or changes to the original index; final relationship still requires a separate explicit post-create Apply. Real Obsidian acceptance pending.
+
+- Review-branch UX increment (unmerged): contextual creation from a selected engineering note offers an optional second **Review relationship** dialog with eligible native SysML direction/type, diff, explicit Apply and independent Undo. Creating a note does not silently link it, and canceling connection leaves the note independent. Runtime acceptance pending.
+
+- Review-branch UX increment (unmerged): contextual **+ New…** menu in each work area. Document supports ordinary Markdown Daily, Meeting, Transcript and Engineering notes without UID/SysML; the other work areas use the existing governed model creation planner (ID, UID, SysML, preview, Apply and Undo). Base Vault now generates the matching four ordinary Templater-compatible templates. Not accepted in real Obsidian; see [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md).
+
+- Review-branch UX extension (draft PR #4, unmerged): resolved relationship results now offer **↗ Workflow…** in the Note, Find similar and Common related views, opening the target note in an independent workflow tab while preserving the source view.
+- Review-branch UX prototype (draft PR #4, unmerged): Document/Define/Structure/Verify work areas, ranked N-of-N through 1-of-N related-element discovery, workflow-aware temporary Canvas candidates with Keep/Dismiss and safe Save, automatic scratch-preview discovery, new-tab workflow opening, per-view Follow/Pin, and explicit Open in workflow from selected items and note menus. Source tests pass; full generated-artifact/runtime release gates remain open. See [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). This entry does not claim a release or new governance decision.
+
 - Governance: posts in a body section, tags as a property, variants not in the Product list, every view opens in a new tab. IMP-138, WKB-072, D-0160, OD-39, OD-40, OD-43, OD-44
 - Governance: Product keeps Charger, BMID and Kit as categories; V1 behaviours replaced with SysML except discussion posts and text tags; old notes are re-imported. IMP-138, D-0159, OD-39, OD-42, OD-43
 - Workbench: Open note and note links now open in a new tab. Governance: the sales ledger defines the top products. WKB-073, WKB-072, D-0158, OD-39, OD-40

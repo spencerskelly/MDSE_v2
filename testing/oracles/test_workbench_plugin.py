@@ -119,11 +119,17 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertTrue({"open", "refresh", "show-note", "table", "canvas", "save-canvas"} <= cmds, cmds)
             self.assertFalse(pg.evaluate("window.__cmds['save-canvas'].checkCallback(true)"), "nothing to save yet")
 
-            # the panel opens in the RIGHT sidebar, with no browser of its own
+            # The panel opens in the RIGHT sidebar and now includes governed-note search.
+            # It still uses Obsidian's file explorer for filesystem navigation.
             pg.evaluate("window.__active = null; window.__plugin.openPanel()")
             pg.wait_for_selector("text=No model note selected")
             self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
-            self.assertEqual(pg.locator("input[type=search]").count(), 0)
+            self.assertGreaterEqual(pg.locator("input[type=search]").count(), 1)
+            self.assertEqual(pg.locator("nav.workareas").count(), 1)
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
+            # Legacy in-place lens assertions below deliberately choose the opt-in reuse mode.
+            # Default is a new independent editor tab; preserve that new default.
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
 
             # it follows the note Obsidian opens
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", PCE_PATH)
@@ -133,7 +139,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # D-0143: the functions are one grouped drop-down, not a column of buttons
             self.assertEqual(pg.locator("select.fn").count(), 1); self.assertEqual(pg.locator("nav.tbar").count(), 0)
-            self.assertEqual(pg.locator("select.fn option").count(), 18)
+            self.assertEqual(pg.locator("select.fn option").count(), 19, "Find shared terms adds one workflow function")
             pg.select_option("select.fn", label="Find similar")
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
@@ -200,6 +206,103 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_workflow_switch_creates_independent_pinned_tab_without_replacing_sidebar(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        primary = "10_Model/Charger.md"
+        other = next(p for p in notes if p != primary)
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", primary)
+            pg.wait_for_selector("header >> text=Charger")
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
+            before = pg.evaluate("""() => {
+                const v = window.__leaves.right[0].view;
+                return { count: window.__leaves.main.length, selected: v.app_.selected(), lens: v.app_.lens(),
+                  pinned: v.app_.isPinned(), files: JSON.stringify(window.__notes) };
+            }""")
+            # The default opens an independent editor tab; the original Workbench is not reused.
+            pg.locator("nav.workareas button:has-text('Structure')").first.click()
+            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-workflow-tab' && l.view.app_)")
+            state = pg.evaluate("""() => {
+                const o = window.__leaves.right[0].view.app_;
+                const n = window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_;
+                return { count: window.__leaves.main.length, old: [o.selected(), o.lens(), o.isPinned()],
+                  newly: [n.selected(), n.lens(), n.area(), n.isPinned()], files: JSON.stringify(window.__notes) };
+            }""")
+            self.assertEqual(state["old"], [before["selected"], before["lens"], before["pinned"]])
+            self.assertEqual(state["count"], before["count"] + 1)
+            self.assertEqual(state["newly"], [primary, "structure", "structure", True])
+            self.assertEqual(state["files"], before["files"])
+            # The new tab is pinned: following a different note in the sidebar may not steal its context.
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", other)
+            pg.wait_for_function("p => window.__leaves.right[0].view.app_.selected() === p", arg=other)
+            self.assertEqual(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected()"), primary)
+            # Follow is an explicit local decision, and then uses the selected item.
+            pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.setPinned(false)")
+            pg.wait_for_function("p => window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected() === p", arg=other)
+            self.assertFalse(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.isPinned()"))
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), before["files"])
+            browser.close()
+        self.assertEqual(errors, [])
+
+    def test_cross_type_term_discovery_groups_notes_and_opens_fresh_canvas_without_linking(self):
+        def record(label, kind, content, suffix):
+            return f"---\ntype: {kind}\nuid: 20261120220911{suffix}\nname: {label}\nstatus: Draft\n---\n# {label}\n\n{content}\n"
+        notes = {
+            "20/REQ.md": record("Battery Cooling", "Requirement", "The battery cooling fan shall stop at 60 C.", "req"),
+            "40/VER.md": record("Cooling verification", "Verification", "Test the battery cooling fan and record shutdown.", "ver"),
+            "30/OBJ.md": record("Cooling Fan", "Object", "Mechanical battery cooling fan motor.", "obj"),
+        }
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "20/REQ.md")
+            pg.wait_for_selector("header >> text=Battery Cooling")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
+            pg.select_option("select.fn", label="Find shared terms")
+            pg.wait_for_selector(".term-suggestions button:has-text('cooling')")
+            pg.click(".term-suggestions button:has-text('cooling')")
+            pg.wait_for_function("() => document.querySelectorAll('.term-hit').length === 3")
+            self.assertEqual(pg.locator(".term-hit").count(), 3)
+            self.assertIn("Requirement", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Verification", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Object", pg.locator(".term-discovery").inner_text())
+            pg.click("button:has-text('Select displayed')")
+            pg.wait_for_selector("text=3 selected")
+            old = pg.evaluate("JSON.stringify(window.__notes)")
+            pg.click("button:has-text('New grouped Canvas')")
+            pg.wait_for_function("() => Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
+            canvas_file = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
+            canvas = json.loads(pg.evaluate("p => window.__files[p]", canvas_file))
+            self.assertEqual(len([n for n in canvas['nodes'] if n['type'] == 'text' and n.get('text', '').startswith('**[[')]), 3,
+                             "Canvas uses link-backed text cards for actual model notes")
+            self.assertEqual(len(canvas['edges']), 0, "matching words must not invent model relationships")
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), old)
+            self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.lens()"), "terms")
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
@@ -218,6 +321,9 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
+            # This legacy edit regression deliberately opts into in-place tool switching.
+            # New-tab preservation is tested separately; it remains the default for engineers.
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Add relationship")
 
@@ -469,6 +575,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
 
@@ -489,9 +596,14 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.locator(".mded .hq:has-text('Conjugated') .q").click()
             pg.wait_for_selector(".mded .hlp b:has-text('Conjugated')")
 
+            # Editing pins the source. To inspect a different note in this same Workbench,
+            # the engineer must leave Edit and explicitly choose Follow first.
+            pg.select_option("select.fn", label="Note")
+            pg.locator("header button:has-text('Follow')").click()
             # a flow that runs against the direction is refused with the reason
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Station.md")
             pg.wait_for_selector("header >> text=Station")
+            pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
             pg.select_option("select[aria-label=Add]", "flow")
             pg.fill(".mded input[placeholder='e.g. charger.dcOut']:nth-of-type(1)", "battery.dcIn.flowOut")
@@ -529,6 +641,7 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             # compare (D-0092)
             pg.select_option("select.fn", label="Compare notes")
             pg.wait_for_selector("text=Choose the second note above.")
@@ -544,8 +657,10 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.select_option("select.fn", label="Dashboard")
             pg.select_option("select.fn", label="Merge notes")
             pg.wait_for_selector("text=/as the same part as/")
-            # two notes chosen on the canvas: the other one is already picked, and the BOM part stays
+            # A pinned Edit/Compare context ignores Canvas selection. Follow is required
+            # before the original Workbench can enter Common related from chosen cards.
             pg.select_option("select.fn", label="Common related")
+            pg.locator("header button:has-text('Follow')").click()
             pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", ["10_Model/Charger.md", "10_Model/CHG-1.md"])
             pg.click("button:has-text('Merge these two')")
             pg.wait_for_selector("text=/as the same part as/")

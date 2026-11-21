@@ -1533,27 +1533,27 @@ const funcRelated = (r         , sel        )          => r.path === sel || [r.p
 const traceRelated = (r          , sel        )          => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-                                                                                                                                                                                                                               
-const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
+                                                                                                                                                                                                                                         
+const LENSES                        = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["terms", "Find shared terms"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 const LENS_GROUPS                                                                            = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "similar", "compare", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review", "keywords"] },
-  { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
+  { id: "canvas", label: "Canvas", lenses: ["pick", "terms", "common", "layout"] },
 ];
 /** The panel's vertical toolbar: every lens once, in task groups (feature request 2026-10-29). Individual functions live here; a view's own options sit at the top of that view. `needsEdit` buttons show disabled where the host cannot edit. */
                                                                                        
 const TOOLBAR_GROUPS                                                             = [
   { id: "navigate", label: "Navigate", items: [{ lens: "dashboard", glyph: "▦", label: "Dashboard" }, { lens: "note", glyph: "☰", label: "Note" }, { lens: "tables", glyph: "▤", label: "Tables" }] },
-  { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
+  { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "terms", glyph: "≋", label: "Find shared terms" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
   { id: "trace", label: "Trace", items: [{ lens: "structure", glyph: "⌥", label: "Structure" }, { lens: "design", glyph: "◇", label: "Design types" }, { lens: "internal", glyph: "◫", label: "Internal structure" }, { lens: "functional", glyph: "ƒ", label: "Function" }, { lens: "states", glyph: "◉", label: "States" }, { lens: "requirements", glyph: "✓", label: "Requirements" }] },
   { id: "edit", label: "Create and edit", items: [{ lens: "edit", glyph: "✎", label: "Edit", needsEdit: true }, { lens: "merge", glyph: "⊕", label: "Merge notes", needsEdit: true }] },
   { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }, { lens: "keywords", glyph: "⌘", label: "Keywords (BOM categories)" }] },
   { id: "canvas", label: "Canvas", items: [{ lens: "layout", glyph: "⊞", label: "Auto-layout and refresh" }] },
 ];
-const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
+const LENS_PROFILE                       = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", terms: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
 const lensHasCanvas = (l      )          => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
-const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
+const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "terms" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
 
                                                                                                                                                    
                                         
@@ -1661,6 +1661,78 @@ function lensTables(ix            , lens      , sel        , o              = {}
     }
   }
   return out;
+}
+
+/* member_nav.ts */
+/* Inspect a SysML usage independently of the definition that types it.
+ * A usage is NOT a note: all results here are read-only, owner-local projections of the
+ * authoritative SysML text. Only explicit connect/bind/flow statements are linked. */
+
+
+
+                          
+                                                                             
+ 
+                            
+                                                                
+                                                                                                  
+                      
+                                                                       
+ 
+                        
+                                                                        
+                                                                    
+                                                         
+                                                           
+                                                             
+                                  
+ 
+function memberDetails(ix            , owner        )                 {
+  const d = ix.notes.get(owner)?.def;
+  if (!d) return [];
+  const members = d.usages.map((u       , index)               => ({
+    index, key: owner + "|" + index + "|" + u.head, owner, kind: u.kind, name: u.name,
+    head: u.head, type: u.type ?? "", typePath: u.type ? ix.bySymbol.get(u.type) ?? null : null,
+    mult: u.mult ?? "", dir: u.dir ?? "", ref: !!u.ref, conj: !!u.conj, end: !!u.end,
+    subsets: u.subsets ?? [], redefines: u.redefines ?? [], doc: u.doc ?? "",
+    props: (u.props ?? []).map((p) => ({ name: p.name, value: p.value })), connections: [],
+  }));
+  const byName = new Map                        ();
+  for (const m of members) (byName.get(m.name) ?? byName.set(m.name, []).get(m.name) ).push(m);
+  const unique = (name        )                      => {
+    const matches = byName.get(name);
+    return matches?.length === 1 ? matches[0]  : null;
+  };
+  const portCache = new Map                                        ();
+  const endpoint = (text        )                 => {
+    const segments = text.split(".");
+    const m = unique(segments[0] ?? "");
+    if (!m) return { text, usage: null, path: null, resolved: false };
+    if (segments.length === 1) return { text, usage: m.name, path: m.typePath, resolved: true };
+    if (segments.length !== 2 || m.kind !== "part" || !m.typePath)
+      return { text, usage: m.name, path: null, resolved: false };
+    let ports = portCache.get(m.typePath);
+    if (!ports) { ports = portsOfType(ix, m.typePath); portCache.set(m.typePath, ports); }
+    const p = ports.find((x) => x.name === segments[1]);
+    return { text, usage: m.name, path: p?.path ?? null, resolved: !!p };
+  };
+  for (const stmt of d.stmts) {
+    if ((stmt.kind !== "connect" && stmt.kind !== "bind" && stmt.kind !== "flow") || !stmt.a || !stmt.b) continue;
+    const a = endpoint(stmt.a), b = endpoint(stmt.b);
+    for (const [here, other] of [[a, b], [b, a]]         ) {
+      if (!here.usage) continue;
+      const match = unique(here.usage);
+      if (!match) continue;
+      // A connection between two endpoints of the same usage appears only once in that usage.
+      if (here === b && a.usage === b.usage && a.usage !== null) continue;
+      match.connections.push({
+        kind: stmt.kind, form: stmt.form ?? "", name: stmt.name ?? "",
+        position: here === a ? "a" : "b",
+        thisEnd: here, otherEnd: other, statement: stmt.text,
+      });
+    }
+  }
+  return members;
 }
 
 /* outline.ts */
@@ -1920,23 +1992,92 @@ function cardNotePath(node                        )                {
 }
 
 /** Notes related to `path` (D-0082): every resolved relationship either way, as the other note's path with the kinds that join them. */
-function relatedNotes(ix            , path        )                                           {
-  const by = new Map                     ();
+function relatedNotes(ix            , path        , kinds                    )                                           {
+  const by = new Map                     (), allow = kinds ? new Set(kinds) : null;
   for (const e of ix.edges) {
-    if (!e.to || e.reverse) continue;
+    if (!e.to || e.reverse || (allow && !allow.has(e.kind))) continue;
     const other = e.from === path ? e.to : e.to === path ? e.from : null;
     if (other && other !== path && ix.notes.has(other) && !ix.notes.get(other) .meta.mergedInto) (by.get(other) ?? by.set(other, new Set()).get(other) ).add(e.kind);
   }
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
 }
 
-/** Notes related to two or more of the given notes (D-0084). `all` are related to every one of them, with the kinds that join each; `some` are related to at least two but not all, most first. The given notes themselves are left out. */
-function commonRelated(ix            , paths          )                                                                                                                                                                             {
-  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p).map((r) => [r.path, r.kinds]         ))]         );
+/** Notes related to selected notes (D-0084 / UX discovery). `all` touch every selected source; `some` touch 1..N-1 sources, ranked most to least common. Each source counts once regardless of how many edges join it to a candidate. Selected and retired notes are excluded. */
+function commonRelated(ix            , paths          , kinds                    )                                                                                                                                                                             {
+  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p, kinds).map((r) => [r.path, r.kinds]         ))]         );
   const count = new Map                                                  ();
   for (const [p, m] of per) for (const [q, kinds] of m) if (!given.includes(q)) (count.get(q) ?? count.set(q, []).get(q) ).push({ from: p, kinds });
-  const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).filter((r) => r.count >= 2 || given.length === 1).sort((a, b) => b.count - a.count || ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
+  const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).sort((a, b) => b.count - a.count || ix.notes.get(a.path) .title.localeCompare(ix.notes.get(b.path) .title) || a.path.localeCompare(b.path));
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
+}
+
+/** Workbench-area discovery filters. These govern candidate discovery only, never model meaning.
+ * Always provide an unrestricted option because a focused view is not a complete relationship audit. */
+                                                                    
+const DISCOVERY_KINDS                                           = {
+  document: ["describes", "trace", "dependsOn", "uses", "references", "supersedes"],
+  define: ["hasRequirement", "hasAction", "hasState", "satisfies", "refines", "derivedFrom",
+    "performs", "allocatedTo", "specializes", "includes", "extendedBy", "dependsOn", "has"],
+  structure: ["hasPart", "hasPort", "hasFlow", "references", "specializes", "allocatedTo",
+    "implements", "has", "connects", "binds", "hasState"],
+  verify: ["verifies", "hasVerification", "satisfies", "derivedFrom", "refines",
+    "trace", "allocatedTo", "hasRequirement", "dependsOn"],
+};
+
+/** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
+const DISCOVERY_PREFIX = "mdse-discovery:";
+const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
+const isDiscoveryNode = (n            )          => n.id.startsWith(DISCOVERY_PREFIX);
+
+/** Remove all temporary candidates and every line touching one. Never moves kept cards. */
+function clearDiscovery(doc           )            {
+  const temporary = new Set(doc.nodes.filter(isDiscoveryNode).map((n) => n.id));
+  return { nodes: doc.nodes.filter((n) => !temporary.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !temporary.has(e.fromNode) && !temporary.has(e.toNode)).map((e) => ({ ...e })) };
+}
+
+/** Overlay up to `limit` related notes on a copy of a kept view, preserving all prior card positions.
+ * For multiple sources the N-of-N / ... / 1-of-N order comes from commonRelated.
+ * Temporary status is encoded in card IDs, not in model notes or extra Canvas schema fields. */
+function discoveryOverlay(doc           , ix            , sources          , limit = 24,
+  mode                                              = {})                                                       {
+  const kept = clearDiscovery(doc), given = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  if (!given.length) return { doc: kept, shown: 0, available: 0 };
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const related = given.length === 1
+    ? relatedNotes(ix, given[0] , kinds).map((r) => r.path)
+    : ((r) => [...r.all, ...r.some].map((x) => x.path))(commonRelated(ix, given, kinds));
+  const onCanvas = new Set(kept.nodes.map(cardNotePath).filter((p)              => !!p));
+  const candidates = related.filter((p) => !onCanvas.has(p));
+  const chosen = candidates.slice(0, Math.max(0, Math.floor(limit)));
+  if (!chosen.length) return { doc: kept, shown: 0, available: candidates.length };
+  const before = new Set(kept.nodes.map((n) => n.id));
+  const placed = addToCanvas(kept, ix, given[0] , chosen);
+  const renamed = new Map(placed.doc.nodes.filter((n) => !before.has(n.id)).map((n) => [n.id, DISCOVERY_PREFIX + n.id]         ));
+  const nodes = placed.doc.nodes.map((n) => renamed.has(n.id) ? { ...n, id: renamed.get(n.id) , color: "5", text: (n.text ?? "") + DISCOVERY_MARK } : n);
+  const edges = placed.doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, shown: renamed.size, available: candidates.length };
+}
+
+/** Keep selected temporary cards, retaining their user-adjusted positions. Other candidates stay temporary. */
+function keepDiscoveryCandidates(doc           , ix            , paths          )                                   {
+  const wanted = new Set(paths), renamed = new Map                ();
+  const nodes = doc.nodes.map((n) => {
+    if (!isDiscoveryNode(n) || !wanted.has(cardNotePath(n) ?? "")) return { ...n };
+    const id = n.id.slice(DISCOVERY_PREFIX.length), path = cardNotePath(n) ;
+    renamed.set(n.id, id);
+    const restored = noteCard(ix, path, id);
+    return { ...n, id, color: restored.color, text: (n.text ?? "").replace(DISCOVERY_MARK, "") };
+  });
+  const edges = doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, kept: renamed.size };
+}
+
+/** Dismiss only the requested temporary candidates, leaving kept cards and other candidates intact. */
+function dismissDiscoveryCandidates(doc           , paths          )                                        {
+  const wanted = new Set(paths), removed = new Set(doc.nodes.filter((n) => isDiscoveryNode(n) && wanted.has(cardNotePath(n) ?? "")).map((n) => n.id));
+  return { doc: { nodes: doc.nodes.filter((n) => !removed.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !removed.has(e.fromNode) && !removed.has(e.toNode)).map((e) => ({ ...e })) }, dismissed: removed.size };
 }
 
 /** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
@@ -2449,6 +2590,72 @@ function uniqueCanvas(ix            , pa        , pb        )               {
   edgeFix();
   const a = ix.notes.get(pa) , b = ix.notes.get(pb) ;
   return { doc: { nodes, edges }, notes: nodes.length, unresolved: 0, capped: false, fileName: `Unique - ${safe(a.title)} vs ${safe(b.title)}.canvas`, groups: 0, hidden: 0, saveFolder: undefined };
+}
+
+/* member_canvas.ts */
+/* Read-only Canvas projection of one SysML usage and its explicit connections.
+ * Canvas cards and lines never become model notes or relationship authority. */
+
+
+
+const MEMBER_CANVAS_PREFIX = "mdse-member:";
+const MEMBER_CANVAS_LIMIT = 24;
+function memberConnectionCanvas(ix            , owner        , key        ,
+  limit = MEMBER_CANVAS_LIMIT)               {
+  const n = ix.notes.get(owner);
+  const member = memberDetails(ix, owner).find((m) => m.key === key);
+  if (!n || !member) throw new Error("This SysML member no longer exists. Refresh and select it again.");
+  const total = member.connections.length, chosen = member.connections.slice(0, Math.max(0, Math.floor(limit)));
+  const capped = chosen.length < total;
+  const nodes               = [], edges               = [];
+  const ownerId = MEMBER_CANVAS_PREFIX + "owner", selectedId = MEMBER_CANVAS_PREFIX + "selected";
+  nodes.push({ id: ownerId, type: "file", file: owner, x: 340, y: -290, width: 340, height: 170 });
+  const typeLine = member.typePath
+    ? `**Type definition:** [[${member.typePath}|${member.type}]]`
+    : member.type ? `**Unresolved type:** ${member.type}` : "**Untyped usage**";
+  nodes.push({ id: selectedId, type: "text", x: 340, y: 180, width: 430, height: 190, color: "4",
+    text: [`**Selected ${member.kind} usage (not a note)**`, `\`${member.head}\``,
+      typeLine, `**Owner:** [[${owner}]]`,
+      `**Explicit links shown:** ${chosen.length} of ${total}`].join("\n\n") });
+  const endCards = new Map                    ();
+  let left = 0, right = 0, unresolved = 0;
+  for (let i = 0; i < chosen.length; i++) {
+    const c = chosen[i] , other = c.otherEnd;
+    const missing = !other.resolved || !c.thisEnd.resolved;
+    if (missing) unresolved++;
+    const side = c.kind === "flow" && c.position === "b" ? "left" : "right";
+    const idKey = side + "|" + other.text;
+    let target = endCards.get(idKey);
+    if (!target) {
+      const row = side === "left" ? left++ : right++;
+      const typ = other.path ? ix.notes.get(other.path) : null;
+      const description = other.resolved
+        ? `**Resolved member:** ${other.usage ?? "(unknown)"}`
+        : "**Unresolved endpoint — review SysML**";
+      const type = typ ? `**Endpoint type:** [[${other.path}|${typ.title}]]`
+        : other.path ? `**Endpoint type:** [[${other.path}]]`
+          : "**No separate definition note required**";
+      target = { id: MEMBER_CANVAS_PREFIX + "endpoint:" + side + ":" + row, type: "text",
+        x: side === "left" ? -470 : 1300, y: row * 260, width: 420, height: 170,
+        color: other.resolved ? "5" : "1",
+        text: [`**Endpoint: ${other.text}**`, description, type].join("\n\n") };
+      endCards.set(idKey, target); nodes.push(target);
+    }
+    const flowIn = c.kind === "flow" && c.position === "b";
+    const fromNode = flowIn ? target.id : selectedId, toNode = flowIn ? selectedId : target.id;
+    const pair = c.kind === "flow" ? (flowIn
+      ? `${other.text} → ${c.thisEnd.text}` : `${c.thisEnd.text} → ${other.text}`)
+      : `${c.thisEnd.text} ↔ ${other.text}`;
+    const label = [c.kind === "connect" && c.form && c.form !== "plain" ? c.form : c.kind,
+      pair, missing ? "⚠ unresolved" : ""].filter(Boolean).join(" · ");
+    const edge             = { id: MEMBER_CANVAS_PREFIX + "statement:" + i, fromNode, toNode,
+      fromSide: "right", toSide: "left",
+      toEnd: c.kind === "flow" ? "arrow" : "none", label: label.slice(0, 150) };
+    edges.push(edge);
+  }
+  const title = [n.title, member.name].join(" - ").replace(/[\\/:*?"<>|#^\[\]]/g, " ").slice(0, 90);
+  return { doc: { nodes, edges }, notes: 1, unresolved, capped, groups: 0,
+    fileName: `Member Connections - ${title}.canvas`, saveFolder: n.folder };
 }
 
 /* edit.ts */
@@ -4352,6 +4559,130 @@ function previewWord(ix            , rules                , word        , catego
   return { placed: placedPaths.length, placedPaths, movedTotal, moved: [...moved].map(([from, count]) => ({ from, count })).sort((a, b) => b.count - a.count) };
 }
 
+/* term_discovery.ts */
+/* Read-only discovery of terms across governed engineering notes.
+ * Words are evidence for finding candidate relationships, never model relationships.
+ * The browser builds this disposable index in batches; no persisted search database. */
+
+const TERM_FIELDS = ["name", "aliases", "description", "body", "sysml", "identity"]         ;
+                                            
+                                                                                                          
+                                                                                
+                                                                                                    
+                                                                                                                      
+                       
+                                             
+                                               
+                           
+                  
+ 
+const BIT                            = { name: 1, aliases: 2, description: 4, body: 8, sysml: 16, identity: 32 };
+const WEIGHT                            = { name: 10, aliases: 8, description: 6, body: 2, sysml: 3, identity: 9 };
+const STOP = new Set(("the and for from with into about above below when where what which while this that these those there their them then than " +
+  "are was were has had have does did shall should would could will must can may not but all any one two each per using use used " +
+  "sysml def part port item attribute requirement verification action state ref in out to of by at as is be on it its or an a a").split(/\s+/));
+function tokenizeTerms(text        )           {
+  const lower = text.normalize("NFKC").toLocaleLowerCase("en-US");
+  const raw = lower.match(/[\p{L}\p{N}]+(?:[-_][\p{L}\p{N}]+)*/gu) ?? [];
+  const out           = [];
+  for (const w of raw) {
+    out.push(w);
+    if (w.includes("-") || w.includes("_")) out.push(...w.split(/[-_]+/).filter(Boolean));
+  }
+  return out;
+}
+function noteFields(n      )                            {
+  return { name: [n.title, String(n.meta.name ?? "")].join(" "), aliases: String(n.meta.aliases ?? ""),
+    description: [String(n.meta.description ?? ""), n.def?.doc ?? ""].join(" "),
+    body: n.body, sysml: n.block ?? "",
+    identity: [n.id, n.uid, n.name, String(n.meta.partNumber ?? "")].join(" ") };
+}
+function emptyTermCatalog()              {
+  return { postings: new Map(), typeCounts: new Map(), notes: new Map(), indexed: 0 };
+}
+function addTermNote(c             , n      )       {
+  if (c.notes.has(n.path)) return;
+  c.notes.set(n.path, n);
+  c.indexed++;
+  const fields = noteFields(n);
+  const terms = new Map                ();
+  for (const field of TERM_FIELDS) {
+    const words = new Set(tokenizeTerms(fields[field]));
+    for (const word of words) terms.set(word, (terms.get(word) ?? 0) | BIT[field]);
+  }
+  for (const [word, mask] of terms) {
+    (c.postings.get(word) ?? c.postings.set(word, new Map()).get(word) ).set(n.path, mask);
+    const types = c.typeCounts.get(word) ?? new Map                ();
+    types.set(n.type, (types.get(n.type) ?? 0) + 1);
+    c.typeCounts.set(word, types);
+  }
+}
+function buildTermCatalog(ix            )              {
+  const c = emptyTermCatalog();
+  for (const n of ix.notes.values()) addTermNote(c, n);
+  return c;
+}
+function commonTerms(c             , max = 24, minNotes = 2, crossTypeOnly = true)                  {
+  const found                  = [];
+  for (const [word, postings] of c.postings) {
+    if (word.length < 3 || STOP.has(word) || postings.size < minNotes) continue;
+    const types = c.typeCounts.get(word) ;
+    if (crossTypeOnly && types.size < 2) continue;
+    found.push({ word, notes: postings.size, types: types.size,
+      byType: [...types].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)) });
+  }
+  found.sort((a, b) => b.types - a.types || b.notes - a.notes || a.word.localeCompare(b.word));
+  return found.slice(0, Math.max(0, max));
+}
+function excerpt(n      , word        , mask        )         {
+  const f = noteFields(n);
+  const sources = TERM_FIELDS.filter((t) => mask & BIT[t]).sort((a, b) => WEIGHT[b] - WEIGHT[a]);
+  const source = sources[0] ?? "body", raw = f[source].replace(/\s+/g, " ").trim();
+  const at = raw.toLocaleLowerCase("en-US").indexOf(word);
+  const start = Math.max(0, at < 0 ? 0 : at - 48);
+  const text = raw.slice(start, start + 160);
+  return (start ? "…" : "") + text + (start + 160 < raw.length ? "…" : "");
+}
+function searchTermCatalog(c             , query        , perType = 25, typeFilter = "")             {
+  const terms = [...new Set(tokenizeTerms(query))].filter(Boolean);
+  if (!terms.length) return { terms, total: 0, groups: [], truncated: false };
+  const postings = terms.map((w) => c.postings.get(w));
+  if (postings.some((x) => !x)) return { terms, total: 0, groups: [], truncated: false };
+  postings.sort((a, b) => a .size - b .size);
+  const first = postings[0] , totals = new Map                ();
+  const ranked = new Map                                                                     ();
+  const cap = Math.max(0, Math.floor(perType));
+  const compare = (a                                 , b                                 )         =>
+    b.score - a.score || a.path.localeCompare(b.path);
+  for (const [path] of first) {
+    const masks = postings.map((p) => p .get(path));
+    if (masks.some((m) => !m)) continue; // AND match: every requested term belongs to the same note
+    const n = c.notes.get(path) ;
+    if (typeFilter && n.type !== typeFilter) continue;
+    totals.set(n.type, (totals.get(n.type) ?? 0) + 1);
+    if (!cap) continue;
+    const score = masks.reduce((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m  & BIT[f]).map((f) => WEIGHT[f])), 0);
+    const hits = ranked.get(n.type) ?? [];
+    const hit = { path, score, fields: TERM_FIELDS.filter((field) => masks.some((m) => m  & BIT[field])) };
+    // Bound the retained candidates per type: broad legacy searches must not
+    // materialize excerpts or sort 100,000 matching records on every query.
+    if (hits.length < cap || compare(hit, hits[hits.length - 1] ) < 0) {
+      let i = 0; while (i < hits.length && compare(hits[i] , hit) <= 0) i++;
+      hits.splice(i, 0, hit);
+      if (hits.length > cap) hits.pop();
+      ranked.set(n.type, hits);
+    }
+  }
+  const groups = [...totals].map(([type, total]) => ({
+    type, total,
+    matches: (ranked.get(type) ?? []).map((r)               => ({
+      ...r, type, excerpt: excerpt(c.notes.get(r.path) , terms[0] , c.postings.get(terms[0] ) .get(r.path) ),
+    })),
+  })).sort((a, b) => b.total - a.total || a.type.localeCompare(b.type));
+  const total = [...totals.values()].reduce((a, n) => a + n, 0);
+  return { terms, total, groups, truncated: groups.some((g) => g.total > g.matches.length) };
+}
+
 /* edit_help.ts */
 /* The "?" help (D-0031): a short definition and the options for each topic in the Edit lens. Text is bundled and shown in a
  * small popover, so there is no lookup and no wait. `note` names the full note in 99_System/04_Language (D-0028) when one exists. */
@@ -5582,6 +5913,104 @@ function editView(c         )              {
   return box;
 }
 
+/* quick_create.ts */
+/* Contextual "New" choices for the four Workbench workflows.
+ * A governed record uses the existing planAddElement() writer and its ID/UID/SysML checks.
+ * An ordinary document is deliberately plain Markdown: never assign model identity implicitly. */
+                                                                
+                         
+                                                                         
+                                                                
+ 
+/** Exact types/subtypes from governance/schemas/element-types.yaml (do not invent model classes). */
+const QUICK_TEMPLATES                           = [
+  { id: "daily", label: "Daily note", area: "document", kind: "plain", sections: ["Priorities", "Activity", "Follow-up"] },
+  { id: "meeting", label: "Meeting note", area: "document", kind: "plain", sections: ["Participants", "Agenda", "Discussion", "Decisions", "Actions"] },
+  { id: "transcript", label: "Transcript", area: "document", kind: "plain", sections: ["Source", "Transcript", "Summary"] },
+  { id: "engineering-note", label: "Engineering note", area: "document", kind: "plain", sections: ["Context", "Findings", "References"] },
+  { id: "governed-document", label: "Governed document", area: "document", kind: "governed", type: "Document", subtype: "" },
+  { id: "stakeholder-need", label: "Stakeholder need", area: "define", kind: "governed", type: "Requirement", subtype: "stakeholder" },
+  { id: "use-case", label: "Use case", area: "define", kind: "governed", type: "Use Case", subtype: "what" },
+  { id: "requirement", label: "Requirement", area: "define", kind: "governed", type: "Requirement", subtype: "functional" },
+  { id: "function", label: "Function", area: "define", kind: "governed", type: "Behavior", subtype: "function" },
+  { id: "part", label: "Part / assembly definition", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "interface", label: "Interface definition", area: "structure", kind: "governed", type: "Object", subtype: "interface" },
+  { id: "configuration-procedure", label: "Configuration procedure", area: "structure", kind: "governed", type: "Procedure", subtype: "configuration" },
+  { id: "verification-case", label: "Verification case (test)", area: "verify", kind: "governed", type: "Verification", subtype: "test" },
+  { id: "test-plan", label: "Test plan", area: "verify", kind: "governed", type: "Plan", subtype: "" },
+  { id: "test-procedure", label: "Test procedure", area: "verify", kind: "governed", type: "Procedure", subtype: "test" },
+  { id: "test-result", label: "Test result record", area: "verify", kind: "governed", type: "Result", subtype: "" },
+];
+function quickTemplatesFor(area           )                  {
+  return QUICK_TEMPLATES.filter((t) => t.area === area);
+}
+function quickTemplate(id        )                            { return QUICK_TEMPLATES.find((t) => t.id === id); }
+                                                                                                                             
+const invalid = (message        )                => ({ summary: "", writes: [], problems: [message] });
+function planPlainNote(template               , title        , folder        , existing                     )                {
+  if (template.kind !== "plain") return invalid("A governed model note must use the governed element writer.");
+  const name = title.trim().replace(/\s+/g, " ");
+  if (!name || name === "." || name === ".." || /[\\/:*?"<>|\[\]#^]/.test(name)) return invalid("Enter a file-safe note title without path separators or reserved characters.");
+  const parent = folder.trim().replace(/^\/+|\/+$/g, "");
+  if (parent && parent.split("/").some((p) => p === "." || p === ".." || !p || /[\\:*?"<>|\[\]#^]/.test(p))) return invalid("Choose a vault folder, not a relative or invalid path.");
+  const path = (parent ? parent + "/" : "") + name + ".md";
+  if ([...existing].some((p) => p.toLowerCase() === path.toLowerCase())) return invalid("A note already exists at " + path + ".");
+  const after = "# " + name + "\n\n" + (template.sections ?? []).map((x) => "## " + x + "\n\n").join("");
+  return { summary: 'Create ordinary Markdown note "' + name + '" at ' + path + " (no SysML or governed UID).",
+    writes: [{ path, before: null, after }], problems: [] };
+}
+
+/** Eligible context relationships are proposals only; nothing is written until a second
+ * explicit preview + Apply. Both native directions are considered because SysML relationship
+ * ownership and endpoint order depend on the two modeled definitions. */
+
+
+                                                                                                                                                
+function contextLinkChoices(ix            , files                     , origin        , created        )                      {
+  if (!origin || !created || origin === created || !ix.notes.has(origin) || !ix.notes.has(created)) return [];
+  const out                      = [];
+  for (const [from, to] of [[origin, created], [created, origin]]) {
+    for (const choice of cdChoices(ix, files, from, to)) {
+      if (!choice.ok) continue;
+      out.push({ rel: choice.rel.id, label: choice.rel.label, from, to,
+        help: choice.rel.help, inputs: choice.rel.inputs, usageKind: choice.usageKind });
+    }
+  }
+  return out;
+}
+
+/** Evaluate a *proposed*, not-yet-written governed note against the selected existing note.
+ * Parse only the source and hypothetical target into a two-note index. This avoids rescanning
+ * a vault with tens of thousands of notes on every modal Preview. Neither the cached index nor
+ * the vault file map is mutated. Eligibility is re-evaluated after creation.
+ * No relationship is automatically attached or stored in the proposed note. */
+
+                                                                                                                
+function previewContextLinks(ix            , files                     , origin        ,
+  plan                                                                                               )                           {
+  const none = (message        )                           => ({ choices: [], message, createdPath: null });
+  if (plan.problems.length || plan.writes.length !== 1 || plan.writes[0] .before !== null)
+    return none("Preview a valid new governed element before checking relationships.");
+  if (!origin || !ix.notes.has(origin) || !files.has(origin))
+    return none("No governed source element selected. This new note will remain independent.");
+  const candidate = plan.writes[0] ;
+  if (files.has(candidate.path)) return none("The proposed note already exists. Preview again.");
+  const simulated = new Map                ([
+    [origin, files.get(origin) ], [candidate.path, candidate.after],
+  ]);
+  const stagedIndex = buildIndex(simulated);
+  if (!stagedIndex.notes.has(candidate.path) || !stagedIndex.notes.get(candidate.path)?.def)
+    return none("The proposed note has no native SysML definition to relate.");
+  const choices = contextLinkChoices(stagedIndex, simulated, origin, candidate.path);
+  const priority                         = { verify: 0, satisfy: 1, derivedFrom: 2, perform: 3,
+    owns: 4, specializes: 5, include: 6, extend: 7, allocate: 8, refines: 9, dependsOn: 10 };
+  choices.sort((a, b) => (priority[a.rel] ?? 50) - (priority[b.rel] ?? 50) ||
+    a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.rel.localeCompare(b.rel));
+  return { choices, createdPath: candidate.path, message: choices.length
+    ? "Potential native relationships (not saved). Choose Create, then separately review and Apply a relationship."
+    : "No native SysML relationship is currently eligible. You can create the note independently." };
+}
+
 /* panel.ts */
 /* The Obsidian interface: a right-sidebar panel that follows the selected note, and a main-window table view. Both read the
  * one shared index the plugin builds; neither has its own file list (Obsidian's file explorer is the browser). Plain DOM;
@@ -5592,6 +6021,9 @@ function editView(c         )              {
 
 const OL = { buildOutline, visibleRows, collapseFromLevel, toggled, shownDepth };
 
+const QC = { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks };
+const MN = { memberDetails };
+const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTermCatalog, commonTerms, searchTermCatalog };
 
 
 
@@ -5600,13 +6032,26 @@ const OL = { buildOutline, visibleRows, collapseFromLevel, toggled, shownDepth }
                                                                                                                        
                      
                                
+                                                                                                     
+                                     
                                                       
                                 
+                                                                                                           
+                                                                                                                     
+                                                                                                               
+                                                                          
                                                                              
                                                                        
+                                                                                                     
+                                                                 
                                                            
                                                                                   
                                                                  
+                                                                                                                    
+                                                                                                                                         
+                                                                                             
+                                            
+                                               
                                                                    
                                                                                
                                                                                            
@@ -5638,16 +6083,46 @@ const OL = { buildOutline, visibleRows, collapseFromLevel, toggled, shownDepth }
                                                                                                                                               
                                             
                               
+                                                                                      
+                                                                                                          
+                                                         
+                      
+                                   
                                                                                     
                                        
                                                       
  
 
+                                                                          
+const WORKFLOW_ENTRY_LENS                                      = {
+  document: "note", define: "functional", structure: "structure", verify: "requirements",
+};
+/** Opens the explicit target item in a separate Workbench tab, without changing this view. */
+function openInNewWorkflow(host                                 , area                     , itemPath        )                {
+  if (!itemPath || !host.openWorkflow) return Promise.reject(new Error("Choose a governed engineering item before opening a workflow."));
+  return host.openWorkflow(area, WORKFLOW_ENTRY_LENS[area], itemPath);
+}
+
+/** Context isolation: pinned views, active editing, and unresolved paths must never silently change the selected item. */
+function followSelection(ix                   , current        , proposed                           , pinned         , editing         )         {
+  return !pinned && !editing && !!proposed && !!ix?.notes.has(proposed) ? proposed : current;
+}
+
 const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
+.mdp .workareas{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .workareas button{font-size:12px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdp .workareas button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}.mdp .workareas button:disabled{opacity:.48;cursor:not-allowed}.mdp .workareas button.review{margin-left:auto}
+.mdw .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdw .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
+.mdw .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
+.mdw .searchhits button:hover,.mdw .searchhits button:focus-visible{background:var(--bg)}
+.mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
+.mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
+.mdw .relation-workflow{margin-left:6px;max-width:110px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:5px;background:var(--bg2);color:var(--fg)}
+.mdw .member-search{width:100%;box-sizing:border-box;padding:5px 7px;margin:4px 0 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .member-entry{border-bottom:1px solid var(--line);padding:5px 0}.mdw .member-entry summary{cursor:pointer;font-size:12.5px;white-space:normal}.mdw .member-info{padding:6px 10px;font-size:12px;overflow-wrap:anywhere}.mdw .member-info code{white-space:pre-wrap}.mdw .member-link{padding:4px 0;border-top:1px dashed var(--line)}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
@@ -5657,13 +6132,15 @@ const PANEL_STYLE = `
 .mdw button.sm{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw button.sm:hover{border-color:var(--acc)}.mdw button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 `;
 
-function mountPanel(root             , host           , opt                                            = { mode: "panel" })           {
+function mountPanel(root             , host           , opt                                                                                                                                              = { mode: "panel" })           {
   const compact = opt.mode === "panel";
   const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE;
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
-  let ix                    = null, sel = "", lens         = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo                                 = null;
-  let scope                     = "selected", table                                       = "relationships", text = "", spec                      = {}, revFilter = "", pinned = false, inherit                  = [];   // D-0101
+  let ix                    = null, sel = opt.selected ?? "", lens         = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo                                 = null;
+  let workArea                                                 = opt.area ?? "document", reviewReturn         = "note", searchText = "", discoveryAll = false;
+  let workflowOpenMode                    = "tab";
+  let scope                     = "selected", table                                       = "relationships", text = "", spec                      = {}, revFilter = "", pinned = !!opt.fixedContext, inherit                  = [];   // D-0101
 
   const note = (p                           )                   => (p ? ix?.notes.get(p) : undefined);
   const link = (p                           , label         , cls = "")       => {
@@ -5673,6 +6150,23 @@ function mountPanel(root             , host           , opt                     
   };
   const empty = (m        )              => h("div", { class: "empty", style: "padding:16px 0" }, m);
   const tag = (t        )              => h("span", { class: "tag" }, t);
+  /** Per-result workflow handoff; never alters sel, lens, Pin, or the originating view. */
+  const relatedWorkflow = (path        )                     => {
+    if (!host.openWorkflow || !note(path)) return null;
+    return h("select", { class: "relation-workflow", "aria-label": "Open related element in workflow: " + note(path) .title,
+      title: "Open this related engineering element in another Workbench tab",
+      onchange: (e       ) => {
+        const el = e.target                     , target = el.value                       ;
+        el.value = "";
+        if (!target) return;
+        void openInNewWorkflow(host, target, path).catch((err) => {
+          msg = "Could not open related element: " + String((err         )?.message ?? err); draw();
+        });
+      }
+    }, h("option", { value: "", selected: true }, "↗ Workflow…"),
+      ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]]         )
+        .map(([label, id]) => h("option", { value: id }, label)));
+  };
 
   /* ---- generic table renderer ---- */
   const cellNode = (c                         )        => {
@@ -5683,9 +6177,39 @@ function mountPanel(root             , host           , opt                     
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set        ();
   let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
+  // Disposable, batched inverted index. Rebuilt only when the authoritative vault index is replaced.
+  let termCatalog                        = null, termSource                    = null, termBuilding                    = null;
+  let termProgress = 0, termDestroyed = false, termQuery = "", termType = "", termPerType = 25;
+  let termCommon                     = [], termTypes           = [];
+  const termPicked = new Set        ();
+  function ensureTermCatalog()       {
+    if (!ix || termSource === ix || termBuilding === ix || termDestroyed) return;
+    const source = ix, catalog = TD.emptyTermCatalog(), iterator = source.notes.values(), kinds = new Set        ();
+    termBuilding = source; termProgress = 0; termCatalog = null; termCommon = []; termTypes = [];
+    const next = ()       => {
+      if (termDestroyed || ix !== source || termBuilding !== source) return;
+      let done = false;
+      for (let i = 0; i < 200; i++) {
+        const entry = iterator.next();
+        if (entry.done) { done = true; break; }
+        TD.addTermNote(catalog, entry.value);
+        kinds.add(entry.value.type);
+        termProgress++;
+      }
+      if (done) {
+        termCatalog = catalog; termSource = source; termBuilding = null;
+        termTypes = [...kinds].sort();
+        termCommon = TD.commonTerms(catalog, 36, 2, true);
+        for (const path of termPicked) if (!source.notes.has(path)) termPicked.delete(path);
+        draw();
+      } else setTimeout(next, 0); // Yield to Obsidian between chunks even for large legacy models.
+    };
+    setTimeout(next, 0);
+  }
   let editEl                     = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
-  function openEditor(ref         )       { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
+  function openEditor(ref         )       { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
   const outlineState = new Map                     ();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map                 ();                                                // open/closed state of each folding section, kept across redraws
@@ -5789,7 +6313,7 @@ function mountPanel(root             , host           , opt                     
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
   /* D-0092: compare the selected note with another: what differs, and the structure down to the parts that differ. */
-  function openCompare(other        )       { cmpOther = other; lens = "compare"; editEl = null; draw(); }
+  function openCompare(other        )       { pinned = true; cmpOther = other; lens = "compare"; editEl = null; draw(); }
   function compareBar()              {
     const found = V.pickRows(ix , cmpText, "", 60).notes.filter((x) => x.path !== sel);
     const pick = h("select", { "aria-label": "Note to compare with", style: "max-width:100%", onchange: (e       ) => { cmpOther = (e.target                     ).value; draw(); } },
@@ -5798,7 +6322,7 @@ function mountPanel(root             , host           , opt                     
     return h("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0" }, h("span", { class: "mut" }, "Compare with"),
       h("input", { type: "search", placeholder: "Search by name, id or part number", value: cmpText, "aria-label": "Search for the note to compare with", style: "flex:1;min-width:140px", onchange: (e       ) => { cmpText = (e.target                    ).value; cmpOther = ""; draw(); } }), pick);
   }
-  function openMerge(other        )       { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
+  function openMerge(other        )       { if (!host.edit) return; pinned = true; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
 
   /* ---- lenses ---- */
   function dashboardView()              {
@@ -5809,6 +6333,61 @@ function mountPanel(root             , host           , opt                     
       card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("objects without a port", String(d.noPort)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
       bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
   }
+  function memberInspector(n      )              {
+    if (memberOwner !== n.path) { memberOwner = n.path; memberFilter = ""; memberLimit = 40; expandedMembers.clear(); }
+    const members = MN.memberDetails(ix , n.path), query = memberFilter.toLowerCase();
+    const matches = members.filter((m) => !query ||
+      [m.kind, m.name, m.type, m.head, m.doc, ...m.subsets, ...m.redefines,
+        ...m.props.map((p) => p.name + " " + p.value), ...m.connections.map((c) => c.statement)]
+        .some((s) => s.toLowerCase().includes(query)));
+    const visible = matches.slice(0, memberLimit), area = h("div", {});
+    area.append(h("label", { class: "mut" }, "Filter members / connections ",
+      h("input", { class: "member-search", type: "search", value: memberFilter,
+        placeholder: "Name, port, connected endpoint, SysML…",
+        onchange: (e       ) => { memberFilter = (e.target                    ).value; memberLimit = 40; draw(); } })));
+    area.append(h("div", { class: "mut", style: "font-size:11px" },
+      `Showing ${visible.length} of ${matches.length} matching usages (${members.length} total). Each usage remains owned by this note.`));
+    for (const m of visible) {
+      const d = h("details", { class: "member-entry", open: expandedMembers.has(m.key) },
+        h("summary", {}, tag(m.kind), " ", h("b", {}, m.name), " ",
+          h("span", { class: "mut" }, [m.ref ? "ref" : "", m.dir, m.mult, m.type ? ": " + m.type : "(untyped)"].filter(Boolean).join(" ")),
+          m.connections.length ? h("span", { class: "mut" }, ` · ${m.connections.length} explicit connection(s)`) : null));
+      const info = h("div", { class: "member-info" });
+      if (host.openMemberCanvas) {
+        const btn = h("button", { class: "sm", title: "Visualize only this member's explicit SysML connections in a new scratch Canvas tab" }, "Canvas connections");
+        btn.addEventListener("click", () => busy(btn, "Opening…", () => host.openMemberCanvas (n.path, m.key)));
+        info.append(h("div", { style: "margin:0 0 6px" }, btn));
+      }
+      if (m.type) info.append(h("div", {}, "Type definition: ", m.typePath ? link(m.typePath) : h("span", { class: "gap" }, m.type + " (not in vault)"),
+        m.typePath ? relatedWorkflow(m.typePath) : null));
+      else info.append(h("div", { class: "gap" }, "Untyped usage — no type definition to navigate to."));
+      info.append(h("div", {}, "Declaration: ", h("code", {}, m.head)));
+      if (m.ref || m.conj || m.end) info.append(h("div", { class: "mut" }, [m.ref ? "reference usage" : "", m.conj ? "conjugated type" : "", m.end ? "interface end" : ""].filter(Boolean).join(" · ")));
+      if (m.subsets.length) info.append(h("div", {}, "Subsets: " + m.subsets.join(", ")));
+      if (m.redefines.length) info.append(h("div", {}, "Redefines: " + m.redefines.join(", ")));
+      if (m.doc) info.append(h("div", { style: "white-space:pre-wrap" }, "Documentation: " + m.doc));
+      for (const p of m.props) info.append(h("div", {}, h("code", {}, p.name + " = " + p.value)));
+      if (!m.connections.length) info.append(h("div", { class: "mut" }, "No explicit connect, bind or flow involving this usage."));
+      for (const c of m.connections) {
+        const other = c.otherEnd;
+        info.append(h("div", { class: "member-link" },
+          h("div", {}, tag(c.kind + (c.form && c.form !== "plain" ? " / " + c.form : "")), " ",
+            h("b", {}, c.thisEnd.text), " ↔ ", h("b", {}, other.text),
+            other.resolved ? null : h("span", { class: "gap" }, " (unresolved endpoint)")),
+          h("div", { class: "mut" }, h("code", {}, c.statement)),
+          other.path ? h("div", {}, "Endpoint type: ", link(other.path), relatedWorkflow(other.path)) : null));
+      }
+      d.append(info);
+      d.addEventListener("toggle", () => {
+        if ((d                      ).open) expandedMembers.add(m.key);
+        else expandedMembers.delete(m.key);
+      });
+      area.append(d);
+    }
+    if (matches.length > memberLimit)
+      area.append(h("button", { class: "sm", onclick: () => { memberLimit += 40; draw(); } }, `Show next ${Math.min(40, matches.length - memberLimit)} members`));
+    return area;
+  }
   function noteView()              {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
@@ -5818,7 +6397,7 @@ function mountPanel(root             , host           , opt                     
     const rel = (edges                             , dir              )              => {
       const by = new Map                      (); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind) ).push(e);
       if (!by.size) return h("div", { class: "mut" }, "None.");
-      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
+      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), other ? relatedWorkflow(other) : null, e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix , n.path), "out")], { count: outgoing(ix , n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix , n.path), "in")], { count: incoming(ix , n.path).length }));
     const rn = relatedNotes(ix , n.path);
@@ -5826,9 +6405,9 @@ function mountPanel(root             , host           , opt                     
       if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom (n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
       const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas (n.path, rn.map((r) => r.path))));
-      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas (n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas (n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
     }
-    if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix .bySymbol.has(u.type) ? note(ix .bySymbol.get(u.type)) .title : u.type + " (not in vault)", path: ix .bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
+    if (n.def?.usages.length) box.append(sec("usages", "Members and explicit connections", [memberInspector(n)], { count: n.def.usages.length }));
     return box;
   }
   const chip = (label        , on         , fn                      )              => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e       ) => { fn((e.target                    ).checked); draw(); } }), " " + label);
@@ -5929,6 +6508,87 @@ function mountPanel(root             , host           , opt                     
       h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
   }
 
+  /* Shared-term discovery: evidence by governed type, with explicit Canvas placement only.
+   * Nothing in this view writes SysML. A common word is never treated as a relationship. */
+  function termsView()              {
+    ensureTermCatalog();
+    const box = h("div", { class: "term-discovery" },
+      h("div", { class: "mut" }, "Search governed engineering note names, aliases, descriptions, Markdown bodies and SysML text. Complete words are AND-matched. Shared words are candidate evidence, not modeled links."));
+    if (!termCatalog || termSource !== ix) {
+      box.append(h("div", { class: "mut", role: "status" },
+        `Building the local term index without freezing Obsidian… ${termProgress} of ${ix .notes.size} governed notes examined.`));
+      return box;
+    }
+    const catalog = termCatalog;
+    const input = h("input", { type: "search", class: "member-search",
+      "aria-label": "Search words across engineering element types", value: termQuery,
+      placeholder: "e.g. cooling fan, battery, CANH",
+      onchange: (e       ) => { termQuery = (e.target                    ).value; termPerType = 25; draw(); } });
+    box.append(input);
+    const result = TD.searchTermCatalog(catalog, termQuery, termPerType, termType);
+    const setQuery = (w        ) => { termQuery = w; termType = ""; termPerType = 25; draw(); };
+    const related = h("div", { class: "chips term-suggestions" },
+      h("span", { class: "mut" }, "Common terms across element types (documents, not occurrences): "),
+      ...termCommon.slice(0, 24).map((f) => h("button", { class: "sm", type: "button",
+        title: f.byType.map((x) => x.type + ": " + x.count).join("; "), onclick: () => setQuery(f.word) },
+        `${f.word} · ${f.notes} notes / ${f.types} types`)));
+    box.append(related);
+    if (!termCommon.length) box.append(h("div", { class: "mut" }, "No words currently appear in two or more governed element types."));
+    const chooser = h("select", { "aria-label": "Filter term matches by element type", onchange: (e       ) => {
+      termType = (e.target                     ).value; termPerType = 25; draw();
+    } }, h("option", { value: "", selected: !termType }, "All element types"),
+      ...termTypes.map((t) => h("option", { value: t, selected: t === termType }, t)));
+    box.append(h("div", { class: "chips" }, chooser,
+      h("span", { class: "mut", role: "status" },
+        termQuery.trim() ? `${result.total} matching governed elements across ${result.groups.length} shown types.` :
+          `${catalog.indexed} governed elements indexed; choose a common term or enter a search.`)));
+    const selected = ()           => [...termPicked].filter((path) => ix .notes.has(path));
+    const actionBar = h("div", { class: "chips", style: "display:flex;gap:6px;flex-wrap:wrap" });
+    const makeButton = (label        , hint        , fn                       ) => {
+      const button = h("button", { class: "sm", type: "button", title: hint }, label);
+      button.addEventListener("click", () => {
+        if (!selected().length) { msg = "Select at least one matching engineering element."; draw(); return; }
+        busy(button, "Placing…", fn);
+      });
+      return button;
+    };
+    const count = h("span", { class: "mut" }, `${selected().length} selected`);
+    const displayed = result.groups.flatMap((g) => g.matches.map((x) => x.path));
+    actionBar.append(
+      h("button", { class: "sm", type: "button", onclick: () => { for (const p of displayed) termPicked.add(p); draw(); } }, "Select displayed"),
+      h("button", { class: "sm", type: "button", onclick: () => { termPicked.clear(); draw(); } }, "Clear selection"),
+      count);
+    if (host.openPickCanvas) actionBar.append(makeButton("New grouped Canvas",
+      "Open a new scratch Canvas grouped by element type. Lines come only from existing authoritative relationships.",
+      () => host.openPickCanvas (selected(), `Shared terms: ${termQuery.trim() || "selected elements"}`, true, true, true)));
+    if (host.addToCanvas) actionBar.append(makeButton("Add to current Canvas",
+      "Explicitly add these cards to the currently active Canvas. This can modify a saved Canvas. Only existing governed relationships are drawn.",
+      () => host.addToCanvas (sel && ix .notes.has(sel) ? sel : selected()[0] , selected())));
+    box.append(actionBar);
+    if (!termQuery.trim()) return box;
+    if (!result.total) { box.append(empty("No governed elements contain every searched term. Try a single word, a synonym, or a broader requirement phrase.")); return box; }
+    for (const group of result.groups) {
+      const items = group.matches.map((hit) => {
+        const n = ix .notes.get(hit.path) ;
+        return h("div", { class: "term-hit", style: "display:flex;gap:7px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--line)" },
+          h("input", { type: "checkbox", checked: termPicked.has(hit.path),
+            "aria-label": "Select " + n.title + " for Canvas",
+            onchange: (e       ) => {
+              if ((e.target                    ).checked) termPicked.add(hit.path); else termPicked.delete(hit.path);
+              count.textContent = `${selected().length} selected`;
+            } }),
+          h("div", {}, link(hit.path), " ", relatedWorkflow(hit.path), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")),
+            h("span", { class: "mut" }, " " + n.id),
+            h("div", { class: "mut", style: "font-size:11px" }, `Matched in: ${hit.fields.join(", ")} · ${hit.excerpt}`)));
+      });
+      box.append(sec("terms-" + group.type, group.type, items, { count: group.total, open: true }));
+    }
+    if (result.truncated) box.append(h("button", { class: "sm", type: "button",
+      onclick: () => { termPerType += 25; draw(); } }, `Show up to ${termPerType + 25} per type`));
+    box.append(h("div", { class: "mut" }, "Only existing SysML/approved model connections appear between cards. To propose a new relationship, draw and approve it through the governed editor."));
+    return box;
+  }
+
   /* Find similar: the notes that share a relationship with the selected note, grouped by relationship and direction. */
   let simKinds           = [];
   function similarView()              {
@@ -5938,7 +6598,7 @@ function mountPanel(root             , host           , opt                     
     const box = h("div", {}, h("div", { class: "chips" }, h("span", { class: "mut" }, "Relationship"), h("select", { "aria-label": "Relationship kind", onchange: (e       ) => { const v = (e.target                     ).value; simKinds = v ? [v] : []; draw(); } }, h("option", { value: "" }, "all"), ...kinds.map((k) => h("option", { value: k, selected: simKinds[0] === k }, k)))));
     if (!r.groups.length) { box.append(h("div", { class: "mut" }, all.groups.length ? "No similar notes for this relationship." : "No other note shares a relationship with this one.")); return box; }
     if (host.addToCanvas) box.append(h("div", { class: "row" }, addBtn(`Add all ${r.peers.length} to canvas`, r.peers.map((x) => x.path), "sm pri")));
-    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via) .title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via) .title}` : `${note(g.via) .title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), " ", tag(note(p) .type)))], { count: g.peers.length }));
+    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via) .title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via) .title}` : `${note(g.via) .title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), relatedWorkflow(p), " ", tag(note(p) .type)))], { count: g.peers.length }));
     return box;
   }
 
@@ -5948,12 +6608,12 @@ function mountPanel(root             , host           , opt                     
     if (given.length < 2) return empty("Choose two or more note cards on the canvas (hold Shift to add to a choice) and the notes related to all of them are listed here.");
     const c = commonRelated(ix , given), kindsOf = (by                                          )         => by.map((b) => `${note(b.from) .title}: ${b.kinds.join(", ")}`).join(" · ");
     const addBtn = (label        , paths          , cls = "sm")              => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas (given[0] , paths))); return b; };
-    const row = (r                                                                )              => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
+    const row = (r                                                                )              => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path) .type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
     const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p) .type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0] ; openMerge(given[1] ); } }, "Merge these two…") : null;
     const cmpBtn = given.length === 2 ? h("button", { class: "sm pri", title: "List what differs between these two notes, with the structure down to the parts that differ", onclick: () => { sel = given[0] ; openCompare(given[1] ); } }, "Compare these two") : null;
     const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), cmpBtn || mergeBtn ? h("div", { class: "row" }, cmpBtn, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
-    if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path) .type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
+    box.append(sec("com-some", "Related to fewer than all (most common first)", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path) .type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: true }));
     return box;
   }
 
@@ -5974,20 +6634,142 @@ function mountPanel(root             , host           , opt                     
 
   /* ---- shell ---- */
   const busy = (btn             , label        , job                       )       => { btn.setAttribute("disabled", ""); btn.textContent = label; job().then((m) => { msg = m; undo = null; }, (e) => { msg = "Failed: " + String((e         )?.message ?? e); }).finally(() => draw()); };
+  const setContextPinned = (nextPinned         )       => {
+    if (lens === "edit" && !nextPinned) { msg = "Editing keeps this engineering item pinned. Leave Edit to enable Follow."; draw(); return; }
+    pinned = nextPinned;
+    if (!pinned) sel = followSelection(ix, sel, host.currentSelection?.(), false, false);
+    draw();
+  };
   function draw()       {
     const n = note(sel);
+    const contextMode = h("div", { class: "contextmode", role: "group", "aria-label": "Engineering item selection mode" },
+      h("span", { class: "mut", style: "font-size:12px" }, "Selection:"),
+      h("button", { type: "button", "aria-pressed": !pinned, disabled: lens === "edit" || undefined,
+        title: "Follow engineering items selected in other notes and Canvases", onclick: () => setContextPinned(false) }, "Follow"),
+      h("button", { type: "button", "aria-pressed": pinned,
+        title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
+      pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
+    if (n && host.openWorkflow) contextMode.append(
+      h("label", { class: "mut", style: "font-size:12px", title: "Open the selected engineering item in a separate, pinned Workbench tab without replacing this view" },
+        "Open item in ", h("select", {
+          "aria-label": "Open selected item in new workflow tab",
+          onchange: (e       ) => {
+            const pick = e.target                     ;
+            const area = pick.value                       ; pick.value = "";
+            if (!area) return;
+            void openInNewWorkflow(host, area, n.path).catch((err) => {
+              msg = "Could not open new workflow: " + String((err         )?.message ?? err); draw();
+            });
+          }
+        },
+        h("option", { value: "", selected: true }, "new workflow tab…"),
+        ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]]         )
+          .map(([label, id]) => h("option", { value: id }, label)))));
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
-      !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e       ) => { pinned = !(e.target                    ).checked; draw(); } }), " follow the selected note") : null);
+      contextMode);
     const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
       const items = g.lenses.filter((k) => (k !== "edit" && k !== "merge") || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k) [1]]         ), here = g.lenses.includes(lens);
-      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
+      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e       ) => { const v = (e.target                     ).value          ; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
     // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
     const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
       ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
-    fnSelect.addEventListener("change", () => { const v = (fnSelect                     ).value          ; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
+    fnSelect.addEventListener("change", () => {
+      const v = (fnSelect                     ).value          ;
+      if (v === "merge") { openMerge(""); return; }
+      const area = lensArea(v) ?? workArea;
+      if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
+        (fnSelect                     ).value = lens; // The current Workbench stays on its original function.
+        void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+      } else { workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); }
+    });
+    // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
+    // Review is contextual; the importer stays external and publishing remains under Document.
+    const lensArea = (v        )                         => {
+      if (v === "review") return null;
+      // Discovery and canvas utilities are cross-workflow; they must not reset an active work-area filter.
+      if (["common", "pick", "terms", "similar", "layout", "compare"].includes(v)) return workArea;
+      // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
+      if (v === "requirements" && workArea === "verify") return "verify";
+      if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
+      if (["functional", "states", "design", "requirements", "edit"].includes(v)) return "define";
+      return "document";
+    };
+    // Align the active work area when an existing advanced function is chosen.
+    // The Review lens retains the prior work area so returning is predictable.
+    if (lens !== "review") workArea = lensArea(lens) ;
+    const goArea = (area                 , next        )       => {
+      if (area === workArea && next === lens) return;
+      if (workflowOpenMode === "tab" && host.openWorkflow) {
+        void host.openWorkflow(area, next, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+        return;
+      }
+      workArea = area;
+      lens = next;
+      if (next === "edit") pinned = true; else editEl = null;
+      draw();
+    };
+    const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
+      ...([["Document", "document", WORKFLOW_ENTRY_LENS.document], ["Define", "define", WORKFLOW_ENTRY_LENS.define], ["Structure", "structure", WORKFLOW_ENTRY_LENS.structure], ["Verify", "verify", WORKFLOW_ENTRY_LENS.verify]]         )
+        .map(([label, id, next]) => h("button", {
+          type: "button", "aria-pressed": workArea === id,
+          title: id === "verify" ? "Requirements verification trace; test plans and execution are not yet implemented" : undefined,
+          onclick: () => goArea(id, next)
+        }, label)),
+      h("button", { type: "button", class: "review", "aria-label": "Review findings for current work",
+        "aria-pressed": lens === "review", onclick: () => {
+          if (lens === "review") lens = reviewReturn;
+          else { reviewReturn = lens; lens = "review"; }
+          draw();
+        } }, lens === "review" ? "Back from Review" : "Review"));
+    const opening = h("label", { class: "mut", title: "Choose whether switching workflows or functions opens a new tab or replaces the current Workbench view" },
+      "Open tools in ", h("select", { "aria-label": "Workflow opening behavior",
+        onchange: (e       ) => { workflowOpenMode = (e.target                     ).value                     ; draw(); } },
+        h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
+        h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
+    workareas.append(opening);
+    if (host.quickCreate) {
+      const available = QC.quickTemplatesFor(workArea);
+      const menu = h("select", { "aria-label": "New item from workflow template",
+        title: "Create a note using a workflow-specific template. Governed model records require UID, ID and a preview; ordinary Markdown notes do not.",
+        onchange: (e       ) => {
+          const pick = e.target                     , id = pick.value; pick.value = "";
+          if (!id) return;
+          void host.quickCreate (id, sel).then((result) => { if (result) { msg = result; draw(); } },
+            (err) => { msg = "Could not start New: " + String((err         )?.message ?? err); draw(); });
+        } },
+        h("option", { value: "", selected: true }, "+ New…"),
+        ...available.map((t) => h("option", { value: t.id }, t.label + (t.kind === "plain" ? " (Markdown)" : " (model)"))));
+      workareas.append(menu);
+    }
+    // Reuse the existing ranked model-note search for this first navigation increment.
+    // Full search unification, structured result metadata and performance tests remain separate passes.
+    const searchInput = h("input", { type: "search", "aria-label": "Search engineering information",
+      placeholder: "Search names, aliases, IDs, part numbers or note text…", value: searchText,
+      oninput: (e       ) => {
+        const inp = e.target                    , pos = inp.selectionStart;
+        searchText = inp.value;
+        draw();
+        const next = wrap.querySelector(".globalsearch input")                           ;
+        next?.focus(); if (pos !== null) next?.setSelectionRange(pos, pos);
+      }
+    });
+    const searchBox = h("div", { class: "globalsearch" }, searchInput);
+    if (ix && searchText.trim()) {
+      const found = V.search(ix, searchText, 21), limited = found.slice(0, 20);
+      const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
+        ...limited.map((hit) => h("button", { type: "button",
+          onclick: () => {
+            sel = hit.path; searchText = ""; workArea = "document"; lens = "note"; editEl = null;
+            host.openNote(hit.path); draw();
+          }
+        }, hit.title, h("small", {}, [hit.id, hit.type, String(hit.meta.partNumber ?? "")].filter(Boolean).join(" · ")))));
+      if (!limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "No matching model notes."));
+      if (found.length > limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "More matches exist; refine the search."));
+      searchBox.append(hits);
+    }
     const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
@@ -6012,9 +6794,25 @@ function mountPanel(root             , host           , opt                     
           }));
         } }, "All connections canvas"));
       acts.append(allControls);
+      if (host.discoverRelated && n) {
+        const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
+        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
+        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated (sources, { workflow: workArea, all: discoveryAll })));
+        acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+            onchange: (e       ) => { discoveryAll = (e.target                    ).checked; draw(); } }), " All relationships"));
+      }
+      if (host.hasPreview?.()) {
+        for (const [label, action] of [["Keep selected", host.keepSelectedDiscovery], ["Dismiss selected", host.dismissSelectedDiscovery]]         ) {
+          if (!action) continue;
+          const b = h("button", { class: "sm", title: "Select candidate cards in the scratch Canvas first" }, label);
+          b.addEventListener("click", () => busy(b, "Updating…", () => action()));
+          acts.append(b);
+        }
+      }
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit }                       ) : lens === "compare" ? ({ ...spec, other: cmpOther }                       ) : spec))); acts.append(b); }
-      if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
+      if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo ; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e         )?.message ?? e); } draw(); } }, "Undo") : null) : null;
     const body = h("div", { class: "body" });
@@ -6028,6 +6826,7 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "review") body.append(reviewView());
       else if (lens === "keywords") body.append(keywordsView());
       else if (lens === "pick") body.append(pickView());
+      else if (lens === "terms") body.append(termsView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
       else if (lens === "similar") body.append(similarView());
@@ -6040,28 +6839,37 @@ function mountPanel(root             , host           , opt                     
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e         )?.message ?? e))); console.error(e); }
-    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, toolbar, acts, ...(status ? [status] : []), body); }
-    else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
+    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, workareas, searchBox, toolbar, acts, ...(status ? [status] : []), body); }
+    else wrap.replaceChildren(header, searchBox, lenses, ...(status ? [status] : []), body);
   }
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
+    setIndex(i, l = "") { if (i !== ix) { termCatalog = null; termSource = null; termBuilding = null; termProgress = 0; termCommon = []; termTypes = []; } ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
-    select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
+    select(p) { const next = followSelection(ix, sel, p, pinned, lens === "edit"); if (next === sel) return; sel = next; draw(); },
     setCanvasSelection(paths) {
+      if (pinned || lens === "edit") return; // Pinned or editing views are independent of Canvas selection.
       const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
-      if (paths.length === 1) { if (lens === "common") lens = "note"; if (!pinned && (!ix || ix.notes.has(paths[0] ))) sel = paths[0] ; }
+      if (paths.length === 1) { if (lens === "common") lens = "note"; sel = followSelection(ix, sel, paths[0] , pinned, false); }
       else if (paths.length >= 2) lens = "common";
       editEl = lens === "edit" ? editEl : null; draw();
     },
-    setLens(l) { lens = l; editEl = null; draw(); },
+    setLens(l) { lens = l; if (l === "edit") pinned = true; editEl = null; draw(); },
+    setWorkflow(area, nextLens, selected) {
+      workArea = area; lens = nextLens; if (selected) sel = selected;
+      if (nextLens === "edit") pinned = true;
+      editEl = null; draw();
+    },
+    area: () => workArea,
+    isPinned: () => pinned,
+    setPinned: (next) => setContextPinned(next),
     lens: () => lens, selected: () => sel,
-    destroy() { wrap.remove(); style.remove(); },
+    destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
 }
 
-return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, cardNotePath, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
+return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks, planAddElement, memberConnectionCanvas, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, cardNotePath, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -6076,10 +6884,21 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                            
                         
                    
-                                                                                                        
+                                                                                                                                                                  
+                                                                                      
+                                                                                                                                                      
+                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                            
+                                                                    
+                                                                                                                                                                                                                            
+                                                                                                                                                                                                                     
                                                                             
                                                                           
                                                                                                                                                                            
+                                                                                                                                                                                                                  
+                                    
+                                                                                              
+                                                                                             
                                              
                                                                            
                                                                                                                                                                     
@@ -6098,9 +6917,10 @@ return { mountWorkbench, mountPanel, LENSES, LENS_PROFILE, lensHasCanvas, lensHa
                                                                                                                                                                        
                                                                                                                                                                                
                                                                                                                                                                                                                     
+                                                                                                                                                                                                               
   
 const obsidian = require("obsidian");
-const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
+const PANEL = "mdse-panel", TABLE = "mdse-table", WORKFLOW_TAB = "mdse-workflow-tab", OLD_VIEW = "mdse-workbench";
 const PARSER_REPORT = "99_System/11_Import/Parser Check.md";
 const tick = ()                => new Promise((r) => setTimeout(r, 0));
 
@@ -6155,7 +6975,13 @@ async function savePreview(plugin     , folder        )                  {
   const base = rec.fileName.replace(/\.canvas$/, "");
   let path = `${folder}/${base}.canvas`;
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
-  const saved = await app.vault.create(path, await app.vault.read(src));
+  const raw = await app.vault.read(src);
+  let doc     ;
+  try { doc = JSON.parse(raw); if (!Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) throw new Error("invalid Canvas data"); }
+  catch { throw new Error("Cannot save an invalid Canvas preview."); }
+  // Never publish discovery candidates: retain kept card positions and other Canvas metadata.
+  const cleaned = WB.clearDiscovery(doc);
+  const saved = await app.vault.create(path, JSON.stringify({ ...doc, nodes: cleaned.nodes, edges: cleaned.edges }, null, 2));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
   await mainLeaf(app).openFile(saved);
   return `Saved to ${path}`;
@@ -6167,6 +6993,176 @@ class PickModal extends obsidian.FuzzySuggestModal      {
   getItems() { return this.items; }
   getItemText(x     ) { return this.label(x); }
   onChooseItem(x     ) { this.onPick(x); }
+}
+
+/** Optional second transaction after creating a model note. Neither cancellation nor simply
+ * opening this dialog writes SysML. Existing relationship validation owns the actual change. */
+class ContextLinkModal extends obsidian.Modal {
+  plugin     ; origin        ; created        ;
+  constructor(plugin     , origin        , created        ) { super(plugin.app); this.plugin = plugin; this.origin = origin; this.created = created; }
+  onOpen() {
+    const p = this.plugin, el = this.contentEl;
+    el.empty();
+    el.createEl("h3", { text: "Review a relationship" });
+    el.createEl("p", { cls: "setting-item-description",
+      text: "The new note is already saved and remains independent. A relationship changes SysML only if you separately preview and apply it." });
+    const ix = WB.buildIndex(p.files, { classes: CLASSES }); // Includes the newly created file, without waiting for the async UI refresh.
+    const choices = WB.contextLinkChoices(ix, p.files, this.origin, this.created);
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    if (!choices.length) {
+      el.createEl("p", { text: "No writable native SysML relationship is valid between these two notes. No link was added." });
+      buttons.createEl("button", { text: "Done" }).onclick = () => this.close();
+      return;
+    }
+    const titleOf = (path        )         => ix.notes.get(path)?.title ?? path;
+    let selected = "", name = "", mult = "", plan      = null;
+    const info = el.createEl("p", { cls: "setting-item-description" });
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const choose = new obsidian.Setting(el).setName("Relationship and direction")
+      .setDesc("The arrow shows which note owns the native relationship statement.")
+      .addDropdown((d     ) => {
+        d.addOption("", "Select a relationship…");
+        choices.forEach((c     , i        ) => d.addOption(String(i), titleOf(c.from) + " → " + titleOf(c.to) + " · " + c.label));
+        d.setValue("").onChange((v        ) => { selected = v; name = ""; mult = ""; refresh(); });
+      });
+    const nameSetting = new obsidian.Setting(el).setName("Usage name (optional)")
+      .addText((x     ) => x.onChange((v        ) => { name = v; refresh(); }));
+    const multSetting = new obsidian.Setting(el).setName("Multiplicity (optional)")
+      .addText((x     ) => x.setPlaceholder("e.g. 1..*").onChange((v        ) => { mult = v; refresh(); }));
+    const apply = buttons.createEl("button", { text: "Apply relationship", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Leave unlinked" }).onclick = () => this.close();
+    const refresh = () => {
+      plan = null; apply.disabled = true; preview.setText("");
+      const c = selected === "" ? null : choices[Number(selected)];
+      nameSetting.settingEl.style.display = c?.inputs.includes("name") ? "" : "none";
+      multSetting.settingEl.style.display = c?.inputs.includes("mult") ? "" : "none";
+      info.setText(c?.help ?? "Select a valid direction and relationship kind. The new note stays unlinked until Apply.");
+      if (!c) return;
+      plan = WB.planAddRelationship(ix, p.files, { rel: c.rel, from: c.from, to: c.to,
+        name, mult, usageKind: c.usageKind });
+      if (plan.problems.length || !plan.writes.length) {
+        info.setText(plan.problems[0] ?? "No change can be written."); return;
+      }
+      const w = plan.writes[0], d = WB.edDiff(w.before, w.after);
+      preview.setText([w.path, ...d.removed.map((x        ) => "- " + x),
+        ...d.added.map((x        ) => "+ " + x)].join("\n"));
+      apply.disabled = false;
+    };
+    apply.onclick = async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true;
+      try {
+        const res = await p.applyPlan(plan); // Independent, compare-before-write transaction with Undo.
+        const notice = document.createDocumentFragment(), undo = document.createElement("button");
+        undo.textContent = "Undo"; undo.style.marginLeft = "0.5em";
+        undo.onclick = async () => {
+          undo.disabled = true;
+          try { new obsidian.Notice("MDSE relationship: " + (await res.undo())); }
+          catch (e     ) { new obsidian.Notice("MDSE relationship undo failed: " + String(e?.message ?? e), 8000); }
+        };
+        notice.append("MDSE relationship: " + res.message + " ", undo);
+        new obsidian.Notice(notice, 15000);
+        this.close();
+      } catch (e     ) {
+        plan = null; info.setText("Relationship not applied: " + String(e?.message ?? e) + ". Close or select again to preview.");
+      }
+    };
+    void choose; refresh();
+  }
+}
+
+/** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
+ * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
+class QuickCreateModal extends obsidian.Modal {
+  plugin     ; template     ; origin        ;
+  constructor(plugin     , template     , origin        ) { super(plugin.app); this.plugin = plugin; this.template = template; this.origin = origin; }
+  onOpen() {
+    const p = this.plugin, t = this.template, el = this.contentEl;
+    el.empty(); el.createEl("h3", { text: "New " + t.label });
+    el.createEl("p", { cls: "setting-item-description",
+      text: t.kind === "plain" ? "Ordinary Markdown: no governed ID, UID, SysML model element or automatic relationship." :
+        "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
+    const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
+    const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    let title = t.id === "daily" ? dateLabel : "", folder = originFolder, detail = "";
+    new obsidian.Setting(el).setName("Name").addText((x     ) =>
+      x.setPlaceholder("New note title").setValue(title).onChange((v        ) => { title = v; invalidate(); }));
+    new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
+      .addText((x     ) => x.setValue(folder).onChange((v        ) => { folder = v; invalidate(); }));
+    if (t.kind === "governed") new obsidian.Setting(el).setName("Description / requirement text")
+      .addTextArea((x     ) => x.setValue(detail).onChange((v        ) => { detail = v; invalidate(); }));
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const status = el.createEl("p", { cls: "setting-item-description" });
+    const relationshipPreview = el.createDiv();
+    relationshipPreview.style.maxHeight = "220px"; relationshipPreview.style.overflow = "auto";
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    const see = buttons.createEl("button", { text: "Preview" });
+    const apply = buttons.createEl("button", { text: "Create", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    let plan      = null;
+    function invalidate() { plan = null; apply.disabled = true; preview.setText(""); relationshipPreview.empty(); status.setText("Preview required before creating."); }
+    invalidate();
+    see.addEventListener("click", () => {
+      const existing = new Set        ([...p.files.keys(), ...[...p.ix.notes.keys()]]);
+      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
+        WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      relationshipPreview.empty();
+      if (plan.problems.length) {
+        status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
+      }
+      preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
+      if (t.kind === "governed") {
+        const proposals = WB.previewContextLinks(p.ix, p.files, this.origin, plan);
+        relationshipPreview.createEl("h4", { text: "Potential relationships — preview only" });
+        relationshipPreview.createEl("p", { cls: "setting-item-description", text: proposals.message });
+        for (const c of proposals.choices.slice(0, 12)) {
+          const source = c.from === this.origin ? "Selected element" : "New element";
+          const target = c.to === this.origin ? "Selected element" : "New element";
+          relationshipPreview.createEl("div", { text: source + " → " + target + " · " + c.label });
+        }
+        if (proposals.choices.length > 12)
+          relationshipPreview.createEl("p", { cls: "setting-item-description", text: "And " + (proposals.choices.length - 12) + " more valid options after creation." });
+      }
+      status.setText(plan.summary); apply.disabled = false;
+    });
+    apply.addEventListener("click", async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true; see.disabled = true;
+      try {
+        const createdPath = plan.writes[0].path;
+        const result = await p.applyPlan(plan);
+        const file = p.app.vault.getAbstractFileByPath(createdPath);
+        if (file) await mainLeaf(p.app).openFile(file);
+        const notice = document.createDocumentFragment(), undoButton = document.createElement("button");
+        undoButton.textContent = "Undo"; undoButton.style.marginLeft = "0.5em";
+        undoButton.onclick = async () => {
+          undoButton.disabled = true;
+          try { new obsidian.Notice("MDSE: " + (await result.undo())); }
+          catch (err     ) { new obsidian.Notice("MDSE: undo failed: " + String(err?.message ?? err), 8000); }
+        };
+        notice.append("MDSE: " + result.message + " ", undoButton);
+        new obsidian.Notice(notice, 15000);
+        // Creating the note is complete. Link approval, if offered, is a separate operation.
+        relationshipPreview.empty(); // Replace hypothetical candidates with the actual post-creation validation.
+        const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
+          ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
+        if (!linkOptions.length) { this.close(); return; }
+        preview.setText("Created: " + createdPath + "\n\nNo SysML relationship has been added.");
+        status.setText("You may leave this note independent or separately review a native relationship to " +
+          (p.ix.notes.get(this.origin)?.title ?? this.origin) + ".");
+        buttons.replaceChildren();
+        buttons.createEl("button", { text: "Review relationship…", cls: "mod-cta" }).onclick = () => {
+          this.close(); new ContextLinkModal(p, this.origin, createdPath).open();
+        };
+        buttons.createEl("button", { text: "Done — leave unlinked" }).onclick = () => this.close();
+      } catch (err     ) {
+        status.setText("Could not create: " + String(err?.message ?? err) + ". Preview again.");
+        plan = null; see.disabled = false;
+      }
+    });
+  }
 }
 
 /** D-0161: a canvas of more than 50 elements warns and asks for a limit of up to 212. Closing without choosing cancels the canvas. */
@@ -6250,8 +7246,15 @@ function hostFor(plugin     )      {
       if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens        ) => plugin.openTable(lens),
+    currentSelection: () => plugin.selected || null,
+    openWorkflow: (area        , lens        , selected        ) => plugin.openWorkflowTab(area, lens, selected),
+    quickCreate: (templateId        , selectedPath        ) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
+    openMemberCanvas: (owner        , key        ) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
+    discoverRelated: (sources          , mode                                                                            ) => plugin.discoverRelatedOnCanvas(sources, mode),
+    keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
+    dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path        , mode                   ) => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
@@ -6290,6 +7293,32 @@ class PanelView extends obsidian.ItemView {
   async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
 }
 
+/** Independent editor-area Workbench. Opening a workflow never repurposes an open file, Canvas, or other Workbench tab. */
+class WorkflowTabView extends obsidian.ItemView {
+  plugin     ; app_      = null; area = "document"; lens = "note"; selected = ""; pinned = true;
+  constructor(leaf     , plugin     ) { super(leaf); this.plugin = plugin; }
+  getViewType() { return WORKFLOW_TAB; }
+  getDisplayText() { return "MDSE " + this.area.charAt(0).toUpperCase() + this.area.slice(1); }
+  getIcon() { return "network"; }
+  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected, pinned: this.app_?.isPinned?.() ?? this.pinned }; }
+  async setState(state     , result     ) {
+    if (state?.area && ["document", "define", "structure", "verify"].includes(state.area)) this.area = state.area;
+    if (typeof state?.lens === "string") this.lens = state.lens;
+    if (typeof state?.selected === "string") this.selected = state.selected;
+    if (typeof state?.pinned === "boolean") this.pinned = state.pinned;
+    this.app_?.setWorkflow?.(this.area, this.lens, this.selected);
+    this.app_?.setPinned?.(this.pinned);
+    await super.setState?.(state, result);
+  }
+  async onOpen() {
+    this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
+    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: this.pinned });
+    this.plugin.apps.add(this.app_);
+    await this.plugin.attachIndex(this.app_);
+  }
+  async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
+}
+
 class TableView extends obsidian.ItemView {
   plugin     ; app_      = null; lens = "tables";
   constructor(leaf     , plugin     ) { super(leaf); this.plugin = plugin; }
@@ -6309,7 +7338,7 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files                      = new Map(); ix      = null; building                       = null; apps           = new Set(); selected = ""; rebuildTimer      = null;
-  preview                                                                                       = null; previews                                                                                             = new Map(); previewSeq = 0; settings                                                                 = { defaultFolder: "", lastFolder: "", popout: false };
+  preview                                                                                                                                                                               = null; previews                                                                                                                                                                                     = new Map(); previewSeq = 0; settings                                                                 = { defaultFolder: "", lastFolder: "", popout: false };
   author = ""; drawTimer      = null; drawBusy              = new Set(); drawQueue                = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -6411,20 +7440,68 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /** D-0082, D-0084: the note cards chosen on a canvas. Obsidian has no event for it, so the chosen cards are read from the canvas's own `selection` (an undocumented internal) every 300 ms while a canvas has been in front, and after a click or key press.
    *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
   canvasLeaf      = null; canvasKey = "";
+  discoveryTimer      = null; discoveryEpoch = 0; discoveryBusy = false;
+
+  /** Refresh only an MDSE discovery preview. Never touch a saved Canvas or a temporary card being inspected.
+   * The debounce epoch prevents stale selections from overwriting newer ones. */
+  async refreshDiscoveryOnSelection(path        , sources          , epoch        )                {
+    if (epoch !== this.discoveryEpoch) return;
+    if (this.discoveryBusy) {
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, sources, epoch); }, 180);
+      return;
+    }
+    const rec = this.previews.get(path), t = this.canvasTarget();
+    if (!rec?.discovery || !t || t.path !== path) return;
+    this.discoveryBusy = true;
+    try {
+      await this.ensureIndex();
+      if (epoch !== this.discoveryEpoch || this.canvasTarget()?.path !== path || !this.previews.get(path)?.discovery) return;
+      await this.editTarget(t, (raw        ) => {
+        if (epoch !== this.discoveryEpoch) return null;
+        const current = parseDoc(raw);
+        // Never swallow a user's newly drawn line: it must pass through the governed relationship editor.
+        if (WB.cdDrawnLines(current, rec.edgeIds).length) return null;
+        const existingEdges = WB.cdEdgeIds(current);
+        const anchored = WB.addToCanvas(WB.clearDiscovery(current), this.ix, sources[0] , sources).doc;
+        const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, rec.discovery );
+        const next = { ...current, nodes: result.doc.nodes, edges: result.doc.edges };
+        // Register only lines generated by MDSE, never lines the user drew.
+        for (const id of WB.cdEdgeIds(next)) if (!existingEdges.has(id)) rec.edgeIds.add(id);
+        return JSON.stringify(next, null, 2);
+      });
+    } catch (e     ) {
+      new obsidian.Notice("MDSE discovery refresh failed: " + String(e?.message ?? e), 8000);
+    } finally { this.discoveryBusy = false; }
+  }
+
   canvasSelection() {
     const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
     if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
     const leaf = this.canvasLeaf, view = leaf?.view; if (!view || view.getViewType?.() !== "canvas" || !view.canvas || (view.containerEl && !view.containerEl.isConnected)) return;
     const sel = view.canvas.selection; if (!sel) return;
     const paths           = [];
+    let candidateSelected = false, allIdsKnown = true;
     for (const node of sel) {
       let data     ; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const id          = data?.id ?? node?.id;
+      if (typeof id !== "string") allIdsKnown = false;
+      else if (id.startsWith("mdse-discovery:")) candidateSelected = true;
       const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
       if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
     }
-    const key = paths.join("\n"); if (key === this.canvasKey) return; this.canvasKey = key;
+    const path = String(view.file?.path ?? "");
+    const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
+    if (key === this.canvasKey) return;
+    this.canvasKey = key;
+    clearTimeout(this.discoveryTimer);
+    ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a     ) => a.setCanvasSelection?.([])); return; }
     this.selected = paths[0] ; this.apps.forEach((a     ) => { a.setCanvasSelection?.(paths); });
+    // Candidate selection is deliberately inert: otherwise clicking Keep could remove its target.
+    if (!candidateSelected && allIdsKnown && this.previews.get(path)?.discovery) {
+      const epoch = this.discoveryEpoch;
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, [...paths], epoch); }, 220);
+    }
   }
   onFileOpen(f     ) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a     ) => a.select(f.path)); } }
 
@@ -6446,13 +7523,36 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     ws.revealLeaf(leaf);
     if (requested && !wantPopout) new obsidian.Notice("MDSE: this Obsidian version does not support pop-out windows; opened in sidebar.");
   }
+  /** Show a context-specific creation dialog; source/current workspaces remain intact. */
+  async openQuickCreate(templateId        , selectedPath        )                  {
+    const template = WB.quickTemplate(templateId);
+    if (!template) throw new Error("Unknown creation template: " + templateId);
+    await this.ensureIndex();
+    new QuickCreateModal(this, template, selectedPath).open();
+    return "";
+  }
+  /** Open a dedicated workflow in a fresh Obsidian editor tab. Never reuse a file or Canvas leaf. */
+  async openWorkflowTab(area        , lens        , selected        )                {
+    const leaf = mainLeaf(this.app); // getLeaf("tab") creates a new tab rather than replacing an existing one.
+    await leaf.setViewState({ type: WORKFLOW_TAB, state: { area, lens, selected }, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
   async openTable(lens        ) {
     await this.ensureIndex();
-    let leaf = this.app.workspace.getLeavesOfType(TABLE)[0];
-    if (!leaf) leaf = mainLeaf(this.app);
+    // Never repurpose an existing table when the engineer opens a different function.
+    const leaf = mainLeaf(this.app);
     await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
+  }
+  /** Open an isolated, read-only member-connection preview; the current editor and Canvas stay unchanged. */
+  async openMemberCanvas(owner        , key        )                  {
+    await this.ensureIndex();
+    if (!this.ix?.notes.has(owner)) throw new Error("The owning model note is not available.");
+    const projection = WB.memberConnectionCanvas(this.ix, owner, key);
+    const message = await writePreview(this, projection);
+    const count = projection.doc && (projection.doc       ).edges?.length || 0;
+    return `${message} Displayed ${count} explicit connection(s) for one SysML usage${projection.unresolved ? ` (${projection.unresolved} unresolved)` : ""}. This is a visual projection only; it does not create model notes or change the source.`;
   }
   /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
   askCanvasLimit(count        )                         { return new Promise((resolve) => new LimitModal(this.app, count, resolve).open()); }
@@ -6567,6 +7667,48 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
     return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+  }
+
+  /** Preview related candidates on a new scratch Canvas; never modify an existing saved canvas. */
+  async discoverRelatedOnCanvas(paths          , mode                                                                             = { workflow: "document", all: false })                  {
+    await this.ensureIndex();
+    const sources = [...new Set(paths)].filter((p) => this.ix.notes.has(p));
+    if (!sources.length) return "Select a governed engineering note first.";
+    const target = this.canvasTarget();
+    let current      = { nodes: [], edges: [] };
+    if (target) {
+      try { await target.leaf?.view?.save?.(); } catch { /* Canvas view may not expose save */ }
+      const file = this.app.vault.getAbstractFileByPath(target.path);
+      if (file) current = parseDoc(await this.app.vault.read(file));
+    }
+    const kept = WB.clearDiscovery(current);
+    const anchored = WB.addToCanvas(kept, this.ix, sources[0] , sources).doc;
+    const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, mode);
+    const name = String(this.ix.notes.get(sources[0] )?.title ?? "Engineering elements").slice(0, 65).replace(/[\\/:*?"<>|#^[\]]/g, " ");
+    const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
+      fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
+      capped: result.shown < result.available, groups: 0 });
+    if (this.preview) this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+    this.canvasKey = ""; // A newly opened preview is a distinct selection context.
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Selecting kept cards refreshes candidates automatically; selecting temporary cards leaves them available for Keep or Dismiss. Save excludes temporary candidates.`;
+  }
+
+  /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
+  async changeSelectedDiscovery(action                    )                  {
+    await this.ensureIndex();
+    const t = this.canvasTarget();
+    if (!t || !this.previews.has(t.path)) return "Open an MDSE discovery preview first.";
+    const paths = this.selectedCardPaths();
+    if (!paths.length) return "Select one or more discovery candidate cards first.";
+    let changed = 0;
+    await this.editTarget(t, (text) => {
+      const original = parseDoc(text);
+      const r = action === "keep" ? WB.keepDiscoveryCandidates(original, this.ix, paths) : WB.dismissDiscoveryCandidates(original, paths);
+      changed = action === "keep" ? r.kept : r.dismissed;
+      if (!changed) return null;
+      return JSON.stringify({ ...original, nodes: r.doc.nodes, edges: r.doc.edges }, null, 2);
+    });
+    return changed ? `${action === "keep" ? "Kept" : "Dismissed"} ${changed} candidate(s). ${action === "keep" ? "They will be included when you save this canvas." : "Kept cards were not changed."}` : "No temporary candidates were selected.";
   }
 
   /* ---- saving a preview ---- */
@@ -6704,6 +7846,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf     ) => new PanelView(leaf, this));
     this.registerView(TABLE, (leaf     ) => new TableView(leaf, this));
+    this.registerView(WORKFLOW_TAB, (leaf     ) => new WorkflowTabView(leaf, this));
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk         , fn                  )          => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder        , only                        , fn                     ) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x     ) => x[1], (x     ) => fn(x[0])).open();
@@ -6728,6 +7871,18 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("file-menu", (menu     , f     ) => {
       if (f?.extension !== "md") return;
       menu.addItem((i     ) => i.setTitle("Show in MDSE Workbench").setIcon("network").onClick(async () => { await this.openPanel(); await this.ensureIndex(); this.selected = f.path; this.apps.forEach((a     ) => a.select(f.path)); }));
+      menu.addItem((i     ) => i.setTitle("Open in MDSE workflow…").setIcon("copy-plus").onClick(async () => {
+        try {
+          await this.ensureIndex();
+          if (!this.ix?.notes.has(f.path)) { new obsidian.Notice("MDSE: this file is not a governed model note.", 6000); return; }
+          const choices = (["document", "define", "structure", "verify"]         ).map((area) => ({
+            area, lens: WB.WORKFLOW_ENTRY_LENS[area], label: area.charAt(0).toUpperCase() + area.slice(1),
+          }));
+          new PickModal(this.app, "Open note in new MDSE workflow tab", choices, (x     ) => x.label,
+            (x     ) => { void this.openWorkflowTab(x.area, x.lens, f.path).catch((e     ) =>
+              new obsidian.Notice("MDSE: could not open workflow: " + String(e?.message ?? e), 8000)); }).open();
+        } catch (e     ) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
+      }));
       menu.addItem((i     ) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f     ) => this.onFileOpen(f)));
@@ -6741,5 +7896,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { ++this.discoveryEpoch; clearTimeout(this.discoveryTimer); clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };

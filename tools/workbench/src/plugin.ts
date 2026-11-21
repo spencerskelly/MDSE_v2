@@ -11,10 +11,21 @@ declare const require: (id: string) => any;
 declare const CLASSES: any;
 declare const MDSE: any;
 declare const WB: {
-  mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string }) => any;
+  mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
+  WORKFLOW_ENTRY_LENS: Record<"document" | "define" | "structure" | "verify", string>;
+  quickTemplate: (id: string) => { id: string; label: string; area: string; kind: "plain" | "governed"; type?: string; subtype?: string } | undefined;
+  planPlainNote: (template: any, title: string, folder: string, existing: ReadonlySet<string>) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
+  planAddElement: (ix: any, classes: any, options: { type: string; subtype: string; title: string; folder: string; text: string; author: string }) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
+  buildIndex: (files: Map<string, string>, options: unknown) => any;
+  contextLinkChoices: (ix: any, files: Map<string, string>, origin: string, created: string) => Array<{ rel: string; label: string; from: string; to: string; help: string; inputs: readonly string[]; usageKind: string }>;
+  previewContextLinks: (ix: any, files: Map<string, string>, origin: string, plan: any) => { choices: Array<{ rel: string; label: string; from: string; to: string }>; message: string; createdPath: string | null };
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
+  discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number, mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => { doc: any; shown: number; available: number };
+  clearDiscovery: (doc: any) => any;
+  keepDiscoveryCandidates: (doc: any, ix: any, paths: string[]) => { doc: any; kept: number };
+  dismissDiscoveryCandidates: (doc: any, paths: string[]) => { doc: any; dismissed: number };
   cardNotePath: (node: any) => string | null;
   structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
@@ -33,9 +44,10 @@ declare const WB: {
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
   uniqueCanvas: (ix: any, a: string, b: string) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string };
   internalCanvas: (ix: any, path: string, inherit?: string[]) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number };
+  memberConnectionCanvas: (ix: any, owner: string, key: string, limit?: number) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string };
 };
 const obsidian = require("obsidian");
-const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
+const PANEL = "mdse-panel", TABLE = "mdse-table", WORKFLOW_TAB = "mdse-workflow-tab", OLD_VIEW = "mdse-workbench";
 const PARSER_REPORT = "99_System/11_Import/Parser Check.md";
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
@@ -90,7 +102,13 @@ async function savePreview(plugin: any, folder: string): Promise<string> {
   const base = rec.fileName.replace(/\.canvas$/, "");
   let path = `${folder}/${base}.canvas`;
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
-  const saved = await app.vault.create(path, await app.vault.read(src));
+  const raw = await app.vault.read(src);
+  let doc: any;
+  try { doc = JSON.parse(raw); if (!Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) throw new Error("invalid Canvas data"); }
+  catch { throw new Error("Cannot save an invalid Canvas preview."); }
+  // Never publish discovery candidates: retain kept card positions and other Canvas metadata.
+  const cleaned = WB.clearDiscovery(doc);
+  const saved = await app.vault.create(path, JSON.stringify({ ...doc, nodes: cleaned.nodes, edges: cleaned.edges }, null, 2));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
   await mainLeaf(app).openFile(saved);
   return `Saved to ${path}`;
@@ -102,6 +120,176 @@ class PickModal extends obsidian.FuzzySuggestModal<any> {
   getItems() { return this.items; }
   getItemText(x: any) { return this.label(x); }
   onChooseItem(x: any) { this.onPick(x); }
+}
+
+/** Optional second transaction after creating a model note. Neither cancellation nor simply
+ * opening this dialog writes SysML. Existing relationship validation owns the actual change. */
+class ContextLinkModal extends obsidian.Modal {
+  plugin: any; origin: string; created: string;
+  constructor(plugin: any, origin: string, created: string) { super(plugin.app); this.plugin = plugin; this.origin = origin; this.created = created; }
+  onOpen() {
+    const p = this.plugin, el = this.contentEl;
+    el.empty();
+    el.createEl("h3", { text: "Review a relationship" });
+    el.createEl("p", { cls: "setting-item-description",
+      text: "The new note is already saved and remains independent. A relationship changes SysML only if you separately preview and apply it." });
+    const ix = WB.buildIndex(p.files, { classes: CLASSES }); // Includes the newly created file, without waiting for the async UI refresh.
+    const choices = WB.contextLinkChoices(ix, p.files, this.origin, this.created);
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    if (!choices.length) {
+      el.createEl("p", { text: "No writable native SysML relationship is valid between these two notes. No link was added." });
+      buttons.createEl("button", { text: "Done" }).onclick = () => this.close();
+      return;
+    }
+    const titleOf = (path: string): string => ix.notes.get(path)?.title ?? path;
+    let selected = "", name = "", mult = "", plan: any = null;
+    const info = el.createEl("p", { cls: "setting-item-description" });
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const choose = new obsidian.Setting(el).setName("Relationship and direction")
+      .setDesc("The arrow shows which note owns the native relationship statement.")
+      .addDropdown((d: any) => {
+        d.addOption("", "Select a relationship…");
+        choices.forEach((c: any, i: number) => d.addOption(String(i), titleOf(c.from) + " → " + titleOf(c.to) + " · " + c.label));
+        d.setValue("").onChange((v: string) => { selected = v; name = ""; mult = ""; refresh(); });
+      });
+    const nameSetting = new obsidian.Setting(el).setName("Usage name (optional)")
+      .addText((x: any) => x.onChange((v: string) => { name = v; refresh(); }));
+    const multSetting = new obsidian.Setting(el).setName("Multiplicity (optional)")
+      .addText((x: any) => x.setPlaceholder("e.g. 1..*").onChange((v: string) => { mult = v; refresh(); }));
+    const apply = buttons.createEl("button", { text: "Apply relationship", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Leave unlinked" }).onclick = () => this.close();
+    const refresh = () => {
+      plan = null; apply.disabled = true; preview.setText("");
+      const c = selected === "" ? null : choices[Number(selected)];
+      nameSetting.settingEl.style.display = c?.inputs.includes("name") ? "" : "none";
+      multSetting.settingEl.style.display = c?.inputs.includes("mult") ? "" : "none";
+      info.setText(c?.help ?? "Select a valid direction and relationship kind. The new note stays unlinked until Apply.");
+      if (!c) return;
+      plan = WB.planAddRelationship(ix, p.files, { rel: c.rel, from: c.from, to: c.to,
+        name, mult, usageKind: c.usageKind });
+      if (plan.problems.length || !plan.writes.length) {
+        info.setText(plan.problems[0] ?? "No change can be written."); return;
+      }
+      const w = plan.writes[0], d = WB.edDiff(w.before, w.after);
+      preview.setText([w.path, ...d.removed.map((x: string) => "- " + x),
+        ...d.added.map((x: string) => "+ " + x)].join("\n"));
+      apply.disabled = false;
+    };
+    apply.onclick = async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true;
+      try {
+        const res = await p.applyPlan(plan); // Independent, compare-before-write transaction with Undo.
+        const notice = document.createDocumentFragment(), undo = document.createElement("button");
+        undo.textContent = "Undo"; undo.style.marginLeft = "0.5em";
+        undo.onclick = async () => {
+          undo.disabled = true;
+          try { new obsidian.Notice("MDSE relationship: " + (await res.undo())); }
+          catch (e: any) { new obsidian.Notice("MDSE relationship undo failed: " + String(e?.message ?? e), 8000); }
+        };
+        notice.append("MDSE relationship: " + res.message + " ", undo);
+        new obsidian.Notice(notice, 15000);
+        this.close();
+      } catch (e: any) {
+        plan = null; info.setText("Relationship not applied: " + String(e?.message ?? e) + ". Close or select again to preview.");
+      }
+    };
+    void choose; refresh();
+  }
+}
+
+/** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
+ * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
+class QuickCreateModal extends obsidian.Modal {
+  plugin: any; template: any; origin: string;
+  constructor(plugin: any, template: any, origin: string) { super(plugin.app); this.plugin = plugin; this.template = template; this.origin = origin; }
+  onOpen() {
+    const p = this.plugin, t = this.template, el = this.contentEl;
+    el.empty(); el.createEl("h3", { text: "New " + t.label });
+    el.createEl("p", { cls: "setting-item-description",
+      text: t.kind === "plain" ? "Ordinary Markdown: no governed ID, UID, SysML model element or automatic relationship." :
+        "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
+    const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
+    const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    let title = t.id === "daily" ? dateLabel : "", folder = originFolder, detail = "";
+    new obsidian.Setting(el).setName("Name").addText((x: any) =>
+      x.setPlaceholder("New note title").setValue(title).onChange((v: string) => { title = v; invalidate(); }));
+    new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
+      .addText((x: any) => x.setValue(folder).onChange((v: string) => { folder = v; invalidate(); }));
+    if (t.kind === "governed") new obsidian.Setting(el).setName("Description / requirement text")
+      .addTextArea((x: any) => x.setValue(detail).onChange((v: string) => { detail = v; invalidate(); }));
+    const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
+    preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
+    const status = el.createEl("p", { cls: "setting-item-description" });
+    const relationshipPreview = el.createDiv();
+    relationshipPreview.style.maxHeight = "220px"; relationshipPreview.style.overflow = "auto";
+    const buttons = el.createDiv({ cls: "modal-button-container" });
+    const see = buttons.createEl("button", { text: "Preview" });
+    const apply = buttons.createEl("button", { text: "Create", cls: "mod-cta" }); apply.disabled = true;
+    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    let plan: any = null;
+    function invalidate() { plan = null; apply.disabled = true; preview.setText(""); relationshipPreview.empty(); status.setText("Preview required before creating."); }
+    invalidate();
+    see.addEventListener("click", () => {
+      const existing = new Set<string>([...p.files.keys(), ...[...p.ix.notes.keys()]]);
+      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
+        WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      relationshipPreview.empty();
+      if (plan.problems.length) {
+        status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
+      }
+      preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
+      if (t.kind === "governed") {
+        const proposals = WB.previewContextLinks(p.ix, p.files, this.origin, plan);
+        relationshipPreview.createEl("h4", { text: "Potential relationships — preview only" });
+        relationshipPreview.createEl("p", { cls: "setting-item-description", text: proposals.message });
+        for (const c of proposals.choices.slice(0, 12)) {
+          const source = c.from === this.origin ? "Selected element" : "New element";
+          const target = c.to === this.origin ? "Selected element" : "New element";
+          relationshipPreview.createEl("div", { text: source + " → " + target + " · " + c.label });
+        }
+        if (proposals.choices.length > 12)
+          relationshipPreview.createEl("p", { cls: "setting-item-description", text: "And " + (proposals.choices.length - 12) + " more valid options after creation." });
+      }
+      status.setText(plan.summary); apply.disabled = false;
+    });
+    apply.addEventListener("click", async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true; see.disabled = true;
+      try {
+        const createdPath = plan.writes[0].path;
+        const result = await p.applyPlan(plan);
+        const file = p.app.vault.getAbstractFileByPath(createdPath);
+        if (file) await mainLeaf(p.app).openFile(file);
+        const notice = document.createDocumentFragment(), undoButton = document.createElement("button");
+        undoButton.textContent = "Undo"; undoButton.style.marginLeft = "0.5em";
+        undoButton.onclick = async () => {
+          undoButton.disabled = true;
+          try { new obsidian.Notice("MDSE: " + (await result.undo())); }
+          catch (err: any) { new obsidian.Notice("MDSE: undo failed: " + String(err?.message ?? err), 8000); }
+        };
+        notice.append("MDSE: " + result.message + " ", undoButton);
+        new obsidian.Notice(notice, 15000);
+        // Creating the note is complete. Link approval, if offered, is a separate operation.
+        relationshipPreview.empty(); // Replace hypothetical candidates with the actual post-creation validation.
+        const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
+          ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
+        if (!linkOptions.length) { this.close(); return; }
+        preview.setText("Created: " + createdPath + "\n\nNo SysML relationship has been added.");
+        status.setText("You may leave this note independent or separately review a native relationship to " +
+          (p.ix.notes.get(this.origin)?.title ?? this.origin) + ".");
+        buttons.replaceChildren();
+        buttons.createEl("button", { text: "Review relationship…", cls: "mod-cta" }).onclick = () => {
+          this.close(); new ContextLinkModal(p, this.origin, createdPath).open();
+        };
+        buttons.createEl("button", { text: "Done — leave unlinked" }).onclick = () => this.close();
+      } catch (err: any) {
+        status.setText("Could not create: " + String(err?.message ?? err) + ". Preview again.");
+        plan = null; see.disabled = false;
+      }
+    });
+  }
 }
 
 /** D-0161: a canvas of more than 50 elements warns and asks for a limit of up to 212. Closing without choosing cancels the canvas. */
@@ -185,8 +373,15 @@ function hostFor(plugin: any): any {
       if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens: string) => plugin.openTable(lens),
+    currentSelection: () => plugin.selected || null,
+    openWorkflow: (area: string, lens: string, selected: string) => plugin.openWorkflowTab(area, lens, selected),
+    quickCreate: (templateId: string, selectedPath: string) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
+    openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
+    discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
+    keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
+    dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
     openStructureCanvas: (path: string, mode: "direct" | "full") => plugin.openStructureCanvas(path, mode),
     autoLayout: () => plugin.autoLayoutCanvas(),
@@ -225,6 +420,32 @@ class PanelView extends obsidian.ItemView {
   async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
 }
 
+/** Independent editor-area Workbench. Opening a workflow never repurposes an open file, Canvas, or other Workbench tab. */
+class WorkflowTabView extends obsidian.ItemView {
+  plugin: any; app_: any = null; area = "document"; lens = "note"; selected = ""; pinned = true;
+  constructor(leaf: any, plugin: any) { super(leaf); this.plugin = plugin; }
+  getViewType() { return WORKFLOW_TAB; }
+  getDisplayText() { return "MDSE " + this.area.charAt(0).toUpperCase() + this.area.slice(1); }
+  getIcon() { return "network"; }
+  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected, pinned: this.app_?.isPinned?.() ?? this.pinned }; }
+  async setState(state: any, result: any) {
+    if (state?.area && ["document", "define", "structure", "verify"].includes(state.area)) this.area = state.area;
+    if (typeof state?.lens === "string") this.lens = state.lens;
+    if (typeof state?.selected === "string") this.selected = state.selected;
+    if (typeof state?.pinned === "boolean") this.pinned = state.pinned;
+    this.app_?.setWorkflow?.(this.area, this.lens, this.selected);
+    this.app_?.setPinned?.(this.pinned);
+    await super.setState?.(state, result);
+  }
+  async onOpen() {
+    this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
+    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: this.pinned });
+    this.plugin.apps.add(this.app_);
+    await this.plugin.attachIndex(this.app_);
+  }
+  async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
+}
+
 class TableView extends obsidian.ItemView {
   plugin: any; app_: any = null; lens = "tables";
   constructor(leaf: any, plugin: any) { super(leaf); this.plugin = plugin; }
@@ -244,7 +465,7 @@ class TableView extends obsidian.ItemView {
 
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
-  preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
+  preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -346,20 +567,68 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /** D-0082, D-0084: the note cards chosen on a canvas. Obsidian has no event for it, so the chosen cards are read from the canvas's own `selection` (an undocumented internal) every 300 ms while a canvas has been in front, and after a click or key press.
    *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
   canvasLeaf: any = null; canvasKey = "";
+  discoveryTimer: any = null; discoveryEpoch = 0; discoveryBusy = false;
+
+  /** Refresh only an MDSE discovery preview. Never touch a saved Canvas or a temporary card being inspected.
+   * The debounce epoch prevents stale selections from overwriting newer ones. */
+  async refreshDiscoveryOnSelection(path: string, sources: string[], epoch: number): Promise<void> {
+    if (epoch !== this.discoveryEpoch) return;
+    if (this.discoveryBusy) {
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, sources, epoch); }, 180);
+      return;
+    }
+    const rec = this.previews.get(path), t = this.canvasTarget();
+    if (!rec?.discovery || !t || t.path !== path) return;
+    this.discoveryBusy = true;
+    try {
+      await this.ensureIndex();
+      if (epoch !== this.discoveryEpoch || this.canvasTarget()?.path !== path || !this.previews.get(path)?.discovery) return;
+      await this.editTarget(t, (raw: string) => {
+        if (epoch !== this.discoveryEpoch) return null;
+        const current = parseDoc(raw);
+        // Never swallow a user's newly drawn line: it must pass through the governed relationship editor.
+        if (WB.cdDrawnLines(current, rec.edgeIds).length) return null;
+        const existingEdges = WB.cdEdgeIds(current);
+        const anchored = WB.addToCanvas(WB.clearDiscovery(current), this.ix, sources[0]!, sources).doc;
+        const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, rec.discovery!);
+        const next = { ...current, nodes: result.doc.nodes, edges: result.doc.edges };
+        // Register only lines generated by MDSE, never lines the user drew.
+        for (const id of WB.cdEdgeIds(next)) if (!existingEdges.has(id)) rec.edgeIds.add(id);
+        return JSON.stringify(next, null, 2);
+      });
+    } catch (e: any) {
+      new obsidian.Notice("MDSE discovery refresh failed: " + String(e?.message ?? e), 8000);
+    } finally { this.discoveryBusy = false; }
+  }
+
   canvasSelection() {
     const act = this.app.workspace.activeLeaf ?? this.app.workspace.getMostRecentLeaf?.();
     if (act?.view?.getViewType?.() === "canvas") this.canvasLeaf = act;
     const leaf = this.canvasLeaf, view = leaf?.view; if (!view || view.getViewType?.() !== "canvas" || !view.canvas || (view.containerEl && !view.containerEl.isConnected)) return;
     const sel = view.canvas.selection; if (!sel) return;
     const paths: string[] = [];
+    let candidateSelected = false, allIdsKnown = true;
     for (const node of sel) {
       let data: any; try { data = node?.getData?.() ?? node?.unknownData ?? node; } catch { continue; }
+      const id: unknown = data?.id ?? node?.id;
+      if (typeof id !== "string") allIdsKnown = false;
+      else if (id.startsWith("mdse-discovery:")) candidateSelected = true;
       const p = WB.cardNotePath({ type: data?.type, file: typeof data?.file === "string" ? data.file : data?.file?.path, text: data?.text });
       if (p && this.ix?.notes.has(p) && !paths.includes(p)) paths.push(p);
     }
-    const key = paths.join("\n"); if (key === this.canvasKey) return; this.canvasKey = key;
+    const path = String(view.file?.path ?? "");
+    const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
+    if (key === this.canvasKey) return;
+    this.canvasKey = key;
+    clearTimeout(this.discoveryTimer);
+    ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
     this.selected = paths[0]!; this.apps.forEach((a: any) => { a.setCanvasSelection?.(paths); });
+    // Candidate selection is deliberately inert: otherwise clicking Keep could remove its target.
+    if (!candidateSelected && allIdsKnown && this.previews.get(path)?.discovery) {
+      const epoch = this.discoveryEpoch;
+      this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, [...paths], epoch); }, 220);
+    }
   }
   onFileOpen(f: any) { if (f && f.extension === "md" && this.ix?.notes.has(f.path)) { this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); } }
 
@@ -381,13 +650,36 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     ws.revealLeaf(leaf);
     if (requested && !wantPopout) new obsidian.Notice("MDSE: this Obsidian version does not support pop-out windows; opened in sidebar.");
   }
+  /** Show a context-specific creation dialog; source/current workspaces remain intact. */
+  async openQuickCreate(templateId: string, selectedPath: string): Promise<string> {
+    const template = WB.quickTemplate(templateId);
+    if (!template) throw new Error("Unknown creation template: " + templateId);
+    await this.ensureIndex();
+    new QuickCreateModal(this, template, selectedPath).open();
+    return "";
+  }
+  /** Open a dedicated workflow in a fresh Obsidian editor tab. Never reuse a file or Canvas leaf. */
+  async openWorkflowTab(area: string, lens: string, selected: string): Promise<void> {
+    const leaf = mainLeaf(this.app); // getLeaf("tab") creates a new tab rather than replacing an existing one.
+    await leaf.setViewState({ type: WORKFLOW_TAB, state: { area, lens, selected }, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
   async openTable(lens: string) {
     await this.ensureIndex();
-    let leaf = this.app.workspace.getLeavesOfType(TABLE)[0];
-    if (!leaf) leaf = mainLeaf(this.app);
+    // Never repurpose an existing table when the engineer opens a different function.
+    const leaf = mainLeaf(this.app);
     await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
+  }
+  /** Open an isolated, read-only member-connection preview; the current editor and Canvas stay unchanged. */
+  async openMemberCanvas(owner: string, key: string): Promise<string> {
+    await this.ensureIndex();
+    if (!this.ix?.notes.has(owner)) throw new Error("The owning model note is not available.");
+    const projection = WB.memberConnectionCanvas(this.ix, owner, key);
+    const message = await writePreview(this, projection);
+    const count = projection.doc && (projection.doc as any).edges?.length || 0;
+    return `${message} Displayed ${count} explicit connection(s) for one SysML usage${projection.unresolved ? ` (${projection.unresolved} unresolved)` : ""}. This is a visual projection only; it does not create model notes or change the source.`;
   }
   /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
   askCanvasLimit(count: number): Promise<number | null> { return new Promise((resolve) => new LimitModal(this.app, count, resolve).open()); }
@@ -502,6 +794,48 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
     return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+  }
+
+  /** Preview related candidates on a new scratch Canvas; never modify an existing saved canvas. */
+  async discoverRelatedOnCanvas(paths: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } = { workflow: "document", all: false }): Promise<string> {
+    await this.ensureIndex();
+    const sources = [...new Set(paths)].filter((p) => this.ix.notes.has(p));
+    if (!sources.length) return "Select a governed engineering note first.";
+    const target = this.canvasTarget();
+    let current: any = { nodes: [], edges: [] };
+    if (target) {
+      try { await target.leaf?.view?.save?.(); } catch { /* Canvas view may not expose save */ }
+      const file = this.app.vault.getAbstractFileByPath(target.path);
+      if (file) current = parseDoc(await this.app.vault.read(file));
+    }
+    const kept = WB.clearDiscovery(current);
+    const anchored = WB.addToCanvas(kept, this.ix, sources[0]!, sources).doc;
+    const result = WB.discoveryOverlay(anchored, this.ix, sources, 24, mode);
+    const name = String(this.ix.notes.get(sources[0]!)?.title ?? "Engineering elements").slice(0, 65).replace(/[\\/:*?"<>|#^[\]]/g, " ");
+    const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
+      fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
+      capped: result.shown < result.available, groups: 0 });
+    if (this.preview) this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+    this.canvasKey = ""; // A newly opened preview is a distinct selection context.
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Selecting kept cards refreshes candidates automatically; selecting temporary cards leaves them available for Keep or Dismiss. Save excludes temporary candidates.`;
+  }
+
+  /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
+  async changeSelectedDiscovery(action: "keep" | "dismiss"): Promise<string> {
+    await this.ensureIndex();
+    const t = this.canvasTarget();
+    if (!t || !this.previews.has(t.path)) return "Open an MDSE discovery preview first.";
+    const paths = this.selectedCardPaths();
+    if (!paths.length) return "Select one or more discovery candidate cards first.";
+    let changed = 0;
+    await this.editTarget(t, (text) => {
+      const original = parseDoc(text);
+      const r = action === "keep" ? WB.keepDiscoveryCandidates(original, this.ix, paths) : WB.dismissDiscoveryCandidates(original, paths);
+      changed = action === "keep" ? r.kept : r.dismissed;
+      if (!changed) return null;
+      return JSON.stringify({ ...original, nodes: r.doc.nodes, edges: r.doc.edges }, null, 2);
+    });
+    return changed ? `${action === "keep" ? "Kept" : "Dismissed"} ${changed} candidate(s). ${action === "keep" ? "They will be included when you save this canvas." : "Kept cards were not changed."}` : "No temporary candidates were selected.";
   }
 
   /* ---- saving a preview ---- */
@@ -639,6 +973,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf: any) => new PanelView(leaf, this));
     this.registerView(TABLE, (leaf: any) => new TableView(leaf, this));
+    this.registerView(WORKFLOW_TAB, (leaf: any) => new WorkflowTabView(leaf, this));
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk: boolean, fn: (f: any) => void): boolean => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder: string, only: (l: string) => boolean, fn: (l: string) => void) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x: any) => x[1], (x: any) => fn(x[0])).open();
@@ -663,6 +998,18 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("file-menu", (menu: any, f: any) => {
       if (f?.extension !== "md") return;
       menu.addItem((i: any) => i.setTitle("Show in MDSE Workbench").setIcon("network").onClick(async () => { await this.openPanel(); await this.ensureIndex(); this.selected = f.path; this.apps.forEach((a: any) => a.select(f.path)); }));
+      menu.addItem((i: any) => i.setTitle("Open in MDSE workflow…").setIcon("copy-plus").onClick(async () => {
+        try {
+          await this.ensureIndex();
+          if (!this.ix?.notes.has(f.path)) { new obsidian.Notice("MDSE: this file is not a governed model note.", 6000); return; }
+          const choices = (["document", "define", "structure", "verify"] as const).map((area) => ({
+            area, lens: WB.WORKFLOW_ENTRY_LENS[area], label: area.charAt(0).toUpperCase() + area.slice(1),
+          }));
+          new PickModal(this.app, "Open note in new MDSE workflow tab", choices, (x: any) => x.label,
+            (x: any) => { void this.openWorkflowTab(x.area, x.lens, f.path).catch((e: any) =>
+              new obsidian.Notice("MDSE: could not open workflow: " + String(e?.message ?? e), 8000)); }).open();
+        } catch (e: any) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
+      }));
       menu.addItem((i: any) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
@@ -676,5 +1023,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { ++this.discoveryEpoch; clearTimeout(this.discoveryTimer); clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };

@@ -2,11 +2,60 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
+import { followSelection, openInNewWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
 import { importedVault, classes } from "./harness.ts";
 
 const files = await importedVault();
 const ix = buildIndex(files, { classes, parserReport: files.get("99_System/11_Import/Parser Check.md") });
 const byTitle = (t: string): string => [...ix.notes.values()].find((n) => n.title === t)!.path;
+
+test("Open in workflow launches independent tabs with the exact selected engineering item", async () => {
+  const path = byTitle("Charger"), prior = { path, workflow: "document", lens: "note", pinned: true };
+  const calls: Array<[string, string, string]> = [];
+  const host = { openWorkflow: async (area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string) =>
+    { calls.push([area, lens, selected]); } };
+  for (const area of ["document", "define", "structure", "verify"] as const) await openInNewWorkflow(host, area, path);
+  assert.deepEqual(calls, [
+    ["document", "note", path], ["define", "functional", path],
+    ["structure", "structure", path], ["verify", "requirements", path],
+  ], "each new workflow starts on the right engineering view with the same selected element");
+  assert.deepEqual(WORKFLOW_ENTRY_LENS, {
+    document: "note", define: "functional", structure: "structure", verify: "requirements",
+  });
+  assert.deepEqual(prior, { path, workflow: "document", lens: "note", pinned: true },
+    "the source tab's selected element, lens and pin state are never modified");
+  await assert.rejects(openInNewWorkflow({}, "document", path), /Choose a governed engineering item/);
+  await assert.rejects(openInNewWorkflow(host, "define", ""), /Choose a governed engineering item/);
+});
+
+test("related-result workflow handoff opens the linked target, not the source note", async () => {
+  const pair = [...ix.notes.keys()].slice(0, 2);
+  assert.equal(pair.length, 2);
+  const [source, related] = pair as [string, string];
+  const events: Array<[string, string, string]> = [];
+  const host = { openWorkflow: async (area: "document" | "define" | "structure" | "verify", lens: V.Lens, path: string) => {
+    events.push([area, lens, path]);
+  } };
+  const original = { selected: source, area: "structure", pinned: true, lens: "structure" };
+  await openInNewWorkflow(host, "verify", related);
+  await openInNewWorkflow(host, "document", related);
+  assert.deepEqual(events, [["verify", "requirements", related], ["document", "note", related]]);
+  assert.ok(events.every((e) => e[2] !== source), "navigate to the related item, never the current source");
+  assert.deepEqual(original, { selected: source, area: "structure", pinned: true, lens: "structure" },
+    "the originating item, work area and pin state remain untouched");
+});
+
+test("Workbench Follow and Pin isolate selection and protect active editing", () => {
+  const paths = [...ix.notes.keys()].slice(0, 2);
+  assert.equal(paths.length, 2);
+  const [current, next] = paths as [string, string];
+  assert.equal(followSelection(ix, current, next, false, false), next, "Follow tracks a valid selected element");
+  assert.equal(followSelection(ix, current, next, true, false), current, "Pin ignores other selections");
+  assert.equal(followSelection(ix, current, next, false, true), current, "Edit never loses its current element");
+  assert.equal(followSelection(ix, current, "unresolved.md", false, false), current, "unknown elements cannot steal context");
+  assert.equal(followSelection(ix, current, null, false, false), current, "empty selection preserves context");
+  assert.equal(followSelection(null, current, next, false, false), current, "no loaded index cannot change context");
+});
 
 test("index reads every governed note and reports the parser as not run", () => {
   assert.ok(ix.notes.size >= 25);
@@ -117,7 +166,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -582,18 +631,124 @@ test("new notes that relate to each other sit together, and a cluster of them aw
   assert.equal(empty.added, 1 + rel.length); assert.ok(empty.doc.nodes.every((n) => Math.abs(n.x) <= 4 * 1120 && Math.abs(n.y) <= 4 * 360));
 });
 
+test("discovery candidates are visible in scratch views but never survive save until kept", () => {
+  const c = byTitle("Charger"), base = pickCanvas(ix, [c], { relations: false, label: "", group: false }).doc;
+  const original = JSON.stringify(base), preview = discoveryOverlay(base, ix, [c], 3);
+  assert.equal(JSON.stringify(base), original, "discovery never mutates the existing Canvas");
+  assert.equal(preview.shown, 3);
+  assert.equal(preview.available, relatedNotes(ix, c).length);
+  const candidateCards = preview.doc.nodes.filter(isDiscoveryNode);
+  assert.equal(candidateCards.length, 3);
+  assert.ok(candidateCards.every((n) => n.color === "5" && n.text?.includes("Discovery candidate")));
+  assert.deepEqual(clearDiscovery(preview.doc), base, "saving drops every temporary card and touching line");
+  const chosen = candidateCards[0]!, path = cdNotePath(chosen)!;
+  const moved = { ...preview.doc, nodes: preview.doc.nodes.map((n) => n.id === chosen.id ? { ...n, x: n.x + 17 } : n) };
+  const keep = keepDiscoveryCandidates(moved, ix, [path]);
+  assert.equal(keep.kept, 1);
+  const keptCard = keep.doc.nodes.find((n) => cdNotePath(n) === path)!;
+  assert.ok(!isDiscoveryNode(keptCard) && !keptCard.text?.includes("Discovery candidate"));
+  assert.equal(keptCard.x, chosen.x + 17, "promoting preserves manual Canvas positioning");
+  const saved = clearDiscovery(keep.doc), ids = new Set(saved.nodes.map((n) => n.id));
+  assert.equal(saved.nodes.length, base.nodes.length + 1);
+  assert.ok(saved.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)), "no dangling discovery lines");
+  const other = candidateCards[1]!, dismissed = dismissDiscoveryCandidates(preview.doc, [cdNotePath(other)!]);
+  assert.equal(dismissed.dismissed, 1);
+  assert.equal(dismissed.doc.nodes.filter(isDiscoveryNode).length, 2);
+  assert.equal(clearDiscovery(dismissed.doc).nodes.length, base.nodes.length);
+  const refreshed = discoveryOverlay(preview.doc, ix, [c], 1);
+  assert.equal(refreshed.doc.nodes.filter(isDiscoveryNode).length, 1, "refresh replaces old candidates, not duplicate them");
+  assert.deepEqual(discoveryOverlay(base, ix, ["unknown.md"]).doc, base, "invalid sources never alter the Canvas");
+});
+
+test("successive discovery selections retain kept cards and replace only temporary neighbors", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 5).map((n) => n.path);
+  assert.equal(paths.length, 5);
+  const [source, keptNeighbor, temporary, nextCandidate, unrelated] = paths as [string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(source, keptNeighbor, "hasPart"), edge(source, temporary, "hasPort"),
+    edge(keptNeighbor, nextCandidate, "hasPart"), edge(unrelated, temporary, "describes"),
+  ] } as unknown as typeof ix;
+  const base = pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc;
+  const first = discoveryOverlay(base, fixture, [source], 24, { workflow: "structure" });
+  assert.deepEqual(first.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)).sort(), [keptNeighbor, temporary].sort());
+  const retained = keepDiscoveryCandidates(first.doc, fixture, [keptNeighbor]);
+  assert.equal(retained.kept, 1);
+  const positioned = { ...retained.doc, nodes: retained.doc.nodes.map((n) =>
+    cdNotePath(n) === keptNeighbor ? { ...n, x: n.x + 37, y: n.y - 13 } : n) };
+  const before = positioned.nodes.filter((n) => !isDiscoveryNode(n));
+  const next = discoveryOverlay(positioned, fixture, [keptNeighbor], 24, { workflow: "structure" });
+  assert.deepEqual(next.doc.nodes.filter((n) => !isDiscoveryNode(n)), before,
+    "switching the selected kept card never moves or replaces kept cards");
+  assert.deepEqual(next.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)), [nextCandidate],
+    "old temporary candidates disappear and new relevant candidates appear");
+  const saved = clearDiscovery(next.doc);
+  assert.deepEqual(saved.nodes, before, "saving the refreshed preview excludes all discovery candidates");
+  const ids = new Set(saved.nodes.map((n) => n.id));
+  assert.ok(saved.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)));
+  assert.deepEqual(base, pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc,
+    "an earlier Canvas is not changed by refreshing its scratch copy");
+});
+
+test("workflow discovery filters candidates, retains ranking and permits all relationships", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 6).map((n) => n.path);
+  assert.equal(paths.length, 6);
+  const [source, second, doc, def, structure, verify] = paths as [string, string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(source, doc, "describes"), edge(source, def, "satisfies"),
+    edge(source, structure, "hasPart"), edge(source, verify, "verifies"),
+    edge(second, verify, "verifies"), edge(second, def, "satisfies"),
+  ] } as unknown as typeof ix;
+  const base = pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc;
+  const names = (workflow: "document" | "define" | "structure" | "verify", all = false): string[] =>
+    discoveryOverlay(base, fixture, [source], 24, { workflow, all }).doc.nodes
+      .filter(isDiscoveryNode).map((n) => cdNotePath(n)!).sort();
+  assert.deepEqual(names("document"), [doc]);
+  assert.deepEqual(names("define"), [def]);
+  assert.deepEqual(names("structure"), [structure]);
+  assert.deepEqual(names("verify"), [def, verify].sort(), "Verify includes verification and requirement-satisfaction context");
+  assert.deepEqual(names("structure", true), [doc, def, structure, verify].sort(), "All override must not hide cross-workflow connections");
+  const r = commonRelated(fixture, [source, second], ["verifies"]);
+  assert.deepEqual(r.all.map((x) => x.path), [verify]);
+  assert.deepEqual(r.some, [], "filtered overlap is based on matching kinds only");
+  const multi = discoveryOverlay(base, fixture, [source, second], 24, { workflow: "verify" });
+  assert.deepEqual(multi.doc.nodes.filter(isDiscoveryNode).map((n) => cdNotePath(n)).sort(), [def, verify].sort(), "multi-selection retains shared verification and satisfaction context");
+  assert.deepEqual(clearDiscovery(multi.doc), base, "switching discovery context cannot change kept content");
+});
+
 test("notes related to two or more chosen notes are listed, with the kinds that join each (D-0084)", () => {
   const c = byTitle("Charger"), rel = relatedNotes(ix, c).map((r) => r.path), pair = [c, rel[0]!];
   const r = commonRelated(ix, pair);
   assert.ok(r.all.every((x) => !pair.includes(x.path) && x.by.length === 2 && x.by.every((b) => b.kinds.length)), "each is joined to both, and the chosen are left out");
   assert.ok(r.all.every((x) => relatedNotes(ix, pair[0]!).some((y) => y.path === x.path) && relatedNotes(ix, pair[1]!).some((y) => y.path === x.path)));
-  assert.deepEqual(r.some, [], "with two chosen, every shared note is in 'all'");
-  // three chosen: all is the intersection, some are joined to two
+  assert.ok(r.some.every((x) => x.count === 1), "with two chosen, partial matches touch exactly one");
+  assert.ok(r.some.every((x) => !pair.includes(x.path)), "selected notes never appear as candidates");
+  // Three chosen: all is the intersection; partial results include both 2-of-3 and 1-of-3.
   const trio = [...ix.notes.keys()].slice(0, 3), t = commonRelated(ix, trio);
-  for (const x of t.all) assert.equal(x.by.length, 3); for (const x of t.some) assert.ok(x.count >= 2 && x.count < 3);
+  for (const x of t.all) assert.equal(x.by.length, 3);
+  for (const x of t.some) assert.ok(x.count >= 1 && x.count < 3);
   assert.deepEqual(commonRelated(ix, [c]).all, [], "one note has no 'common'");
   assert.deepEqual(commonRelated(ix, ["nope.md", "nope2.md"]), { all: [], some: [] });
-  const sorted = r.some.map((x) => x.count); assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "most shared first");
+  const sorted = t.some.map((x) => x.count);
+  assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), "partial matches rank from most to least common");
+});
+
+test("discovery candidates are ranked 3-of-3, 2-of-3, 1-of-3 without double counting edges", () => {
+  const paths = [...ix.notes.values()].filter((n) => !n.meta.mergedInto).slice(0, 6).map((n) => n.path);
+  assert.equal(paths.length, 6, "fixture has enough live model notes");
+  const [a, b, c, all, two, one] = paths as [string, string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(a, all, "satisfies"), edge(b, all, "verifies"), edge(c, all, "allocatedTo"),
+    edge(a, two, "hasPart"), edge(a, two, "specializes"), edge(b, two, "hasPort"),
+    edge(c, one, "describes"),
+  ] } as unknown as typeof ix;
+  const r = commonRelated(fixture, [a, b, c]);
+  assert.deepEqual(r.all.map((x) => x.path), [all]);
+  assert.deepEqual(r.some.map((x) => [x.path, x.count]), [[two, 2], [one, 1]]);
+  assert.deepEqual(r.some[0]!.by.find((x) => x.from === a)!.kinds, ["hasPart", "specializes"]);
+  assert.deepEqual(commonRelated(fixture, [a, b, c, a]), r, "reselecting an existing source does not change counts");
 });
 
 test("added notes are placed by what they are: parts under the assembly, specializations under the general, requirements under use cases, functions and test cases under requirements, objects under functions (D-0085)", () => {

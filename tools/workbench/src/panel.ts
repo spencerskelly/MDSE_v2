@@ -8,6 +8,9 @@ import { incoming, outgoing } from "./index.ts";
 import * as V from "./views.ts";
 import * as OL from "./outline.ts";
 import { relatedNotes, commonRelated } from "./canvas.ts";
+import * as QC from "./quick_create.ts";
+import * as MN from "./member_nav.ts";
+import * as TD from "./term_discovery.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
@@ -17,13 +20,26 @@ import type { EditHost } from "./edit_ui.ts";
 export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
 export interface PanelHost {
   openNote(path: string): void;
+  /** Current globally selected model item, used only when the engineer explicitly enables Follow. */
+  currentSelection?(): string | null;
   /** Open the table for a lens in the main window. */
   openTable(lens: V.Lens): void;
+  /** Open an independent Workbench editor tab without replacing an open note, Canvas or other workflow. */
+  openWorkflow?(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): Promise<void>;
+  /** Create a document or governed model note from a workflow-specific template, with preview before Apply. */
+  quickCreate?(templateId: string, selectedPath: string): Promise<string>;
   /** Open the canvas for a lens in the main window (a transient preview). */
   openCanvas(lens: V.Lens, spec: Partial<V.ViewSpec>): Promise<string>;
+  /** Show one usage and its actual SysML connect/bind/flow endpoints in a new scratch Canvas tab. */
+  openMemberCanvas?(owner: string, key: string): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  /** Show related notes as temporary candidates on a new scratch Canvas, never writing an existing saved Canvas. */
+  discoverRelated?(sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }): Promise<string>;
+  /** Promote or dismiss cards selected on a discovery preview; only kept cards are saved. */
+  keepSelectedDiscovery?(): Promise<string>;
+  dismissSelectedDiscovery?(): Promise<string>;
   /** D-0088: a new canvas of the selected assembly's structure. */
   openStructureCanvas?(path: string, mode: "direct" | "full"): Promise<string>;
   /** D-0088: a new canvas (replacing the preview) of a note and the notes a view shows. */
@@ -55,16 +71,46 @@ export interface PanelApp {
   /** The note cards chosen on a canvas, in the order chosen (D-0084). Two or more open the Common related lens; one is the same as select. */
   setCanvasSelection(paths: string[]): void;
   setLens(lens: V.Lens): void;
+  /** Restore a workflow tab's own state, independent of other open Workbench tabs. */
+  setWorkflow(area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string): void;
+  area(): "document" | "define" | "structure" | "verify";
+  isPinned(): boolean;
+  setPinned(pinned: boolean): void;
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
   lens(): V.Lens; selected(): string; destroy(): void;
+}
+
+export type EngineeringWorkflow = "document" | "define" | "structure" | "verify";
+export const WORKFLOW_ENTRY_LENS: Record<EngineeringWorkflow, V.Lens> = {
+  document: "note", define: "functional", structure: "structure", verify: "requirements",
+};
+/** Opens the explicit target item in a separate Workbench tab, without changing this view. */
+export function openInNewWorkflow(host: Pick<PanelHost, "openWorkflow">, area: EngineeringWorkflow, itemPath: string): Promise<void> {
+  if (!itemPath || !host.openWorkflow) return Promise.reject(new Error("Choose a governed engineering item before opening a workflow."));
+  return host.openWorkflow(area, WORKFLOW_ENTRY_LENS[area], itemPath);
+}
+
+/** Context isolation: pinned views, active editing, and unresolved paths must never silently change the selected item. */
+export function followSelection(ix: ModelIndex | null, current: string, proposed: string | null | undefined, pinned: boolean, editing: boolean): string {
+  return !pinned && !editing && !!proposed && !!ix?.notes.has(proposed) ? proposed : current;
 }
 
 const PANEL_STYLE = `
 .mdw.mdp{display:block;height:100%;min-height:0;overflow:auto;padding:0 0 24px}.mdw.mdp header{display:block;padding:8px 10px}
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
+.mdp .workareas{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .workareas button{font-size:12px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdp .workareas button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}.mdp .workareas button:disabled{opacity:.48;cursor:not-allowed}.mdp .workareas button.review{margin-left:auto}
+.mdw .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdw .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
+.mdw .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
+.mdw .searchhits button:hover,.mdw .searchhits button:focus-visible{background:var(--bg)}
+.mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
+.mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
+.mdw .relation-workflow{margin-left:6px;max-width:110px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:5px;background:var(--bg2);color:var(--fg)}
+.mdw .member-search{width:100%;box-sizing:border-box;padding:5px 7px;margin:4px 0 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .member-entry{border-bottom:1px solid var(--line);padding:5px 0}.mdw .member-entry summary{cursor:pointer;font-size:12.5px;white-space:normal}.mdw .member-info{padding:6px 10px;font-size:12px;overflow-wrap:anywhere}.mdw .member-info code{white-space:pre-wrap}.mdw .member-link{padding:4px 0;border-top:1px dashed var(--line)}
 .mdp .body{padding:8px 10px}.mdp h3{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
 .mdp .acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}
 .mdp table{font-size:12.5px}.mdp td,.mdp th{padding:3px 6px}.mdp .more{color:var(--mut);padding:4px 6px}.mdp .olc{display:inline-block;white-space:nowrap}.mdp .oltg{display:inline-block;width:16px;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;font-size:12px;text-align:center}
@@ -74,13 +120,15 @@ const PANEL_STYLE = `
 .mdw button.sm{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw button.sm:hover{border-color:var(--acc)}.mdw button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
 `;
 
-export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens } = { mode: "panel" }): PanelApp {
+export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens; area?: "document" | "define" | "structure" | "verify"; selected?: string; fixedContext?: boolean } = { mode: "panel" }): PanelApp {
   const compact = opt.mode === "panel";
   const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE;
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
-  let ix: ModelIndex | null = null, sel = "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
-  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = false, inherit: V.InheritFrom[] = [];   // D-0101
+  let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
+  let workArea: "document" | "define" | "structure" | "verify" = opt.area ?? "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
+  let workflowOpenMode: "tab" | "current" = "tab";
+  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
   const link = (p: string | null | undefined, label?: string, cls = ""): Node => {
@@ -90,6 +138,23 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   };
   const empty = (m: string): HTMLElement => h("div", { class: "empty", style: "padding:16px 0" }, m);
   const tag = (t: string): HTMLElement => h("span", { class: "tag" }, t);
+  /** Per-result workflow handoff; never alters sel, lens, Pin, or the originating view. */
+  const relatedWorkflow = (path: string): HTMLElement | null => {
+    if (!host.openWorkflow || !note(path)) return null;
+    return h("select", { class: "relation-workflow", "aria-label": "Open related element in workflow: " + note(path)!.title,
+      title: "Open this related engineering element in another Workbench tab",
+      onchange: (e: Event) => {
+        const el = e.target as HTMLSelectElement, target = el.value as EngineeringWorkflow;
+        el.value = "";
+        if (!target) return;
+        void openInNewWorkflow(host, target, path).catch((err) => {
+          msg = "Could not open related element: " + String((err as Error)?.message ?? err); draw();
+        });
+      }
+    }, h("option", { value: "", selected: true }, "↗ Workflow…"),
+      ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]] as const)
+        .map(([label, id]) => h("option", { value: id }, label)));
+  };
 
   /* ---- generic table renderer ---- */
   const cellNode = (c: V.TableCell | undefined): Child => {
@@ -100,9 +165,39 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return c.path !== undefined ? link(c.path, c.text, c.cls) : h("span", { class: c.cls ?? "" }, c.text);
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
+  let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  // Disposable, batched inverted index. Rebuilt only when the authoritative vault index is replaced.
+  let termCatalog: TD.TermCatalog | null = null, termSource: ModelIndex | null = null, termBuilding: ModelIndex | null = null;
+  let termProgress = 0, termDestroyed = false, termQuery = "", termType = "", termPerType = 25;
+  let termCommon: TD.TermFrequency[] = [], termTypes: string[] = [];
+  const termPicked = new Set<string>();
+  function ensureTermCatalog(): void {
+    if (!ix || termSource === ix || termBuilding === ix || termDestroyed) return;
+    const source = ix, catalog = TD.emptyTermCatalog(), iterator = source.notes.values(), kinds = new Set<string>();
+    termBuilding = source; termProgress = 0; termCatalog = null; termCommon = []; termTypes = [];
+    const next = (): void => {
+      if (termDestroyed || ix !== source || termBuilding !== source) return;
+      let done = false;
+      for (let i = 0; i < 200; i++) {
+        const entry = iterator.next();
+        if (entry.done) { done = true; break; }
+        TD.addTermNote(catalog, entry.value);
+        kinds.add(entry.value.type);
+        termProgress++;
+      }
+      if (done) {
+        termCatalog = catalog; termSource = source; termBuilding = null;
+        termTypes = [...kinds].sort();
+        termCommon = TD.commonTerms(catalog, 36, 2, true);
+        for (const path of termPicked) if (!source.notes.has(path)) termPicked.delete(path);
+        draw();
+      } else setTimeout(next, 0); // Yield to Obsidian between chunks even for large legacy models.
+    };
+    setTimeout(next, 0);
+  }
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
-  function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
+  function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
   const outlineState = new Map<string, Set<string>>();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
   const secs = new Map<string, boolean>();                                                // open/closed state of each folding section, kept across redraws
@@ -206,7 +301,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
   /* D-0092: compare the selected note with another: what differs, and the structure down to the parts that differ. */
-  function openCompare(other: string): void { cmpOther = other; lens = "compare"; editEl = null; draw(); }
+  function openCompare(other: string): void { pinned = true; cmpOther = other; lens = "compare"; editEl = null; draw(); }
   function compareBar(): HTMLElement {
     const found = V.pickRows(ix!, cmpText, "", 60).notes.filter((x) => x.path !== sel);
     const pick = h("select", { "aria-label": "Note to compare with", style: "max-width:100%", onchange: (e: Event) => { cmpOther = (e.target as HTMLSelectElement).value; draw(); } },
@@ -215,7 +310,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     return h("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0" }, h("span", { class: "mut" }, "Compare with"),
       h("input", { type: "search", placeholder: "Search by name, id or part number", value: cmpText, "aria-label": "Search for the note to compare with", style: "flex:1;min-width:140px", onchange: (e: Event) => { cmpText = (e.target as HTMLInputElement).value; cmpOther = ""; draw(); } }), pick);
   }
-  function openMerge(other: string): void { if (!host.edit) return; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
+  function openMerge(other: string): void { if (!host.edit) return; pinned = true; setEditMode("merge"); setMergeWith(other); editEl = null; lens = "edit"; draw(); }
 
   /* ---- lenses ---- */
   function dashboardView(): HTMLElement {
@@ -226,6 +321,61 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       card("unresolved references", String(d.dangling)), card("unconnected notes", String(d.orphans)), card("objects without a port", String(d.noPort)), card("SysML warnings", String(d.warnings), d.parser === "passed" ? "parser checked" : d.parser === "failed" ? "parser check failed" : "not parser-checked")),
       bars("Notes by type", d.byType), bars("Status", d.byStatus), bars("Flags", d.flags), bars("Relationship kinds", d.edgeKinds));
   }
+  function memberInspector(n: Note): HTMLElement {
+    if (memberOwner !== n.path) { memberOwner = n.path; memberFilter = ""; memberLimit = 40; expandedMembers.clear(); }
+    const members = MN.memberDetails(ix!, n.path), query = memberFilter.toLowerCase();
+    const matches = members.filter((m) => !query ||
+      [m.kind, m.name, m.type, m.head, m.doc, ...m.subsets, ...m.redefines,
+        ...m.props.map((p) => p.name + " " + p.value), ...m.connections.map((c) => c.statement)]
+        .some((s) => s.toLowerCase().includes(query)));
+    const visible = matches.slice(0, memberLimit), area = h("div", {});
+    area.append(h("label", { class: "mut" }, "Filter members / connections ",
+      h("input", { class: "member-search", type: "search", value: memberFilter,
+        placeholder: "Name, port, connected endpoint, SysML…",
+        onchange: (e: Event) => { memberFilter = (e.target as HTMLInputElement).value; memberLimit = 40; draw(); } })));
+    area.append(h("div", { class: "mut", style: "font-size:11px" },
+      `Showing ${visible.length} of ${matches.length} matching usages (${members.length} total). Each usage remains owned by this note.`));
+    for (const m of visible) {
+      const d = h("details", { class: "member-entry", open: expandedMembers.has(m.key) },
+        h("summary", {}, tag(m.kind), " ", h("b", {}, m.name), " ",
+          h("span", { class: "mut" }, [m.ref ? "ref" : "", m.dir, m.mult, m.type ? ": " + m.type : "(untyped)"].filter(Boolean).join(" ")),
+          m.connections.length ? h("span", { class: "mut" }, ` · ${m.connections.length} explicit connection(s)`) : null));
+      const info = h("div", { class: "member-info" });
+      if (host.openMemberCanvas) {
+        const btn = h("button", { class: "sm", title: "Visualize only this member's explicit SysML connections in a new scratch Canvas tab" }, "Canvas connections");
+        btn.addEventListener("click", () => busy(btn, "Opening…", () => host.openMemberCanvas!(n.path, m.key)));
+        info.append(h("div", { style: "margin:0 0 6px" }, btn));
+      }
+      if (m.type) info.append(h("div", {}, "Type definition: ", m.typePath ? link(m.typePath) : h("span", { class: "gap" }, m.type + " (not in vault)"),
+        m.typePath ? relatedWorkflow(m.typePath) : null));
+      else info.append(h("div", { class: "gap" }, "Untyped usage — no type definition to navigate to."));
+      info.append(h("div", {}, "Declaration: ", h("code", {}, m.head)));
+      if (m.ref || m.conj || m.end) info.append(h("div", { class: "mut" }, [m.ref ? "reference usage" : "", m.conj ? "conjugated type" : "", m.end ? "interface end" : ""].filter(Boolean).join(" · ")));
+      if (m.subsets.length) info.append(h("div", {}, "Subsets: " + m.subsets.join(", ")));
+      if (m.redefines.length) info.append(h("div", {}, "Redefines: " + m.redefines.join(", ")));
+      if (m.doc) info.append(h("div", { style: "white-space:pre-wrap" }, "Documentation: " + m.doc));
+      for (const p of m.props) info.append(h("div", {}, h("code", {}, p.name + " = " + p.value)));
+      if (!m.connections.length) info.append(h("div", { class: "mut" }, "No explicit connect, bind or flow involving this usage."));
+      for (const c of m.connections) {
+        const other = c.otherEnd;
+        info.append(h("div", { class: "member-link" },
+          h("div", {}, tag(c.kind + (c.form && c.form !== "plain" ? " / " + c.form : "")), " ",
+            h("b", {}, c.thisEnd.text), " ↔ ", h("b", {}, other.text),
+            other.resolved ? null : h("span", { class: "gap" }, " (unresolved endpoint)")),
+          h("div", { class: "mut" }, h("code", {}, c.statement)),
+          other.path ? h("div", {}, "Endpoint type: ", link(other.path), relatedWorkflow(other.path)) : null));
+      }
+      d.append(info);
+      d.addEventListener("toggle", () => {
+        if ((d as HTMLDetailsElement).open) expandedMembers.add(m.key);
+        else expandedMembers.delete(m.key);
+      });
+      area.append(d);
+    }
+    if (matches.length > memberLimit)
+      area.append(h("button", { class: "sm", onclick: () => { memberLimit += 40; draw(); } }, `Show next ${Math.min(40, matches.length - memberLimit)} members`));
+    return area;
+  }
   function noteView(): HTMLElement {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
@@ -235,7 +385,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const rel = (edges: ReturnType<typeof outgoing>, dir: "out" | "in"): HTMLElement => {
       const by = new Map<string, typeof edges>(); for (const e of edges) (by.get(e.kind) ?? by.set(e.kind, []).get(e.kind)!).push(e);
       if (!by.size) return h("div", { class: "mut" }, "None.");
-      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
+      return h("div", {}, ...[...by].map(([k, list]) => h("div", { style: "margin:2px 0" }, h("span", { class: "tag k" }, k), " ", ...list.flatMap((e, i) => { const other = dir === "out" ? e.to : e.reverse ? null : e.from; return [i ? ", " : "", e.reverse && dir === "out" ? h("span", { class: "gap" }, "← " + e.toSymbol + " (not in vault)") : other ? link(other) : h("span", { class: "gap" }, e.toSymbol + " (not in vault)"), other ? relatedWorkflow(other) : null, e.label ? h("span", { class: "mut" }, " " + e.label) : null]; }))));
     };
     box.append(sec("rel-out", "Relates to", [rel(outgoing(ix!, n.path), "out")], { count: outgoing(ix!, n.path).length }), sec("rel-in", "Related from", [rel(incoming(ix!, n.path), "in")], { count: incoming(ix!, n.path).length }));
     const rn = relatedNotes(ix!, n.path);
@@ -243,9 +393,9 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom!(n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
       const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
       all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
-      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
     }
-    if (n.def?.usages.length) box.append(sec("usages", "Usages", [tableView({ id: "usages", title: "", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }], rows: n.def.usages.map((u) => ({ kind: (u.dir ? u.dir + " " : "") + u.kind, name: u.name + (u.mult ?? ""), type: u.type ? { text: ix!.bySymbol.has(u.type) ? note(ix!.bySymbol.get(u.type))!.title : u.type + " (not in vault)", path: ix!.bySymbol.get(u.type) ?? null } : { text: "untyped", cls: "gap" } })), empty: "" })], { count: n.def.usages.length }));
+    if (n.def?.usages.length) box.append(sec("usages", "Members and explicit connections", [memberInspector(n)], { count: n.def.usages.length }));
     return box;
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
@@ -346,6 +496,87 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
   }
 
+  /* Shared-term discovery: evidence by governed type, with explicit Canvas placement only.
+   * Nothing in this view writes SysML. A common word is never treated as a relationship. */
+  function termsView(): HTMLElement {
+    ensureTermCatalog();
+    const box = h("div", { class: "term-discovery" },
+      h("div", { class: "mut" }, "Search governed engineering note names, aliases, descriptions, Markdown bodies and SysML text. Complete words are AND-matched. Shared words are candidate evidence, not modeled links."));
+    if (!termCatalog || termSource !== ix) {
+      box.append(h("div", { class: "mut", role: "status" },
+        `Building the local term index without freezing Obsidian… ${termProgress} of ${ix!.notes.size} governed notes examined.`));
+      return box;
+    }
+    const catalog = termCatalog;
+    const input = h("input", { type: "search", class: "member-search",
+      "aria-label": "Search words across engineering element types", value: termQuery,
+      placeholder: "e.g. cooling fan, battery, CANH",
+      onchange: (e: Event) => { termQuery = (e.target as HTMLInputElement).value; termPerType = 25; draw(); } });
+    box.append(input);
+    const result = TD.searchTermCatalog(catalog, termQuery, termPerType, termType);
+    const setQuery = (w: string) => { termQuery = w; termType = ""; termPerType = 25; draw(); };
+    const related = h("div", { class: "chips term-suggestions" },
+      h("span", { class: "mut" }, "Common terms across element types (documents, not occurrences): "),
+      ...termCommon.slice(0, 24).map((f) => h("button", { class: "sm", type: "button",
+        title: f.byType.map((x) => x.type + ": " + x.count).join("; "), onclick: () => setQuery(f.word) },
+        `${f.word} · ${f.notes} notes / ${f.types} types`)));
+    box.append(related);
+    if (!termCommon.length) box.append(h("div", { class: "mut" }, "No words currently appear in two or more governed element types."));
+    const chooser = h("select", { "aria-label": "Filter term matches by element type", onchange: (e: Event) => {
+      termType = (e.target as HTMLSelectElement).value; termPerType = 25; draw();
+    } }, h("option", { value: "", selected: !termType }, "All element types"),
+      ...termTypes.map((t) => h("option", { value: t, selected: t === termType }, t)));
+    box.append(h("div", { class: "chips" }, chooser,
+      h("span", { class: "mut", role: "status" },
+        termQuery.trim() ? `${result.total} matching governed elements across ${result.groups.length} shown types.` :
+          `${catalog.indexed} governed elements indexed; choose a common term or enter a search.`)));
+    const selected = (): string[] => [...termPicked].filter((path) => ix!.notes.has(path));
+    const actionBar = h("div", { class: "chips", style: "display:flex;gap:6px;flex-wrap:wrap" });
+    const makeButton = (label: string, hint: string, fn: () => Promise<string>) => {
+      const button = h("button", { class: "sm", type: "button", title: hint }, label);
+      button.addEventListener("click", () => {
+        if (!selected().length) { msg = "Select at least one matching engineering element."; draw(); return; }
+        busy(button, "Placing…", fn);
+      });
+      return button;
+    };
+    const count = h("span", { class: "mut" }, `${selected().length} selected`);
+    const displayed = result.groups.flatMap((g) => g.matches.map((x) => x.path));
+    actionBar.append(
+      h("button", { class: "sm", type: "button", onclick: () => { for (const p of displayed) termPicked.add(p); draw(); } }, "Select displayed"),
+      h("button", { class: "sm", type: "button", onclick: () => { termPicked.clear(); draw(); } }, "Clear selection"),
+      count);
+    if (host.openPickCanvas) actionBar.append(makeButton("New grouped Canvas",
+      "Open a new scratch Canvas grouped by element type. Lines come only from existing authoritative relationships.",
+      () => host.openPickCanvas!(selected(), `Shared terms: ${termQuery.trim() || "selected elements"}`, true, true, true)));
+    if (host.addToCanvas) actionBar.append(makeButton("Add to current Canvas",
+      "Explicitly add these cards to the currently active Canvas. This can modify a saved Canvas. Only existing governed relationships are drawn.",
+      () => host.addToCanvas!(sel && ix!.notes.has(sel) ? sel : selected()[0]!, selected())));
+    box.append(actionBar);
+    if (!termQuery.trim()) return box;
+    if (!result.total) { box.append(empty("No governed elements contain every searched term. Try a single word, a synonym, or a broader requirement phrase.")); return box; }
+    for (const group of result.groups) {
+      const items = group.matches.map((hit) => {
+        const n = ix!.notes.get(hit.path)!;
+        return h("div", { class: "term-hit", style: "display:flex;gap:7px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--line)" },
+          h("input", { type: "checkbox", checked: termPicked.has(hit.path),
+            "aria-label": "Select " + n.title + " for Canvas",
+            onchange: (e: Event) => {
+              if ((e.target as HTMLInputElement).checked) termPicked.add(hit.path); else termPicked.delete(hit.path);
+              count.textContent = `${selected().length} selected`;
+            } }),
+          h("div", {}, link(hit.path), " ", relatedWorkflow(hit.path), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")),
+            h("span", { class: "mut" }, " " + n.id),
+            h("div", { class: "mut", style: "font-size:11px" }, `Matched in: ${hit.fields.join(", ")} · ${hit.excerpt}`)));
+      });
+      box.append(sec("terms-" + group.type, group.type, items, { count: group.total, open: true }));
+    }
+    if (result.truncated) box.append(h("button", { class: "sm", type: "button",
+      onclick: () => { termPerType += 25; draw(); } }, `Show up to ${termPerType + 25} per type`));
+    box.append(h("div", { class: "mut" }, "Only existing SysML/approved model connections appear between cards. To propose a new relationship, draw and approve it through the governed editor."));
+    return box;
+  }
+
   /* Find similar: the notes that share a relationship with the selected note, grouped by relationship and direction. */
   let simKinds: string[] = [];
   function similarView(): HTMLElement {
@@ -355,7 +586,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const box = h("div", {}, h("div", { class: "chips" }, h("span", { class: "mut" }, "Relationship"), h("select", { "aria-label": "Relationship kind", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; simKinds = v ? [v] : []; draw(); } }, h("option", { value: "" }, "all"), ...kinds.map((k) => h("option", { value: k, selected: simKinds[0] === k }, k)))));
     if (!r.groups.length) { box.append(h("div", { class: "mut" }, all.groups.length ? "No similar notes for this relationship." : "No other note shares a relationship with this one.")); return box; }
     if (host.addToCanvas) box.append(h("div", { class: "row" }, addBtn(`Add all ${r.peers.length} to canvas`, r.peers.map((x) => x.path), "sm pri")));
-    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via)!.title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via)!.title}` : `${note(g.via)!.title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), " ", tag(note(p)!.type)))], { count: g.peers.length }));
+    for (const g of r.groups) box.append(sec(`sim-${g.direction}-${g.kind}-${g.via}`, `${g.direction === "out" ? "also" : "same source:"} ${g.kind} ${g.direction === "out" ? "→" : "←"} ${note(g.via)!.title}`, [h("div", { class: "mut", style: "font-size:12px" }, g.direction === "out" ? `${n.title} and these notes all ${g.kind} ${note(g.via)!.title}` : `${note(g.via)!.title} ${g.kind} ${n.title} and these notes`), ...g.peers.map((p) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [p]) : null, " ", link(p), relatedWorkflow(p), " ", tag(note(p)!.type)))], { count: g.peers.length }));
     return box;
   }
 
@@ -365,12 +596,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (given.length < 2) return empty("Choose two or more note cards on the canvas (hold Shift to add to a choice) and the notes related to all of them are listed here.");
     const c = commonRelated(ix!, given), kindsOf = (by: Array<{ from: string; kinds: string[] }>): string => by.map((b) => `${note(b.from)!.title}: ${b.kinds.join(", ")}`).join(" · ");
     const addBtn = (label: string, paths: string[], cls = "sm"): HTMLElement => { const b = h("button", { class: cls, title: "Put on the canvas preview, between the chosen cards when they are there" }, label); b.addEventListener("click", () => busy(b, "Adding…", () => host.addToCanvas!(given[0]!, paths))); return b; };
-    const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
+    const row = (r: { path: string; by: Array<{ from: string; kinds: string[] }> }): HTMLElement => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path)!.type), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by)));
     const mergeBtn = host.edit && given.length === 2 && given.every((p) => note(p)!.type === "Object") ? h("button", { class: "sm", title: "Mark these two notes as the same part and merge them. When one is a BOM part, it is the one that stays.", onclick: () => { sel = given[0]!; openMerge(given[1]!); } }, "Merge these two…") : null;
     const cmpBtn = given.length === 2 ? h("button", { class: "sm pri", title: "List what differs between these two notes, with the structure down to the parts that differ", onclick: () => { sel = given[0]!; openCompare(given[1]!); } }, "Compare these two") : null;
     const box = h("div", {}, h("div", { class: "mut" }, "Chosen on the canvas"), cmpBtn || mergeBtn ? h("div", { class: "row" }, cmpBtn, mergeBtn) : null, h("div", {}, ...given.flatMap((p, i) => [i ? ", " : "", link(p)])));
     box.append(sec("com-all", `Related to all ${given.length}`, c.all.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.all.length} to canvas`, c.all.map((r) => r.path), "sm pri")) : null, ...c.all.map(row)] : [h("div", { class: "mut" }, "No note is related to all of them.")], { count: c.all.length }));
-    if (given.length > 2 || !c.all.length) box.append(sec("com-some", "Related to at least two", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: given.length > 2 }));
+    box.append(sec("com-some", "Related to fewer than all (most common first)", c.some.length ? [host.addToCanvas ? h("div", { class: "row" }, addBtn(`Add all ${c.some.length} to canvas`, c.some.map((r) => r.path))) : null, ...c.some.slice(0, 200).map((r) => h("div", { style: "margin:3px 0" }, host.addToCanvas ? addBtn("+", [r.path]) : null, " ", link(r.path), relatedWorkflow(r.path), " ", tag(note(r.path)!.type), h("span", { class: "mut" }, ` ${r.count} of ${given.length}`), h("div", { class: "mut", style: "font-size:12px;margin-left:26px" }, kindsOf(r.by))))] : [h("div", { class: "mut" }, "None.")], { count: c.some.length, open: true }));
     return box;
   }
 
@@ -391,20 +622,142 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
 
   /* ---- shell ---- */
   const busy = (btn: HTMLElement, label: string, job: () => Promise<string>): void => { btn.setAttribute("disabled", ""); btn.textContent = label; job().then((m) => { msg = m; undo = null; }, (e) => { msg = "Failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); };
+  const setContextPinned = (nextPinned: boolean): void => {
+    if (lens === "edit" && !nextPinned) { msg = "Editing keeps this engineering item pinned. Leave Edit to enable Follow."; draw(); return; }
+    pinned = nextPinned;
+    if (!pinned) sel = followSelection(ix, sel, host.currentSelection?.(), false, false);
+    draw();
+  };
   function draw(): void {
     const n = note(sel);
+    const contextMode = h("div", { class: "contextmode", role: "group", "aria-label": "Engineering item selection mode" },
+      h("span", { class: "mut", style: "font-size:12px" }, "Selection:"),
+      h("button", { type: "button", "aria-pressed": !pinned, disabled: lens === "edit" || undefined,
+        title: "Follow engineering items selected in other notes and Canvases", onclick: () => setContextPinned(false) }, "Follow"),
+      h("button", { type: "button", "aria-pressed": pinned,
+        title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
+      pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
+    if (n && host.openWorkflow) contextMode.append(
+      h("label", { class: "mut", style: "font-size:12px", title: "Open the selected engineering item in a separate, pinned Workbench tab without replacing this view" },
+        "Open item in ", h("select", {
+          "aria-label": "Open selected item in new workflow tab",
+          onchange: (e: Event) => {
+            const pick = e.target as HTMLSelectElement;
+            const area = pick.value as EngineeringWorkflow; pick.value = "";
+            if (!area) return;
+            void openInNewWorkflow(host, area, n.path).catch((err) => {
+              msg = "Could not open new workflow: " + String((err as Error)?.message ?? err); draw();
+            });
+          }
+        },
+        h("option", { value: "", selected: true }, "new workflow tab…"),
+        ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]] as const)
+          .map(([label, id]) => h("option", { value: id }, label)))));
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
       ix ? h("div", { class: "mut", style: "font-size:12px" }, `${ix.notes.size} notes · ${ix.edges.length} links · ` + (ix.parser === "passed" ? "SysML checked" : ix.parser === "failed" ? "SysML check failed" : "SysML not parser-checked")) : null,
-      !compact ? h("label", { class: "mut", style: "margin-left:auto" }, h("input", { type: "checkbox", checked: !pinned, onchange: (e: Event) => { pinned = !(e.target as HTMLInputElement).checked; draw(); } }), " follow the selected note") : null);
+      contextMode);
     const lenses = h("div", { class: "lenses" }, ...V.LENS_GROUPS.map((g) => {                       // D-0084: three menus
       const items = g.lenses.filter((k) => (k !== "edit" && k !== "merge") || !!host.edit).map((k) => [k, V.LENSES.find(([x]) => x === k)![1]] as const), here = g.lenses.includes(lens);
-      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } } },
+      return h("select", { "aria-label": `${g.label} menu`, title: g.id === "note" ? "Ways to see the selected note" : g.id === "model" ? "Ways to see the whole model" : "Tools for the canvas", class: here ? "cur" : "", onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value as V.Lens; if (!v) return; if (v === "merge") openMerge(""); else { lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); } } },
         h("option", { value: "", selected: !here }, `${g.label} ▾`), ...items.map(([k, label]) => h("option", { value: k, selected: lens === k }, label)));
     }));
     // D-0143: one drop-down of the functions, grouped, in place of a column of icon buttons; what it opens is read below it
     const fnSelect = h("select", { "aria-label": "Workbench function", class: "fn", title: "Choose what to look at or do" },
       ...V.TOOLBAR_GROUPS.map((g) => h("optgroup", { label: g.label }, ...g.items.map((it) => { const off = !!it.needsEdit && !host.edit; return h("option", { value: it.lens, selected: lens === it.lens, disabled: off || undefined }, off ? `${it.label} (not available here)` : it.label); }))));
-    fnSelect.addEventListener("change", () => { const v = (fnSelect as HTMLSelectElement).value as V.Lens; if (v === "merge") openMerge(""); else { lens = v; if (v !== "edit") editEl = null; draw(); } });
+    fnSelect.addEventListener("change", () => {
+      const v = (fnSelect as HTMLSelectElement).value as V.Lens;
+      if (v === "merge") { openMerge(""); return; }
+      const area = lensArea(v) ?? workArea;
+      if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
+        (fnSelect as HTMLSelectElement).value = lens; // The current Workbench stays on its original function.
+        void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+      } else { workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); }
+    });
+    // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
+    // Review is contextual; the importer stays external and publishing remains under Document.
+    const lensArea = (v: V.Lens): typeof workArea | null => {
+      if (v === "review") return null;
+      // Discovery and canvas utilities are cross-workflow; they must not reset an active work-area filter.
+      if (["common", "pick", "terms", "similar", "layout", "compare"].includes(v)) return workArea;
+      // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
+      if (v === "requirements" && workArea === "verify") return "verify";
+      if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
+      if (["functional", "states", "design", "requirements", "edit"].includes(v)) return "define";
+      return "document";
+    };
+    // Align the active work area when an existing advanced function is chosen.
+    // The Review lens retains the prior work area so returning is predictable.
+    if (lens !== "review") workArea = lensArea(lens)!;
+    const goArea = (area: typeof workArea, next: V.Lens): void => {
+      if (area === workArea && next === lens) return;
+      if (workflowOpenMode === "tab" && host.openWorkflow) {
+        void host.openWorkflow(area, next, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
+        return;
+      }
+      workArea = area;
+      lens = next;
+      if (next === "edit") pinned = true; else editEl = null;
+      draw();
+    };
+    const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
+      ...([["Document", "document", WORKFLOW_ENTRY_LENS.document], ["Define", "define", WORKFLOW_ENTRY_LENS.define], ["Structure", "structure", WORKFLOW_ENTRY_LENS.structure], ["Verify", "verify", WORKFLOW_ENTRY_LENS.verify]] as const)
+        .map(([label, id, next]) => h("button", {
+          type: "button", "aria-pressed": workArea === id,
+          title: id === "verify" ? "Requirements verification trace; test plans and execution are not yet implemented" : undefined,
+          onclick: () => goArea(id, next)
+        }, label)),
+      h("button", { type: "button", class: "review", "aria-label": "Review findings for current work",
+        "aria-pressed": lens === "review", onclick: () => {
+          if (lens === "review") lens = reviewReturn;
+          else { reviewReturn = lens; lens = "review"; }
+          draw();
+        } }, lens === "review" ? "Back from Review" : "Review"));
+    const opening = h("label", { class: "mut", title: "Choose whether switching workflows or functions opens a new tab or replaces the current Workbench view" },
+      "Open tools in ", h("select", { "aria-label": "Workflow opening behavior",
+        onchange: (e: Event) => { workflowOpenMode = (e.target as HTMLSelectElement).value as "tab" | "current"; draw(); } },
+        h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
+        h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
+    workareas.append(opening);
+    if (host.quickCreate) {
+      const available = QC.quickTemplatesFor(workArea);
+      const menu = h("select", { "aria-label": "New item from workflow template",
+        title: "Create a note using a workflow-specific template. Governed model records require UID, ID and a preview; ordinary Markdown notes do not.",
+        onchange: (e: Event) => {
+          const pick = e.target as HTMLSelectElement, id = pick.value; pick.value = "";
+          if (!id) return;
+          void host.quickCreate!(id, sel).then((result) => { if (result) { msg = result; draw(); } },
+            (err) => { msg = "Could not start New: " + String((err as Error)?.message ?? err); draw(); });
+        } },
+        h("option", { value: "", selected: true }, "+ New…"),
+        ...available.map((t) => h("option", { value: t.id }, t.label + (t.kind === "plain" ? " (Markdown)" : " (model)"))));
+      workareas.append(menu);
+    }
+    // Reuse the existing ranked model-note search for this first navigation increment.
+    // Full search unification, structured result metadata and performance tests remain separate passes.
+    const searchInput = h("input", { type: "search", "aria-label": "Search engineering information",
+      placeholder: "Search names, aliases, IDs, part numbers or note text…", value: searchText,
+      oninput: (e: Event) => {
+        const inp = e.target as HTMLInputElement, pos = inp.selectionStart;
+        searchText = inp.value;
+        draw();
+        const next = wrap.querySelector(".globalsearch input") as HTMLInputElement | null;
+        next?.focus(); if (pos !== null) next?.setSelectionRange(pos, pos);
+      }
+    });
+    const searchBox = h("div", { class: "globalsearch" }, searchInput);
+    if (ix && searchText.trim()) {
+      const found = V.search(ix, searchText, 21), limited = found.slice(0, 20);
+      const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
+        ...limited.map((hit) => h("button", { type: "button",
+          onclick: () => {
+            sel = hit.path; searchText = ""; workArea = "document"; lens = "note"; editEl = null;
+            host.openNote(hit.path); draw();
+          }
+        }, hit.title, h("small", {}, [hit.id, hit.type, String(hit.meta.partNumber ?? "")].filter(Boolean).join(" · ")))));
+      if (!limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "No matching model notes."));
+      if (found.length > limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "More matches exist; refine the search."));
+      searchBox.append(hits);
+    }
     const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
     if (compact && ix) {
@@ -429,9 +782,25 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           }));
         } }, "All connections canvas"));
       acts.append(allControls);
+      if (host.discoverRelated && n) {
+        const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
+        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
+        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated!(sources, { workflow: workArea, all: discoveryAll })));
+        acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+            onchange: (e: Event) => { discoveryAll = (e.target as HTMLInputElement).checked; draw(); } }), " All relationships"));
+      }
+      if (host.hasPreview?.()) {
+        for (const [label, action] of [["Keep selected", host.keepSelectedDiscovery], ["Dismiss selected", host.dismissSelectedDiscovery]] as const) {
+          if (!action) continue;
+          const b = h("button", { class: "sm", title: "Select candidate cards in the scratch Canvas first" }, label);
+          b.addEventListener("click", () => busy(b, "Updating…", () => action()));
+          acts.append(b);
+        }
+      }
       if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : lens === "compare" ? ({ ...spec, other: cmpOther } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
-      if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
+      if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;
     const body = h("div", { class: "body" });
@@ -445,6 +814,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "review") body.append(reviewView());
       else if (lens === "keywords") body.append(keywordsView());
       else if (lens === "pick") body.append(pickView());
+      else if (lens === "terms") body.append(termsView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
       else if (lens === "similar") body.append(similarView());
@@ -457,23 +827,32 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         for (const t of ts) body.append(tableView(t, canAdd));
       }
     } catch (e) { body.append(h("div", { class: "callout flagConflict" }, h("b", {}, "This view failed to draw"), String((e as Error)?.message ?? e))); console.error(e); }
-    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, toolbar, acts, ...(status ? [status] : []), body); }
-    else wrap.replaceChildren(header, lenses, ...(status ? [status] : []), body);
+    if (compact) { wrap.classList.remove("tb"); wrap.replaceChildren(header, workareas, searchBox, toolbar, acts, ...(status ? [status] : []), body); }
+    else wrap.replaceChildren(header, searchBox, lenses, ...(status ? [status] : []), body);
   }
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
+    setIndex(i, l = "") { if (i !== ix) { termCatalog = null; termSource = null; termBuilding = null; termProgress = 0; termCommon = []; termTypes = []; } ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
-    select(p) { if (pinned || p === sel) return; if (ix && !ix.notes.has(p)) return; sel = p; draw(); },
+    select(p) { const next = followSelection(ix, sel, p, pinned, lens === "edit"); if (next === sel) return; sel = next; draw(); },
     setCanvasSelection(paths) {
+      if (pinned || lens === "edit") return; // Pinned or editing views are independent of Canvas selection.
       const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
-      if (paths.length === 1) { if (lens === "common") lens = "note"; if (!pinned && (!ix || ix.notes.has(paths[0]!))) sel = paths[0]!; }
+      if (paths.length === 1) { if (lens === "common") lens = "note"; sel = followSelection(ix, sel, paths[0]!, pinned, false); }
       else if (paths.length >= 2) lens = "common";
       editEl = lens === "edit" ? editEl : null; draw();
     },
-    setLens(l) { lens = l; editEl = null; draw(); },
+    setLens(l) { lens = l; if (l === "edit") pinned = true; editEl = null; draw(); },
+    setWorkflow(area, nextLens, selected) {
+      workArea = area; lens = nextLens; if (selected) sel = selected;
+      if (nextLens === "edit") pinned = true;
+      editEl = null; draw();
+    },
+    area: () => workArea,
+    isPinned: () => pinned,
+    setPinned: (next) => setContextPinned(next),
     lens: () => lens, selected: () => sel,
-    destroy() { wrap.remove(); style.remove(); },
+    destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
 }

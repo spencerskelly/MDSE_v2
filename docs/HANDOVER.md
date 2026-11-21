@@ -1,72 +1,81 @@
-# Handover
+# MDSE toolchain handover
 
-For the engineering team taking over the MDSE toolset. Read this, then `governance/README.md`. About an hour in total.
+**Current review-branch orientation — 2026-11-20.** This describes the as-built toolset in `MDSE_v2` and distinguishes source implementation, distributable output and live-vault runtime acceptance. It supersedes this file's older early-P1 task list; original decisions and milestones remain in governance.
 
-## In one paragraph
+## Start here
 
-MDSE turns an Enterprise Architect SysML v1 model (and later product BOMs) into an Obsidian vault: one Markdown note per model element, YAML for classification and provenance, and a final `## SysML v2` block that is the authoritative model text. Five tools do this: a shared **core** library, a single-file offline HTML **importer**, a **base-vault** builder, and two Obsidian plugins, **bootstrap** and **workbench**. The rules are settled enough to start; most of the code is not written.
+1. Read [the canonical toolset build/update and acceptance instructions](TOOLSET_UPDATE.md) **before rebuilding, replacing a plugin, or updating an existing vault**.
+2. Read [governance/README.md](../governance/README.md), then the relevant active decisions, [RULESET.md](../governance/RULESET.md), [OPEN_DECISIONS.md](../governance/OPEN_DECISIONS.md) and [ARCHITECTURE.md](../governance/ARCHITECTURE.md). Approval/status takes precedence over historical handover language.
+3. Inspect the exact source branch and SHA. Do not assume the source, committed `dist/` artifacts, installed plugin and `MDSE_v2_live` modeled definition are synchronized.
+4. Validate independently: unit tests, committed build consistency, parser/synthetic checks, real-vault index integrity, Obsidian runtime interaction and approval/release.
 
-## What is true today
+## Repositories and authority
 
-| Area | State |
+| Repository | Responsibility |
 |---|---|
-| Governance | One ruleset (327 rules). 100 Active, 221 Unreviewed (not binding until the owner reviews them), a few Proposed/Check. Decisions D-0000 to D-0014. |
-| Proven code | Core note library (JS), QEAX reader, importer page shell and build, ZIP writer. 47 tests green. |
-| Not built | QEAX-to-notes, SysML v2 writer, UID/id allocation, changelog, Base Vault build, Bootstrap, Workbench, BOM import |
-| Real data | Never run from this repository. The owner runs real imports privately |
+| `spencerskelly/MDSE_v2` | Tool code, build distributions, controlled Base Vault payload, governance and tests |
+| `spencerskelly/MDSE_v2_live` | **Main-only** engineering definition and integration vault; model and installed runtimes are not sources for tool code |
+| `Test_Vault_` and `MDSE_Workbench` | Historical/archived reference only |
 
-## Set up
+SysML v2 text is authoritative for native model semantics. Markdown and YAML provide context/provenance; generated Canvas views are not semantic authorities. Do not import real engineering data into the public tools repository (DAT-002).
 
-```bash
-nvm use                     # Node 22
-pip install -r testing/requirements.txt && python -m playwright install chromium
-npm test                    # must be green before you push
+## Actual implementation areas
+
+| Area | Current source implementation | Open acceptance |
+|---|---|---|
+| Shared core | Markdown/YAML and engineering model support | Reconcile known legacy merge paths and current rules before assuming all edits share one contract |
+| Importer | Offline HTML; QEAX and BOM intake; merge/update flows; controlled vault-update Step 4 | Real-source/approval acceptance, parser and release synchronization |
+| Base Vault | Vault scaffold, governed templates, pinned vendor plugin payloads, Workbench/Bootstrap payload | Controlled release hash/lock and cross-platform first-open acceptance |
+| Bootstrap | Obsidian lock check, governed settings and plugin activation support | First-open real-Obsidian and release lock acceptance |
+| Workbench | Viewer, trace tables, Canvas, editing, review and exports; four-workflow **prototype on draft PR #4** | Obsidian new-tab/focus selection, scratch candidate, save, editing and pop-out regression acceptance |
+
+The older "Workbench not built" and "Phase 3 editing not started" descriptions are no longer valid as a description of source; they do **not** imply production release acceptance.
+
+## Four-workflow UX being developed
+
+- **Document:** engineering note and content investigation; the first contextual **+ New…** launcher now supports ordinary Daily, Meeting, Transcript and Engineering Note templates without SysML identity, plus governed Document creation. Full ordinary-Markdown search and publishing remain open.
+- **Define:** needs, requirements, behavior/functions and semantic trace/editing.
+- **Structure:** parts, BOMs, configurations, interfaces, ports and connections.
+- **Verify:** requirement coverage and verification relationships; test-plan/execution workflow remains to be built.
+- **Connection discovery:** Find → Find shared terms creates a disposable, incrementally built word index over governed notes, surfaces common terms and type-grouped Requirement/Verification/other hits, and places selected candidates on a new Canvas with no inferred model links. See [workflow specification](TERM_CONNECTION_DISCOVERY.md).
+- **Member-level navigation:** the Note view has a read-only expandable member inspector that differentiates a usage from its typing definition, maps explicit port/part endpoints and `connect`/`bind`/`flow` only, flags unresolved endpoints and retains the parent working tab. Each usage offers an isolated scratch **Canvas connections** projection without new notes or automatic model edits.
+- **Shared interaction:** workflow-specific **+ New…** menus for model records (using the validated element planner) and plain documentation (no UID/SysML); selected item and global governed-note search; ranked shared-neighbor discovery from N-of-N to 1-of-N; temporary/kept/dismissed candidates on scratch Canvases, workflow filters and All relationships; explicit modeled relationship editing.
+- **Workspace preservation:** changing workflows or functions defaults to a *new* Workbench tab; a choice exists to reuse the current Workbench. Per-view Follow / Pin isolates the selection; Edit pins the item. A selected element can be opened directly in any workflow through the Workbench header or a governed note's context menu.
+
+All of these statements concern review-branch **source**, not an installed or runtime-accepted release. See [Workbench README](../tools/workbench/README.md) and [update and acceptance checklist](TOOLSET_UPDATE.md).
+
+## Developer build and evidence
+
+```sh
+# Node 22; at the exact source commit selected for testing
+npm run build             # Workbench first, importer second
+npm run test:workbench
+npm run check:workbench
+npm run check:importer
+npm test
 ```
 
-## Ground rules (from CONTRIBUTING.md)
+The importer bundles the Workbench plugin distribution into its managed Base Vault payload. Updating a Workbench TypeScript file but not rebuilding and committing `tools/workbench/dist` **and** `tools/importer/dist` will fail build-freshness checks and must not be distributed. CI's check and build jobs are separate; a passing build does not prove committed outputs are current.
 
-- Push to `main`; keep CI green.
-- A change in meaning needs a decision (`governance/DECISIONS.md`) and a ruleset edit in the same commit.
-- Unreviewed rules are not binding. Ask the owner before building on one.
-- No real engineering data, ever. This repository is public.
-- TypeScript for tools; Python and Java only in `testing/`.
+Deploy first to a staging clone, choose the controlled importer's **Preview vault update** and inspect changes, or use an intentionally isolated manual Workbench-only pilot with backups and no Bootstrap lock mismatch. The production/live vault should only be updated after explicit owner approval.
 
-## First work, in order
+The `MDSE_v2_live/scripts/check-live-workbench.mjs` test is an actual model-index smoke test against an exact tool source checkout; it is not a graphical Obsidian test, a parser certificate or a release.
 
-| # | Task | Blocked by | Folder |
-|---|---|---|---|
-| 1 | Owner decides OD-01 (relationship split), OD-03 (usage identity), OD-05/06 (license, visibility) | Owner | governance |
-| 2 | Owner reviews Unreviewed P1 rules in MOD and IMP | Owner | governance |
-| 3 | Port `tools/core` to TypeScript; tests stay green; importer build consumes the compiled output | — | tools/core, tools/importer |
-| 4 | Change `mergeNote` to the approval-only merge rules; one test per merge rule | — | tools/core |
-| 5 | UID/id allocation, flag callouts, changelog model in core | — | tools/core |
-| 6 | Importer M2: QEAX to notes with ledger and changelog; Python oracle for the expected notes | 1, 2 | tools/importer, testing |
-| 7 | Importer M3: SysML v2 writer; wire the parser job to run on generated output | 1 (OD-01, OD-03) | tools/importer, testing |
-| 8 | Base Vault build and release manifest | Folder skeleton and templates decided | tools/base-vault |
-| 9 | Bootstrap port | 8 | tools/bootstrap |
-| 10 | Read-only Workbench | OD-02 (OD-09 closed by D-0019) | tools/workbench |
+## Working rules and next increments
 
-Tasks 3 and 4 can start immediately.
+- Use [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md). Model-semantic or tool-contract changes require owner decisions and corresponding rules/schema updates; implementation-only UX refinements do not themselves imply a new SysML construct.
+- Do not merge draft [PR #4](https://github.com/spencerskelly/MDSE_v2/pull/4) without approval; the active work happens on `ux/pass08-workarea-prototype-20261119`.
+- Prioritize engineering usability improvements that preserve the original editor/workspace state. Next work: navigate directly from related-element results into a selected workflow, without changing the originating view or creating a model relationship.
+- After a coherent feature set, regenerate the paired distributions, validate on real Obsidian in a staging vault, collect release evidence and obtain the owner's promotion decision.
 
-## Things that will surprise you
+## Governing sources
 
-- **`mergeNote` currently refreshes EA-owned fields and replaces the SysML block on re-import.** The owner has since ruled that every change to existing content needs approval. Task 4 fixes it.
-- **`relationships.yaml` is half-obsolete.** SysML-defined relationships move into SysML text (D-0003). Do not build on those fields until OD-01 is decided.
-- **The mapping file cites archived paths.** `ea-family-mapping.json` dispositions are current; its `approved_source` fields point into the Test_Vault_ archive.
-- **Many rules come from V1** (Local Model, YAML relationships, EA field dispositions). Their notes say "likely affected by D-0003". Expect the owner's review to retire many of them.
-- **The parser gate is manual** and its pin is not final.
-
-## How the owner works
-
-Spencer (Director of Engineering) owns every decision. He prefers short, direct exchanges, one question at a time, and wants to be told when there is a more efficient way to work. Bring options with a recommendation; do not decide open items yourself.
-
-## Where to look
-
-| Question | File |
+| Topic | Canonical reference |
 |---|---|
-| What are we building and why? | `governance/MDSE_DEFINITION.md` |
-| What must the tool do? | `governance/RULESET.md` (your tool's section), then `tools/<tool>/README.md` |
-| What is undecided? | `governance/OPEN_DECISIONS.md` |
-| In what order? | `governance/ROADMAP.md` |
-| Who owns what? | `governance/ARCHITECTURE.md` |
-| Where did this come from? | `docs/HISTORY.md` |
+| Current approved rules and decisions | `governance/DECISIONS.md` and `governance/RULESET.md` |
+| Open issues/gates | `governance/OPEN_DECISIONS.md`, `governance/ROADMAP.md` |
+| Tool boundaries | `governance/ARCHITECTURE.md` |
+| Build and safe deployment | [TOOLSET_UPDATE.md](TOOLSET_UPDATE.md) |
+| Workbench UX source and usage | [Workbench README](../tools/workbench/README.md) |
+| Importer update behavior | [Importer README](../tools/importer/README.md) |
+| Live integration baseline | [MDSE_v2_live LIVE_BASELINE.md](https://github.com/spencerskelly/MDSE_v2_live/blob/main/LIVE_BASELINE.md) |
