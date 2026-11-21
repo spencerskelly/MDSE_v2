@@ -495,8 +495,8 @@ export function cardAction(doc: CanvasDoc, ix: ModelIndex, parent: string, kind:
   const r = expandAll(doc, ix, parent); return { doc: r.doc, action: r.added ? "expanded" : "none", changed: r.added, capped: r.capped };
 }
 
-/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
-export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
+/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. When a Workbench add operation calls completeRelationships, all existing modeled connections between visible notes are rebuilt even if the canvas had no prior generated lines. */
+export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex, opts: { completeRelationships?: boolean } = {}): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   let redrawn = 0, missing = 0;
   const cardOf = new Map<string, CanvasNode>();
@@ -532,7 +532,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
     if (!live) linesRemoved++;
     return live;
   });
-  if (hadDrawn) {
+  if (hadDrawn || opts.completeRelationships) {
     const taken = new Set(out.edges.map((e) => e.id)); let k = 0;
     for (const r of real) {
       const f = cardOf.get(r.from), t = cardOf.get(r.to!); if (!f || !t || f === t) continue;
