@@ -98,7 +98,8 @@ export function searchTermCatalog(c: TermCatalog, query: string, perType = 25, t
     const score = masks.reduce((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m! & BIT[f]).map((f) => WEIGHT[f])), 0);
     const fields = TERM_FIELDS.filter((field) => masks.some((m) => m! & BIT[field]));
     const hits = ranked.get(n.type) ?? [];
-    hits.push({ path, type: n.type, fields, score, excerpt: excerpt(n, terms[0]!, masks[0]!) });
+    hits.push({ path, type: n.type, fields, score,
+      excerpt: excerpt(n, terms[0]!, c.postings.get(terms[0]!)!.get(path)!) });
     ranked.set(n.type, hits);
     totals.set(n.type, (totals.get(n.type) ?? 0) + 1);
   }
