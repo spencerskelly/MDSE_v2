@@ -549,9 +549,14 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.locator(".mded .hq:has-text('Conjugated') .q").click()
             pg.wait_for_selector(".mded .hlp b:has-text('Conjugated')")
 
+            # Editing pins the source. To inspect a different note in this same Workbench,
+            # the engineer must leave Edit and explicitly choose Follow first.
+            pg.select_option("select.fn", label="Note")
+            pg.locator("header button:has-text('Follow')").click()
             # a flow that runs against the direction is refused with the reason
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Station.md")
             pg.wait_for_selector("header >> text=Station")
+            pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
             pg.select_option("select[aria-label=Add]", "flow")
             pg.fill(".mded input[placeholder='e.g. charger.dcOut']:nth-of-type(1)", "battery.dcIn.flowOut")
@@ -605,8 +610,10 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.select_option("select.fn", label="Dashboard")
             pg.select_option("select.fn", label="Merge notes")
             pg.wait_for_selector("text=/as the same part as/")
-            # two notes chosen on the canvas: the other one is already picked, and the BOM part stays
+            # A pinned Edit/Compare context ignores Canvas selection. Follow is required
+            # before the original Workbench can enter Common related from chosen cards.
             pg.select_option("select.fn", label="Common related")
+            pg.locator("header button:has-text('Follow')").click()
             pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", ["10_Model/Charger.md", "10_Model/CHG-1.md"])
             pg.click("button:has-text('Merge these two')")
             pg.wait_for_selector("text=/as the same part as/")
