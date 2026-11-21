@@ -10,6 +10,8 @@ export interface MemberEndpoint {
 }
 export interface MemberConnection {
   kind: "connect" | "bind" | "flow"; form: string; name: string;
+  /** Which original statement endpoint this usage represents; preserves native flow direction. */
+  position: "a" | "b";
   thisEnd: MemberEndpoint; otherEnd: MemberEndpoint; statement: string;
 }
 export interface MemberDetail {
@@ -60,6 +62,7 @@ export function memberDetails(ix: ModelIndex, owner: string): MemberDetail[] {
       if (here === b && a.usage === b.usage && a.usage !== null) continue;
       match.connections.push({
         kind: stmt.kind, form: stmt.form ?? "", name: stmt.name ?? "",
+        position: here === a ? "a" : "b",
         thisEnd: here, otherEnd: other, statement: stmt.text,
       });
     }
