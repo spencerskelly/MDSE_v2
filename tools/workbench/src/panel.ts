@@ -558,19 +558,18 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     for (const group of result.groups) {
       const items = group.matches.map((hit) => {
         const n = ix!.notes.get(hit.path)!;
-        return h("div", { class: "term-hit", style: "padding:5px 0;border-bottom:1px solid var(--line)" },
-          h("label", { style: "display:flex;gap:7px;align-items:flex-start" },
-            h("input", { type: "checkbox", checked: termPicked.has(hit.path),
-              "aria-label": "Select " + n.title + " for Canvas",
-              onchange: (e: Event) => {
-                if ((e.target as HTMLInputElement).checked) termPicked.add(hit.path); else termPicked.delete(hit.path);
-                count.textContent = `${selected().length} selected`;
-              } }),
-            h("span", {}, link(hit.path), " ", relatedWorkflow(hit.path), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")),
-              h("span", { class: "mut" }, " " + n.id),
-              h("div", { class: "mut", style: "font-size:11px" }, `Matched in: ${hit.fields.join(", ")} · ${hit.excerpt}`))));
+        return h("div", { class: "term-hit", style: "display:flex;gap:7px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--line)" },
+          h("input", { type: "checkbox", checked: termPicked.has(hit.path),
+            "aria-label": "Select " + n.title + " for Canvas",
+            onchange: (e: Event) => {
+              if ((e.target as HTMLInputElement).checked) termPicked.add(hit.path); else termPicked.delete(hit.path);
+              count.textContent = `${selected().length} selected`;
+            } }),
+          h("div", {}, link(hit.path), " ", relatedWorkflow(hit.path), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")),
+            h("span", { class: "mut" }, " " + n.id),
+            h("div", { class: "mut", style: "font-size:11px" }, `Matched in: ${hit.fields.join(", ")} · ${hit.excerpt}`)));
       });
-      box.append(sec("terms-" + group.type, `${group.type} (${group.total})`, items, { count: group.total, open: true }));
+      box.append(sec("terms-" + group.type, group.type, items, { count: group.total, open: true }));
     }
     if (result.truncated) box.append(h("button", { class: "sm", type: "button",
       onclick: () => { termPerType += 25; draw(); } }, `Show up to ${termPerType + 25} per type`));
