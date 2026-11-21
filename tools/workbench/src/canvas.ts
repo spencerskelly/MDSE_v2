@@ -214,6 +214,17 @@ export const DISCOVERY_KINDS: Record<DiscoveryArea, readonly string[]> = {
     "trace", "allocatedTo", "hasRequirement", "dependsOn"],
 };
 
+/** Fixed boundary for a discovery session: original source(s) and their direct, resolved
+ * neighbors under the chosen workflow filter. Re-centering the overlay on a neighbor must
+ * not expand this boundary to unrelated second-hop items. */
+export function discoveryBoundary(ix: ModelIndex, sources: string[], mode: { workflow?: DiscoveryArea; all?: boolean } = {}): Set<string> {
+  const roots = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const allowed = new Set(roots);
+  for (const root of roots) for (const neighbor of relatedNotes(ix, root, kinds)) allowed.add(neighbor.path);
+  return allowed;
+}
+
 /** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
 export const DISCOVERY_PREFIX = "mdse-discovery:";
 const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
