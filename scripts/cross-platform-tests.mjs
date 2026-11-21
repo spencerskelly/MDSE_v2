@@ -2,9 +2,9 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-const groups = ["tools/importer/test", "tools/workbench/test"];
+const groups = ["tools/importer/test", "tools/workbench/test", "tools/core/test", "tools/bootstrap/test"];
 for (const dir of groups) {
-  const files = readdirSync(resolve(dir)).filter((x) => x.endsWith(".test.ts")).sort()
+  const files = readdirSync(resolve(dir)).filter((x) => x.endsWith(".test.ts") || x.endsWith(".test.mjs")).sort()
     .map((x) => resolve(dir, x));
   if (!files.length) throw new Error("No tests found in " + dir);
   console.log("Running " + files.length + " test files from " + dir);
