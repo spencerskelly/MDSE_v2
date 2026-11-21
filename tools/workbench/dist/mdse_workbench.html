@@ -2031,6 +2031,17 @@ const DISCOVERY_KINDS                                           = {
     "trace", "allocatedTo", "hasRequirement", "dependsOn"],
 };
 
+/** Fixed boundary for a discovery session: original source(s) and their direct, resolved
+ * neighbors under the chosen workflow filter. Re-centering the overlay on a neighbor must
+ * not expand this boundary to unrelated second-hop items. */
+function discoveryBoundary(ix            , sources          , mode                                              = {})              {
+  const roots = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const allowed = new Set(roots);
+  for (const root of roots) for (const neighbor of relatedNotes(ix, root, kinds)) allowed.add(neighbor.path);
+  return allowed;
+}
+
 /** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
 const DISCOVERY_PREFIX = "mdse-discovery:";
 const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
@@ -6056,6 +6067,8 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                                                  
                                                                                                                     
                                                                                                                                          
+                              
+                                    
                                                                                              
                                             
                                                
@@ -6097,6 +6110,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                    
                                                                                     
                                        
+                  
                                                       
  
 
@@ -6802,11 +6816,16 @@ function mountPanel(root             , host           , opt                     
         } }, "All connections canvas"));
       acts.append(allControls);
       if (host.discoverRelated && n) {
+        const active = !!host.discoveryActive?.();
         const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
-        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
-        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated (sources, { workflow: workArea, all: discoveryAll })));
+        const b = h("button", {
+          class: "sm pri", "aria-pressed": active ? "true" : "false",
+          title: active ? "Stop live discovery; remove temporary candidates while keeping retained notes" : "Discover direct modeled neighbors on a scratch Canvas"
+        }, active ? "Stop discovering" : "Discover neighbors");
+        b.addEventListener("click", () => busy(b, active ? "Stopping…" : "Discovering…", () =>
+          active && host.stopDiscovery ? host.stopDiscovery() : host.discoverRelated (sources, { workflow: workArea, all: discoveryAll })));
         acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
-          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll, disabled: active || undefined,
             onchange: (e       ) => { discoveryAll = (e.target                    ).checked; draw(); } }), " All relationships"));
       }
       if (host.hasPreview?.()) {
@@ -6871,6 +6890,7 @@ function mountPanel(root             , host           , opt                     
     area: () => workArea,
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
+    refresh() { draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };

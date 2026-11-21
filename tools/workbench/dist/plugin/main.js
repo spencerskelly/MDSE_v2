@@ -2024,6 +2024,17 @@ const DISCOVERY_KINDS                                           = {
     "trace", "allocatedTo", "hasRequirement", "dependsOn"],
 };
 
+/** Fixed boundary for a discovery session: original source(s) and their direct, resolved
+ * neighbors under the chosen workflow filter. Re-centering the overlay on a neighbor must
+ * not expand this boundary to unrelated second-hop items. */
+function discoveryBoundary(ix            , sources          , mode                                              = {})              {
+  const roots = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const allowed = new Set(roots);
+  for (const root of roots) for (const neighbor of relatedNotes(ix, root, kinds)) allowed.add(neighbor.path);
+  return allowed;
+}
+
 /** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
 const DISCOVERY_PREFIX = "mdse-discovery:";
 const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
@@ -6049,6 +6060,8 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                                                  
                                                                                                                     
                                                                                                                                          
+                              
+                                    
                                                                                              
                                             
                                                
@@ -6090,6 +6103,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                    
                                                                                     
                                        
+                  
                                                       
  
 
@@ -6795,11 +6809,16 @@ function mountPanel(root             , host           , opt                     
         } }, "All connections canvas"));
       acts.append(allControls);
       if (host.discoverRelated && n) {
+        const active = !!host.discoveryActive?.();
         const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
-        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
-        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated (sources, { workflow: workArea, all: discoveryAll })));
+        const b = h("button", {
+          class: "sm pri", "aria-pressed": active ? "true" : "false",
+          title: active ? "Stop live discovery; remove temporary candidates while keeping retained notes" : "Discover direct modeled neighbors on a scratch Canvas"
+        }, active ? "Stop discovering" : "Discover neighbors");
+        b.addEventListener("click", () => busy(b, active ? "Stopping…" : "Discovering…", () =>
+          active && host.stopDiscovery ? host.stopDiscovery() : host.discoverRelated (sources, { workflow: workArea, all: discoveryAll })));
         acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
-          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll, disabled: active || undefined,
             onchange: (e       ) => { discoveryAll = (e.target                    ).checked; draw(); } }), " All relationships"));
       }
       if (host.hasPreview?.()) {
@@ -6864,6 +6883,7 @@ function mountPanel(root             , host           , opt                     
     area: () => workArea,
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
+    refresh() { draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
@@ -6896,6 +6916,7 @@ return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quick
                                                                           
                                                                                                                                                                            
                                                                                                                                                                                                                   
+                                                                                                                                                      
                                     
                                                                                               
                                                                                              
@@ -7265,6 +7286,8 @@ function hostFor(plugin     )      {
     openMemberCanvas: (owner        , key        ) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor        , paths          ) => plugin.addToCanvasPreview(anchor, paths),
     discoverRelated: (sources          , mode                                                                            ) => plugin.discoverRelatedOnCanvas(sources, mode),
+    discoveryActive: () => plugin.isDiscoveryActive(),
+    stopDiscovery: () => plugin.stopDiscoveryOnCanvas(),
     keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
     dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths          , label        , relations         , group         , replace         ) => plugin.openPickCanvas(paths, label, relations, group, replace),
@@ -7427,6 +7450,41 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
    *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
   canvasLeaf      = null; canvasKey = "";
   discoveryTimer      = null; discoveryEpoch = 0; discoveryBusy = false;
+  discoveryBoundaryPaths              = new Set();
+  discoveryPath = "";
+  isDiscoveryActive()          {
+    const t = this.canvasTarget();
+    return !!t && t.path === this.discoveryPath && !!this.previews.get(t.path)?.discovery;
+  }
+  /** Explicit and automatic exit share one path; temporary candidates vanish, kept cards stay. */
+  async stopDiscoveryOnCanvas()                  {
+    const path = this.discoveryPath;
+    ++this.discoveryEpoch;
+    clearTimeout(this.discoveryTimer);
+    this.discoveryBoundaryPaths.clear();
+    this.discoveryPath = "";
+    const rec = this.previews.get(path);
+    if (!rec?.discovery) return "Discover Related is already off.";
+    delete rec.discovery;
+    if (this.preview?.path === path) delete this.preview.discovery;
+    this.apps.forEach((app     ) => app.refresh?.());
+    const target = this.canvasTarget();
+    if (target?.path === path) {
+      await this.editTarget(target, (raw        ) => {
+        const current = parseDoc(raw), clean = WB.clearDiscovery(current);
+        return clean.nodes.length !== current.nodes.length || clean.edges.length !== current.edges.length
+          ? JSON.stringify({ ...current, nodes: clean.nodes, edges: clean.edges }, null, 2) : null;
+      });
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file) await this.app.vault.process(file, (raw        ) => {
+        const current = parseDoc(raw), clean = WB.clearDiscovery(current);
+        return clean.nodes.length !== current.nodes.length || clean.edges.length !== current.edges.length
+          ? JSON.stringify({ ...current, nodes: clean.nodes, edges: clean.edges }, null, 2) : raw;
+      });
+    }
+    return "Discover Related off. Temporary candidates removed; kept cards preserved.";
+  }
 
   /** Refresh only an MDSE discovery preview. Never touch a saved Canvas or a temporary card being inspected.
    * The debounce epoch prevents stale selections from overwriting newer ones. */
@@ -7484,7 +7542,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (!paths.length) { this.apps.forEach((a     ) => a.setCanvasSelection?.([])); return; }
     this.selected = paths[0] ; this.apps.forEach((a     ) => { a.setCanvasSelection?.(paths); });
     // Candidate selection is deliberately inert: otherwise clicking Keep could remove its target.
-    if (!candidateSelected && allIdsKnown && this.previews.get(path)?.discovery) {
+    if (!candidateSelected && allIdsKnown && path === this.discoveryPath && this.previews.get(path)?.discovery) {
+      if (paths.some((p) => !this.discoveryBoundaryPaths.has(p))) {
+        void this.stopDiscoveryOnCanvas().then((message        ) => new obsidian.Notice("MDSE: " + message, 4500))
+          .catch((e     ) => new obsidian.Notice("MDSE: could not stop discovery: " + String(e?.message ?? e), 8000));
+        return;
+      }
       const epoch = this.discoveryEpoch;
       this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, [...paths], epoch); }, 220);
     }
@@ -7700,9 +7763,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
       fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
       capped: result.shown < result.available, groups: 0 });
-    if (this.preview) this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+    if (this.preview) {
+      this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+      this.discoveryPath = this.preview.path;
+      this.discoveryBoundaryPaths = WB.discoveryBoundary(this.ix, sources, mode);
+    }
     this.canvasKey = ""; // A newly opened preview is a distinct selection context.
-    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Selecting kept cards refreshes candidates automatically; selecting temporary cards leaves them available for Keep or Dismiss. Save excludes temporary candidates.`;
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Discovery follows the original element and its directly related elements, stops outside that group, or can be turned off manually. Kept cards remain; temporary candidates are not saved.`;
   }
 
   /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
