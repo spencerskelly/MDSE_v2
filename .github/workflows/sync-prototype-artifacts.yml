@@ -1,6 +1,7 @@
 name: Sync prototype generated artifacts (review branch only)
 
 # One-shot build triggered only by adding or changing this workflow itself.
+# Re-synchronize paired artifacts for reviewed cross-type term connection discovery (2026-11-20).
 # The build commit changes dist/*, not this workflow, so it does not rerun.
 on:
   push:
