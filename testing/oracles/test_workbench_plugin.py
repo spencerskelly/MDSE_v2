@@ -715,7 +715,7 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0, "no table editor tabs created")
             tables = lambda: pg.evaluate("[...document.querySelectorAll('table')].map(t => t.querySelectorAll('tbody tr').length)")
             self.assertIn(25, tables(), "Workbench page displays 25 of 1,207 rows")
-            pg.locator("button:has-text('Next page')").first.click()
+            pg.locator("div.more:has-text('Page 1 of 49')").locator("xpath=..").locator("button:has-text('Next page')").click()
             pg.wait_for_selector("text=Page 2 of 49")
             self.assertTrue(pg.locator("button:has-text('Export CSV')").count(), "export retains all rows")
             pg.evaluate("(() => { const bs = [...document.querySelectorAll('button')].filter(b => b.textContent === 'Collapse all parts'); bs[bs.length - 1].click(); })()")
