@@ -1,0 +1,66 @@
+name: Sync prototype generated artifacts (review branch only)
+
+# One-shot build triggered only by adding or changing this workflow itself.
+# The build commit changes dist/*, not this workflow, so it does not rerun.
+on:
+  push:
+    branches:
+      - ux/pass08-workarea-prototype-20261119
+    paths:
+      - .github/workflows/sync-prototype-artifacts.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mdse-ux-prototype-artifact-sync
+  cancel-in-progress: false
+
+jobs:
+  synchronize-generated-artifacts:
+    if: github.repository == 'spencerskelly/MDSE_v2' && github.ref == 'refs/heads/ux/pass08-workarea-prototype-20261119'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Build Workbench and bundled importer at the same SHA
+        run: npm run build
+      - name: Check regenerated distributions
+        run: |
+          npm run check:workbench
+          npm run check:importer
+      - name: Run source and importer regression tests
+        run: |
+          npm run test:workbench
+          npm run test:importer
+          npm run test:core
+          npm run test:bootstrap
+      - name: Commit only generated distributions to the review branch
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git add -- tools/workbench/dist/mdse_workbench.html \
+            tools/workbench/dist/plugin/main.js \
+            tools/workbench/dist/plugin/manifest.json \
+            tools/workbench/dist/plugin/styles.css \
+            tools/importer/dist/mdse_importer.html \
+            tools/importer/TRANSLATION.md
+          if git diff --cached --quiet; then
+            echo "Distributions already synchronized."
+            exit 0
+          fi
+          git fetch origin "$GITHUB_REF_NAME"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$GITHUB_REF_NAME")" || {
+            echo "Branch advanced while building; refusing to publish a mixed SHA." >&2
+            exit 1
+          }
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "build(review): synchronize Workbench and importer distributions"
+          git push origin "HEAD:$GITHUB_REF_NAME"
