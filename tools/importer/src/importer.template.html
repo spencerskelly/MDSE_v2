@@ -667,11 +667,15 @@ async function readVaultFile(path) {
   }
 }
 async function removeVaultFile(path) {
-  const parts = path.split("/");
-  let dir = vaultHandle;
-  for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
-  try { await dir.removeEntry(parts.at(-1)); }
-  catch (e) { if (!e || e.name !== "NotFoundError") throw e; }
+  try {
+    const parts = path.split("/");
+    let dir = vaultHandle;
+    for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+    await dir.removeEntry(parts.at(-1));
+  } catch (e) {
+    // A failing first write may never have created its parent directories.
+    if (!e || e.name !== "NotFoundError") throw e;
+  }
 }
 /** Recheck the snapshot just before Apply. A changed file, a new backup/log file,
  * or a changed target folder invalidates the preview without writing anything. */
