@@ -534,6 +534,91 @@ async function writeFile(root, path, text) {   // text is a string or a Uint8Arr
     }
   }
 }
+/** Read the original bytes of a target (including PDFs/binaries), without creating it. */
+async function existingVaultFile(path) {
+  try {
+    const parts = path.split("/"); let dir = vaultHandle;
+    for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+    return await (await dir.getFileHandle(parts.at(-1))).getFile();
+  } catch (e) {
+    if (e && e.name === "NotFoundError") return null;
+    throw new Error(`Cannot inspect existing target ${path}: ${e && e.message || e}`);
+  }
+}
+const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+/** Apply imported notes and attachments with a recoverable before-image.
+ * A missed permission/race/conflict aborts instead of silently overwriting an edited note.
+ * Recovery archives are intentionally left in place even after successful Apply. */
+async function safeImportWrite(files, originallyScanned, onProgress) {
+  const paths = badPaths(files);
+  if (paths.length) throw new Error("Unsafe Windows/macOS output: " + paths.slice(0, 3).join("; "));
+  const caseConflicts = await pathNameConflicts(vaultHandle, files.map((f) => f.path));
+  if (caseConflicts.length) throw new Error("Case/Unicode collision: " + caseConflicts.slice(0, 3).join("; "));
+  const encode = new TextEncoder(), originals = new Map(), writes = [];
+  for (const f of files) {
+    const file = await existingVaultFile(f.path);
+    if (file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const oldText = originallyScanned.get(f.path);
+      if (oldText !== undefined && /\.md$/i.test(f.path) &&
+          new TextDecoder().decode(bytes) !== oldText)
+        throw new Error("Engineering note was edited during import preparation: " + f.path + ". Rescan before Apply.");
+      const proposed = f.bytes || encode.encode(f.content);
+      if (sameBytes(bytes, proposed)) continue; // Identical output: no write or backup required.
+      originals.set(f.path, bytes);
+    } else originals.set(f.path, null);
+    writes.push(f);
+  }
+  if (!writes.length) return 0;
+  const stamp = localIso().replace("T", " ").replace(/:/g, ".");
+  const backupRoot = `99_System/11_Import/Import ${stamp}/Replaced/`;
+  const backups = [...originals].filter(([, b]) => b !== null).map(([path, bytes]) => ({
+    path: backupRoot + path, bytes
+  }));
+  const archivePaths = backups.map((b) => b.path);
+  const archiveErrors = badPaths(backups).concat(await pathNameConflicts(vaultHandle, archivePaths));
+  if (archiveErrors.length) throw new Error("Unsafe recovery archive: " + archiveErrors.slice(0, 3).join("; "));
+  for (const archive of archivePaths) if (await existingVaultFile(archive))
+    throw new Error("A recovery archive already exists: " + archive + ". Retry without overwriting it.");
+  // Complete and verify ALL before-images before modifying a model file or plugin.
+  for (const b of backups) {
+    await writeFile(vaultHandle, b.path, b.bytes);
+    const f = await existingVaultFile(b.path);
+    if (!f || !sameBytes(new Uint8Array(await f.arrayBuffer()), b.bytes))
+      throw new Error("Recovery archive could not be verified: " + b.path);
+  }
+  const touched = [];
+  try {
+    let n = 0;
+    for (const f of writes) {
+      // Detect an edit occurring after preflight and before a particular write.
+      const current = await existingVaultFile(f.path), old = originals.get(f.path);
+      if ((!current && old !== null) || (current && old === null) ||
+        (current && old !== null && !sameBytes(new Uint8Array(await current.arrayBuffer()), old)))
+        throw new Error("Target changed during import: " + f.path + ". No further writes attempted.");
+      touched.push(f.path);
+      const proposed = f.bytes || encode.encode(f.content);
+      await writeFile(vaultHandle, f.path, proposed);
+      const check = await existingVaultFile(f.path);
+      if (!check || !sameBytes(new Uint8Array(await check.arrayBuffer()), proposed))
+        throw new Error("Import read-back verification failed: " + f.path);
+      noteWritten(f); n++;
+      if (n % 20 === 0 || n === writes.length) { onProgress(n, writes.length); await sleep(0); }
+    }
+    return n;
+  } catch (err) {
+    const failures = [];
+    for (const path of touched.reverse()) {
+      try {
+        const before = originals.get(path);
+        if (before === null) await removeVaultFile(path);
+        else if (before) await writeFile(vaultHandle, path, before);
+        else throw new Error("missing original snapshot");
+      } catch (e) { failures.push(path + ": " + (e.message || e)); }
+    }
+    throw new Error(`Import stopped and attempted rollback: ${err.message || err}.${failures.length ? " INCOMPLETE rollback: " + failures.slice(0, 5).join("; ") : " Original files restored where possible."} Recovery archives remain under ${backupRoot}`);
+  }
+}
 $("genAdd").addEventListener("click", async () => {
   try {
     progStart(STAGES); await rescanVault();
@@ -553,10 +638,9 @@ $("genAdd").addEventListener("click", async () => {
     if (bad.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${bad.length} file name(s) cannot be written by the browser; nothing was written.</span><pre>${esc(bad.slice(0, 25).join("\n"))}${bad.length > 25 ? "\n… and " + (bad.length - 25) + " more" : ""}</pre>`; return; }
     const clash = writeClashes(r.files);
     if (clash.length) { progFail(); $("genStatus").innerHTML = `<span class=bad>${clash.length} note(s) would replace or duplicate a different note in this folder; nothing was written.</span><pre>${esc(clash.slice(0, 25).join("\n"))}${clash.length > 25 ? "\n… and " + (clash.length - 25) + " more" : ""}</pre>`; return; }
-    if (!confirm(`Write ${r.files.length} file(s) into "${vaultHandle.name}"? Nothing is deleted.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
-    let n = 0;
-    for (const f of r.files) { await writeFile(vaultHandle, f.path, f.bytes || f.content); noteWritten(f); n++; if (n % 20 === 0 || n === r.files.length) { stageAt(4, n / r.files.length, `Writing files (${n} of ${r.files.length})`); await tick(); } }
-    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote ${n} file(s) into ${esc(vaultHandle.name)}.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`); await rescanVault();
+    if (!confirm(`Write up to ${r.files.length} file(s) into "${vaultHandle.name}"? Existing files will be archived before changes; nothing will be deleted unless recovering a failed write.`)) { progFail(); $("genStatus").textContent = "Cancelled."; return; }
+    const n = await safeImportWrite(r.files, new Map(vaultFiles || []), (done, total) => stageAt(4, done / total, `Writing/verifying files (${done} of ${total})`));
+    progDone(`Wrote ${n} files`); $("genStatus").innerHTML = `<span class=ok>Wrote and verified ${n} changed file(s) into ${esc(vaultHandle.name)}. Recovery copies retained for existing files.</span>`; showTrust(`in the folder “${esc(vaultHandle.name)}”`); await rescanVault();
   } catch (e) { reportFailure(e, "write to folder"); }
 });
 
