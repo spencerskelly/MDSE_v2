@@ -574,6 +574,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (!rec?.discovery) return "Discover Related is already off.";
     delete rec.discovery;
     if (this.preview?.path === path) delete this.preview.discovery;
+    this.apps.forEach((app: any) => app.refresh?.());
     const target = this.canvasTarget();
     if (target?.path === path) {
       await this.editTarget(target, (raw: string) => {
