@@ -8,6 +8,8 @@ on:
       - 'tools/workbench/test/**'
       - 'tools/importer/src/**'
       - '.github/workflows/prototype-build.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
@@ -33,6 +35,7 @@ jobs:
           npm run check:workbench
           npm run check:importer
       - name: Commit built artifacts to test branch
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
