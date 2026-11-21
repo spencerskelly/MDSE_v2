@@ -429,7 +429,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           }));
         } }, "All connections canvas"));
       acts.append(allControls);
-      if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
+      // Table lenses already render inside this Workbench; do not create a second tool tab.
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : lens === "compare" ? ({ ...spec, other: cmpOther } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.() && V.lensHasCanvas(lens)) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
