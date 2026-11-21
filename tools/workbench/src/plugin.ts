@@ -23,6 +23,7 @@ declare const WB: {
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
   discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number, mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => { doc: any; shown: number; available: number };
+  discoveryBoundary: (ix: any, sources: string[], mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => Set<string>;
   clearDiscovery: (doc: any) => any;
   keepDiscoveryCandidates: (doc: any, ix: any, paths: string[]) => { doc: any; kept: number };
   dismissDiscoveryCandidates: (doc: any, paths: string[]) => { doc: any; dismissed: number };
@@ -392,6 +393,8 @@ function hostFor(plugin: any): any {
     openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
+    discoveryActive: () => plugin.isDiscoveryActive(),
+    stopDiscovery: () => plugin.stopDiscoveryOnCanvas(),
     keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
     dismissSelectedDiscovery: () => plugin.changeSelectedDiscovery("dismiss"),
     openPickCanvas: (paths: string[], label: string, relations: boolean, group: boolean, replace: boolean) => plugin.openPickCanvas(paths, label, relations, group, replace),
@@ -554,6 +557,40 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
    *  The canvas stays the source when the Workbench panel is clicked: the last canvas that was in front is the one read. One card selects that note; two or more are handed to the panel's Common related lens. */
   canvasLeaf: any = null; canvasKey = "";
   discoveryTimer: any = null; discoveryEpoch = 0; discoveryBusy = false;
+  discoveryBoundaryPaths: Set<string> = new Set();
+  discoveryPath = "";
+  isDiscoveryActive(): boolean {
+    const t = this.canvasTarget();
+    return !!t && t.path === this.discoveryPath && !!this.previews.get(t.path)?.discovery;
+  }
+  /** Explicit and automatic exit share one path; temporary candidates vanish, kept cards stay. */
+  async stopDiscoveryOnCanvas(): Promise<string> {
+    const path = this.discoveryPath;
+    ++this.discoveryEpoch;
+    clearTimeout(this.discoveryTimer);
+    this.discoveryBoundaryPaths.clear();
+    this.discoveryPath = "";
+    const rec = this.previews.get(path);
+    if (!rec?.discovery) return "Discover Related is already off.";
+    delete rec.discovery;
+    if (this.preview?.path === path) delete this.preview.discovery;
+    const target = this.canvasTarget();
+    if (target?.path === path) {
+      await this.editTarget(target, (raw: string) => {
+        const current = parseDoc(raw), clean = WB.clearDiscovery(current);
+        return clean.nodes.length !== current.nodes.length || clean.edges.length !== current.edges.length
+          ? JSON.stringify({ ...current, nodes: clean.nodes, edges: clean.edges }, null, 2) : null;
+      });
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file) await this.app.vault.process(file, (raw: string) => {
+        const current = parseDoc(raw), clean = WB.clearDiscovery(current);
+        return clean.nodes.length !== current.nodes.length || clean.edges.length !== current.edges.length
+          ? JSON.stringify({ ...current, nodes: clean.nodes, edges: clean.edges }, null, 2) : raw;
+      });
+    }
+    return "Discover Related off. Temporary candidates removed; kept cards preserved.";
+  }
 
   /** Refresh only an MDSE discovery preview. Never touch a saved Canvas or a temporary card being inspected.
    * The debounce epoch prevents stale selections from overwriting newer ones. */
@@ -611,7 +648,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
     this.selected = paths[0]!; this.apps.forEach((a: any) => { a.setCanvasSelection?.(paths); });
     // Candidate selection is deliberately inert: otherwise clicking Keep could remove its target.
-    if (!candidateSelected && allIdsKnown && this.previews.get(path)?.discovery) {
+    if (!candidateSelected && allIdsKnown && path === this.discoveryPath && this.previews.get(path)?.discovery) {
+      if (paths.some((p) => !this.discoveryBoundaryPaths.has(p))) {
+        void this.stopDiscoveryOnCanvas().then((message: string) => new obsidian.Notice("MDSE: " + message, 4500))
+          .catch((e: any) => new obsidian.Notice("MDSE: could not stop discovery: " + String(e?.message ?? e), 8000));
+        return;
+      }
       const epoch = this.discoveryEpoch;
       this.discoveryTimer = setTimeout(() => { void this.refreshDiscoveryOnSelection(path, [...paths], epoch); }, 220);
     }
@@ -827,9 +869,13 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const msg = await writePreview(this, { doc: { ...current, nodes: result.doc.nodes, edges: result.doc.edges },
       fileName: `Discovery - ${name}.canvas`, notes: result.doc.nodes.length, unresolved: 0,
       capped: result.shown < result.available, groups: 0 });
-    if (this.preview) this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+    if (this.preview) {
+      this.preview.discovery = { ...mode }; // Only discovery previews auto-refresh.
+      this.discoveryPath = this.preview.path;
+      this.discoveryBoundaryPaths = WB.discoveryBoundary(this.ix, sources, mode);
+    }
     this.canvasKey = ""; // A newly opened preview is a distinct selection context.
-    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Selecting kept cards refreshes candidates automatically; selecting temporary cards leaves them available for Keep or Dismiss. Save excludes temporary candidates.`;
+    return `${msg} ${result.shown} discovery candidate(s) shown of ${result.available} available (${mode.all ? "all relationships" : mode.workflow}). Discovery follows the original element and its directly related elements, stops outside that group, or can be turned off manually. Kept cards remain; temporary candidates are not saved.`;
   }
 
   /** Promote or dismiss only selected discovery candidates on the active scratch preview. */
