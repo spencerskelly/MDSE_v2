@@ -166,7 +166,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
+import { refreshCanvas, updateIncludedCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -917,6 +917,42 @@ ${parts}tags: []
   const custom = { id: "manual-line-1", fromNode: again.doc.nodes[0]!.id, toNode: again.doc.nodes.at(-1)!.id, fromSide: "right" as const, toSide: "left" as const, toEnd: "none" as const };
   const manual = refreshCanvas({ ...again.doc, edges: [...again.doc.edges, custom] }, local, { completeRelationships: true });
   assert.ok(manual.doc.edges.some((e) => e.id === custom.id), "user-drawn lines are preserved");
+});
+
+test("Update included elements adds checked and removes unchecked Canvas cards only within the list scope", () => {
+  const source = new Map<string, string>();
+  const note = (id: string, name: string, rel = "") => `---
+type: Object
+id: OBJ-${id}
+uid: 2026112116000${id}checkcanvas
+status: Draft
+${rel}tags: []
+---
+# ${name}
+`;
+  source.set("Assembly.md", note("00101", "Assembly", 'hasPart: ["[[Part A]]", "[[Part B]]"]\\n'));
+  source.set("Part A.md", note("00102", "Part A"));
+  source.set("Part B.md", note("00103", "Part B"));
+  source.set("Unrelated.md", note("00104", "Unrelated"));
+  const model = buildIndex(source, { classes });
+  const first = addToCanvas({ nodes: [], edges: [] }, model, null, ["Assembly.md", "Part A.md", "Unrelated.md"]).doc;
+  const unrelated = first.nodes.find(n => cdNotePath(n) === "Unrelated.md")!;
+  const placed = updateIncludedCanvas(first, model,
+    ["Assembly.md", "Part A.md", "Part B.md"], ["Assembly.md", "Part B.md"],
+    "Assembly.md", ["Part A.md", "Part B.md"]);
+  assert.equal(placed.added, 1); assert.equal(placed.removed, 1);
+  assert.deepEqual(placed.doc.nodes.find(n => n.id === unrelated.id), unrelated, "out-of-scope card and its position stay untouched");
+  assert.ok(placed.doc.nodes.some(n => cdNotePath(n) === "Part B.md"));
+  assert.ok(!placed.doc.nodes.some(n => cdNotePath(n) === "Part A.md"));
+  assert.equal(placed.doc.edges.filter(e => e.fromNode === unrelated.id || e.toNode === unrelated.id).length, 0);
+  assert.equal(updateIncludedCanvas(placed.doc, model, ["Assembly.md", "Part A.md", "Part B.md"],
+    ["Assembly.md", "Part B.md"], "Assembly.md").added, 0, "repeat is idempotent");
+  const withoutParent = updateIncludedCanvas(first, model,
+    ["Assembly.md", "Part A.md", "Part B.md"], ["Part B.md"],
+    "Assembly.md", ["Part B.md"]);
+  assert.ok(!withoutParent.doc.nodes.some(n => cdNotePath(n) === "Assembly.md"),
+    "unchecking the parent does not silently add it back");
+  assert.ok(withoutParent.doc.nodes.some(n => cdNotePath(n) === "Part B.md"));
 });
 
 test("a retired note is a red card that names the note it went into, and Refresh redraws cards and lines from the vault without moving anything (D-0091)", () => {
