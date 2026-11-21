@@ -10,6 +10,7 @@ import * as OL from "./outline.ts";
 import { relatedNotes, commonRelated } from "./canvas.ts";
 import * as QC from "./quick_create.ts";
 import * as MN from "./member_nav.ts";
+import * as TD from "./term_discovery.ts";
 import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
@@ -166,6 +167,35 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  // Disposable, batched inverted index. Rebuilt only when the authoritative vault index is replaced.
+  let termCatalog: TD.TermCatalog | null = null, termSource: ModelIndex | null = null, termBuilding: ModelIndex | null = null;
+  let termProgress = 0, termDestroyed = false, termQuery = "", termType = "", termPerType = 25;
+  let termCommon: TD.TermFrequency[] = [], termTypes: string[] = [];
+  const termPicked = new Set<string>();
+  function ensureTermCatalog(): void {
+    if (!ix || termSource === ix || termBuilding === ix || termDestroyed) return;
+    const source = ix, catalog = TD.emptyTermCatalog(), iterator = source.notes.values(), kinds = new Set<string>();
+    termBuilding = source; termProgress = 0; termCatalog = null; termCommon = []; termTypes = [];
+    const next = (): void => {
+      if (termDestroyed || ix !== source || termBuilding !== source) return;
+      let done = false;
+      for (let i = 0; i < 200; i++) {
+        const entry = iterator.next();
+        if (entry.done) { done = true; break; }
+        TD.addTermNote(catalog, entry.value);
+        kinds.add(entry.value.type);
+        termProgress++;
+      }
+      if (done) {
+        termCatalog = catalog; termSource = source; termBuilding = null;
+        termTypes = [...kinds].sort();
+        termCommon = TD.commonTerms(catalog, 36, 2, true);
+        for (const path of termPicked) if (!source.notes.has(path)) termPicked.delete(path);
+        draw();
+      } else setTimeout(next, 0); // Yield to Obsidian between chunks even for large legacy models.
+    };
+    setTimeout(next, 0);
+  }
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
@@ -466,6 +496,88 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("div", { class: "mut" }, `${found.total} match${found.total === 1 ? "" : "es"}${found.total > notes.length ? ` (first ${notes.length} listed; narrow the search for the rest)` : ""}`), bar, list);
   }
 
+  /* Shared-term discovery: evidence by governed type, with explicit Canvas placement only.
+   * Nothing in this view writes SysML. A common word is never treated as a relationship. */
+  function termsView(): HTMLElement {
+    ensureTermCatalog();
+    const box = h("div", { class: "term-discovery" },
+      h("div", { class: "mut" }, "Search governed engineering note names, aliases, descriptions, Markdown bodies and SysML text. Complete words are AND-matched. Shared words are candidate evidence, not modeled links."));
+    if (!termCatalog || termSource !== ix) {
+      box.append(h("div", { class: "mut", role: "status" },
+        `Building the local term index without freezing Obsidian… ${termProgress} of ${ix!.notes.size} governed notes examined.`));
+      return box;
+    }
+    const catalog = termCatalog;
+    const input = h("input", { type: "search", class: "member-search",
+      "aria-label": "Search words across engineering element types", value: termQuery,
+      placeholder: "e.g. cooling fan, battery, CANH",
+      onchange: (e: Event) => { termQuery = (e.target as HTMLInputElement).value; termPerType = 25; draw(); } });
+    box.append(input);
+    const result = TD.searchTermCatalog(catalog, termQuery, termPerType, termType);
+    const setQuery = (w: string) => { termQuery = w; termType = ""; termPerType = 25; draw(); };
+    const related = h("div", { class: "chips term-suggestions" },
+      h("span", { class: "mut" }, "Common terms across element types (documents, not occurrences): "),
+      ...termCommon.slice(0, 24).map((f) => h("button", { class: "sm", type: "button",
+        title: f.byType.map((x) => x.type + ": " + x.count).join("; "), onclick: () => setQuery(f.word) },
+        `${f.word} · ${f.notes} notes / ${f.types} types`)));
+    box.append(related);
+    if (!termCommon.length) box.append(h("div", { class: "mut" }, "No words currently appear in two or more governed element types."));
+    const chooser = h("select", { "aria-label": "Filter term matches by element type", onchange: (e: Event) => {
+      termType = (e.target as HTMLSelectElement).value; termPerType = 25; draw();
+    } }, h("option", { value: "", selected: !termType }, "All element types"),
+      ...termTypes.map((t) => h("option", { value: t, selected: t === termType }, t)));
+    box.append(h("div", { class: "chips" }, chooser,
+      h("span", { class: "mut", role: "status" },
+        termQuery.trim() ? `${result.total} matching governed elements across ${result.groups.length} shown types.` :
+          `${catalog.indexed} governed elements indexed; choose a common term or enter a search.`)));
+    const selected = (): string[] => [...termPicked].filter((path) => ix!.notes.has(path));
+    const actionBar = h("div", { class: "chips", style: "display:flex;gap:6px;flex-wrap:wrap" });
+    const makeButton = (label: string, hint: string, fn: () => Promise<string>) => {
+      const button = h("button", { class: "sm", type: "button", title: hint }, label);
+      button.addEventListener("click", () => {
+        if (!selected().length) { msg = "Select at least one matching engineering element."; draw(); return; }
+        busy(button, "Placing…", fn);
+      });
+      return button;
+    };
+    const count = h("span", { class: "mut" }, `${selected().length} selected`);
+    const displayed = result.groups.flatMap((g) => g.matches.map((x) => x.path));
+    actionBar.append(
+      h("button", { class: "sm", type: "button", onclick: () => { for (const p of displayed) termPicked.add(p); draw(); } }, "Select displayed"),
+      h("button", { class: "sm", type: "button", onclick: () => { termPicked.clear(); draw(); } }, "Clear selection"),
+      count);
+    if (host.openPickCanvas) actionBar.append(makeButton("New grouped Canvas",
+      "Open a new scratch Canvas grouped by element type. Lines come only from existing authoritative relationships.",
+      () => host.openPickCanvas!(selected(), `Shared terms: ${termQuery.trim() || "selected elements"}`, true, true, true)));
+    if (host.addToCanvas) actionBar.append(makeButton("Add to current Canvas",
+      "Explicitly add these cards to the currently active Canvas. This can modify a saved Canvas. Only existing governed relationships are drawn.",
+      () => host.addToCanvas!(sel && ix!.notes.has(sel) ? sel : selected()[0]!, selected())));
+    box.append(actionBar);
+    if (!termQuery.trim()) return box;
+    if (!result.total) { box.append(empty("No governed elements contain every searched term. Try a single word, a synonym, or a broader requirement phrase.")); return box; }
+    for (const group of result.groups) {
+      const items = group.matches.map((hit) => {
+        const n = ix!.notes.get(hit.path)!;
+        return h("div", { class: "term-hit", style: "padding:5px 0;border-bottom:1px solid var(--line)" },
+          h("label", { style: "display:flex;gap:7px;align-items:flex-start" },
+            h("input", { type: "checkbox", checked: termPicked.has(hit.path),
+              "aria-label": "Select " + n.title + " for Canvas",
+              onchange: (e: Event) => {
+                if ((e.target as HTMLInputElement).checked) termPicked.add(hit.path); else termPicked.delete(hit.path);
+                count.textContent = `${selected().length} selected`;
+              } }),
+            h("span", {}, link(hit.path), " ", relatedWorkflow(hit.path), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")),
+              h("span", { class: "mut" }, " " + n.id),
+              h("div", { class: "mut", style: "font-size:11px" }, `Matched in: ${hit.fields.join(", ")} · ${hit.excerpt}`))));
+      });
+      box.append(sec("terms-" + group.type, `${group.type} (${group.total})`, items, { count: group.total, open: true }));
+    }
+    if (result.truncated) box.append(h("button", { class: "sm", type: "button",
+      onclick: () => { termPerType += 25; draw(); } }, `Show up to ${termPerType + 25} per type`));
+    box.append(h("div", { class: "mut" }, "Only existing SysML/approved model connections appear between cards. To propose a new relationship, draw and approve it through the governed editor."));
+    return box;
+  }
+
   /* Find similar: the notes that share a relationship with the selected note, grouped by relationship and direction. */
   let simKinds: string[] = [];
   function similarView(): HTMLElement {
@@ -567,7 +679,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const lensArea = (v: V.Lens): typeof workArea | null => {
       if (v === "review") return null;
       // Discovery and canvas utilities are cross-workflow; they must not reset an active work-area filter.
-      if (["common", "pick", "similar", "layout", "compare"].includes(v)) return workArea;
+      if (["common", "pick", "terms", "similar", "layout", "compare"].includes(v)) return workArea;
       // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
       if (v === "requirements" && workArea === "verify") return "verify";
       if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
@@ -703,6 +815,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "review") body.append(reviewView());
       else if (lens === "keywords") body.append(keywordsView());
       else if (lens === "pick") body.append(pickView());
+      else if (lens === "terms") body.append(termsView());
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
       else if (lens === "similar") body.append(similarView());
@@ -721,7 +834,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   draw();
 
   return {
-    setIndex(i, l = "") { ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
+    setIndex(i, l = "") { if (i !== ix) { termCatalog = null; termSource = null; termBuilding = null; termProgress = 0; termCommon = []; termTypes = []; } ix = i; loading = l || (i ? "" : "Reading notes…"); if (ix && sel && !ix.notes.has(sel)) sel = ""; if (!ix) editEl = null; if (lens === "edit" && editEl && ix) { editRefresh(editEl); return; } draw(); },
     editRelationship(ref) { openEditor(ref); },
     select(p) { const next = followSelection(ix, sel, p, pinned, lens === "edit"); if (next === sel) return; sel = next; draw(); },
     setCanvasSelection(paths) {
@@ -741,6 +854,6 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     lens: () => lens, selected: () => sel,
-    destroy() { wrap.remove(); style.remove(); },
+    destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
 }
