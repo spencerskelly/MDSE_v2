@@ -37,6 +37,8 @@ export interface PanelHost {
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
   /** Show related notes as temporary candidates on a new scratch Canvas, never writing an existing saved Canvas. */
   discoverRelated?(sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }): Promise<string>;
+  discoveryActive?(): boolean;
+  stopDiscovery?(): Promise<string>;
   /** Promote or dismiss cards selected on a discovery preview; only kept cards are saved. */
   keepSelectedDiscovery?(): Promise<string>;
   dismissSelectedDiscovery?(): Promise<string>;
@@ -783,11 +785,16 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         } }, "All connections canvas"));
       acts.append(allControls);
       if (host.discoverRelated && n) {
+        const active = !!host.discoveryActive?.();
         const sources = canvasSel.length >= 2 ? [...new Set(canvasSel)] : [n.path];
-        const b = h("button", { class: "sm pri", title: "Show workflow-relevant neighbors on a scratch Canvas; saved views exclude temporary cards" }, "Discover neighbors");
-        b.addEventListener("click", () => busy(b, "Discovering…", () => host.discoverRelated!(sources, { workflow: workArea, all: discoveryAll })));
+        const b = h("button", {
+          class: "sm pri", "aria-pressed": active ? "true" : "false",
+          title: active ? "Stop live discovery; remove temporary candidates while keeping retained notes" : "Discover direct modeled neighbors on a scratch Canvas"
+        }, active ? "Stop discovering" : "Discover neighbors");
+        b.addEventListener("click", () => busy(b, active ? "Stopping…" : "Discovering…", () =>
+          active && host.stopDiscovery ? host.stopDiscovery() : host.discoverRelated!(sources, { workflow: workArea, all: discoveryAll })));
         acts.append(b, h("label", { class: "sm", title: "Ignore workflow relationship filters and discover every resolved relationship kind" },
-          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll,
+          h("input", { type: "checkbox", "aria-label": "All relationships", checked: discoveryAll, disabled: active || undefined,
             onchange: (e: Event) => { discoveryAll = (e.target as HTMLInputElement).checked; draw(); } }), " All relationships"));
       }
       if (host.hasPreview?.()) {
