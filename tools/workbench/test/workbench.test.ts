@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
-import { followSelection, openInNewWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
+import { followSelection, navigateToWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
 import { importedVault, classes } from "./harness.ts";
 
 const files = await importedVault();
@@ -14,7 +14,7 @@ test("Open in workflow launches independent tabs with the exact selected enginee
   const calls: Array<[string, string, string]> = [];
   const host = { openWorkflow: async (area: "document" | "define" | "structure" | "verify", lens: V.Lens, selected: string) =>
     { calls.push([area, lens, selected]); } };
-  for (const area of ["document", "define", "structure", "verify"] as const) await openInNewWorkflow(host, area, path);
+  for (const area of ["document", "define", "structure", "verify"] as const) await navigateToWorkflow(host, area, path);
   assert.deepEqual(calls, [
     ["document", "note", path], ["define", "functional", path],
     ["structure", "structure", path], ["verify", "requirements", path],
@@ -24,8 +24,8 @@ test("Open in workflow launches independent tabs with the exact selected enginee
   });
   assert.deepEqual(prior, { path, workflow: "document", lens: "note", pinned: true },
     "the source tab's selected element, lens and pin state are never modified");
-  await assert.rejects(openInNewWorkflow({}, "document", path), /Choose a governed engineering item/);
-  await assert.rejects(openInNewWorkflow(host, "define", ""), /Choose a governed engineering item/);
+  await assert.rejects(navigateToWorkflow({}, "document", path), /Choose a governed engineering item/);
+  await assert.rejects(navigateToWorkflow(host, "define", ""), /Choose a governed engineering item/);
 });
 
 test("related-result workflow handoff opens the linked target, not the source note", async () => {
@@ -37,8 +37,8 @@ test("related-result workflow handoff opens the linked target, not the source no
     events.push([area, lens, path]);
   } };
   const original = { selected: source, area: "structure", pinned: true, lens: "structure" };
-  await openInNewWorkflow(host, "verify", related);
-  await openInNewWorkflow(host, "document", related);
+  await navigateToWorkflow(host, "verify", related);
+  await navigateToWorkflow(host, "document", related);
   assert.deepEqual(events, [["verify", "requirements", related], ["document", "note", related]]);
   assert.ok(events.every((e) => e[2] !== source), "navigate to the related item, never the current source");
   assert.deepEqual(original, { selected: source, area: "structure", pinned: true, lens: "structure" },
