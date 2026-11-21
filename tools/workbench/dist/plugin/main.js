@@ -7851,7 +7851,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const target = this.canvasTarget();
     if (!target) {
       if (!wanted.length) return "No Canvas is open and nothing is checked.";
-      return this.addToCanvasPreview(anchor, wanted);
+      return this.addToCanvasPreview(wanted.includes(anchor) ? anchor : null, wanted);
     }
     let changes                                                               = null;
     await this.editTarget(target, (text) => {
