@@ -268,8 +268,14 @@ function writeClashes(files) {
   }
   return out;
 }
+function unsafeFolderReason() {
+  if (!vaultHandle) return "Choose a writable vault folder.";
+  if (!vaultExists && allPaths.size)
+    return "This folder has existing files but no vault marker (.vault.yaml or .obsidian). Choose the actual vault root or an empty folder; refusing to initialize inside unrelated data.";
+  return "";
+}
 function refreshButtons() {
-  const ready = !!person && (!!source || !!bom);
+  const ready = !!person && (!!source || !!bom) && !unsafeFolderReason();
   $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
   $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
   $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
@@ -278,6 +284,7 @@ $("pick").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) { $("vaultStatus").innerHTML = '<span class=bad>This browser cannot write folders. Use Chrome or Edge, or build a ZIP.</span>'; return; }
   try {
     vaultHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    pendingUpdate = null; $("updApply").disabled = true;
     await rescanVault(); const files = vaultFiles;
     if (vaultExists) reportVault(files); else $("vaultOut").innerHTML = '<p class="mut">No vault in this folder. The whole vault will be written into it.</p>';
     $("vaultStatus").innerHTML = `<span class=ok>${esc(vaultHandle.name)}</span> · ${vaultExists ? "existing vault" : "no vault yet"} · read &amp; write`; refreshButtons();
@@ -622,6 +629,8 @@ async function safeImportWrite(files, originallyScanned, onProgress) {
 $("genAdd").addEventListener("click", async () => {
   try {
     progStart(STAGES); await rescanVault();
+    const unsafe = unsafeFolderReason();
+    if (unsafe) throw new Error(unsafe);
     const r = await assemble(vaultExists ? { hasVault: true, files: new Map(vaultFiles), allPaths: new Set(allPaths) } : null);
     if (vaultExists) {
       if ($("toolUpd").checked) {
@@ -677,6 +686,8 @@ async function assertFreshUpdate(pending) {
 $("updPreview").addEventListener("click", async () => {
   await rescanVault();
   try {
+    const unsafe = unsafeFolderReason();
+    if (unsafe) throw new Error(unsafe);
     pendingUpdate = null; $("updApply").disabled = true; $("updStatus").textContent = "Comparing…"; $("updOut").innerHTML = "";
     const res = await planVaultUpdate({ base: BASEVAULT, read: readVaultFile, runDate: localIso() });
     const s = res.summary, shown = res.rows.filter((r) => r.action !== "same");
