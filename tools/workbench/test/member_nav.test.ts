@@ -120,8 +120,8 @@ test("member Canvas shows explicit connect/bind/flow lines without inventing mem
   assert.equal(edges.length, 4, "the chosen part participates in four explicit statements");
   assert.equal(nodes.filter((n) => n.type === "file").length, 1);
   assert.equal(nodes.find((n) => n.type === "file")?.file, system);
-  assert.equal(nodes.filter((n) => n.type === "text").length, 5,
-    "one selected member card and four distinct endpoint cards including direction-specific sides");
+  assert.equal(nodes.filter((n) => n.type === "text").length, 4,
+    "one selected member card and three endpoint cards, with incoming flow on its own side");
   assert.ok(nodes.every((n) => n.id.startsWith(MEMBER_CANVAS_PREFIX)));
   assert.ok(nodes.filter((n) => n.type === "text").every((n) => cardNotePath(n) === null),
     "member/endpoint cards must not masquerade as model note cards");
@@ -133,7 +133,11 @@ test("member Canvas shows explicit connect/bind/flow lines without inventing mem
   assert.equal(flowOut.toEnd, "arrow");
   assert.equal(flowIn.toNode, MEMBER_CANVAS_PREFIX + "selected", "incoming flow retains native direction");
   assert.equal(flowOut.fromNode, MEMBER_CANVAS_PREFIX + "selected", "outgoing flow retains native direction");
-  assert.equal(edges.filter((e) => e.toEnd === "none").length, 2, "connect and bind are not directional");
+  assert.equal(edges.filter((e) => e.toEnd === "none").length, 2, "connectors are undirected");
+  const input = memberDetails(ix, system).find((m) => m.name === "input")!;
+  const inputCanvas = memberConnectionCanvas(ix, system, input.key);
+  assert.ok(inputCanvas.doc.edges.some((e) => /bind/.test(e.label ?? "") && e.toEnd === "none"),
+    "binding semantics are shown without inventing a direction");
   assert.equal(edges.filter((e) => /unresolved/.test(e.label ?? "")).length, 1);
   assert.ok(nodes.some((n) => n.text?.includes("Endpoint: input") && n.type === "text"));
   assert.ok(nodes.some((n) => n.text?.includes("**Endpoint: input**") && n.color === "5"));
