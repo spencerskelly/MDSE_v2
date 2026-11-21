@@ -396,12 +396,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     ws.revealLeaf(leaf);
     if (requested && !wantPopout) new obsidian.Notice("MDSE: this Obsidian version does not support pop-out windows; opened in sidebar.");
   }
+  /** Table/lens changes are Workbench navigation, never editor-tab navigation. */
   async openTable(lens: string) {
+    await this.openPanel();
     await this.ensureIndex();
-    let leaf = this.app.workspace.getLeavesOfType(TABLE)[0];
-    if (!leaf) leaf = mainLeaf(this.app);
-    await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    const panels: any[] = this.app.workspace.getLeavesOfType(PANEL) || [];
+    const panel = panels.find((leaf: any) => leaf.view?.app_?.setLens);
+    if (!panel) throw new Error("MDSE Workbench panel was not initialized.");
+    panel.view.app_.setLens(lens);
+    await this.app.workspace.revealLeaf(panel);
     this.syncSelection();
   }
   /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
@@ -667,7 +670,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { this.registerEvent(this.app.workspace.on("canvas:edge-menu", (menu: any, edge: any) => { const r = edge?.id ? WB.edgeRefOfId(String(edge.id)) : null; if (r) menu.addItem((i: any) => i.setTitle("Edit relationship (MDSE)").setIcon("pencil").onClick(() => this.editRelationship(r))); })); } catch { /* older Obsidian: the command still works */ }
     this.addCommand({ id: "refresh", name: "Refresh MDSE Workbench index", callback: async () => { this.files = await readVault(this.app); await this.rebuild(); } });
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk: boolean) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
-    this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
+    this.addCommand({ id: "table", name: "Show MDSE table in Workbench…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk: boolean) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
     this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.cardActionOnSelected("toggle").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "collapse-layer", name: "Collapse one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
