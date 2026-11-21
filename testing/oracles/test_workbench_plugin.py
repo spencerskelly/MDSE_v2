@@ -206,6 +206,56 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_workflow_switch_creates_independent_pinned_tab_without_replacing_sidebar(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        primary = "10_Model/Charger.md"
+        other = next(p for p in notes if p != primary)
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", primary)
+            pg.wait_for_selector("header >> text=Charger")
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
+            before = pg.evaluate("""() => {
+                const v = window.__leaves.right[0].view;
+                return { count: window.__leaves.main.length, selected: v.app_.selected(), lens: v.app_.lens(),
+                  pinned: v.app_.isPinned(), files: JSON.stringify(window.__notes) };
+            }""")
+            # The default opens an independent editor tab; the original Workbench is not reused.
+            pg.locator("nav.workareas button:has-text('Structure')").first.click()
+            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-workflow-tab' && l.view.app_)")
+            state = pg.evaluate("""() => {
+                const o = window.__leaves.right[0].view.app_;
+                const n = window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_;
+                return { count: window.__leaves.main.length, old: [o.selected(), o.lens(), o.isPinned()],
+                  newly: [n.selected(), n.lens(), n.area(), n.isPinned()], files: JSON.stringify(window.__notes) };
+            }""")
+            self.assertEqual(state["old"], [before["selected"], before["lens"], before["pinned"]])
+            self.assertEqual(state["count"], before["count"] + 1)
+            self.assertEqual(state["newly"], [primary, "structure", "structure", True])
+            self.assertEqual(state["files"], before["files"])
+            # The new tab is pinned: following a different note in the sidebar may not steal its context.
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", other)
+            pg.wait_for_function("p => window.__leaves.right[0].view.app_.selected() === p", arg=other)
+            self.assertEqual(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected()"), primary)
+            # Follow is an explicit local decision, and then uses the selected item.
+            pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.setPinned(false)")
+            pg.wait_for_function("p => window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected() === p", arg=other)
+            self.assertFalse(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.isPinned()"))
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), before["files"])
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
