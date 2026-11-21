@@ -138,15 +138,18 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
 
-            # table: opens in the main window for the selected note
+            # Table selections change the existing Workbench panel, not editor tabs.
             for lens in ("Tables", "Structure"):
                 pg.select_option("select.fn", label=lens)
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
-            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
             pg.wait_for_selector("table")
-            # a table opened after the index was built must be handed it, not sit on "Reading notes…"
-            pg.wait_for_function("() => { const v = window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view; return v.contentEl.querySelector('table') && !/Reading notes/.test(v.contentEl.textContent); }")
+            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table').length"), 0)
+            self.assertEqual(pg.evaluate("window.__leaves.right.filter(l => l.type === 'mdse-panel').length"), 1)
+            self.assertEqual(pg.evaluate("document.querySelector('select.fn').selectedOptions[0].textContent"), "Structure")
+            pg.evaluate("window.__cmds['table'].callback()")
+            pg.evaluate("window.__modal.onChooseItem(['requirements', 'Requirements'])")
+            pg.wait_for_function("document.querySelector('select.fn').selectedOptions[0].textContent === 'Requirements'")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
+            pg.select_option("select.fn", label="Structure")
 
             # canvas: each view is a new scratch file in the main window (D-0140)
             pg.click("button:has-text('Canvas in main window')")
@@ -681,7 +684,7 @@ class WorkbenchPlugin(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_main_window_structure_table_draws_a_system_of_over_a_thousand_rows(self):
-        """D-0151, WKB-070: 6 boards of 200 parts under one system is 1,207 rows; the main-window table draws all of them and the folds work on it."""
+        """A 1,207-row structure stays accessible through Workbench-only pagination and CSV export."""
         def note(i, title, kids=()):
             hp = "hasPart: [" + ", ".join(f'"[[{k}]]"' for k in kids) + "]\n" if kids else ""
             return f"10_Model/{title}.md", f"---\ntype: Object\nid: OBJ-{i:05d}\nuid: 202611090000{i:05d}big\nstatus: Draft\n{hp}tags: []\n---\n# {title}\n"
@@ -708,13 +711,16 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("window.__ev['file-open']({ path: '10_Model/System.md', extension: 'md' })")
             pg.wait_for_selector("header >> text=System")
             pg.select_option("select.fn", label="Structure")
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("[...document.querySelectorAll('table')].some(t => t.querySelectorAll('tbody tr').length > 1200)")
+            pg.wait_for_selector("text=Page 1 of 49")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0, "no table editor tabs created")
             tables = lambda: pg.evaluate("[...document.querySelectorAll('table')].map(t => t.querySelectorAll('tbody tr').length)")
-            self.assertEqual(tables()[2], 1207, "every row, with none cut and no 'not drawn' message")
-            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.more')].some(e => /not drawn/.test(e.textContent))"), False)
+            self.assertIn(25, tables(), "Workbench page displays 25 of 1,207 rows")
+            pg.locator("div.more:has-text('Page 1 of 49')").first.locator("xpath=..").locator("button:has-text('Next page')").click()
+            pg.wait_for_selector("text=Page 2 of 49")
+            self.assertTrue(pg.locator("button:has-text('Export CSV')").count(), "export retains all rows")
             pg.evaluate("(() => { const bs = [...document.querySelectorAll('button')].filter(b => b.textContent === 'Collapse all parts'); bs[bs.length - 1].click(); })()")
-            self.assertEqual(tables()[2], 7, "the system and its 6 boards")
+            self.assertIn(7, tables(), "folding keeps the system and six boards")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
         self.assertEqual(errors, [])
 
 
