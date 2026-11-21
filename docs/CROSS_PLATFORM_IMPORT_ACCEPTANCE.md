@@ -2,6 +2,13 @@
 
 **Status:** review branch `hardening/cross-platform-import-update-20261120`, draft PR #5 against the connection-discovery prototype. **Not yet accepted on real NTFS and APFS vaults.** Do not merge or deploy to MDSE_v2_live until the native staging tests below pass and the owner authorizes promotion.
 
+## Build and automated validation evidence
+
+- Paired artifact sync: [Actions 44860243055](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860243055) — passed, artifact commit `a182afce77767b26b40395b364432e835ae840b3`. The generated importer HTML now includes the OS hardening code.
+- Native platform regression: [Windows/macOS Actions 44860224606](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860224606) — passed on both operating systems. A separate latest-source run is also part of PR #5.
+- Browser failure-injection regression: latest PR CI run must pass with the exact generated importer HTML. **Do not mark this accepted until confirmed.**
+- Physical Windows NTFS / macOS APFS folder update and Obsidian runtime: **not yet performed**.
+
 ## Supported browser / folder workflow
 
 Use current **Chrome or Edge** on Windows or macOS. File System Access directory writes require a supported browser and the user's explicit permission. Safari and Firefox are for *new-vault ZIP export only*. The importer is self-contained HTML and does not require installing Node or Python on the engineer's PC.
