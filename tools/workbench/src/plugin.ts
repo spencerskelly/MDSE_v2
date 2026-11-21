@@ -29,7 +29,7 @@ declare const WB: {
   cardNotePath: (node: any) => string | null;
   structureCanvas: (ix: any, path: string, mode: "direct" | "full") => any;
   addChildren: (doc: any, ix: any, parent: string, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
-  refreshCanvas: (doc: any, ix: any) => { doc: any; redrawn: number; missing: number; linesAdded: number; linesRemoved: number };
+  refreshCanvas: (doc: any, ix: any, opts?: { completeRelationships?: boolean }) => { doc: any; redrawn: number; missing: number; linesAdded: number; linesRemoved: number };
   autoLayout: (doc: any, ix: any) => { doc: any; moved: number; kept: number };
   cardAction: (doc: any, ix: any, parent: string, kind: string) => { doc: any; action: "collapsed" | "expanded" | "none"; changed: number; capped: boolean };
   pickCanvas: (ix: any, paths: string[], o: { relations: boolean; label: string; group: boolean }) => any;
@@ -777,12 +777,25 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const place = (doc: any) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
     if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is
-      let res: { added: number; present: number; lineIds?: string[] } | null = null;
-      await this.editTarget(target, (text) => { const r = place(parseDoc(text)); res = r; if (!r.added) return null; const rec = this.previews.get(target.path); if (rec) for (const id of r.lineIds ?? []) rec.edgeIds.add(id); return JSON.stringify(r.doc, null, 2); });
-      const r = res as { added: number; present: number } | null;
+      let res: { added: number; present: number; linesAdded: number; linesRemoved: number } | null = null;
+      await this.editTarget(target, (text) => {
+        const original = parseDoc(text), placed = place(original);
+        if (!placed.added) { res = { added: 0, present: placed.present, linesAdded: 0, linesRemoved: 0 }; return null; }
+        // Rebuild all modeled relationships between the visible cards after every Workbench addition.
+        // The model index is read-only, and canvas card coordinates and user-drawn edges are retained.
+        const synced = WB.refreshCanvas(placed.doc, this.ix, { completeRelationships: true });
+        const previous = new Set(original.edges.map((e: any) => e.id));
+        const rec = this.previews.get(target.path);
+        if (rec) for (const edge of synced.doc.edges) {
+          if (!previous.has(edge.id)) rec.edgeIds.add(edge.id); // do not misclassify generated lines as user-drawn
+        }
+        res = { added: placed.added, present: placed.present, linesAdded: placed.lineIds.length + synced.linesAdded - synced.linesRemoved, linesRemoved: synced.linesRemoved };
+        return JSON.stringify(synced.doc, null, 2);
+      });
+      const r = res as { added: number; present: number; linesAdded: number; linesRemoved: number } | null;
       if (!r) return "Could not read that canvas.";
       this.app.workspace.revealLeaf(target.leaf);
-      return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Nothing else on it moved.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
+      return r.added ? `Added ${r.added} note${r.added === 1 ? "" : "s"} to ${target.path}${r.present ? ` (${r.present} already there)` : ""}. Modeled relationships refreshed automatically; existing cards stayed in place.` : r.present ? "Those notes are already on the canvas." : "Nothing to add.";
     }
     const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
     return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
