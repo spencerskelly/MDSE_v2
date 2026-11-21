@@ -35,6 +35,10 @@ export interface PanelHost {
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  /** The actual note cards in the open Canvas; temporary discovery candidates excluded. */
+  canvasIncluded?(): Promise<{ canvas: string | null; included: string[] }>;
+  /** Set membership for this list only: checked cards included, unchecked cards removed. */
+  updateIncluded?(anchor: string, scope: string[], checked: string[], directChildren: string[]): Promise<string>;
   /** Show related notes as temporary candidates on a new scratch Canvas, never writing an existing saved Canvas. */
   discoverRelated?(sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }): Promise<string>;
   discoveryActive?(): boolean;
@@ -169,6 +173,45 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  let membershipLoading = false, membershipReady = false, membershipEpoch = 0;
+  let membershipContext = ""; let activeCanvasName: string | null = null;
+  /** Read the actual Canvas before presenting membership checkboxes. Avoid treating an unchecked
+   * list row as an instruction to delete it until the current Canvas was successfully read. */
+  function loadIncluded(context: string, force = false): void {
+    if (!host.canvasIncluded) return;
+    if (!force && membershipContext === context) return;
+    membershipContext = context;
+    membershipReady = false; membershipLoading = true;
+    rowTicks.clear();
+    const epoch = ++membershipEpoch;
+    void host.canvasIncluded().then((snapshot) => {
+      if (epoch !== membershipEpoch) return;
+      activeCanvasName = snapshot.canvas;
+      rowTicks.clear(); for (const p of snapshot.included) rowTicks.add(p);
+      membershipLoading = false; membershipReady = true;
+      draw();
+    }, (error) => {
+      if (epoch !== membershipEpoch) return;
+      membershipLoading = false; membershipReady = false;
+      msg = "Cannot read Canvas inclusion: " + String(error);
+      draw();
+    });
+  }
+  async function applyIncluded(anchor: string, eligible: string[], children: string[] = []): Promise<string> {
+    if (!membershipReady || !host.updateIncluded) return "The current Canvas inclusion has not been loaded.";
+    const checked = eligible.filter((p) => rowTicks.has(p));
+    const result = await host.updateIncluded(anchor, eligible, checked, children);
+    loadIncluded(membershipContext, true);
+    return result;
+  }
+  const includeCheck = (p: string, label: string): HTMLElement => h("input", {
+    type: "checkbox", "aria-label": "Include " + label, checked: rowTicks.has(p),
+    disabled: !membershipReady || undefined,
+    onchange: (e: Event) => {
+      if ((e.target as HTMLInputElement).checked) rowTicks.add(p); else rowTicks.delete(p);
+      if (tickCount) tickCount.textContent = `${rowTicks.size} currently selected`;
+    }
+  });
   // Disposable, batched inverted index. Rebuilt only when the authoritative vault index is replaced.
   let termCatalog: TD.TermCatalog | null = null, termSource: ModelIndex | null = null, termBuilding: ModelIndex | null = null;
   let termProgress = 0, termDestroyed = false, termQuery = "", termType = "", termPerType = 25;
@@ -218,7 +261,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (!t.rows.length) { box.append(empty(t.empty)); return t.title ? wrapSec() : box; }
     const tick = (r: Record<string, V.TableCell>): HTMLElement => {
       const p = rowNote(t, r); if (!p) return h("td", {});
-      return h("td", {}, h("input", { type: "checkbox", "aria-label": "Tick for the canvas", checked: rowTicks.has(p), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) rowTicks.add(p); else rowTicks.delete(p); if (tickCount) tickCount.textContent = `${rowTicks.size} ticked`; } }));
+      return h("td", {}, includeCheck(p, ix!.notes.get(p)?.title ?? p));
     };
     /* D-0150: an outline table (the indented BOM) can fold each assembly, fold or unfold everything, or show down to one level */
     const okey = [lens, sel, t.id, tree].join("|");
@@ -264,7 +307,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         h("button", { class: "sm", title: "Fold every assembly in this table: show only this note and its direct parts (the Collapse all above folds page sections, not parts)", onclick: () => { outlineState.set(okey, OL.collapseFromLevel(ol, 1)); paint(); } }, "Collapse all parts"),
         levels, status));
     }
-    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), tbody));
+    box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Checked = included in the current Canvas. Uncheck and update to remove the card from this view." }, "In view") : null, ...cols.map((c) => h("th", {}, c.label)))), tbody));
     box.append(moreEl, pager); paint();
     box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
@@ -292,19 +335,16 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (!shown.length && lens !== "structure") return null;
     const root = sel && ix!.notes.has(sel) ? sel : "", anchor = root || shown[0]!;
     const kidsOf = lens === "structure" && root ? [...new Set(ix!.edges.filter((e) => e.kind === "hasPart" && e.from === root && e.to && !e.reverse && e.to !== root && ix!.notes.has(e.to)).map((e) => e.to!))] : [];
-    /* D-0090: on Structure the root's direct parts go in one row below its card; anything else ticked is placed by the hierarchy rules */
-    const addSome = async (paths: string[]): Promise<string> => {
-      const row = host.addChildren ? paths.filter((p) => kidsOf.includes(p)) : [], rest = paths.filter((p) => !row.includes(p) && p !== root);
-      const m1 = row.length ? await host.addChildren!(root, row) : "";
-      const m2 = rest.length || !row.length ? await host.addToCanvas!(anchor, rest.length ? rest : paths) : "";
-      return [m1, m2].filter(Boolean).join(" ");
-    };
-    const run = (b: HTMLElement, paths: string[]): void => { if (!paths.length) { msg = "Tick at least one row first."; draw(); return; } busy(b, "Adding…", () => addSome(paths)); };
-    const some = h("button", { class: "sm pri", title: "Put the ticked notes on the canvas preview, placed by how they relate: parts under the assembly, specializations under the general element, requirements under use cases, functions and test cases under requirements, objects under functions" }, "Add ticked to canvas");
-    some.addEventListener("click", () => run(some, [...rowTicks].filter((p) => ix!.notes.has(p))));
-    const every = h("button", { class: "sm", title: "Put every note listed in the tables below on the canvas preview" }, `Add all ${shown.length + (root && !shown.includes(root) ? 1 : 0)} shown to canvas`);
-    every.addEventListener("click", () => run(every, root && !shown.includes(root) ? [root, ...shown] : shown));
-    tickCount = h("span", { class: "mut" }, `${rowTicks.size} ticked`);
+    const eligible = root && !shown.includes(root) ? [root, ...shown] : shown;
+    const some = h("button", { class: "sm pri", disabled: !membershipReady || undefined,
+      title: "Apply these checkboxes to the active Canvas: add checked missing cards, remove unchecked existing cards in this list, leave all other Canvas elements untouched." }, "Update included elements");
+    some.addEventListener("click", () => busy(some, "Updating…", () => applyIncluded(anchor, eligible, kidsOf)));
+    const every = h("button", { class: "sm", disabled: !membershipReady || undefined,
+      title: "Check every item in the current list; use Update included elements to apply." }, `Check all ${eligible.length} listed`);
+    every.addEventListener("click", () => { for (const p of eligible) rowTicks.add(p); draw(); });
+    tickCount = h("span", { class: "mut" }, membershipReady
+      ? `${eligible.filter((p) => rowTicks.has(p)).length} of ${eligible.length} included/selected`
+      : membershipLoading ? "Reading Canvas inclusion…" : "Canvas inclusion unavailable");
     const mk = (label: string, title: string, go: () => Promise<string>): HTMLElement => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
     const fresh: HTMLElement[] = [];
     if (kidsOf.length && host.addChildren) { const cb = h("button", { class: "sm pri", title: "Put every direct part of this assembly on the open canvas as one row below its card, joined bottom to top" }, `Add all ${kidsOf.length} children to canvas`); cb.addEventListener("click", () => busy(cb, "Adding…", () => host.addChildren!(root, kidsOf))); fresh.push(cb); }
@@ -312,7 +352,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom!(anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", onclick: () => { rowTicks.clear(); draw(); } }, "Clear ticks"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", disabled: !membershipReady || undefined, onclick: () => { for (const p of eligible) rowTicks.delete(p); draw(); } }, "Uncheck listed"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -407,9 +447,18 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const rn = relatedNotes(ix!, n.path);
     if (host.addToCanvas && rn.length) {       // D-0082
       if (host.newCanvasFrom) { const nb = h("button", { class: "sm pri", title: "A new canvas, replacing the preview, of this note and every note related to it, placed by how they relate" }, "Canvas of this note and its related notes"); nb.addEventListener("click", () => busy(nb, "Creating…", () => host.newCanvasFrom!(n.path, rn.map((r) => r.path)))); box.append(h("div", { class: "row" }, nb)); }
-      const all = h("button", { class: "sm pri", title: "Put every related note on the canvas preview, beside this note's card" }, `Add all ${rn.length} related to canvas`);
-      all.addEventListener("click", () => busy(all, "Adding…", () => host.addToCanvas!(n.path, rn.map((r) => r.path))));
-      box.append(sec("rel-add", "Add related notes to the canvas", [h("div", { class: "row" }, all), ...rn.map((r) => { const b = h("button", { class: "sm", title: "Add this note to the canvas preview" }, "+"); b.addEventListener("click", () => busy(b, "…", () => host.addToCanvas!(n.path, [r.path]))); return h("div", { style: "margin:2px 0" }, b, " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))); })], { count: rn.length, open: false }));
+      const eligible = [n.path, ...rn.map((r) => r.path)];
+      const update = h("button", { class: "sm pri", disabled: !membershipReady || undefined,
+        title: "Synchronize this related-element list with the current Canvas. Unchecked related cards are removed only from the Canvas." }, "Update included elements");
+      update.addEventListener("click", () => busy(update, "Updating…", () => applyIncluded(n.path, eligible)));
+      const all = h("button", { class: "sm", disabled: !membershipReady || undefined,
+        onclick: () => { for (const p of eligible) rowTicks.add(p); draw(); } }, "Check all related");
+      box.append(sec("rel-add", "Related elements — Canvas inclusion", [
+        h("div", { class: "mut" }, membershipReady ? `Checked elements are already in ${activeCanvasName ?? "the current view"} or staged for inclusion. Changes apply only after Update.` : "Reading Canvas membership…"),
+        h("div", { class: "row" }, update, all),
+        h("div", {}, includeCheck(n.path, n.title), " ", link(n.path), h("span", { class: "mut" }, " (selected element)")),
+        ...rn.map((r) => h("div", { style: "margin:2px 0" }, includeCheck(r.path, note(r.path)?.title ?? r.path), " ", link(r.path), relatedWorkflow(r.path), " ", h("span", { class: "mut" }, r.kinds.join(", "))))
+      ], { count: rn.length, open: true }));
     }
     if (n.def?.usages.length) box.append(sec("usages", "Members and explicit connections", [memberInspector(n)], { count: n.def.usages.length }));
     return box;
@@ -811,6 +860,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
     const status = msg ? h("div", { class: "msg" }, msg, undo ? h("button", { class: "sm", style: "margin-left:8px", onclick: async () => { const u = undo!; undo = null; try { msg = await u(); markEditStale(); } catch (e) { msg = "Undo failed: " + String((e as Error)?.message ?? e); } draw(); } }, "Undo") : null) : null;
+    if (ix && (lens === "note" || ADDABLE.has(lens)) && host.canvasIncluded) loadIncluded(lens + "|" + sel);
     const body = h("div", { class: "body" });
     if (!ix) body.append(empty(loading));
     else try {
@@ -828,7 +878,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "similar") body.append(similarView());
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
-        const key = lens + "|" + sel; if (key !== tickKey) { rowTicks.clear(); tickKey = key; }
+        const key = lens + "|" + sel; if (key !== tickKey) { tickKey = key; }
         const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
