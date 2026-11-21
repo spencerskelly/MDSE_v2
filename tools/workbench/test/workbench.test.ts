@@ -166,7 +166,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
-import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
+import { refreshCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
 const PCE25 = readFileSync(new URL("./fixtures/PCE25.md", import.meta.url), "utf8");
 const lone = (): ReturnType<typeof buildIndex> => buildIndex(new Map([["00 Product Definition/MHE/PCE25/PCE25.md", PCE25]]));
 
@@ -688,6 +688,23 @@ test("successive discovery selections retain kept cards and replace only tempora
   assert.ok(saved.edges.every((e) => ids.has(e.fromNode) && ids.has(e.toNode)));
   assert.deepEqual(base, pickCanvas(ix, [source], { relations: false, label: "", group: false }).doc,
     "an earlier Canvas is not changed by refreshing its scratch copy");
+});
+
+test("discovery session is bounded to original direct neighbors and does not expand through a second hop", () => {
+  const paths = [...ix.notes.keys()].slice(0, 5);
+  const [source, direct, secondHop, unrelated, crossWorkflow] = paths as [string, string, string, string, string];
+  const edge = (from: string, to: string, kind: string) => ({ from, to, kind, reverse: false });
+  const fixture = { notes: ix.notes, edges: [
+    edge(source, direct, "hasPart"), edge(direct, secondHop, "hasPart"),
+    edge(source, crossWorkflow, "describes"), edge(unrelated, secondHop, "hasPart")
+  ] } as unknown as typeof ix;
+  const boundary = discoveryBoundary(fixture, [source], { workflow: "structure" });
+  assert.ok(boundary.has(source) && boundary.has(direct), "the origin and direct structural neighbor remain active");
+  assert.ok(!boundary.has(secondHop), "selection of a second-hop-only part must stop discovery");
+  assert.ok(!boundary.has(unrelated), "unrelated selection stops discovery");
+  assert.ok(!boundary.has(crossWorkflow), "workflow filtering applies to the original direct boundary");
+  assert.ok(discoveryBoundary(fixture, [source], { workflow: "structure", all: true }).has(crossWorkflow),
+    "All relationships includes cross-workflow direct neighbors");
 });
 
 test("workflow discovery filters candidates, retains ranking and permits all relationships", () => {
