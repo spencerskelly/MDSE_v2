@@ -50,7 +50,9 @@ Step 4 of the page. Choose a vault folder in step 2, press **Preview vault updat
 
 A folder with no vault gets the whole base vault. A `Vault Update <date>.md` note in `99_System/11_Import` lists every change. A malformed JSON config is left alone and reported. Running it again changes nothing.
 
-## Run
+## Run and update the managed toolset
+
+**Canonical staged-update and deployment instructions:** [docs/TOOLSET_UPDATE.md](../../docs/TOOLSET_UPDATE.md). Rebuild **both** distributions whenever Workbench source or its bundled payload changes; a Workbench-only build leaves this importer's committed HTML stale. Before replacing any live-vault config, inspect the importer's Step 4 **Preview vault update** and verify the exact target vault and generated artifact SHA.
 
 ```bash
 npm run build            # workbench, then importer (the importer embeds the Workbench plugin build)

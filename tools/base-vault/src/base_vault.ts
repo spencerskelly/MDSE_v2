@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { CATEGORY_RULES_PATH, renderCategoryRules } from "../../importer/src/bom_category.ts";
+import { QUICK_TEMPLATES } from "../../workbench/src/quick_create.ts";
 
 const TEXT = /\.(md|yaml|yml|json|txt)$/i;
 const JUNK = /(^|\/)(\.DS_Store|Thumbs\.db)$/;
@@ -98,6 +99,11 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     const named = c.subtype.filter(Boolean), sub = named.length ? `subtype: # one of: ${named.join(", ")}` : "subtype:";
     put(`99_System/05_Templates/Template - ${type}.md`, `---\ntype: ${/\s/.test(type) ? JSON.stringify(type) : type}\n${sub}\nid:\nuid:\nstatus: Draft\neaType:\ntags: []\n---\n# <% tp.file.title %>\n\n\n\n## Source: EA\n`);
   }
+  // Ordinary engineering documentation uses the same template catalog as Workbench New.
+  // These templates intentionally have no model ID/UID/SysML section.
+  for (const t of QUICK_TEMPLATES.filter((x) => x.kind === "plain"))
+    put(`99_System/05_Templates/Template - ${t.label}.md`,
+      "# <% tp.file.title %>\n\n" + (t.sections ?? []).map((x) => "## " + x + "\n\n").join(""));
   const ecoOrder = (JSON.parse(readFileSync(join(o.root, "governance/schemas/properties.json"), "utf8")) as { order: string[] }).order;
   put("99_System/05_Templates/Template - ECO.md", ecoTemplate(ecoOrder));   // MOD-190, D-0164
   put("ECO/ECO-00001.md", ecoExample(ecoOrder));                              // MOD-189, MOD-191, D-0165

@@ -1,0 +1,58 @@
+name: Four workflow integration build
+on:
+  push:
+    branches:
+      - integration/four-workflows-single-workbench-20261120
+    paths:
+      - 'tools/workbench/src/**'
+      - 'tools/workbench/test/**'
+      - 'tools/importer/src/**'
+      - 'testing/oracles/**'
+      - '.github/workflows/integration-build.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test Workbench and navigation
+        run: npm run test:workbench
+      - name: Test importer
+        run: npm run test:importer
+      - name: Rebuild Workbench and embedded importer distributables
+        run: npm run build
+      - name: Verify deterministic builds
+        run: |
+          npm run check:workbench
+          npm run check:importer
+      - name: Commit paired Workbench and importer distributables
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/workbench/dist tools/importer/dist tools/importer/TRANSLATION.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Build prototype Workbench and importer artifacts'
+            git push origin HEAD:integration/four-workflows-single-workbench-20261120
+          fi
+      - name: Publish build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdse-functional-prototype
+          path: |
+            tools/workbench/dist/plugin/
+            tools/workbench/dist/mdse_workbench.html
+            tools/importer/dist/mdse_importer.html
+          if-no-files-found: warn
