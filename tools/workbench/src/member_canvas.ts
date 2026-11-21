@@ -49,10 +49,13 @@ export function memberConnectionCanvas(ix: ModelIndex, owner: string, key: strin
     }
     const flowIn = c.kind === "flow" && c.position === "b";
     const fromNode = flowIn ? target.id : selectedId, toNode = flowIn ? selectedId : target.id;
+    const pair = c.kind === "flow" ? (flowIn
+      ? `${other.text} → ${c.thisEnd.text}` : `${c.thisEnd.text} → ${other.text}`)
+      : `${c.thisEnd.text} ↔ ${other.text}`;
     const label = [c.kind === "connect" && c.form && c.form !== "plain" ? c.form : c.kind,
-      `${c.thisEnd.text} ↔ ${other.text}`, missing ? "⚠ unresolved" : ""].filter(Boolean).join(" · ");
+      pair, missing ? "⚠ unresolved" : ""].filter(Boolean).join(" · ");
     const edge: CanvasEdge = { id: MEMBER_CANVAS_PREFIX + "statement:" + i, fromNode, toNode,
-      fromSide: flowIn ? "right" : "right", toSide: flowIn ? "left" : "left",
+      fromSide: "right", toSide: "left",
       toEnd: c.kind === "flow" ? "arrow" : "none", label: label.slice(0, 150) };
     edges.push(edge);
   }
