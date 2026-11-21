@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch build synchronization (unmerged): regenerated and committed matching Workbench HTML/plugin and importer HTML at `5735b195`, with `check:workbench`, `check:importer`, 207 Workbench, 140 importer, 15 core and 5 Bootstrap tests passing. Obsidian runtime acceptance remains open; see [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
+
 - Review-branch UX increment (unmerged): **Canvas connections** on an individual SysML member opens a separate scratch Canvas of explicit connectors, bindings and directional flows, with unresolved endpoint markings, shared endpoint cards and 24-line default cap. No new model notes or semantic relationships; Obsidian runtime acceptance still required.
 
 - Review-branch UX increment (unmerged): expandable and filterable **Members and explicit connections** inspector. Distinguishes owner-local usages from reusable type definitions and shows only explicit `connect`/`bind`/`flow` endpoints, including unresolved references. Member detail persists across 40-at-a-time paging; viewing typed definitions preserves the original workspace. Source-only; real Obsidian acceptance pending.
