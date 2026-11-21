@@ -15,6 +15,10 @@ test("each MDSE workflow offers contextual, governed or ordinary creation templa
   assert.equal(new Set(QUICK_TEMPLATES.map((x) => x.id)).size, QUICK_TEMPLATES.length, "template IDs unique");
   assert.equal(quickTemplate("meeting")?.kind, "plain");
   assert.equal(quickTemplate("requirement")?.type, "Requirement");
+  assert.deepEqual(quickTemplatesFor("define").filter(t => ["design", "state"].includes(t.id)).map(t => [t.id, t.type, t.subtype]),
+    [["design", "Condition", "design"], ["state", "Condition", "state"]]);
+  assert.ok(quickTemplatesFor("verify").some(t => t.id === "verify-requirement" && t.type === "Requirement" && t.subtype === "functional"));
+  assert.ok(quickTemplatesFor("define").some(t => t.id === "requirement"), "Define retains its Requirement action");
   assert.equal(quickTemplate("verification-case")?.subtype, "test");
   assert.equal(quickTemplate("unknown"), undefined);
   for (const t of QUICK_TEMPLATES.filter((x) => x.kind === "governed")) {
@@ -45,7 +49,7 @@ test("ordinary Markdown creation never assigns SysML or model identity", () => {
 
 test("governed contextual creation uses the existing ID, UID and SysML writer", () => {
   const ix = buildIndex(new Map());
-  for (const id of ["stakeholder-need", "use-case", "requirement", "function", "part", "interface",
+  for (const id of ["stakeholder-need", "use-case", "requirement", "function", "design", "state", "verify-requirement", "part", "interface",
     "verification-case", "test-plan", "test-procedure", "governed-document"]) {
     const t = quickTemplate(id)!;
     const p = planAddElement(ix, classes, { type: t.type!, subtype: t.subtype ?? "", title: "Example",
@@ -54,8 +58,12 @@ test("governed contextual creation uses the existing ID, UID and SysML writer", 
     assert.equal(p.writes.length, 1);
     assert.match(p.writes[0]!.after, /^---\ntype: /);
     assert.match(p.writes[0]!.after, /\nuid: \d{17}skellyspencer\n/);
-    if (["part", "interface", "requirement", "stakeholder-need", "function", "use-case", "verification-case"].includes(id))
+    if (["part", "interface", "requirement", "verify-requirement", "design", "state", "stakeholder-need", "function", "use-case", "verification-case"].includes(id))
       assert.match(p.writes[0]!.after, /## SysML v2/, id + " must generate native SysML");
+    if (id === "design" || id === "state")
+      assert.match(p.writes[0]!.after, /state def Example;/, id + " must use a state definition, not invent a DesignDefinition");
+    if (id === "verify-requirement")
+      assert.match(p.writes[0]!.after, /requirement def Example;/, "Verify requirement uses the native requirement writer");
   }
 });
 
