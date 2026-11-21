@@ -35,7 +35,8 @@ The current paired tool distributions now include **Find shared terms** and supe
 | Importer tests | **140 passed, 0 failed** |
 | Core and Bootstrap tests | **15 + 5 passed, 0 failed** |
 | Generated-output consistency | **Workbench and importer checks passed** |
-| Browser-oracle and real Obsidian UX | **Not yet accepted** |
+| Browser-oracle tests | **46 passed, 4 subtests passed** in [PR CI run 44855159892](https://github.com/spencerskelly/MDSE_v2/actions/runs/44855159892) |
+| Real Obsidian UX | **Not tested / not accepted** |
 
 Use this newer build for staging. A matching word is only evidence to consider; selected elements are added to a new grouped Canvas without creating a native relationship. **No changes were made to `main` or the live vault.**
 
@@ -72,7 +73,7 @@ Mark each row **Pass / Fail / Not tested**, record a screenshot or log on failur
 
 - **Generated outputs:** synchronized at `5735b195` with the paired build and distribution checks passing.
 - **Synthetic unit tests:** 207 Workbench + 140 importer + 15 core + 5 Bootstrap passing at the same build.
-- **Browser/oracle smoke:** use the latest pull-request CI; this does not substitute for real Obsidian.
+- **Browser/oracle smoke:** 46 passed + 4 subtests passed in [CI run 44855159892](https://github.com/spencerskelly/MDSE_v2/actions/runs/44855159892), which completed successfully against the synchronized build and test-only update at `19a65726f81a5627939f223f41315a131f189b9a`. The synthetic browser is **not** real Obsidian.
 - **Independent SysML parser / real-vault index check:** separately required if relevant to the release scope; not certified by the source build.
 - **Release decision:** **Hold.** Do not merge PR #4 or promote into `MDSE_v2_live` until actual Obsidian staging acceptance is recorded and the owner explicitly authorizes deployment.
 
