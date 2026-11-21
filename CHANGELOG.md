@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Draft hardening PR #5: protected existing-vault maintenance updates and existing-vault EA/BOM imports with disk snapshots, pre-Apply conflict checks, backup-before-write, read-back validation and best-effort rollback. Added path-case/Unicode/Windows filename limits and native macOS/Windows automated checks. **Not yet OS-staging accepted or released.** See [docs/CROSS_PLATFORM_IMPORT_ACCEPTANCE.md](docs/CROSS_PLATFORM_IMPORT_ACCEPTANCE.md).
+
 - Review-branch connection-discovery increment (unmerged): **Find shared terms** searches governed names, aliases, descriptions, bodies, SysML and identifiers with exact words/AND; shows cross-element-type common-word frequencies and per-type results, excerpts, type facets and selected notes. The default action opens a new type-grouped scratch Canvas with only existing model links; explicit Add to current Canvas is separate. Index builds incrementally; broad result ranking is bounded per type. No automatic relationship inference or edit. See [docs/TERM_CONNECTION_DISCOVERY.md](docs/TERM_CONNECTION_DISCOVERY.md). Real Obsidian acceptance pending.
 
 - Review-branch build synchronization (unmerged): regenerated and committed matching Workbench HTML/plugin and importer HTML at `5735b195`, with `check:workbench`, `check:importer`, 207 Workbench, 140 importer, 15 core and 5 Bootstrap tests passing. Obsidian runtime acceptance remains open; see [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
