@@ -424,7 +424,9 @@ export function updateIncludedCanvas(doc: CanvasDoc, ix: ModelIndex, scope: stri
     edges: doc.edges.filter((e) => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)).map((e) => ({ ...e })),
   };
   const missing = [...desired].filter((p) => !existing.has(p));
-  const child = missing.filter((p) => directChildren.includes(p)), rest = missing.filter((p) => !child.includes(p));
+  const child = anchor && (desired.has(anchor) || (!allowed.has(anchor) && existing.has(anchor)))
+    ? missing.filter((p) => directChildren.includes(p)) : [];
+  const rest = missing.filter((p) => !child.includes(p));
   const placed = child.length && anchor ? addChildren(original, ix, anchor, child) : { doc: original, added: 0 };
   const other = rest.length ? addToCanvas(placed.doc, ix, anchor, rest) : { doc: placed.doc, added: 0 };
   const refreshed = refreshCanvas(other.doc, ix, { completeRelationships: true });
