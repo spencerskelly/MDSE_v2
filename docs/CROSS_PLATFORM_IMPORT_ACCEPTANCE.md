@@ -4,7 +4,7 @@
 
 ## Build and automated validation evidence
 
-- Paired artifact sync: [Actions 44860243055](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860243055) — passed, artifact commit `a182afce77767b26b40395b364432e835ae840b3`. The generated importer HTML now includes the OS hardening code.
+- Latest paired artifact sync: [Actions 44860595454](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860595454) — passed, artifact commit `6ea024c12b8f0fbc2579ae14734fe81203ffa0bd`. The generated importer HTML includes the final missing-parent rollback guard.
 - Native platform regression: [Windows/macOS Actions 44860224606](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860224606) — passed on both operating systems. A separate latest-source run is also part of PR #5.
 - Browser failure-injection regression: latest PR CI run must pass with the exact generated importer HTML. **Do not mark this accepted until confirmed.**
 - Physical Windows NTFS / macOS APFS folder update and Obsidian runtime: **not yet performed**.
