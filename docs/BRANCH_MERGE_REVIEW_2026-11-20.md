@@ -35,3 +35,7 @@ Date: 2026-11-20 / 2026-11-21 (America/Los_Angeles). Scope: tools repository onl
 - Full real .qeax imports, BOM revision/update reconciliation and independent SysML parser validation remain separate importer gates.
 - Verify is currently verification/requirements *navigation*; complete test execution and evidence lifecycle are not implied by its name.
 - Do not merge all branches blindly: UX is already included in hardening; connection-discovery is a duplicate pointer.
+
+## Paired build sync checkpoint
+
+The CI run against source commit `0e6d830` began before the bot committed rebuilt artifacts at `4c477f9`, so its browser navigation failure is not valid evidence against the synchronized output. This review-only commit requests CI against the **already committed** synchronized Workbench and importer without altering runtime code. Review the resulting CI run before any merge.
