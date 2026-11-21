@@ -164,7 +164,7 @@ class VaultUpdateBrowser(unittest.TestCase):
               await root.removeEntry('.vault.yaml'); await root.removeEntry('.obsidian', {recursive: true});
             }""")
             pg.click("#pick")
-            self.assertIn("no vault yet", pg.inner_text("#vaultStatus"))
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('no vault yet')")
             pg.click("#updPreview")
             pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Preview blocked')")
             self.assertIn("existing files but no vault marker", pg.inner_text("#updStatus"))
@@ -317,8 +317,9 @@ class InterruptedExistingImportBrowser(unittest.TestCase):
             pg.click("#genAdd")
             pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Import stopped and attempted rollback')")
             self.assertIn("Injected BOM import interruption", pg.inner_text("#genStatus"))
-            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
-            self.assertIsNone(pg.evaluate("window.__readPart('01141-002')"),
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            self.assertNotIn("INCOMPLETE rollback", pg.inner_text("#genStatus"))
+            self.assertIsNone(pg.evaluate("window.__readPart('01141-002'"),
                               "no partially imported part should remain after a successful rollback")
             b.close()
         self.assertEqual(errors, [])
