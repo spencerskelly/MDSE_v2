@@ -258,7 +258,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
     def test_cross_type_term_discovery_groups_notes_and_opens_fresh_canvas_without_linking(self):
         def record(label, kind, content, suffix):
-            return f"---\\ntype: {kind}\\nuid: 20261120220911{suffix}\\nname: {label}\\nstatus: Draft\\n---\\n# {label}\\n\\n{content}\\n"
+            return f"---\ntype: {kind}\nuid: 20261120220911{suffix}\nname: {label}\nstatus: Draft\n---\n# {label}\n\n{content}\n"
         notes = {
             "20/REQ.md": record("Battery Cooling", "Requirement", "The battery cooling fan shall stop at 60 C.", "req"),
             "40/VER.md": record("Cooling verification", "Verification", "Test the battery cooling fan and record shutdown.", "ver"),
@@ -295,7 +295,8 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_function("() => Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
             canvas_file = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
             canvas = json.loads(pg.evaluate("p => window.__files[p]", canvas_file))
-            self.assertEqual(len({n.get('file') for n in canvas['nodes'] if n['type'] == 'file'}), 3)
+            self.assertEqual(len([n for n in canvas['nodes'] if n['type'] == 'text' and n.get('text', '').startswith('**[[')]), 3,
+                             "Canvas uses link-backed text cards for actual model notes")
             self.assertEqual(len(canvas['edges']), 0, "matching words must not invent model relationships")
             self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), old)
             self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.lens()"), "terms")
