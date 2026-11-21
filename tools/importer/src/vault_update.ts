@@ -92,7 +92,7 @@ export async function planVaultUpdate(o: UpdateInput): Promise<UpdateResult> {
       case "lines-union": {
         const mine = new Set(have.split("\n").map((l) => l.trim())), add = want.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#") && !mine.has(l.trim()));
         if (!add.length) { row(path, "same", kind, "already has every shipped line"); break; }
-        replace(path, kind, have0!, have.replace(/\n*$/, "\n") + `\n# Added by MDSE update ${lab}\n${add.join("\n")}\n`)); row(path, "merge", kind, `appended ${add.length} line(s); nothing removed`); break;
+        replace(path, kind, have0!, have.replace(/\n*$/, "\n") + `\n# Added by MDSE update ${lab}\n${add.join("\n")}\n`); row(path, "merge", kind, `appended ${add.length} line(s); nothing removed`); break;
       }
       case "vault-yaml": {
         const pick = (s: string, k: string): string | undefined => new RegExp(`^${k}:\\s*(.*)$`, "m").exec(s)?.[1]?.trim();
