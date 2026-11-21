@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planVaultUpdate, classifyBasePath } from "../src/vault_update.ts";
+import { planVaultUpdate, verifyVaultUpdatePlan, classifyBasePath } from "../src/vault_update.ts";
 import { buildBaseVault, allPayloads } from "../../base-vault/src/base_vault.ts";
 import { sha256Text } from "../src/sha256.ts";
 import { readFileSync } from "node:fs";
@@ -52,11 +52,22 @@ test("updating an existing vault: controlled files replaced with a saved copy, y
   assert.equal(act(".obsidian/plugins/mdse-workbench/main.js"), "replace");
   assert.equal(act("README.md"), "left");
   const wrote = new Map(r.files.map((f) => [f.path, f.content]));
-  // a copy of every replaced template and schema is saved first; plugin builds are reproducible, so none
+  // Every replaced/merged file, including the existing plugin, is backed up before replacement.
   assert.equal(wrote.get("99_System/11_Import/Update 2026-10-19 21.40/Replaced/99_System/05_Templates/Template - Requirement.md"), "old template\n");
   assert.equal(wrote.get("99_System/11_Import/Update 2026-10-19 21.40/Replaced/99_System/03_Schemas/element-types.yaml"), "old: schema\n");
-  assert.ok(![...wrote.keys()].some((k) => k.includes("/Replaced/.obsidian/plugins")));
-  assert.equal(r.summary.backups, 2);
+  assert.equal(wrote.get("99_System/11_Import/Update 2026-10-19 21.40/Replaced/.obsidian/plugins/mdse-workbench/main.js"), "// old build\n");
+  assert.ok(r.summary.backups >= 6, "plugin and merged settings must have retained recoverable originals");
+  const firstMutation = r.files.findIndex((x) => !x.path.includes("/Replaced/"));
+  assert.ok(firstMutation > 0 && r.files.slice(0, firstMutation).every((x) => x.path.includes("/Replaced/")),
+    "all backups must precede any mutation");
+  assert.equal(r.expected[".obsidian/plugins/mdse-workbench/main.js"], "// old build\n");
+  assert.equal(r.expected["99_System/11_Import/Update 2026-10-19 21.40/Replaced/.obsidian/plugins/mdse-workbench/main.js"], null);
+  assert.deepEqual(await verifyVaultUpdatePlan(r, asRead(v)), []);
+  const edited = new Map(v); edited.set("99_System/03_Schemas/element-types.yaml", "edited after preview\n");
+  assert.ok((await verifyVaultUpdatePlan(r, asRead(edited))).includes("99_System/03_Schemas/element-types.yaml"));
+  const occupied = new Map(v); occupied.set("99_System/11_Import/Update 2026-10-19 21.40/Replaced/.obsidian/plugins/mdse-workbench/main.js", "existing backup");
+  assert.ok((await verifyVaultUpdatePlan(r, asRead(occupied))).some((x) => x.includes("Replaced/.obsidian/plugins/mdse-workbench")),
+    "never overwrite existing recovery archives");
   assert.deepEqual(JSON.parse(wrote.get(".obsidian/community-plugins.json")!), ["templater-obsidian", "mdse-bootstrap", "mdse-workbench", "obsidian-git", "advanced-canvas"]);
   assert.deepEqual(JSON.parse(wrote.get(".obsidian/core-plugins.json")!).slice(0, 2), ["file-explorer", "daily-notes"]);
   const app = JSON.parse(wrote.get(".obsidian/app.json")!); assert.equal(app.newLinkFormat, "shortest"); assert.equal(app.vimMode, true);
@@ -85,4 +96,29 @@ test("file classes: what is controlled, merged or seeded", () => {
   assert.equal(k("99_System/05_Templates/Template - Info.md"), "controlled"); assert.equal(k(".obsidian/plugin-lock.yaml"), "controlled");
   assert.equal(k(".obsidian/plugins/mdse-workbench/main.js"), "plugin"); assert.equal(k(".obsidian/plugins/mdse-workbench/data.json"), "seed");
   assert.equal(k("README.md"), "seed"); assert.equal(k("99_System/22_Views/README.md"), "seed"); assert.equal(k(".gitignore"), "lines-union"); assert.equal(k(".vault.yaml"), "vault-yaml");
+});
+
+test("preview conflicts detect additions and modified settings before Apply without a single write", async () => {
+  const original = new Map(Object.entries(base));
+  original.delete("99_System/05_Templates/Template - Requirement.md");
+  original.set(".obsidian/app.json", JSON.stringify({ vimMode: true }));
+  const plan = await planVaultUpdate({ base, read: asRead(original), runDate: "2026-10-19T22:01:04" });
+  assert.equal(plan.expected["99_System/05_Templates/Template - Requirement.md"], null);
+  assert.deepEqual(await verifyVaultUpdatePlan(plan, asRead(original)), []);
+  original.set("99_System/05_Templates/Template - Requirement.md", "user made a note meanwhile");
+  original.set(".obsidian/app.json", JSON.stringify({ vimMode: false }));
+  const errors = await verifyVaultUpdatePlan(plan, asRead(original));
+  assert.ok(errors.includes("99_System/05_Templates/Template - Requirement.md"));
+  assert.ok(errors.includes(".obsidian/app.json"));
+  assert.ok(errors.length >= 2);
+});
+
+test("storage read or permission errors abort planning and revalidation rather than claiming files are missing", async () => {
+  const fail = async (path: string): Promise<string | null> => {
+    if (path === ".obsidian/app.json") throw new Error("NotAllowedError: permission revoked");
+    return null;
+  };
+  await assert.rejects(planVaultUpdate({ base, read: fail, runDate: when }), /permission revoked/);
+  const good = await planVaultUpdate({ base, read: asRead(new Map()), runDate: when });
+  await assert.rejects(verifyVaultUpdatePlan(good, fail), /permission revoked/);
 });
