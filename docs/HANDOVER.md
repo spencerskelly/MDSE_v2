@@ -37,7 +37,7 @@ The older "Workbench not built" and "Phase 3 editing not started" descriptions a
 - **Define:** needs, requirements, behavior/functions and semantic trace/editing.
 - **Structure:** parts, BOMs, configurations, interfaces, ports and connections.
 - **Verify:** requirement coverage and verification relationships; test-plan/execution workflow remains to be built.
-- **Member-level navigation:** the Note view has a read-only expandable member inspector that differentiates a usage from its typing definition, maps explicit port/part endpoints and `connect`/`bind`/`flow` only, flags unresolved endpoints and retains the parent working tab.
+- **Member-level navigation:** the Note view has a read-only expandable member inspector that differentiates a usage from its typing definition, maps explicit port/part endpoints and `connect`/`bind`/`flow` only, flags unresolved endpoints and retains the parent working tab. Each usage offers an isolated scratch **Canvas connections** projection without new notes or automatic model edits.
 - **Shared interaction:** workflow-specific **+ New…** menus for model records (using the validated element planner) and plain documentation (no UID/SysML); selected item and global governed-note search; ranked shared-neighbor discovery from N-of-N to 1-of-N; temporary/kept/dismissed candidates on scratch Canvases, workflow filters and All relationships; explicit modeled relationship editing.
 - **Workspace preservation:** changing workflows or functions defaults to a *new* Workbench tab; a choice exists to reuse the current Workbench. Per-view Follow / Pin isolates the selection; Edit pins the item. A selected element can be opened directly in any workflow through the Workbench header or a governed note's context menu.
 
