@@ -119,11 +119,17 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertTrue({"open", "refresh", "show-note", "table", "canvas", "save-canvas"} <= cmds, cmds)
             self.assertFalse(pg.evaluate("window.__cmds['save-canvas'].checkCallback(true)"), "nothing to save yet")
 
-            # the panel opens in the RIGHT sidebar, with no browser of its own
+            # The panel opens in the RIGHT sidebar and now includes governed-note search.
+            # It still uses Obsidian's file explorer for filesystem navigation.
             pg.evaluate("window.__active = null; window.__plugin.openPanel()")
             pg.wait_for_selector("text=No model note selected")
             self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
-            self.assertEqual(pg.locator("input[type=search]").count(), 0)
+            self.assertGreaterEqual(pg.locator("input[type=search]").count(), 1)
+            self.assertEqual(pg.locator("nav.workareas").count(), 1)
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
+            # Legacy in-place lens assertions below deliberately choose the opt-in reuse mode.
+            # Default is a new independent editor tab; preserve that new default.
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
 
             # it follows the note Obsidian opens
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", PCE_PATH)
