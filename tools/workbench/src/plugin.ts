@@ -47,7 +47,7 @@ declare const WB: {
   memberConnectionCanvas: (ix: any, owner: string, key: string, limit?: number) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string };
 };
 const obsidian = require("obsidian");
-const PANEL = "mdse-panel", TABLE = "mdse-table", WORKFLOW_TAB = "mdse-workflow-tab", OLD_VIEW = "mdse-workbench";
+const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
 const PARSER_REPORT = "99_System/11_Import/Parser Check.md";
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
@@ -374,7 +374,7 @@ function hostFor(plugin: any): any {
     },
     openTable: (lens: string) => plugin.openTable(lens),
     currentSelection: () => plugin.selected || null,
-    openWorkflow: (area: string, lens: string, selected: string) => plugin.openWorkflowTab(area, lens, selected),
+    openWorkflow: (area: string, lens: string, selected: string) => plugin.showWorkflowInPanel(area, lens, selected),
     quickCreate: (templateId: string, selectedPath: string) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
@@ -414,32 +414,6 @@ class PanelView extends obsidian.ItemView {
   async onOpen() {
     this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
     this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel" });
-    this.plugin.apps.add(this.app_);
-    await this.plugin.attachIndex(this.app_);
-  }
-  async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
-}
-
-/** Independent editor-area Workbench. Opening a workflow never repurposes an open file, Canvas, or other Workbench tab. */
-class WorkflowTabView extends obsidian.ItemView {
-  plugin: any; app_: any = null; area = "document"; lens = "note"; selected = ""; pinned = true;
-  constructor(leaf: any, plugin: any) { super(leaf); this.plugin = plugin; }
-  getViewType() { return WORKFLOW_TAB; }
-  getDisplayText() { return "MDSE " + this.area.charAt(0).toUpperCase() + this.area.slice(1); }
-  getIcon() { return "network"; }
-  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected, pinned: this.app_?.isPinned?.() ?? this.pinned }; }
-  async setState(state: any, result: any) {
-    if (state?.area && ["document", "define", "structure", "verify"].includes(state.area)) this.area = state.area;
-    if (typeof state?.lens === "string") this.lens = state.lens;
-    if (typeof state?.selected === "string") this.selected = state.selected;
-    if (typeof state?.pinned === "boolean") this.pinned = state.pinned;
-    this.app_?.setWorkflow?.(this.area, this.lens, this.selected);
-    this.app_?.setPinned?.(this.pinned);
-    await super.setState?.(state, result);
-  }
-  async onOpen() {
-    this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
-    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: this.pinned });
     this.plugin.apps.add(this.app_);
     await this.plugin.attachIndex(this.app_);
   }
@@ -658,18 +632,24 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     new QuickCreateModal(this, template, selectedPath).open();
     return "";
   }
-  /** Open a dedicated workflow in a fresh Obsidian editor tab. Never reuse a file or Canvas leaf. */
-  async openWorkflowTab(area: string, lens: string, selected: string): Promise<void> {
-    const leaf = mainLeaf(this.app); // getLeaf("tab") creates a new tab rather than replacing an existing one.
-    await leaf.setViewState({ type: WORKFLOW_TAB, state: { area, lens, selected }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+  /** Workflow navigation stays in the one Workbench sidebar or optional pop-out. */
+  async showWorkflowInPanel(area: string, lens: string, selected: string): Promise<void> {
+    await this.openPanel();
+    await this.ensureIndex();
+    const panels = this.app.workspace.getLeavesOfType(PANEL) || [];
+    const panel = panels.find((leaf: any) => leaf.view?.app_?.setWorkflow);
+    if (!panel) throw new Error("MDSE Workbench panel could not be opened.");
+    if (selected && !this.ix?.notes.has(selected)) throw new Error("The selected engineering item is not in the model.");
+    panel.view.app_.setWorkflow(area, lens, selected);
+    this.app.workspace.revealLeaf(panel);
   }
   async openTable(lens: string) {
+    await this.openPanel();
     await this.ensureIndex();
-    // Never repurpose an existing table when the engineer opens a different function.
-    const leaf = mainLeaf(this.app);
-    await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    const panel = (this.app.workspace.getLeavesOfType(PANEL) || []).find((leaf: any) => leaf.view?.app_?.setLens);
+    if (!panel) throw new Error("MDSE Workbench panel could not be opened.");
+    panel.view.app_.setLens(lens);
+    this.app.workspace.revealLeaf(panel);
     this.syncSelection();
   }
   /** Open an isolated, read-only member-connection preview; the current editor and Canvas stay unchanged. */
@@ -973,7 +953,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf: any) => new PanelView(leaf, this));
     this.registerView(TABLE, (leaf: any) => new TableView(leaf, this));
-    this.registerView(WORKFLOW_TAB, (leaf: any) => new WorkflowTabView(leaf, this));
+    this.app.workspace.detachLeavesOfType?.("mdse-workflow-tab"); // retire experimental workflow tabs on upgrade
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk: boolean, fn: (f: any) => void): boolean => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder: string, only: (l: string) => boolean, fn: (l: string) => void) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x: any) => x[1], (x: any) => fn(x[0])).open();
@@ -987,7 +967,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { this.registerEvent(this.app.workspace.on("canvas:edge-menu", (menu: any, edge: any) => { const r = edge?.id ? WB.edgeRefOfId(String(edge.id)) : null; if (r) menu.addItem((i: any) => i.setTitle("Edit relationship (MDSE)").setIcon("pencil").onClick(() => this.editRelationship(r))); })); } catch { /* older Obsidian: the command still works */ }
     this.addCommand({ id: "refresh", name: "Refresh MDSE Workbench index", callback: async () => { this.files = await readVault(this.app); await this.rebuild(); } });
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk: boolean) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
-    this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
+    this.addCommand({ id: "table", name: "Show MDSE table in Workbench…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk: boolean) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
     this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.cardActionOnSelected("toggle").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "collapse-layer", name: "Collapse one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e: any) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
@@ -1005,8 +985,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
           const choices = (["document", "define", "structure", "verify"] as const).map((area) => ({
             area, lens: WB.WORKFLOW_ENTRY_LENS[area], label: area.charAt(0).toUpperCase() + area.slice(1),
           }));
-          new PickModal(this.app, "Open note in new MDSE workflow tab", choices, (x: any) => x.label,
-            (x: any) => { void this.openWorkflowTab(x.area, x.lens, f.path).catch((e: any) =>
+          new PickModal(this.app, "Show note in MDSE workflow", choices, (x: any) => x.label,
+            (x: any) => { void this.showWorkflowInPanel(x.area, x.lens, f.path).catch((e: any) =>
               new obsidian.Notice("MDSE: could not open workflow: " + String(e?.message ?? e), 8000)); }).open();
         } catch (e: any) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
       }));
