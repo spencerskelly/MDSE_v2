@@ -71,6 +71,18 @@ function mainLeaf(app: any): any {
   return app.workspace.getLeaf("tab");
 }
 
+/** Artifacts use editor tabs; reopening a note or Canvas focuses its existing tab. */
+async function openArtifact(app: any, file: any): Promise<void> {
+  let existing: any = null;
+  app.workspace.iterateAllLeaves?.((leaf: any) => {
+    if (!existing && leaf.view?.file?.path === file.path) existing = leaf;
+  });
+  if (existing) { await app.workspace.revealLeaf(existing); return; }
+  const leaf = mainLeaf(app);
+  await leaf.openFile(file);
+  await app.workspace.revealLeaf(leaf);
+}
+
 const ensureFolder = async (app: any, dir: string): Promise<void> => {
   let at = "";
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
@@ -90,7 +102,7 @@ async function writePreview(plugin: any, r: { doc: unknown; fileName: string; no
   const file = await app.vault.create(path, JSON.stringify(r.doc, null, 2));
   plugin.preview = { path, fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   plugin.previews.set(path, plugin.preview);
-  await mainLeaf(app).openFile(file);
+  await openArtifact(app, file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
 }
 
@@ -110,7 +122,7 @@ async function savePreview(plugin: any, folder: string): Promise<string> {
   const cleaned = WB.clearDiscovery(doc);
   const saved = await app.vault.create(path, JSON.stringify({ ...doc, nodes: cleaned.nodes, edges: cleaned.edges }, null, 2));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
-  await mainLeaf(app).openFile(saved);
+  await openArtifact(app, saved);
   return `Saved to ${path}`;
 }
 
@@ -370,7 +382,7 @@ function hostFor(plugin: any): any {
   return {
     openNote: (p: string) => {                                          // D-0158: every note opens in a new tab, so the view it came from stays one tab back
       const app = plugin.app, file = app.vault.getAbstractFileByPath(p) ?? app.metadataCache.getFirstLinkpathDest(p, "");
-      if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
+      if (file) void openArtifact(app, file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens: string) => plugin.openTable(lens),
     currentSelection: () => plugin.selected || null,
@@ -952,7 +964,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || ""), popout: !!saved.popout };
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf: any) => new PanelView(leaf, this));
-    this.registerView(TABLE, (leaf: any) => new TableView(leaf, this));
+    // Legacy table views are retired: tools navigate inside the Workbench panel.
+    this.app.workspace.detachLeavesOfType?.(TABLE);
     this.app.workspace.detachLeavesOfType?.("mdse-workflow-tab"); // retire experimental workflow tabs on upgrade
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk: boolean, fn: (f: any) => void): boolean => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
