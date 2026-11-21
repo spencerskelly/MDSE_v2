@@ -1,5 +1,5 @@
 name: Build and test cross-platform hardening (review only)
-# Rebuild after final wrong-destination guard and interruption-injection test additions.
+# Rebuild after absent-file rollback recovery fix and browser regression corrections.
 
 on:
   push:
