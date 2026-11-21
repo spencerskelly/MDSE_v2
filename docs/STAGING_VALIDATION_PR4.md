@@ -41,6 +41,7 @@ Mark each row **Pass / Fail / Not tested**, record a screenshot or log on failur
 | Follow / Pin | Each tab independently follows or holds selection; entering Edit pins the source; reopened tabs restore own state | Not tested |
 | Contextual navigation | From note/menu/related-result, opening the target in Document, Define, Structure or Verify retains the originating tab and targets the correct note | Not tested |
 | Search | Governed-note search resolves name/alias/ID; no unwanted navigation or tab replacement | Not tested |
+| Shared-term discovery | Full-token queries and multi-term AND across requirement/test/model text, common words by type count, grouped type facets, matching excerpts, and type-aware selection; Canvas contains only selected note cards and existing governed links; unrelated editor tabs unchanged | Not tested |
 | New plain note | Document creates Markdown without model UID or SysML, in a new tab; duplicate/path validation, Preview, Create and Undo work | Not tested |
 | New governed element | Preview shows exact ID/UID/SysML content; new note is created alone; optional relationship is a distinct second preview/approval; cancellation leaves it unlinked | Not tested |
 | Member inspector | A usage remains distinct from its type definition; explicit endpoints, missing ports, inherited typing, filtering and pagination are correct | Not tested |
