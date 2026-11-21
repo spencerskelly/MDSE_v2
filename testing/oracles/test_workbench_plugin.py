@@ -139,7 +139,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # D-0143: the functions are one grouped drop-down, not a column of buttons
             self.assertEqual(pg.locator("select.fn").count(), 1); self.assertEqual(pg.locator("nav.tbar").count(), 0)
-            self.assertEqual(pg.locator("select.fn option").count(), 18)
+            self.assertEqual(pg.locator("select.fn option").count(), 19, "Find shared terms adds one workflow function")
             pg.select_option("select.fn", label="Find similar")
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
