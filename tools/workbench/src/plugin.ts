@@ -59,6 +59,21 @@ function mainLeaf(app: any): any {
   return app.workspace.getLeaf("tab");
 }
 
+/** Open or focus an artifact in an editor tab. Never replace a Workbench panel or duplicate an already open file. */
+async function openArtifact(app: any, file: any): Promise<void> {
+  let existing: any = null;
+  app.workspace.iterateAllLeaves?.((leaf: any) => {
+    if (!existing && leaf.view?.file?.path === file.path) existing = leaf;
+  });
+  if (existing) {
+    await app.workspace.revealLeaf(existing);
+    return;
+  }
+  const leaf = mainLeaf(app);
+  await leaf.openFile(file);
+  await app.workspace.revealLeaf(leaf);
+}
+
 const ensureFolder = async (app: any, dir: string): Promise<void> => {
   let at = "";
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
@@ -78,7 +93,7 @@ async function writePreview(plugin: any, r: { doc: unknown; fileName: string; no
   const file = await app.vault.create(path, JSON.stringify(r.doc, null, 2));
   plugin.preview = { path, fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   plugin.previews.set(path, plugin.preview);
-  await mainLeaf(app).openFile(file);
+  await openArtifact(app, file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
 }
 
@@ -92,7 +107,7 @@ async function savePreview(plugin: any, folder: string): Promise<string> {
   for (let i = 2; app.vault.getAbstractFileByPath(path); i++) path = `${folder}/${base} (${i}).canvas`;
   const saved = await app.vault.create(path, await app.vault.read(src));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
-  await mainLeaf(app).openFile(saved);
+  await openArtifact(app, saved);
   return `Saved to ${path}`;
 }
 
@@ -182,7 +197,7 @@ function hostFor(plugin: any): any {
   return {
     openNote: (p: string) => {                                          // D-0158: every note opens in a new tab, so the view it came from stays one tab back
       const app = plugin.app, file = app.vault.getAbstractFileByPath(p) ?? app.metadataCache.getFirstLinkpathDest(p, "");
-      if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
+      if (file) void openArtifact(app, file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens: string) => plugin.openTable(lens),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
