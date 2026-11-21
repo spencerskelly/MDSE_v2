@@ -39,3 +39,7 @@ Date: 2026-11-20 / 2026-11-21 (America/Los_Angeles). Scope: tools repository onl
 ## Paired build sync checkpoint
 
 The CI run against source commit `0e6d830` began before the bot committed rebuilt artifacts at `4c477f9`, so its browser navigation failure is not valid evidence against the synchronized output. This review-only commit requests CI against the **already committed** synchronized Workbench and importer without altering runtime code. Review the resulting CI run before any merge.
+
+## Contextual New menu extension (2026-11-21)
+
+The four-workflow Workbench quick-create catalog now offers the following additional governed note actions: **Define → Design** (`Condition/design`, native `state def`); **Define → State** (`Condition/state`, native `state def`); **Verify → Requirement** (`Requirement/functional`, native `requirement def`). Define's existing Requirement remains available. Creation remains preview-first, generates governed IDs/UIDs, and does not implicitly write contextual SysML relationships. The workflow test suite checks the exact schema mappings and native definition syntax. This documentation-only commit requests a CI run against the synchronized plugin and importer artifacts after the paired build.
