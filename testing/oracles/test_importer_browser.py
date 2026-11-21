@@ -266,6 +266,41 @@ class FullVaultBuild(unittest.TestCase):
 
 
 @unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
+class InterruptedExistingImportBrowser(unittest.TestCase):
+    def test_import_rollback_removes_new_parts_and_preserves_existing_note(self):
+        errors = []
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            src = pathlib.Path(d) / "bom.tsv"; src.write_text(BOM_TSV)
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True)
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.set_input_files("#bomFile", str(src))
+            pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom.tsv')")
+            pg.uncheck("#toolUpd")
+            pg.evaluate("""() => {
+              const original = writeFile; let n = 0;
+              writeFile = async (root, path, data) => {
+                if (path.startsWith('BOM/Parts/') && ++n === 2) throw Error('Injected BOM import interruption');
+                return original(root, path, data);
+              };
+            }""")
+            pg.click("#genAdd")
+            pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Import stopped and attempted rollback')")
+            self.assertIn("Injected BOM import interruption", pg.inner_text("#genStatus"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
+            self.assertIsNone(pg.evaluate("window.__readPart('01141-002')"),
+                              "no partially imported part should remain after a successful rollback")
+            b.close()
+        self.assertEqual(errors, [])
+
+
+@unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
 class BomUpdateBrowser(unittest.TestCase):
     def test_second_bom_is_scanned_and_only_ticked_changes_are_written(self):
         errors = []
