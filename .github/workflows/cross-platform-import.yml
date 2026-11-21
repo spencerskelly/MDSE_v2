@@ -1,0 +1,41 @@
+name: Native Windows and macOS importer regression
+
+on:
+  pull_request:
+    paths:
+      - tools/importer/**
+      - tools/workbench/**
+      - tools/base-vault/**
+      - scripts/cross-platform-tests.mjs
+      - .github/workflows/cross-platform-import.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  importer-os:
+    name: Native ${{ matrix.os }} importer and Workbench tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Test importer and Workbench on host filesystem
+        run: node scripts/cross-platform-tests.mjs
+      - name: Rebuild both bundled products
+        run: npm run build
+      - name: Confirm deterministic paired build
+        run: |
+          npm run check:importer
+          npm run check:workbench
+      - name: Check core and Bootstrap
+        run: |
+          node --test tools/core/test
+          node --test tools/bootstrap/test
