@@ -28,6 +28,9 @@ export function classifyBasePath(path: string): UpdateKind {
 export interface UpdateRow { path: string; action: "add" | "replace" | "merge" | "same" | "left"; kind: UpdateKind; reason: string }
 export interface UpdateResult {
   status: "WRITE_READY" | "NO_CHANGES"; files: OutFile[]; rows: UpdateRow[];
+  /** Exact pre-preview snapshots for every prospective output path, including backup and report files.
+   * An update must be rejected if any value differs at Apply time. */
+  expected: Record<string, string | null>;
   summary: { add: number; replace: number; merge: number; same: number; left: number; backups: number };
 }
 export interface UpdateInput {
@@ -45,37 +48,51 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 export async function planVaultUpdate(o: UpdateInput): Promise<UpdateResult> {
   const lab = label(o.runDate), files: OutFile[] = [], rows: UpdateRow[] = [];
+  const backupFiles: OutFile[] = [], changes: OutFile[] = [];
+  const expected: Record<string, string | null> = {};
+  const planned = new Set<string>();
+  const write = (path: string, content: string, previous: string | null): void => {
+    if (planned.has(path)) throw new Error("Duplicate planned output path: " + path);
+    planned.add(path); changes.push({ path, content }); expected[path] = previous;
+  };
+  const replace = (path: string, kind: UpdateKind, previous: string, content: string): string => {
+    const bak = `99_System/11_Import/Update ${lab}/Replaced/${path}`;
+    if (planned.has(bak)) throw new Error("Duplicate backup path: " + bak);
+    planned.add(bak); backupFiles.push({ path: bak, content: previous }); expected[bak] = null;
+    backups.push(bak);
+    write(path, content, previous);
+    return bak;
+  };
   const row = (path: string, action: UpdateRow["action"], kind: UpdateKind, reason: string): void => { rows.push({ path, action, kind, reason }); };
   const backups: string[] = [];
   for (const path of Object.keys(o.base).sort()) {
     const want = norm(o.base[path]!), kind = classifyBasePath(path), have0 = await o.read(path), have = have0 === null ? null : norm(have0);
-    if (have === null) { files.push({ path, content: want }); row(path, "add", kind, "missing"); continue; }
+    if (have === null) { write(path, want, null); row(path, "add", kind, "missing"); continue; }
     if (have === want) { row(path, "same", kind, "already current"); continue; }
     switch (kind) {
-      case "controlled": {
-        const bak = `99_System/11_Import/Update ${lab}/Replaced/${path}`;
-        files.push({ path: bak, content: have0! }, { path, content: want }); backups.push(bak);
+      case "controlled":
+      case "plugin": {
+        const bak = replace(path, kind, have0!, want);
         row(path, "replace", kind, `differs from the release; previous copy saved to ${bak}`); break;
       }
-      case "plugin": files.push({ path, content: want }); row(path, "replace", kind, "plugin build differs from the release"); break;
       case "json-union": {
         const a = tryJson(have), b = tryJson(want);
         if (!Array.isArray(a) || !Array.isArray(b)) { row(path, "left", kind, "not a JSON list; left alone"); break; }
         const add = b.filter((x) => !a.includes(x));
         if (!add.length) { row(path, "same", kind, "already has every shipped entry"); break; }
-        files.push({ path, content: json([...a, ...add]) }); row(path, "merge", kind, `added ${add.join(", ")}; your other entries kept`); break;
+        replace(path, kind, have0!, json([...a, ...add])); row(path, "merge", kind, `added ${add.join(", ")}; your other entries kept`); break;
       }
       case "json-governed": {
         const a = tryJson(have) as Record<string, unknown> | undefined, b = tryJson(want) as Record<string, unknown>;
         if (!a || typeof a !== "object" || Array.isArray(a)) { row(path, "left", kind, "not a JSON object; left alone"); break; }
         const changed = Object.keys(b).filter((k) => !same(a[k], b[k]));
         if (!changed.length) { row(path, "same", kind, "governed settings already current"); break; }
-        files.push({ path, content: json({ ...a, ...b }) }); row(path, "merge", kind, `set ${changed.join(", ")}; your other settings kept`); break;
+        replace(path, kind, have0!, json({ ...a, ...b })); row(path, "merge", kind, `set ${changed.join(", ")}; your other settings kept`); break;
       }
       case "lines-union": {
         const mine = new Set(have.split("\n").map((l) => l.trim())), add = want.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#") && !mine.has(l.trim()));
         if (!add.length) { row(path, "same", kind, "already has every shipped line"); break; }
-        files.push({ path, content: have.replace(/\n*$/, "\n") + `\n# Added by MDSE update ${lab}\n${add.join("\n")}\n` }); row(path, "merge", kind, `appended ${add.length} line(s); nothing removed`); break;
+        replace(path, kind, have0!, have.replace(/\n*$/, "\n") + `\n# Added by MDSE update ${lab}\n${add.join("\n")}\n`)); row(path, "merge", kind, `appended ${add.length} line(s); nothing removed`); break;
       }
       case "vault-yaml": {
         const pick = (s: string, k: string): string | undefined => new RegExp(`^${k}:\\s*(.*)$`, "m").exec(s)?.[1]?.trim();
@@ -85,17 +102,33 @@ export async function planVaultUpdate(o: UpdateInput): Promise<UpdateResult> {
           text = pick(text, k) === undefined ? text.replace(/\n*$/, "\n") + `${k}: ${w}\n` : text.replace(new RegExp(`^${k}:.*$`, "m"), `${k}: ${w}`); changed.push(k);
         }
         if (!changed.length) { row(path, "same", kind, "identity kept; release already current"); break; }
-        files.push({ path, content: text }); row(path, "merge", kind, `set ${changed.join(", ")}; vault identity kept`); break;
+        replace(path, kind, have0!, text); row(path, "merge", kind, `set ${changed.join(", ")}; vault identity kept`); break;
       }
       case "seed": row(path, "left", kind, "exists; yours to edit, not overwritten"); break;
     }
   }
   const count = (a: UpdateRow["action"]): number => rows.filter((r) => r.action === a).length;
   const summary = { add: count("add"), replace: count("replace"), merge: count("merge"), same: count("same"), left: count("left"), backups: backups.length };
-  if (!files.length) return { status: "NO_CHANGES", files, rows, summary };
+  if (!changes.length) return { status: "NO_CHANGES", files, rows, summary, expected };
   const changedRows = rows.filter((r) => r.action === "add" || r.action === "replace" || r.action === "merge");
-  files.push({ path: `99_System/11_Import/Vault Update ${lab}.md`, content: `# Vault Update ${lab}\n\nConfiguration brought up to the shipped release. No notes were read or changed; nothing was deleted.\n\n| File | Action | Why |\n|---|---|---|\n${changedRows.map((r) => `| \`${r.path}\` | ${r.action} | ${r.reason.replace(/\|/g, "/")} |`).join("\n")}\n\n${summary.same} file(s) were already current; ${summary.left} yours were left alone.${backups.length ? ` Replaced copies are under \`99_System/11_Import/Update ${lab}/Replaced/\`; delete them once you are satisfied.` : ""}\n` });
-  return { status: "WRITE_READY", files, rows, summary };
+  const reportPath = `99_System/11_Import/Vault Update ${lab}.md`;
+  const reportContent = `# Vault Update ${lab}\n\nConfiguration brought up to the shipped release. No notes were read or changed; nothing was deleted.\n\n| File | Action | Why |\n|---|---|---|\n${changedRows.map((r) => `| \`${r.path}\` | ${r.action} | ${r.reason.replace(/\|/g, "/")} |`).join("\n")}\n\n${summary.same} file(s) were already current; ${summary.left} yours were left alone.${backups.length ? ` Replaced copies are under \`99_System/11_Import/Update ${lab}/Replaced/\`; keep them until the update is verified.` : ""}\n`;
+  write(reportPath, reportContent, null);
+  // Back up *all* replaced or merged files before changing any existing configuration.
+  files.push(...backupFiles, ...changes);
+  return { status: "WRITE_READY", files, rows, summary, expected };
+}
+
+/** Reject any stale preview, including a backup/report path that appeared after preview.
+ * Exact bytes matter here: a CRLF-only external edit is still an external edit. */
+export async function verifyVaultUpdatePlan(plan: UpdateResult,
+  read: (path: string) => Promise<string | null>): Promise<string[]> {
+  const conflicts: string[] = [];
+  for (const [path, expected] of Object.entries(plan.expected)) {
+    const current = await read(path);
+    if (current !== expected) conflicts.push(path);
+  }
+  return conflicts;
 }
 
 /* ---- Version check: what the vault has against what this importer ships ------------------------------------------------ */
