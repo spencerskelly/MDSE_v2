@@ -22,6 +22,7 @@ declare const WB: {
   buildIndexAsync: (files: Map<string, string>, o: unknown) => Promise<any>;
   toCanvas: (ix: any, start: string, profile: any, spec?: unknown) => any;
   addToCanvas: (doc: any, ix: any, anchor: string | null, paths: string[], o?: { relations?: boolean }) => { doc: any; added: number; present: number; lineIds: string[] };
+  updateIncludedCanvas: (doc: any, ix: any, scope: string[], checked: string[], anchor?: string | null, directChildren?: string[]) => { doc: any; added: number; removed: number; unchanged: number };
   discoveryOverlay: (doc: any, ix: any, sources: string[], limit?: number, mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => { doc: any; shown: number; available: number };
   discoveryBoundary: (ix: any, sources: string[], mode?: { workflow?: "document" | "define" | "structure" | "verify"; all?: boolean }) => Set<string>;
   clearDiscovery: (doc: any) => any;
@@ -392,6 +393,8 @@ function hostFor(plugin: any): any {
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
+    canvasIncluded: () => plugin.canvasIncluded(),
+    updateIncluded: (anchor: string, scope: string[], checked: string[], directChildren: string[]) => plugin.updateCanvasIncluded(anchor, scope, checked, directChildren),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
     discoveryActive: () => plugin.isDiscoveryActive(),
     stopDiscovery: () => plugin.stopDiscoveryOnCanvas(),
@@ -849,6 +852,51 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     }
     const all = [...(anchor ? [anchor] : []), ...paths], r = rowUnder ? place({ nodes: [], edges: [] }) : WB.addToCanvas({ nodes: [], edges: [] }, this.ix, anchor, all, { relations });   // no canvas open: start one with the same placement rules (D-0085)
     return writePreview(this, { doc: r.doc, fileName: `Canvas - ${(anchor ? this.ix.notes.get(anchor)?.title : "") || "picked notes"}.canvas`.replace(/[\\/:*?"<>|#^[\]]/g, " "), notes: r.added, unresolved: 0, capped: false, groups: 0 });
+  }
+
+  /** Read membership from the actual active Canvas, including saved canvases (never from a stale Workbench checkbox cache). */
+  async canvasIncluded(): Promise<{ canvas: string | null; included: string[] }> {
+    const target = this.canvasTarget();
+    if (!target) return { canvas: null, included: [] };
+    try { await target.leaf?.view?.save?.(); } catch { /* optional Canvas save API */ }
+    const file = this.app.vault.getAbstractFileByPath(target.path);
+    if (!file) return { canvas: null, included: [] };
+    const doc = parseDoc(await this.app.vault.read(file));
+    return { canvas: target.path, included: [...new Set(doc.nodes
+      .filter((n: any) => n.type !== "group" && !String(n.id).startsWith("mdse-discovery:"))
+      .map((n: any) => WB.cardNotePath(n)).filter((p: any) => typeof p === "string" && this.ix?.notes.has(p)))] };
+  }
+  /** Apply one list's checked/unchecked membership atomically to the open Canvas.
+   * Only cards from that list are eligible for removal; no SysML note or relationship is edited. */
+  async updateCanvasIncluded(anchor: string, scope: string[], checked: string[], directChildren: string[] = []): Promise<string> {
+    await this.ensureIndex();
+    const eligible = [...new Set(scope)].filter((p) => this.ix.notes.has(p));
+    if (!eligible.length) return "No governed elements are available in this list.";
+    const wanted = [...new Set(checked)].filter((p) => eligible.includes(p));
+    const target = this.canvasTarget();
+    if (!target) {
+      if (!wanted.length) return "No Canvas is open and nothing is checked.";
+      return this.addToCanvasPreview(anchor, wanted);
+    }
+    let changes: { added: number; removed: number; unchanged: number } | null = null;
+    await this.editTarget(target, (text) => {
+      const current = parseDoc(text);
+      const updated = WB.updateIncludedCanvas(current, this.ix, eligible, wanted, anchor, directChildren);
+      changes = { added: updated.added, removed: updated.removed, unchanged: updated.unchanged };
+      if (!updated.added && !updated.removed) return null;
+      const rec = this.previews.get(target.path);
+      if (rec) {
+        const old = new Set(current.edges.map((e: any) => e.id));
+        for (const edge of updated.doc.edges) if (!old.has(edge.id)) rec.edgeIds.add(edge.id);
+        const kept = new Set(updated.doc.edges.map((e: any) => e.id));
+        for (const id of rec.edgeIds) if (!kept.has(id)) rec.edgeIds.delete(id);
+      }
+      return JSON.stringify(updated.doc, null, 2);
+    });
+    this.app.workspace.revealLeaf(target.leaf);
+    const c = changes as { added: number; removed: number; unchanged: number } | null;
+    if (!c) return "Could not read the current Canvas.";
+    return `Updated included elements on ${target.path}: ${c.added} added, ${c.removed} removed, ${c.unchanged} retained. Other cards and model notes unchanged.`;
   }
 
   /** Preview related candidates on a new scratch Canvas; never modify an existing saved canvas. */
