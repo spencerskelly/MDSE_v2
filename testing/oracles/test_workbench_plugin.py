@@ -126,10 +126,8 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
             self.assertGreaterEqual(pg.locator("input[type=search]").count(), 1)
             self.assertEqual(pg.locator("nav.workareas").count(), 1)
-            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
             # Legacy in-place lens assertions below deliberately choose the opt-in reuse mode.
             # Default is a new independent editor tab; preserve that new default.
-            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
 
             # it follows the note Obsidian opens
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", PCE_PATH)
@@ -144,15 +142,17 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
 
-            # table: opens in the main window for the selected note
+            # Tables render inside the one Workbench sidebar, not in an editor tab.
             for lens in ("Tables", "Structure"):
                 pg.select_option("select.fn", label=lens)
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
-            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
             pg.wait_for_selector("table")
-            # a table opened after the index was built must be handed it, not sit on "Reading notes…"
-            pg.wait_for_function("() => { const v = window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view; return v.contentEl.querySelector('table') && !/Reading notes/.test(v.contentEl.textContent); }")
+            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table').length"), 0)
+            self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
+            self.assertEqual(pg.evaluate("document.querySelector('select.fn').selectedOptions[0].textContent"), "Structure")
+            pg.evaluate("window.__cmds['table'].callback()")
+            pg.evaluate("window.__modal.onChooseItem(['structure', 'Structure'])")
+            pg.wait_for_selector("table")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
 
             # canvas: each view is a new scratch file in the main window (D-0140)
             pg.click("button:has-text('Canvas in main window')")
@@ -206,7 +206,7 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
-    def test_workflow_switch_creates_independent_pinned_tab_without_replacing_sidebar(self):
+    def test_workflow_switch_stays_in_one_sidebar_and_preserves_notes(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         primary = "10_Model/Charger.md"
         other = next(p for p in notes if p != primary)
@@ -225,34 +225,19 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", primary)
             pg.wait_for_selector("header >> text=Charger")
-            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").input_value(), "tab")
-            before = pg.evaluate("""() => {
-                const v = window.__leaves.right[0].view;
-                return { count: window.__leaves.main.length, selected: v.app_.selected(), lens: v.app_.lens(),
-                  pinned: v.app_.isPinned(), files: JSON.stringify(window.__notes) };
-            }""")
-            # The default opens an independent editor tab; the original Workbench is not reused.
-            pg.locator("nav.workareas button:has-text('Structure')").first.click()
-            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-workflow-tab' && l.view.app_)")
-            state = pg.evaluate("""() => {
-                const o = window.__leaves.right[0].view.app_;
-                const n = window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_;
-                return { count: window.__leaves.main.length, old: [o.selected(), o.lens(), o.isPinned()],
-                  newly: [n.selected(), n.lens(), n.area(), n.isPinned()], files: JSON.stringify(window.__notes) };
-            }""")
-            self.assertEqual(state["old"], [before["selected"], before["lens"], before["pinned"]])
-            self.assertEqual(state["count"], before["count"] + 1)
-            self.assertEqual(state["newly"], [primary, "structure", "structure", True])
-            self.assertEqual(state["files"], before["files"])
-            # The new tab is pinned: following a different note in the sidebar may not steal its context.
+            before = pg.evaluate("JSON.stringify(window.__notes)")
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").count(), 0)
+            for area in ("Define", "Structure", "Verify", "Document"):
+                pg.locator("nav.workareas").get_by_role("button", name=area, exact=True).click()
+                pg.wait_for_function("a => document.querySelector('nav.workareas button[aria-pressed=true]')?.textContent === a", arg=area)
+                self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
+                self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), before)
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", other)
             pg.wait_for_function("p => window.__leaves.right[0].view.app_.selected() === p", arg=other)
-            self.assertEqual(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected()"), primary)
-            # Follow is an explicit local decision, and then uses the selected item.
-            pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.setPinned(false)")
-            pg.wait_for_function("p => window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.selected() === p", arg=other)
-            self.assertFalse(pg.evaluate("window.__leaves.main.find(l => l.type === 'mdse-workflow-tab').view.app_.isPinned()"))
-            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), before["files"])
+            pg.locator("nav.workareas").get_by_role("button", name="Structure", exact=True).click()
+            self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.selected()"), other)
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
             browser.close()
         self.assertEqual(errors, [])
 
@@ -279,7 +264,6 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "20/REQ.md")
             pg.wait_for_selector("header >> text=Battery Cooling")
-            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Find shared terms")
             pg.wait_for_selector(".term-suggestions button:has-text('cooling')")
             pg.click(".term-suggestions button:has-text('cooling')")
@@ -323,7 +307,6 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("header >> text=Charger")
             # This legacy edit regression deliberately opts into in-place tool switching.
             # New-tab preservation is tested separately; it remains the default for engineers.
-            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Add relationship")
 
@@ -575,7 +558,6 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
-            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
 
@@ -641,7 +623,6 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/CHG-1.md")
             pg.wait_for_selector("header >> text=CHG-1")
-            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
             # compare (D-0092)
             pg.select_option("select.fn", label="Compare notes")
             pg.wait_for_selector("text=Choose the second note above.")
@@ -796,7 +777,7 @@ class WorkbenchPlugin(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_main_window_structure_table_draws_a_system_of_over_a_thousand_rows(self):
-        """D-0151, WKB-070: 6 boards of 200 parts under one system is 1,207 rows; the main-window table draws all of them and the folds work on it."""
+        """A 1,207-row structure is accessible in the Workbench panel with paging and CSV export."""
         def note(i, title, kids=()):
             hp = "hasPart: [" + ", ".join(f'"[[{k}]]"' for k in kids) + "]\n" if kids else ""
             return f"10_Model/{title}.md", f"---\ntype: Object\nid: OBJ-{i:05d}\nuid: 202611090000{i:05d}big\nstatus: Draft\n{hp}tags: []\n---\n# {title}\n"
@@ -823,13 +804,16 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("window.__ev['file-open']({ path: '10_Model/System.md', extension: 'md' })")
             pg.wait_for_selector("header >> text=System")
             pg.select_option("select.fn", label="Structure")
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("[...document.querySelectorAll('table')].some(t => t.querySelectorAll('tbody tr').length > 1200)")
+            pg.wait_for_selector("text=Page 1 of 49")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
             tables = lambda: pg.evaluate("[...document.querySelectorAll('table')].map(t => t.querySelectorAll('tbody tr').length)")
-            self.assertEqual(tables()[2], 1207, "every row, with none cut and no 'not drawn' message")
-            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.more')].some(e => /not drawn/.test(e.textContent))"), False)
+            self.assertIn(25, tables())
+            pg.locator("div.more:has-text('Page 1 of 49')").first.locator("xpath=..").locator("button:has-text('Next page')").click()
+            pg.wait_for_selector("text=Page 2 of 49")
+            self.assertTrue(pg.locator("button:has-text('Export CSV')").count())
             pg.evaluate("(() => { const bs = [...document.querySelectorAll('button')].filter(b => b.textContent === 'Collapse all parts'); bs[bs.length - 1].click(); })()")
-            self.assertEqual(tables()[2], 7, "the system and its 6 boards")
+            self.assertIn(7, tables(), "the system and its six boards remain accessible")
+
         self.assertEqual(errors, [])
 
 
