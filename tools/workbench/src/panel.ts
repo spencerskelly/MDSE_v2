@@ -85,6 +85,7 @@ export interface PanelApp {
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
   refresh(): void;
+  reloadCanvasIncluded(): void;
   lens(): V.Lens; selected(): string; destroy(): void;
 }
 
@@ -911,6 +912,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     refresh() { draw(); },
+    reloadCanvasIncluded() { if (ix && (lens === "note" || ADDABLE.has(lens))) loadIncluded(lens + "|" + sel, true); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
