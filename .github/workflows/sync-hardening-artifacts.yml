@@ -1,4 +1,5 @@
 name: Build and test cross-platform hardening (review only)
+# Rebuild the hardening source after native Windows/macOS test fixes and safety regressions.
 
 on:
   push:
