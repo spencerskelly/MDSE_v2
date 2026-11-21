@@ -96,6 +96,7 @@ async () => {
   await put('README.md', '# my readme\n');
   await put('10_Model/Charger.md', 'my note\n');
   window.showDirectoryPicker = async () => root;
+  window.__write = put;
   window.confirm = () => true;
   window.__readPart = async (pn) => { const walk = async (d, pre) => { for await (const [n, h] of d.entries()) { if (h.kind === 'directory') { const r = await walk(h, pre + n + '/'); if (r) return r; } else if (n === pn + '.md' && pre.startsWith('BOM/Parts/')) return await (await h.getFile()).text(); } return null; }; return await walk(root, ''); };
   window.__read = async (path) => { try { let d = root; const ps = path.split('/'); for (const p of ps.slice(0, -1)) d = await d.getDirectoryHandle(p); return await (await (await d.getFileHandle(ps.at(-1))).getFile()).text(); } catch (_) { return null; } };
@@ -144,6 +145,77 @@ class VaultUpdateBrowser(unittest.TestCase):
             pg.click("#updPreview")
             pg.wait_for_function("document.getElementById('updStatus').textContent.includes('already current')")
             self.assertTrue(pg.is_disabled("#updApply"))
+            b.close()
+        self.assertEqual(errors, [])
+
+
+    def test_preview_rejects_external_edit_or_new_occupied_backup_without_writes(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Ready')")
+            pg.evaluate("async () => { await window.__write('.obsidian/app.json', '{\"vimMode\": false, \"changedInObsidian\": true}'); }")
+            pg.click("#updApply")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Vault changed since Preview')")
+            self.assertIn("changedInObsidian", pg.evaluate("window.__read('.obsidian/app.json')"))
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\\n")
+            self.assertIsNone(pg.evaluate("window.__read('.obsidian/plugins/mdse-workbench/main.js')"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
+            self.assertTrue(pg.is_disabled("#updApply"))
+            self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/CON.md'}, {path:'Docs/trailing. '}, {path:'Docs/a.md'}, {path:'Docs/A.md'}]).length >= 3"))
+            self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/Café.md'}, {path:'Docs/Cafe\\u0301.md'}]).length > 0"),
+                            "macOS Unicode-normalizing paths must not collide")
+            b.close()
+        self.assertEqual(errors, [])
+
+    def test_failed_mid_update_restores_targets_and_retains_verified_backups(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Ready')")
+            pg.evaluate("""() => {
+              const original = writeFile; let failed = false;
+              writeFile = async (root, path, data) => {
+                if (!failed && path === '.obsidian/community-plugins.json') {
+                  failed = true; throw Error('Simulated interrupted write');
+                }
+                return original(root, path, data);
+              };
+            }""")
+            pg.click("#updApply")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Update stopped')")
+            status = pg.inner_text("#updStatus")
+            self.assertIn("Simulated interrupted write", status)
+            self.assertNotIn("Rollback incomplete", status)
+            self.assertEqual(pg.evaluate("window.__read('.obsidian/app.json')"), '{"vimMode": true}')
+            self.assertEqual(pg.evaluate("window.__read('.obsidian/community-plugins.json')"), '["templater-obsidian"]')
+            self.assertIsNone(pg.evaluate("window.__read('.gitignore')"), "new config files must be removed in rollback")
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\\n")
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\\n")
+            self.assertTrue(pg.evaluate("""async () => {
+              const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('99_System');
+              const imp = await d.getDirectoryHandle('11_Import');
+              for await (const [name] of imp.entries()) if (name.startsWith('Update ')) return true;
+              return false;
+            }"""), "recoverable backups must remain after rollback")
             b.close()
         self.assertEqual(errors, [])
 
