@@ -613,15 +613,15 @@ $("updApply").addEventListener("click", async () => {
     if (!confirm(`Write ${res.files.length} file(s) into "${vaultHandle.name}"? ${res.summary.backups} existing files will be backed up first. No engineering notes will be changed.`)) {
       $("updStatus").textContent = "Cancelled."; return;
     }
-    const backupPrefix = `99_System/11_Import/Update ${localIso().slice(0, 16).replace("T", " ").replace(":", ".")}/Replaced/`;
+    const isBackup = (path) => /^99_System\/11_Import\/Update [^/]+\/Replaced\//.test(path);
     // Planner lists backup files first. Verify all backups before mutating any original.
     for (const f of res.files) {
-      if (!f.path.startsWith(backupPrefix)) continue;
+      if (!isBackup(f.path)) continue;
       await writeFile(vaultHandle, f.path, f.content);
       if ((await readVaultFile(f.path)) !== f.content) throw new Error("Backup verification failed: " + f.path);
     }
     for (const f of res.files) {
-      if (f.path.startsWith(backupPrefix)) continue;
+      if (isBackup(f.path)) continue;
       changed.push(f.path); // Also roll back a target if its write/close failed.
       await writeFile(vaultHandle, f.path, f.content);
       if ((await readVaultFile(f.path)) !== f.content) throw new Error("Read-back verification failed: " + f.path);
