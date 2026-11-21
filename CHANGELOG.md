@@ -4,6 +4,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+- Review-branch UX increment (unmerged): **Canvas connections** on an individual SysML member opens a separate scratch Canvas of explicit connectors, bindings and directional flows, with unresolved endpoint markings, shared endpoint cards and 24-line default cap. No new model notes or semantic relationships; Obsidian runtime acceptance still required.
+
 - Review-branch UX increment (unmerged): expandable and filterable **Members and explicit connections** inspector. Distinguishes owner-local usages from reusable type definitions and shows only explicit `connect`/`bind`/`flow` endpoints, including unresolved references. Member detail persists across 40-at-a-time paging; viewing typed definitions preserves the original workspace. Source-only; real Obsidian acceptance pending.
 
 - Review-branch UX increment (unmerged): preview eligible native SysML relationships and direction *before* creating a governed note by indexing the hypothetical new file in memory. No implicit links or changes to the original index; final relationship still requires a separate explicit post-create Apply. Real Obsidian acceptance pending.
