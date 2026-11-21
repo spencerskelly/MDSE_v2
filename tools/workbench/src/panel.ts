@@ -80,6 +80,7 @@ export interface PanelApp {
   setPinned(pinned: boolean): void;
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
+  refresh(): void;
   lens(): V.Lens; selected(): string; destroy(): void;
 }
 
@@ -859,6 +860,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     area: () => workArea,
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
+    refresh() { draw(); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
