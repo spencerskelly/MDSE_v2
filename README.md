@@ -4,7 +4,7 @@ MDSE is one linked engineering model kept as plain Markdown and YAML in an Obsid
 
 This repository holds the rules, schemas and every tool that builds and serves an MDSE vault. It does **not** hold a model. Real engineering data never enters it ([DAT-002](governance/RULESET.md#dat--data-and-security)).
 
-**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.** For an exact build and safe staging/live vault update, follow [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md).
+**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.** For an exact build and safe staging/live vault update, follow [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). The current PR #4 artifact build and uncompleted Obsidian checks are recorded in [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
 
 ## Where things are
 
