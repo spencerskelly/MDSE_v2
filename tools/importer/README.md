@@ -39,8 +39,8 @@ Step 4 of the page. Choose a vault folder in step 2, press **Preview vault updat
 
 | Files | What happens |
 |---|---|
-| `99_System/02_AI`, `03_Schemas`, `05_Templates`, `.obsidian/plugin-lock.yaml` | Replaced when different. The old copy is saved first under `99_System/11_Import/Update <date>/Replaced/`. |
-| `.obsidian/plugins/mdse-workbench/` (`main.js`, `manifest.json`, `styles.css`) | Replaced when different (the release is reproducible, so no copy). |
+| `99_System/02_AI`, `03_Schemas`, `04_Language`, `05_Templates`, `.obsidian/plugin-lock.yaml` | Replaced when different. Original saved before mutation under `99_System/11_Import/Update <date>/Replaced/`. |
+| `.obsidian/plugins/mdse-workbench/` (`main.js`, `manifest.json`, `styles.css`) | Replaced when different; old plugin bytes are now archived before writes. |
 | `.obsidian/community-plugins.json`, `core-plugins.json` | Shipped entries added; your other entries kept. |
 | `.obsidian/app.json` | The governed keys are set; your other settings kept. |
 | `.gitignore` | Missing shipped lines appended; nothing removed. |
@@ -49,6 +49,8 @@ Step 4 of the page. Choose a vault folder in step 2, press **Preview vault updat
 | Notes, attachments, plugin `data.json`, workspace files, anything not shipped | Not read, not touched. Nothing is deleted. |
 
 A folder with no vault gets the whole base vault. A `Vault Update <date>.md` note in `99_System/11_Import` lists every change. A malformed JSON config is left alone and reported. Running it again changes nothing.
+
+**Hardening branch only:** The preview now captures original file contents and rejects Apply if any target or backup/report path changes. All controlled, merged and plugin originals are backed up before changing any original, writes are read back, and a failed update attempts rollback without deleting recovery archives. Imports into an existing vault likewise back up existing target bytes (including binaries), skip byte-identical outputs and check for changed source files before writes. Neither path is an atomic transaction; keep a full vault backup. Windows/macOS filename normalization, path-byte length and case-collision checks are added. See [cross-platform acceptance plan](../../docs/CROSS_PLATFORM_IMPORT_ACCEPTANCE.md).
 
 ## Run and update the managed toolset
 
