@@ -85,8 +85,8 @@ export type EngineeringWorkflow = "document" | "define" | "structure" | "verify"
 export const WORKFLOW_ENTRY_LENS: Record<EngineeringWorkflow, V.Lens> = {
   document: "note", define: "functional", structure: "structure", verify: "requirements",
 };
-/** Opens the explicit target item in a separate Workbench tab, without changing this view. */
-export function openInNewWorkflow(host: Pick<PanelHost, "openWorkflow">, area: EngineeringWorkflow, itemPath: string): Promise<void> {
+/** Navigate to an item and workflow inside the existing Workbench. */
+export function navigateToWorkflow(host: Pick<PanelHost, "openWorkflow">, area: EngineeringWorkflow, itemPath: string): Promise<void> {
   if (!itemPath || !host.openWorkflow) return Promise.reject(new Error("Choose a governed engineering item before opening a workflow."));
   return host.openWorkflow(area, WORKFLOW_ENTRY_LENS[area], itemPath);
 }
@@ -127,7 +127,6 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
   let workArea: "document" | "define" | "structure" | "verify" = opt.area ?? "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
-  let workflowOpenMode: "tab" | "current" = "tab";
   let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
@@ -142,12 +141,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   const relatedWorkflow = (path: string): HTMLElement | null => {
     if (!host.openWorkflow || !note(path)) return null;
     return h("select", { class: "relation-workflow", "aria-label": "Open related element in workflow: " + note(path)!.title,
-      title: "Open this related engineering element in another Workbench tab",
+      title: "Show this related engineering element in the existing Workbench",
       onchange: (e: Event) => {
         const el = e.target as HTMLSelectElement, target = el.value as EngineeringWorkflow;
         el.value = "";
         if (!target) return;
-        void openInNewWorkflow(host, target, path).catch((err) => {
+        void navigateToWorkflow(host, target, path).catch((err) => {
           msg = "Could not open related element: " + String((err as Error)?.message ?? err); draw();
         });
       }
@@ -638,19 +637,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
       pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
     if (n && host.openWorkflow) contextMode.append(
-      h("label", { class: "mut", style: "font-size:12px", title: "Open the selected engineering item in a separate, pinned Workbench tab without replacing this view" },
+      h("label", { class: "mut", style: "font-size:12px", title: "Show the selected engineering item in the existing Workbench" },
         "Open item in ", h("select", {
-          "aria-label": "Open selected item in new workflow tab",
+          "aria-label": "Show selected item in workflow",
           onchange: (e: Event) => {
             const pick = e.target as HTMLSelectElement;
             const area = pick.value as EngineeringWorkflow; pick.value = "";
             if (!area) return;
-            void openInNewWorkflow(host, area, n.path).catch((err) => {
+            void navigateToWorkflow(host, area, n.path).catch((err) => {
               msg = "Could not open new workflow: " + String((err as Error)?.message ?? err); draw();
             });
           }
         },
-        h("option", { value: "", selected: true }, "new workflow tab…"),
+        h("option", { value: "", selected: true }, "workflow…"),
         ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]] as const)
           .map(([label, id]) => h("option", { value: id }, label)))));
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
@@ -668,10 +667,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       const v = (fnSelect as HTMLSelectElement).value as V.Lens;
       if (v === "merge") { openMerge(""); return; }
       const area = lensArea(v) ?? workArea;
-      if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
-        (fnSelect as HTMLSelectElement).value = lens; // The current Workbench stays on its original function.
-        void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
-      } else { workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); }
+      workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw();
     });
     // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
     // Review is contextual; the importer stays external and publishing remains under Document.
@@ -690,10 +686,6 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (lens !== "review") workArea = lensArea(lens)!;
     const goArea = (area: typeof workArea, next: V.Lens): void => {
       if (area === workArea && next === lens) return;
-      if (workflowOpenMode === "tab" && host.openWorkflow) {
-        void host.openWorkflow(area, next, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
-        return;
-      }
       workArea = area;
       lens = next;
       if (next === "edit") pinned = true; else editEl = null;
@@ -712,12 +704,6 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           else { reviewReturn = lens; lens = "review"; }
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
-    const opening = h("label", { class: "mut", title: "Choose whether switching workflows or functions opens a new tab or replaces the current Workbench view" },
-      "Open tools in ", h("select", { "aria-label": "Workflow opening behavior",
-        onchange: (e: Event) => { workflowOpenMode = (e.target as HTMLSelectElement).value as "tab" | "current"; draw(); } },
-        h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
-        h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
-    workareas.append(opening);
     if (host.quickCreate) {
       const available = QC.quickTemplatesFor(workArea);
       const menu = h("select", { "aria-label": "New item from workflow template",
@@ -798,7 +784,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           acts.append(b);
         }
       }
-      if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
+      // Tables render in the persistent Workbench, not in new editor tabs.
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit } as Partial<V.ViewSpec>) : lens === "compare" ? ({ ...spec, other: cmpOther } as Partial<V.ViewSpec>) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); acts.append(b); }
     }
