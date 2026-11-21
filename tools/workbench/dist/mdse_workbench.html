@@ -6664,9 +6664,9 @@ function mountPanel(root             , host           , opt                     
     const n = note(sel);
     const contextMode = h("div", { class: "contextmode", role: "group", "aria-label": "Engineering item selection mode" },
       h("span", { class: "mut", style: "font-size:12px" }, "Selection:"),
-      h("button", { type: "button", "aria-pressed": !pinned, disabled: lens === "edit" || undefined,
+      h("button", { type: "button", "aria-pressed": !pinned ? "true" : "false", disabled: lens === "edit" || undefined,
         title: "Follow engineering items selected in other notes and Canvases", onclick: () => setContextPinned(false) }, "Follow"),
-      h("button", { type: "button", "aria-pressed": pinned,
+      h("button", { type: "button", "aria-pressed": pinned ? "true" : "false",
         title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
       pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
     if (n && host.openWorkflow) contextMode.append(
@@ -6727,12 +6727,12 @@ function mountPanel(root             , host           , opt                     
     const workareas = h("nav", { class: "workareas", "aria-label": "MDSE work areas" },
       ...([["Document", "document", WORKFLOW_ENTRY_LENS.document], ["Define", "define", WORKFLOW_ENTRY_LENS.define], ["Structure", "structure", WORKFLOW_ENTRY_LENS.structure], ["Verify", "verify", WORKFLOW_ENTRY_LENS.verify]]         )
         .map(([label, id, next]) => h("button", {
-          type: "button", "aria-pressed": workArea === id,
+          type: "button", "aria-pressed": workArea === id ? "true" : "false",
           title: id === "verify" ? "Requirements verification trace; test plans and execution are not yet implemented" : undefined,
           onclick: () => goArea(id, next)
         }, label)),
       h("button", { type: "button", class: "review", "aria-label": "Review findings for current work",
-        "aria-pressed": lens === "review", onclick: () => {
+        "aria-pressed": lens === "review" ? "true" : "false", onclick: () => {
           if (lens === "review") lens = reviewReturn;
           else { reviewReturn = lens; lens = "review"; }
           draw();
