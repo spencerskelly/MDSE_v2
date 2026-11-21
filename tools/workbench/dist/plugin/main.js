@@ -6097,8 +6097,8 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
 const WORKFLOW_ENTRY_LENS                                      = {
   document: "note", define: "functional", structure: "structure", verify: "requirements",
 };
-/** Opens the explicit target item in a separate Workbench tab, without changing this view. */
-function openInNewWorkflow(host                                 , area                     , itemPath        )                {
+/** Navigate to an item and workflow inside the existing Workbench. */
+function navigateToWorkflow(host                                 , area                     , itemPath        )                {
   if (!itemPath || !host.openWorkflow) return Promise.reject(new Error("Choose a governed engineering item before opening a workflow."));
   return host.openWorkflow(area, WORKFLOW_ENTRY_LENS[area], itemPath);
 }
@@ -6139,7 +6139,6 @@ function mountPanel(root             , host           , opt                     
   root.replaceChildren(style, wrap);
   let ix                    = null, sel = opt.selected ?? "", lens         = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo                                 = null;
   let workArea                                                 = opt.area ?? "document", reviewReturn         = "note", searchText = "", discoveryAll = false;
-  let workflowOpenMode                    = "tab";
   let scope                     = "selected", table                                       = "relationships", text = "", spec                      = {}, revFilter = "", pinned = !!opt.fixedContext, inherit                  = [];   // D-0101
 
   const note = (p                           )                   => (p ? ix?.notes.get(p) : undefined);
@@ -6154,12 +6153,12 @@ function mountPanel(root             , host           , opt                     
   const relatedWorkflow = (path        )                     => {
     if (!host.openWorkflow || !note(path)) return null;
     return h("select", { class: "relation-workflow", "aria-label": "Open related element in workflow: " + note(path) .title,
-      title: "Open this related engineering element in another Workbench tab",
+      title: "Show this related engineering element in the existing Workbench",
       onchange: (e       ) => {
         const el = e.target                     , target = el.value                       ;
         el.value = "";
         if (!target) return;
-        void openInNewWorkflow(host, target, path).catch((err) => {
+        void navigateToWorkflow(host, target, path).catch((err) => {
           msg = "Could not open related element: " + String((err         )?.message ?? err); draw();
         });
       }
@@ -6212,6 +6211,7 @@ function mountPanel(root             , host           , opt                     
   function openEditor(ref         )       { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
   const outlineState = new Map                     ();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
+  const pages = new Map                ();
   const secs = new Map                 ();                                                // open/closed state of each folding section, kept across redraws
   function sec(key        , title        , body         , o                                              = {})              {
     const k = lens + ":" + key, d = h("details", { class: "sec", open: secs.get(k) ?? o.open ?? true }, h("summary", {}, title, o.count !== undefined ? h("span", { class: "mut" }, ` (${o.count})`) : null), ...body);
@@ -6236,6 +6236,8 @@ function mountPanel(root             , host           , opt                     
     const ol = t.outline && first ? OL.buildOutline(t.rows.map((r) => { const c = r[first], one = c && typeof c === "object" && !Array.isArray(c) ? c : null; return { level: lvlOf(r), id: one?.path ?? cellText(c).replace(/^\u00a0+/, ""), notice: one?.cls === "gap" }; })) : null;
     const folded = ()              => outlineState.get(okey) ?? new Set        ();
     const tbody = h("tbody", {}), moreEl = h("div", { class: "more" }), status = h("span", { class: "mut" });
+    const pager = h("div", { class: "row", style: "display:flex;gap:8px;align-items:center" });
+    const pageKey = [lens, sel, t.id, scope, tree, table].join("|");
     const rowEl = (i        )              => {
       const r = t.rows[i] ;
       return h("tr", {}, tickable ? tick(r) : null, ...cols.map((c, ci) => h("td", {}, ol && ci === 0 ? outlineCell(i, r[c.key]) : cellNode(r[c.key]))));
@@ -6247,10 +6249,21 @@ function mountPanel(root             , host           , opt                     
       return h("span", { class: "olc", style: `padding-left:${o.level[i]  * 14}px` }, tg, cellNode(label), !open ? h("span", { class: "mut" }, ` (+${parts})`) : null);
     };
     function paint()       {
-      const vis = ol ? OL.visibleRows(ol, folded()) : t.rows.map((_, i) => i), shown = vis.slice(0, CAP);
+      const vis = ol ? OL.visibleRows(ol, folded()) : t.rows.map((_, i) => i);
+      const count = Number.isFinite(CAP) ? Math.max(1, Math.ceil(vis.length / CAP)) : 1;
+      const page = Math.min(pages.get(pageKey) ?? 0, count - 1);
+      pages.set(pageKey, page);
+      const shown = vis.slice(page * CAP, (page + 1) * CAP);
       tbody.replaceChildren(...shown.map(rowEl));
-      moreEl.textContent = vis.length > shown.length ? (compact ? `\u2026 ${vis.length - shown.length} more. Open the table in the main window to see all ${vis.length}.` : `\u2026 ${vis.length - shown.length} more rows not drawn (limit ${CAP}). Fold assemblies or use Show to level to reach them; Export CSV has every row.`) : "";
+      moreEl.textContent = compact && count > 1 ? `Page ${page + 1} of ${count} · ${vis.length} accessible rows` : "";
       moreEl.style.display = moreEl.textContent ? "" : "none";
+      pager.replaceChildren();
+      if (compact && count > 1) {
+        pager.append(
+          h("button", { class: "sm", disabled: page === 0 || undefined, onclick: () => { pages.set(pageKey, page - 1); paint(); } }, "Previous page"),
+          h("button", { class: "sm", disabled: page >= count - 1 || undefined, onclick: () => { pages.set(pageKey, page + 1); paint(); } }, "Next page")
+        );
+      }
       if (ol) status.textContent = vis.length === t.rows.length ? `${t.rows.length} rows` : `${vis.length} of ${t.rows.length} rows shown`;
     }
     if (ol && ol.max > 0) {
@@ -6261,8 +6274,8 @@ function mountPanel(root             , host           , opt                     
         levels, status));
     }
     box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), tbody));
-    box.append(moreEl); paint();
-    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
+    box.append(moreEl, pager); paint();
+    box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
   }
 
@@ -6650,19 +6663,19 @@ function mountPanel(root             , host           , opt                     
         title: "Keep this engineering item fixed while working elsewhere", onclick: () => setContextPinned(true) }, "Pin"),
       pinned ? h("span", { class: "mut", style: "font-size:12px" }, "Item stays fixed") : null);
     if (n && host.openWorkflow) contextMode.append(
-      h("label", { class: "mut", style: "font-size:12px", title: "Open the selected engineering item in a separate, pinned Workbench tab without replacing this view" },
+      h("label", { class: "mut", style: "font-size:12px", title: "Show the selected engineering item in the existing Workbench" },
         "Open item in ", h("select", {
-          "aria-label": "Open selected item in new workflow tab",
+          "aria-label": "Show selected item in workflow",
           onchange: (e       ) => {
             const pick = e.target                     ;
             const area = pick.value                       ; pick.value = "";
             if (!area) return;
-            void openInNewWorkflow(host, area, n.path).catch((err) => {
+            void navigateToWorkflow(host, area, n.path).catch((err) => {
               msg = "Could not open new workflow: " + String((err         )?.message ?? err); draw();
             });
           }
         },
-        h("option", { value: "", selected: true }, "new workflow tab…"),
+        h("option", { value: "", selected: true }, "workflow…"),
         ...([["Document", "document"], ["Define", "define"], ["Structure", "structure"], ["Verify", "verify"]]         )
           .map(([label, id]) => h("option", { value: id }, label)))));
     const header = h("header", {}, n ? h("div", {}, h("b", {}, n.title), " ", tag(n.type + (n.subtype ? "/" + n.subtype : "")), " ", h("span", { class: "mut" }, n.id)) : h("div", { class: "mut" }, ix ? "No model note selected. Open a note in Obsidian and this view follows it." : loading),
@@ -6680,10 +6693,7 @@ function mountPanel(root             , host           , opt                     
       const v = (fnSelect                     ).value          ;
       if (v === "merge") { openMerge(""); return; }
       const area = lensArea(v) ?? workArea;
-      if (workflowOpenMode === "tab" && host.openWorkflow && v !== lens) {
-        (fnSelect                     ).value = lens; // The current Workbench stays on its original function.
-        void host.openWorkflow(area, v, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
-      } else { workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw(); }
+      workArea = area; lens = v; if (v === "edit") pinned = true; else editEl = null; draw();
     });
     // UX pass 08R: Document / Define / Structure / Verify are the four work areas.
     // Review is contextual; the importer stays external and publishing remains under Document.
@@ -6702,10 +6712,6 @@ function mountPanel(root             , host           , opt                     
     if (lens !== "review") workArea = lensArea(lens) ;
     const goArea = (area                 , next        )       => {
       if (area === workArea && next === lens) return;
-      if (workflowOpenMode === "tab" && host.openWorkflow) {
-        void host.openWorkflow(area, next, sel).catch((e) => { msg = "Could not open Workbench tab: " + String(e); draw(); });
-        return;
-      }
       workArea = area;
       lens = next;
       if (next === "edit") pinned = true; else editEl = null;
@@ -6724,12 +6730,6 @@ function mountPanel(root             , host           , opt                     
           else { reviewReturn = lens; lens = "review"; }
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
-    const opening = h("label", { class: "mut", title: "Choose whether switching workflows or functions opens a new tab or replaces the current Workbench view" },
-      "Open tools in ", h("select", { "aria-label": "Workflow opening behavior",
-        onchange: (e       ) => { workflowOpenMode = (e.target                     ).value                     ; draw(); } },
-        h("option", { value: "tab", selected: workflowOpenMode === "tab" }, "new tab (preserve work)"),
-        h("option", { value: "current", selected: workflowOpenMode === "current" }, "current Workbench")));
-    workareas.append(opening);
     if (host.quickCreate) {
       const available = QC.quickTemplatesFor(workArea);
       const menu = h("select", { "aria-label": "New item from workflow template",
@@ -6810,7 +6810,7 @@ function mountPanel(root             , host           , opt                     
           acts.append(b);
         }
       }
-      if (V.lensHasTable(lens)) { const b = h("button", { class: "sm pri", onclick: () => host.openTable(lens) }, "Table in main window"); acts.append(b); }
+      // Tables render in the persistent Workbench, not in new editor tabs.
       if (V.lensHasCanvas(lens)) { const b = h("button", { class: "sm pri", disabled: !n || (lens === "compare" && !cmpOther) || undefined }, lens === "compare" ? "Canvas of unique parts" : "Canvas in main window"); b.addEventListener("click", () => busy(b, "Creating…", () => host.openCanvas(lens, lens === "internal" ? ({ ...spec, inherit }                       ) : lens === "compare" ? ({ ...spec, other: cmpOther }                       ) : spec))); acts.append(b); }
       if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas ())); acts.append(b); }
     }
@@ -6920,7 +6920,7 @@ return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quick
                                                                                                                                                                                                                
   
 const obsidian = require("obsidian");
-const PANEL = "mdse-panel", TABLE = "mdse-table", WORKFLOW_TAB = "mdse-workflow-tab", OLD_VIEW = "mdse-workbench";
+const PANEL = "mdse-panel", TABLE = "mdse-table", OLD_VIEW = "mdse-workbench";
 const PARSER_REPORT = "99_System/11_Import/Parser Check.md";
 const tick = ()                => new Promise((r) => setTimeout(r, 0));
 
@@ -6944,6 +6944,18 @@ function mainLeaf(app     )      {
   return app.workspace.getLeaf("tab");
 }
 
+/** Artifacts use editor tabs; reopening a note or Canvas focuses its existing tab. */
+async function openArtifact(app     , file     )                {
+  let existing      = null;
+  app.workspace.iterateAllLeaves?.((leaf     ) => {
+    if (!existing && leaf.view?.file?.path === file.path) existing = leaf;
+  });
+  if (existing) { await app.workspace.revealLeaf(existing); return; }
+  const leaf = mainLeaf(app);
+  await leaf.openFile(file);
+  await app.workspace.revealLeaf(leaf);
+}
+
 const ensureFolder = async (app     , dir        )                => {
   let at = "";
   for (const part of dir.split("/").filter(Boolean)) { at = at ? `${at}/${part}` : part; if (!app.vault.getAbstractFileByPath(at)) await app.vault.createFolder(at); }
@@ -6963,7 +6975,7 @@ async function writePreview(plugin     , r                                      
   const file = await app.vault.create(path, JSON.stringify(r.doc, null, 2));
   plugin.preview = { path, fileName: r.fileName, edgeIds: WB.cdEdgeIds(r.doc), saveFolder: r.saveFolder };       // lines the Workbench drew; any other line on the canvas was drawn by the person
   plugin.previews.set(path, plugin.preview);
-  await mainLeaf(app).openFile(file);
+  await openArtifact(app, file);
   return `Canvas preview opened in the main window, not saved (${r.notes} notes${r.groups ? `, ${r.groups} groups` : ""}${r.unresolved ? `, ${r.unresolved} not in vault` : ""}${r.capped ? ", capped" : ""}). Use Save canvas to keep it.`;
 }
 
@@ -6983,7 +6995,7 @@ async function savePreview(plugin     , folder        )                  {
   const cleaned = WB.clearDiscovery(doc);
   const saved = await app.vault.create(path, JSON.stringify({ ...doc, nodes: cleaned.nodes, edges: cleaned.edges }, null, 2));
   plugin.settings.lastFolder = folder; await plugin.saveSettings();
-  await mainLeaf(app).openFile(saved);
+  await openArtifact(app, saved);
   return `Saved to ${path}`;
 }
 
@@ -7243,11 +7255,11 @@ function hostFor(plugin     )      {
   return {
     openNote: (p        ) => {                                          // D-0158: every note opens in a new tab, so the view it came from stays one tab back
       const app = plugin.app, file = app.vault.getAbstractFileByPath(p) ?? app.metadataCache.getFirstLinkpathDest(p, "");
-      if (file) void mainLeaf(app).openFile(file); else void app.workspace.openLinkText(p, "", "tab");
+      if (file) void openArtifact(app, file); else void app.workspace.openLinkText(p, "", "tab");
     },
     openTable: (lens        ) => plugin.openTable(lens),
     currentSelection: () => plugin.selected || null,
-    openWorkflow: (area        , lens        , selected        ) => plugin.openWorkflowTab(area, lens, selected),
+    openWorkflow: (area        , lens        , selected        ) => plugin.showWorkflowInPanel(area, lens, selected),
     quickCreate: (templateId        , selectedPath        ) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens        , spec         ) => plugin.openCanvas(lens, spec),
     openMemberCanvas: (owner        , key        ) => plugin.openMemberCanvas(owner, key),
@@ -7287,32 +7299,6 @@ class PanelView extends obsidian.ItemView {
   async onOpen() {
     this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
     this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel" });
-    this.plugin.apps.add(this.app_);
-    await this.plugin.attachIndex(this.app_);
-  }
-  async onClose() { this.plugin.apps.delete(this.app_); this.app_?.destroy(); }
-}
-
-/** Independent editor-area Workbench. Opening a workflow never repurposes an open file, Canvas, or other Workbench tab. */
-class WorkflowTabView extends obsidian.ItemView {
-  plugin     ; app_      = null; area = "document"; lens = "note"; selected = ""; pinned = true;
-  constructor(leaf     , plugin     ) { super(leaf); this.plugin = plugin; }
-  getViewType() { return WORKFLOW_TAB; }
-  getDisplayText() { return "MDSE " + this.area.charAt(0).toUpperCase() + this.area.slice(1); }
-  getIcon() { return "network"; }
-  getState() { return { area: this.app_?.area?.() ?? this.area, lens: this.app_?.lens?.() ?? this.lens, selected: this.app_?.selected?.() ?? this.selected, pinned: this.app_?.isPinned?.() ?? this.pinned }; }
-  async setState(state     , result     ) {
-    if (state?.area && ["document", "define", "structure", "verify"].includes(state.area)) this.area = state.area;
-    if (typeof state?.lens === "string") this.lens = state.lens;
-    if (typeof state?.selected === "string") this.selected = state.selected;
-    if (typeof state?.pinned === "boolean") this.pinned = state.pinned;
-    this.app_?.setWorkflow?.(this.area, this.lens, this.selected);
-    this.app_?.setPinned?.(this.pinned);
-    await super.setState?.(state, result);
-  }
-  async onOpen() {
-    this.contentEl.empty(); this.contentEl.style.padding = "0"; this.contentEl.style.height = "100%";
-    this.app_ = WB.mountPanel(this.contentEl, hostFor(this.plugin), { mode: "panel", area: this.area, lens: this.lens, selected: this.selected, fixedContext: this.pinned });
     this.plugin.apps.add(this.app_);
     await this.plugin.attachIndex(this.app_);
   }
@@ -7531,18 +7517,24 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     new QuickCreateModal(this, template, selectedPath).open();
     return "";
   }
-  /** Open a dedicated workflow in a fresh Obsidian editor tab. Never reuse a file or Canvas leaf. */
-  async openWorkflowTab(area        , lens        , selected        )                {
-    const leaf = mainLeaf(this.app); // getLeaf("tab") creates a new tab rather than replacing an existing one.
-    await leaf.setViewState({ type: WORKFLOW_TAB, state: { area, lens, selected }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+  /** Workflow navigation stays in the one Workbench sidebar or optional pop-out. */
+  async showWorkflowInPanel(area        , lens        , selected        )                {
+    await this.openPanel();
+    await this.ensureIndex();
+    const panels = this.app.workspace.getLeavesOfType(PANEL) || [];
+    const panel = panels.find((leaf     ) => leaf.view?.app_?.setWorkflow);
+    if (!panel) throw new Error("MDSE Workbench panel could not be opened.");
+    if (selected && !this.ix?.notes.has(selected)) throw new Error("The selected engineering item is not in the model.");
+    panel.view.app_.setWorkflow(area, lens, selected);
+    this.app.workspace.revealLeaf(panel);
   }
   async openTable(lens        ) {
+    await this.openPanel();
     await this.ensureIndex();
-    // Never repurpose an existing table when the engineer opens a different function.
-    const leaf = mainLeaf(this.app);
-    await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    const panel = (this.app.workspace.getLeavesOfType(PANEL) || []).find((leaf     ) => leaf.view?.app_?.setLens);
+    if (!panel) throw new Error("MDSE Workbench panel could not be opened.");
+    panel.view.app_.setLens(lens);
+    this.app.workspace.revealLeaf(panel);
     this.syncSelection();
   }
   /** Open an isolated, read-only member-connection preview; the current editor and Canvas stay unchanged. */
@@ -7845,8 +7837,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || ""), popout: !!saved.popout };
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf     ) => new PanelView(leaf, this));
-    this.registerView(TABLE, (leaf     ) => new TableView(leaf, this));
-    this.registerView(WORKFLOW_TAB, (leaf     ) => new WorkflowTabView(leaf, this));
+    // Legacy table views are retired: tools navigate inside the Workbench panel.
+    this.app.workspace.detachLeavesOfType?.(TABLE);
+    this.app.workspace.detachLeavesOfType?.("mdse-workflow-tab"); // retire experimental workflow tabs on upgrade
     this.addRibbonIcon("network", "Open MDSE Workbench", () => this.openPanel());
     const noteOpen = (chk         , fn                  )          => { const f = this.app.workspace.getActiveFile(); if (!f || f.extension !== "md") return false; if (!chk) fn(f); return true; };
     const lensPick = (placeholder        , only                        , fn                     ) => new PickModal(this.app, placeholder, WB.LENSES.filter(([k]) => only(k)), (x     ) => x[1], (x     ) => fn(x[0])).open();
@@ -7860,7 +7853,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { this.registerEvent(this.app.workspace.on("canvas:edge-menu", (menu     , edge     ) => { const r = edge?.id ? WB.edgeRefOfId(String(edge.id)) : null; if (r) menu.addItem((i     ) => i.setTitle("Edit relationship (MDSE)").setIcon("pencil").onClick(() => this.editRelationship(r))); })); } catch { /* older Obsidian: the command still works */ }
     this.addCommand({ id: "refresh", name: "Refresh MDSE Workbench index", callback: async () => { this.files = await readVault(this.app); await this.rebuild(); } });
     this.addCommand({ id: "show-note", name: "Show current note in MDSE Workbench", checkCallback: (chk         ) => noteOpen(chk, async () => { await this.openPanel(); await this.ensureIndex(); this.syncSelection(); }) });
-    this.addCommand({ id: "table", name: "Open MDSE table in main window…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
+    this.addCommand({ id: "table", name: "Show MDSE table in Workbench…", callback: () => lensPick("Which table?", (k) => k !== "dashboard" && k !== "note", (l) => this.openTable(l)) });
     this.addCommand({ id: "canvas", name: "Preview canvas from current note", checkCallback: (chk         ) => noteOpen(chk, () => lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000)))) });
     this.addCommand({ id: "toggle-cards", name: "Collapse or expand the selected canvas cards", callback: () => this.cardActionOnSelected("toggle").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
     this.addCommand({ id: "collapse-layer", name: "Collapse one layer under the selected canvas cards", callback: () => this.cardActionOnSelected("collapseLayer").then((m) => new obsidian.Notice("MDSE: " + m, 6000), (e     ) => new obsidian.Notice("MDSE: " + String(e?.message ?? e), 8000)) });
@@ -7878,8 +7871,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
           const choices = (["document", "define", "structure", "verify"]         ).map((area) => ({
             area, lens: WB.WORKFLOW_ENTRY_LENS[area], label: area.charAt(0).toUpperCase() + area.slice(1),
           }));
-          new PickModal(this.app, "Open note in new MDSE workflow tab", choices, (x     ) => x.label,
-            (x     ) => { void this.openWorkflowTab(x.area, x.lens, f.path).catch((e     ) =>
+          new PickModal(this.app, "Show note in MDSE workflow", choices, (x     ) => x.label,
+            (x     ) => { void this.showWorkflowInPanel(x.area, x.lens, f.path).catch((e     ) =>
               new obsidian.Notice("MDSE: could not open workflow: " + String(e?.message ?? e), 8000)); }).open();
         } catch (e     ) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
       }));
