@@ -105,6 +105,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
   const outlineState = new Map<string, Set<string>>();                                    // collapsed row keys of each outline table, kept across redraws (D-0150)
+  const pages = new Map<string, number>(); // Workbench-only pagination, never a new editor tab
   const secs = new Map<string, boolean>();                                                // open/closed state of each folding section, kept across redraws
   function sec(key: string, title: string, body: Child[], o: { count?: number | string; open?: boolean } = {}): HTMLElement {
     const k = lens + ":" + key, d = h("details", { class: "sec", open: secs.get(k) ?? o.open ?? true }, h("summary", {}, title, o.count !== undefined ? h("span", { class: "mut" }, ` (${o.count})`) : null), ...body);
@@ -129,6 +130,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const ol = t.outline && first ? OL.buildOutline(t.rows.map((r) => { const c = r[first], one = c && typeof c === "object" && !Array.isArray(c) ? c : null; return { level: lvlOf(r), id: one?.path ?? cellText(c).replace(/^\u00a0+/, ""), notice: one?.cls === "gap" }; })) : null;
     const folded = (): Set<string> => outlineState.get(okey) ?? new Set<string>();
     const tbody = h("tbody", {}), moreEl = h("div", { class: "more" }), status = h("span", { class: "mut" });
+    const pageKey = [lens, sel, t.id, scope, table, text, tree].join("|");
+    const pageControls = h("div", { class: "row", style: "display:flex;gap:8px;align-items:center" });
     const rowEl = (i: number): HTMLElement => {
       const r = t.rows[i]!;
       return h("tr", {}, tickable ? tick(r) : null, ...cols.map((c, ci) => h("td", {}, ol && ci === 0 ? outlineCell(i, r[c.key]) : cellNode(r[c.key]))));
@@ -140,11 +143,21 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       return h("span", { class: "olc", style: `padding-left:${o.level[i]! * 14}px` }, tg, cellNode(label), !open ? h("span", { class: "mut" }, ` (+${parts})`) : null);
     };
     function paint(): void {
-      const vis = ol ? OL.visibleRows(ol, folded()) : t.rows.map((_, i) => i), shown = vis.slice(0, CAP);
+      const vis = ol ? OL.visibleRows(ol, folded()) : t.rows.map((_, i) => i);
+      const count = Number.isFinite(CAP) ? Math.max(1, Math.ceil(vis.length / CAP)) : 1;
+      const page = Math.min(pages.get(pageKey) ?? 0, count - 1);
+      pages.set(pageKey, page);
+      const shown = vis.slice(page * CAP, (page + 1) * CAP);
       tbody.replaceChildren(...shown.map(rowEl));
-      moreEl.textContent = vis.length > shown.length ? (compact ? `\u2026 ${vis.length - shown.length} more. Open the table in the main window to see all ${vis.length}.` : `\u2026 ${vis.length - shown.length} more rows not drawn (limit ${CAP}). Fold assemblies or use Show to level to reach them; Export CSV has every row.`) : "";
+      moreEl.textContent = compact && count > 1 ? `Page ${page + 1} of ${count} · ${vis.length} accessible rows` : "";
       moreEl.style.display = moreEl.textContent ? "" : "none";
       if (ol) status.textContent = vis.length === t.rows.length ? `${t.rows.length} rows` : `${vis.length} of ${t.rows.length} rows shown`;
+      pageControls.replaceChildren();
+      if (compact && count > 1) {
+        const previous = h("button", { class: "sm", disabled: page === 0 || undefined, onclick: () => { pages.set(pageKey, page - 1); paint(); } }, "Previous page");
+        const next = h("button", { class: "sm", disabled: page >= count - 1 || undefined, onclick: () => { pages.set(pageKey, page + 1); paint(); } }, "Next page");
+        pageControls.append(previous, next);
+      }
     }
     if (ol && ol.max > 0) {
       const levels = h("select", { "aria-label": "Show down to level", title: "Show the parts down to this level and fold everything below", onchange: (e: Event) => { const el = e.target as HTMLSelectElement, n = Number(el.value); el.value = ""; if (n) { outlineState.set(okey, OL.collapseFromLevel(ol, n)); paint(); } } }, h("option", { value: "" }, "Show to level\u2026"), ...Array.from({ length: ol.max }, (_, k) => h("option", { value: String(k + 1) }, k + 1 === ol.max ? `Level ${k + 1} (all)` : `Level ${k + 1}`)));
@@ -154,8 +167,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         levels, status));
     }
     box.append(h("table", {}, h("thead", {}, h("tr", {}, tickable ? h("th", { title: "Tick the notes to put on the canvas" }, "+") : null, ...cols.map((c) => h("th", {}, c.label)))), tbody));
-    box.append(moreEl); paint();
-    if (!compact) box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
+    box.append(moreEl, pageControls); paint();
+    box.append(h("button", { class: "sm", onclick: () => download(`${t.id}.csv`, [t.columns.filter((c) => c.label).map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.filter((c) => c.label).map((c) => csvCell(cellText(r[c.key]))).join(","))].join("\n")) }, "Export CSV"));
     return t.title ? wrapSec() : box;
   }
 
