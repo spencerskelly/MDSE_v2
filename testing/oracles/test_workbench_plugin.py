@@ -256,6 +256,52 @@ class WorkbenchPlugin(unittest.TestCase):
             browser.close()
         self.assertEqual(errors, [])
 
+    def test_cross_type_term_discovery_groups_notes_and_opens_fresh_canvas_without_linking(self):
+        def record(label, kind, content, suffix):
+            return f"---\\ntype: {kind}\\nuid: 20261120220911{suffix}\\nname: {label}\\nstatus: Draft\\n---\\n# {label}\\n\\n{content}\\n"
+        notes = {
+            "20/REQ.md": record("Battery Cooling", "Requirement", "The battery cooling fan shall stop at 60 C.", "req"),
+            "40/VER.md": record("Cooling verification", "Verification", "Test the battery cooling fan and record shutdown.", "ver"),
+            "30/OBJ.md": record("Cooling Fan", "Object", "Mechanical battery cooling fan motor.", "obj"),
+        }
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "20/REQ.md")
+            pg.wait_for_selector("header >> text=Battery Cooling")
+            pg.select_option("select[aria-label='Workflow opening behavior']", "current")
+            pg.select_option("select.fn", label="Find shared terms")
+            pg.wait_for_selector(".term-suggestions button:has-text('cooling')")
+            pg.click(".term-suggestions button:has-text('cooling')")
+            pg.wait_for_function("() => document.querySelectorAll('.term-hit').length === 3")
+            self.assertEqual(pg.locator(".term-hit").count(), 3)
+            self.assertIn("Requirement", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Verification", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Object", pg.locator(".term-discovery").inner_text())
+            pg.click("button:has-text('Select displayed')")
+            pg.wait_for_selector("text=3 selected")
+            old = pg.evaluate("JSON.stringify(window.__notes)")
+            pg.click("button:has-text('New grouped Canvas')")
+            pg.wait_for_function("() => Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
+            canvas_file = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
+            canvas = json.loads(pg.evaluate("p => window.__files[p]", canvas_file))
+            self.assertEqual(len({n.get('file') for n in canvas['nodes'] if n['type'] == 'file'}), 3)
+            self.assertEqual(len(canvas['edges']), 0, "matching words must not invent model relationships")
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), old)
+            self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.lens()"), "terms")
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
