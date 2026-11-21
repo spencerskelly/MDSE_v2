@@ -149,6 +149,30 @@ class VaultUpdateBrowser(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+    def test_nonempty_nonvault_folder_cannot_be_initialized_by_maintenance_update(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True)
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.evaluate("""async () => {
+              const root = await navigator.storage.getDirectory();
+              await root.removeEntry('.vault.yaml'); await root.removeEntry('.obsidian', {recursive: true});
+            }""")
+            pg.click("#pick")
+            self.assertIn("no vault yet", pg.inner_text("#vaultStatus"))
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Preview blocked')")
+            self.assertIn("existing files but no vault marker", pg.inner_text("#updStatus"))
+            self.assertIsNone(pg.evaluate("window.__read('.vault.yaml')"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            b.close()
+        self.assertEqual(errors, [])
+
     def test_preview_rejects_external_edit_or_new_occupied_backup_without_writes(self):
         errors = []
         with sync_playwright() as pw:
