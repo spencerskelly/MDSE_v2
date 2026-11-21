@@ -6140,6 +6140,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                                                                     
                                        
                   
+                               
                                                       
  
 
@@ -6966,6 +6967,7 @@ function mountPanel(root             , host           , opt                     
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     refresh() { draw(); },
+    reloadCanvasIncluded() { if (ix && (lens === "note" || ADDABLE.has(lens))) loadIncluded(lens + "|" + sel, true); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
@@ -7622,6 +7624,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
     if (key === this.canvasKey) return;
     this.canvasKey = key;
+    this.apps.forEach((app     ) => app.reloadCanvasIncluded?.());
     clearTimeout(this.discoveryTimer);
     ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a     ) => a.setCanvasSelection?.([])); return; }
@@ -7724,6 +7727,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     try { await t.leaf?.view?.save?.(); } catch { /* an older canvas view without save */ }
     const f = this.app.vault.getAbstractFileByPath(t.path);
     if (f) await this.app.vault.process(f, (x        ) => fn(x) ?? x);
+    this.apps.forEach((app     ) => app.reloadCanvasIncluded?.());
   }
   /** D-0091: re-read the vault, then bring the open canvas's note cards and Workbench lines up to date with it. */
   async refreshCanvasView()                  {

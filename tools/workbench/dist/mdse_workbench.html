@@ -6147,6 +6147,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                                                                     
                                        
                   
+                               
                                                       
  
 
@@ -6973,6 +6974,7 @@ function mountPanel(root             , host           , opt                     
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     refresh() { draw(); },
+    reloadCanvasIncluded() { if (ix && (lens === "note" || ADDABLE.has(lens))) loadIncluded(lens + "|" + sel, true); },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
