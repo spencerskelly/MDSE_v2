@@ -44,6 +44,7 @@ declare const WB: {
   PROFILES: Array<{ name: string; description: string }>; LENSES: Array<[string, string]>; LENS_PROFILE: Record<string, string>; lensHasCanvas: (l: string) => boolean;
   uniqueCanvas: (ix: any, a: string, b: string) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string };
   internalCanvas: (ix: any, path: string, inherit?: string[]) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string; placeholders?: number };
+  memberConnectionCanvas: (ix: any, owner: string, key: string, limit?: number) => { doc: unknown; fileName: string; notes: number; unresolved: number; capped: boolean; groups: number; saveFolder?: string };
 };
 const obsidian = require("obsidian");
 const PANEL = "mdse-panel", TABLE = "mdse-table", WORKFLOW_TAB = "mdse-workflow-tab", OLD_VIEW = "mdse-workbench";
@@ -376,6 +377,7 @@ function hostFor(plugin: any): any {
     openWorkflow: (area: string, lens: string, selected: string) => plugin.openWorkflowTab(area, lens, selected),
     quickCreate: (templateId: string, selectedPath: string) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
+    openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
     keepSelectedDiscovery: () => plugin.changeSelectedDiscovery("keep"),
@@ -669,6 +671,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     await leaf.setViewState({ type: TABLE, state: { lens }, active: true });
     this.app.workspace.revealLeaf(leaf);
     this.syncSelection();
+  }
+  /** Open an isolated, read-only member-connection preview; the current editor and Canvas stay unchanged. */
+  async openMemberCanvas(owner: string, key: string): Promise<string> {
+    await this.ensureIndex();
+    if (!this.ix?.notes.has(owner)) throw new Error("The owning model note is not available.");
+    const projection = WB.memberConnectionCanvas(this.ix, owner, key);
+    const message = await writePreview(this, projection);
+    const count = projection.doc && (projection.doc as any).edges?.length || 0;
+    return `${message} Displayed ${count} explicit connection(s) for one SysML usage${projection.unresolved ? ` (${projection.unresolved} unresolved)` : ""}. This is a visual projection only; it does not create model notes or change the source.`;
   }
   /** D-0161: builds a canvas with no limit; over 50 elements the person is asked for a limit (up to 212) and it is built again within it. */
   askCanvasLimit(count: number): Promise<number | null> { return new Promise((resolve) => new LimitModal(this.app, count, resolve).open()); }
