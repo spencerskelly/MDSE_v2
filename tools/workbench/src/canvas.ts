@@ -405,6 +405,33 @@ export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, path
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
 }
 
+/** Reconcile inclusion only for a list's displayed scope. Outside cards, free text,
+ * groups and the coordinates of all retained cards are unchanged. Removing a card also
+ * removes its incident Canvas lines, but never mutates the authoritative SysML model. */
+export function updateIncludedCanvas(doc: CanvasDoc, ix: ModelIndex, scope: string[], checked: string[],
+  anchor: string | null = null, directChildren: string[] = []):
+  { doc: CanvasDoc; added: number; removed: number; unchanged: number } {
+  const allowed = new Set(scope.filter((p) => ix.notes.has(p)));
+  const desired = new Set(checked.filter((p) => allowed.has(p)));
+  const existing = new Set(doc.nodes.filter((n) => !isDiscoveryNode(n)).map(cardNotePath).filter((p): p is string => !!p));
+  const removedIds = new Set(doc.nodes.filter((n) => {
+    if (n.type === "group" || isDiscoveryNode(n)) return false;
+    const path = cardNotePath(n);
+    return !!path && allowed.has(path) && !desired.has(path);
+  }).map((n) => n.id));
+  const original: CanvasDoc = {
+    nodes: doc.nodes.filter((n) => !removedIds.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)).map((e) => ({ ...e })),
+  };
+  const missing = [...desired].filter((p) => !existing.has(p));
+  const child = missing.filter((p) => directChildren.includes(p)), rest = missing.filter((p) => !child.includes(p));
+  const placed = child.length && anchor ? addChildren(original, ix, anchor, child) : { doc: original, added: 0 };
+  const other = rest.length ? addToCanvas(placed.doc, ix, anchor, rest) : { doc: placed.doc, added: 0 };
+  const refreshed = refreshCanvas(other.doc, ix, { completeRelationships: true });
+  return { doc: refreshed.doc, added: placed.added + other.added, removed: removedIds.size,
+    unchanged: [...desired].filter((p) => existing.has(p)).length };
+}
+
 /** Collapse and expand (D-0094). The collapsed state lives on the card itself, as a last line "▸ +N hidden" (N = direct parts not on the canvas), so it survives saving and needs no sidecar. A card with no marker is expanded. */
 const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
 export const isCollapsed = (n: CanvasNode | undefined): boolean => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
