@@ -275,8 +275,8 @@ function unsafeFolderReason() {
   return "";
 }
 function refreshButtons() {
-  const ready = !!person && (!!source || !!bom) && !unsafeFolderReason();
-  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
+  const ready = !!person && (!!source || !!bom);
+  $("genCheck").disabled = !ready; $("genNew").disabled = !ready; $("genAdd").disabled = !(ready && vaultHandle && !unsafeFolderReason()); $("updPreview").disabled = !vaultHandle; $("bomScan").disabled = !(person && bom && vaultHandle && vaultExists); if ($("bomScan").disabled) $("bomApply").disabled = true; if (!vaultHandle) $("updApply").disabled = true;
   $("genHint").textContent = !person ? "Enter your name first." : !(source || bom) ? "Choose a QEAX or a BOM first." : "";
   $("st2").className = source || bom ? "done" : person ? "now" : ""; $("st3").className = vaultHandle ? "done" : (source || bom) ? "now" : "";
 }
@@ -697,7 +697,7 @@ $("updPreview").addEventListener("click", async () => {
     if (res.status === "NO_CHANGES") { $("updStatus").innerHTML = '<span class=ok>Vault configuration is already current. Nothing to do.</span>'; return; }
     pendingUpdate = { plan: res, root: vaultHandle };
     $("updApply").disabled = false; $("updStatus").innerHTML = `Ready: ${res.files.length} file(s) would be written (including ${s.backups} saved copies and an update note). Existing files will be backed up before replacement, and the preview is rechecked at Apply. Nothing has been written yet.`;
-  } catch (e) { reportFailure(e, "preview vault update"); }
+  } catch (e) { $("updStatus").textContent = "Preview blocked: " + (e.message || e); reportFailure(e, "preview vault update"); }
 });
 $("updApply").addEventListener("click", async () => {
   if (!pendingUpdate) return;
