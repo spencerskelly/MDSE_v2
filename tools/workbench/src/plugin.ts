@@ -735,8 +735,15 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const paths = this.selectedCardPaths(); if (!paths.length) return "Select one or more note cards on the canvas first.";
     const done = { collapsed: 0, expanded: 0, none: 0 }; let changed = 0, capped = false;
     await this.editTarget(t, (text) => {
-      let doc = parseDoc(text);
+      const original = parseDoc(text);
+      let doc = original;
       for (const p of paths) { const r = WB.cardAction(doc, this.ix, p, kind); doc = r.doc; done[r.action]++; changed += r.changed; capped = capped || r.capped; }
+      if (done.expanded) {
+        doc = WB.refreshCanvas(doc, this.ix, { completeRelationships: true }).doc;
+        const previous = new Set(original.edges.map((e: any) => e.id));
+        const rec = this.previews.get(t.path);
+        if (rec) for (const edge of doc.edges) if (!previous.has(edge.id)) rec.edgeIds.add(edge.id);
+      }
       return done.collapsed + done.expanded ? JSON.stringify(doc, null, 2) : null;
     });
     this.app.workspace.revealLeaf(t.leaf);
