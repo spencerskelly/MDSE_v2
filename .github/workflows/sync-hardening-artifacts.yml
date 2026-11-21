@@ -1,5 +1,5 @@
 name: Build and test cross-platform hardening (review only)
-# Rebuild after absent-file rollback recovery fix and browser regression corrections.
+# Rebuild after full missing-directory rollback handling for interrupted import files.
 
 on:
   push:
