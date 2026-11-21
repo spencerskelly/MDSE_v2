@@ -89,23 +89,34 @@ export function searchTermCatalog(c: TermCatalog, query: string, perType = 25, t
   if (postings.some((x) => !x)) return { terms, total: 0, groups: [], truncated: false };
   postings.sort((a, b) => a!.size - b!.size);
   const first = postings[0]!, totals = new Map<string, number>();
-  const ranked = new Map<string, TermEvidence[]>();
+  const ranked = new Map<string, Array<{ path: string; score: number; fields: TermField[] }>>();
+  const cap = Math.max(0, Math.floor(perType));
+  const compare = (a: { path: string; score: number }, b: { path: string; score: number }): number =>
+    b.score - a.score || a.path.localeCompare(b.path);
   for (const [path] of first) {
     const masks = postings.map((p) => p!.get(path));
     if (masks.some((m) => !m)) continue; // AND match: every requested term belongs to the same note
     const n = c.notes.get(path)!;
     if (typeFilter && n.type !== typeFilter) continue;
-    const score = masks.reduce((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m! & BIT[f]).map((f) => WEIGHT[f])), 0);
-    const fields = TERM_FIELDS.filter((field) => masks.some((m) => m! & BIT[field]));
-    const hits = ranked.get(n.type) ?? [];
-    hits.push({ path, type: n.type, fields, score,
-      excerpt: excerpt(n, terms[0]!, c.postings.get(terms[0]!)!.get(path)!) });
-    ranked.set(n.type, hits);
     totals.set(n.type, (totals.get(n.type) ?? 0) + 1);
+    if (!cap) continue;
+    const score = masks.reduce((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m! & BIT[f]).map((f) => WEIGHT[f])), 0);
+    const hits = ranked.get(n.type) ?? [];
+    const hit = { path, score, fields: TERM_FIELDS.filter((field) => masks.some((m) => m! & BIT[field])) };
+    // Bound the retained candidates per type: broad legacy searches must not
+    // materialize excerpts or sort 100,000 matching records on every query.
+    if (hits.length < cap || compare(hit, hits[hits.length - 1]!) < 0) {
+      let i = 0; while (i < hits.length && compare(hits[i]!, hit) <= 0) i++;
+      hits.splice(i, 0, hit);
+      if (hits.length > cap) hits.pop();
+      ranked.set(n.type, hits);
+    }
   }
-  const groups = [...ranked].map(([type, rows]) => ({
-    type, total: totals.get(type)!, matches: rows.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
-      .slice(0, Math.max(0, perType)),
+  const groups = [...totals].map(([type, total]) => ({
+    type, total,
+    matches: (ranked.get(type) ?? []).map((r): TermEvidence => ({
+      ...r, type, excerpt: excerpt(c.notes.get(r.path)!, terms[0]!, c.postings.get(terms[0]!)!.get(r.path)!),
+    })),
   })).sort((a, b) => b.total - a.total || a.type.localeCompare(b.type));
   const total = [...totals.values()].reduce((a, n) => a + n, 0);
   return { terms, total, groups, truncated: groups.some((g) => g.total > g.matches.length) };
