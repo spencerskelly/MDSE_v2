@@ -231,6 +231,14 @@ class WorkbenchPlugin(unittest.TestCase):
             before = pg.evaluate("p => JSON.parse(window.__files[p])", path)
             self.assertEqual(len(before["edges"]), 0, "seeded cards have no generated relationships")
             positions = [(n["id"], n["x"], n["y"]) for n in before["nodes"]]
+            # The harness has no real Obsidian Canvas view; attach the seeded file as the active Canvas.
+            pg.evaluate("""p => {
+                const view = {file:{path:p},getViewType:()=> 'canvas',containerEl:{isConnected:true},
+                    save:async()=>{},canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+            }""", path)
             msg = pg.evaluate("async () => await window.__plugin.addToCanvasPreview('10_Model/Assembly.md', ['10_Model/Part B.md'])")
             after = pg.evaluate("p => JSON.parse(window.__files[p])", path)
             self.assertIn("relationships refreshed automatically", msg)
