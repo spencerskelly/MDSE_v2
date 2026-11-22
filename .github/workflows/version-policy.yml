@@ -1,0 +1,32 @@
+name: Enforce MDSE component version increments
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Verify metadata and monotonic semantic versions
+        run: npm run check:versions
+      - name: Compare changed shipped code to its visible version
+        env:
+          MDSE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$MDSE_BASE_SHA" ] || [ "$MDSE_BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "No comparison base (manual dispatch or first push), metadata-only validation performed."
+          else
+            node scripts/check-versions.mjs --base "$MDSE_BASE_SHA"
+          fi
