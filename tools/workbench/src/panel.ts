@@ -828,11 +828,18 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       const found = V.search(ix, searchText, 21), limited = found.slice(0, 20);
       const target = host.activeCanvasPath?.() ?? null;
       const picked = (): string[] => [...searchPicked].filter((p) => ix!.notes.has(p));
+      // The Canvas can be switched or closed while search remains visible. Never silently
+      // create a new Canvas or modify a different tab from the one named in the UI.
+      const confirmTarget = (): boolean => {
+        if (target && host.activeCanvasPath?.() === target) return true;
+        msg = "Target Canvas changed or closed. Recheck the Canvas name and try again.";
+        draw(); return false;
+      };
       const count = h("span", { class: "mut" }, `${picked().length} selected`);
       const addSelected = h("button", { class: "sm pri", type: "button",
         disabled: !host.addToCanvas || !target || !picked().length || undefined,
         title: target ? `Add selected engineering notes to ${target} without replacing or rearranging existing cards` : "Open a Canvas tab before adding results",
-        onclick: () => { if (target && host.addToCanvas && picked().length) busy(addSelected, "Adding…", () => host.addToCanvas!("", picked())); }
+        onclick: () => { if (target && host.addToCanvas && picked().length && confirmTarget()) busy(addSelected, "Adding…", () => host.addToCanvas!("", picked())); }
       }, `Add ${picked().length} selected to Canvas`);
       const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
         ...limited.map((hit) => h("div", { class: "searchrow" },
@@ -856,7 +863,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
             title: target ? `Add this note to ${target}` : "Open a Canvas tab before adding results",
             "aria-label": `Add ${hit.title} to active Canvas`,
             onclick: (e: Event) => {
-              if (!target) return;
+              if (!confirmTarget()) return;
               const b = e.currentTarget as HTMLElement;
               busy(b, "Adding…", () => host.addToCanvas!("", [hit.path]));
             }
