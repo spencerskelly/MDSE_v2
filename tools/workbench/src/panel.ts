@@ -173,7 +173,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   };
   const cellText = (c: V.TableCell | undefined): string => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
-  let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
+  let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", partScope: "current" | "all" = "current", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let membershipLoading = false, membershipReady = false, membershipEpoch = 0;
   let membershipDirty = false, membershipApplying = false;
   let membershipContext = ""; let activeCanvasName: string | null = null;
@@ -358,6 +358,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       : membershipLoading ? "Reading Canvas inclusion…" : "Canvas inclusion unavailable");
     const mk = (label: string, title: string, go: () => Promise<string>): HTMLElement => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
     const fresh: HTMLElement[] = [];
+    if (lens === "structure" && root && V.viewIsPart(ix!.notes.get(root)!) && host.quickCreate) {
+      const state = V.viewPartLifecycle(ix!.notes.get(root)!);
+      const action = (label: string, id: string): HTMLElement => mk(label, "Preview and approve an engineering part lifecycle change; no existing BOM or modeled usage is rewritten.", () => host.quickCreate!(id, root));
+      fresh.push(action("Replace part…", "part-replacement"),
+        action(state === "obsolete" ? "Mark current…" : "Mark obsolete…", state === "obsolete" ? "part-current" : "part-obsolete"));
+    }
     if (kidsOf.length && host.addChildren) { const cb = h("button", { class: "sm pri", title: "Put every direct part of this assembly on the open canvas as one row below its card, joined bottom to top" }, `Add all ${kidsOf.length} children to canvas`); cb.addEventListener("click", () => busy(cb, "Adding…", () => host.addChildren!(root, kidsOf))); fresh.push(cb); }
     if (lens === "structure" && root && host.openStructureCanvas) fresh.push(
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
@@ -476,7 +482,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
   function scopeBar(): HTMLElement | null {
-    if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
+    if (lens === "structure") return h("div", { class: "chips" }, h("label", {}, "Vault parts: ", h("select", { "aria-label": "Part lifecycle filter", onchange: (e: Event) => { partScope = (e.target as HTMLSelectElement).value as typeof partScope; draw(); } }, h("option", { value: "current", selected: partScope === "current" }, "Current only"), h("option", { value: "all", selected: partScope === "all" }, "All, including proposed and obsolete"))), h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
     if (lens === "internal") return h("div", { class: "chips", style: "flex-wrap:wrap" }, h("span", { class: "mut" }, "Also show ports and parts inherited"), ...V.INHERIT_FROM.map(([k, group, label]) => h("label", { title: `${group}: ${label}` }, h("input", { type: "checkbox", "aria-label": `Inherit ${label}`, checked: inherit.includes(k), onchange: (e: Event) => { inherit = (e.target as HTMLInputElement).checked ? [...inherit, k] : inherit.filter((x) => x !== k); draw(); } }), ` ${group === "Assembly" ? (k === "parent" ? "parent assembly" : "child parts") : k === "general" ? "general" : "specific"} `, h("span", { class: "mut" }, group === "Assembly" ? "(assembly)" : "(specialization)"))));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
@@ -890,7 +896,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, partScope, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
