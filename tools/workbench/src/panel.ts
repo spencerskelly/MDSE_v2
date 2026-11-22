@@ -145,7 +145,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
   let workArea: "document" | "define" | "structure" | "verify" = opt.area ?? "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
   const searchPicked = new Set<string>(); // Persistent across global-search filters; independent of the active workflow/Canvas
-  let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
+  let table: "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
   const link = (p: string | null | undefined, label?: string, cls = ""): Node => {
@@ -292,7 +292,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const folded = (): Set<string> => outlineState.get(okey) ?? new Set<string>();
     const tbody = h("tbody", {}), moreEl = h("div", { class: "more" }), status = h("span", { class: "mut" });
     const pager = h("div", { class: "row", style: "display:flex;gap:8px;align-items:center" });
-    const pageKey = [lens, sel, t.id, scope, tree, table].join("|");
+    const pageKey = [lens, sel, t.id, tree, table].join("|");
     const rowEl = (i: number): HTMLElement => {
       const r = t.rows[i]!;
       return h("tr", {}, tickable ? tick(r) : null, ...cols.map((c, ci) => h("td", {}, ol && ci === 0 ? outlineCell(i, r[c.key]) : cellNode(r[c.key]))));
@@ -492,12 +492,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   }
   const chip = (label: string, on: boolean, fn: (v: boolean) => void): HTMLElement => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e: Event) => { fn((e.target as HTMLInputElement).checked); draw(); } }), " " + label);
   function scopeBar(): HTMLElement | null {
-    if (lens === "structure") return h("div", { class: "chips" }, h("label", {}, "Vault parts: ", h("select", { "aria-label": "Part lifecycle filter", onchange: (e: Event) => { partScope = (e.target as HTMLSelectElement).value as typeof partScope; draw(); } }, h("option", { value: "current", selected: partScope === "current" }, "Current only"), h("option", { value: "all", selected: partScope === "all" }, "All, including proposed and obsolete"))), h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
+    if (lens === "structure") return h("div", { class: "chips" }, h("label", {}, "Related-part lifecycle: ", h("select", { "aria-label": "Part lifecycle filter", onchange: (e: Event) => { partScope = (e.target as HTMLSelectElement).value as typeof partScope; draw(); } }, h("option", { value: "current", selected: partScope === "current" }, "Current only"), h("option", { value: "all", selected: partScope === "all" }, "All, including proposed and obsolete"))), h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e: Event) => { tree = (e.target as HTMLSelectElement).value as typeof tree; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
     if (lens === "internal") return h("div", { class: "chips", style: "flex-wrap:wrap" }, h("span", { class: "mut" }, "Also show ports and parts inherited"), ...V.INHERIT_FROM.map(([k, group, label]) => h("label", { title: `${group}: ${label}` }, h("input", { type: "checkbox", "aria-label": `Inherit ${label}`, checked: inherit.includes(k), onchange: (e: Event) => { inherit = (e.target as HTMLInputElement).checked ? [...inherit, k] : inherit.filter((x) => x !== k); draw(); } }), ` ${group === "Assembly" ? (k === "parent" ? "parent assembly" : "child parts") : k === "general" ? "general" : "specific"} `, h("span", { class: "mut" }, group === "Assembly" ? "(assembly)" : "(specialization)"))));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
-    return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
-      lens === "tables" ? h("select", { "aria-label": "Table", onchange: (e: Event) => { table = (e.target as HTMLSelectElement).value as typeof table; draw(); } }, ...([["relationships", "Relationships"], ["usages", "Usages"], ["notes", "All notes"]] as const).map(([v, l]) => h("option", { value: v, selected: v === table }, l))) : null,
-      lens === "tables" ? h("input", { type: "search", placeholder: "filter", value: text, style: "width:110px", onchange: (e: Event) => { text = (e.target as HTMLInputElement).value; draw(); } }) : null);
+    // Every workflow table is rooted in the selected engineering note. A vault-wide
+    // scope would introduce unrelated records without an engineer selecting them.
+    return lens === "tables"
+      ? h("div", { class: "chips" },
+          h("span", { class: "mut" }, "Selected element and its relationships"),
+          h("select", { "aria-label": "Table", onchange: (e: Event) => { table = (e.target as HTMLSelectElement).value as typeof table; draw(); } },
+            ...([["relationships", "Relationships"], ["usages", "Usages"]] as const).map(([v, l]) => h("option", { value: v, selected: v === table }, l))),
+          h("input", { type: "search", placeholder: "filter relationships", value: text, style: "width:140px",
+            onchange: (e: Event) => { text = (e.target as HTMLInputElement).value; draw(); } }))
+      : h("div", { class: "mut" }, "Showing only functions or requirements related to the selected element. Use Search to add unrelated notes to a Canvas.");
   }
   function reviewView(): HTMLElement {
     const items = V.reviewQueue(ix!), cats = new Map<string, number>(); for (const i of items) cats.set(i.category, (cats.get(i.category) ?? 0) + 1);
@@ -957,7 +964,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, partScope, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { table, text, tree, partScope, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));

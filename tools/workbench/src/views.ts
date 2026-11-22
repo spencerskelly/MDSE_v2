@@ -598,7 +598,7 @@ export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string; /** D-0150: rows are depth-first and each has a `level`; the first column's cell can be folded and unfolded */ outline?: boolean }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; partScope?: "current" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
+export interface LensOptions { /** Legacy scope is accepted but ignored: workflow tables never traverse the entire vault. */ scope?: "selected" | "all"; partScope?: "current" | "all"; table?: "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
 
 /** Part lifecycle is independent of note review status. Legacy parts with no field remain
  * current until specifically classified; proposed replacements are visible under All. */
@@ -612,7 +612,7 @@ export function viewIsPart(n: Note): boolean {
   return n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
 }
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
-  const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
+  const has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
   const out: TableData[] = [];
   if (lens === "structure") {
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
@@ -634,17 +634,6 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
-    const registry = [...ix.notes.values()].filter(viewIsPart)
-      .filter((p) => o.partScope === "all" || viewPartLifecycle(p) === "current")
-      .sort((a, b) => a.title.localeCompare(b.title));
-    out.push({ id: "part-registry", title: o.partScope === "all" ? "All parts in vault" : "Current parts in vault",
-      columns: [{ key: "part", label: "Part", wide: true }, { key: "pn", label: "Part number" },
-        { key: "lifecycle", label: "Lifecycle" }, { key: "replacement", label: "Replaced by / replaces" }],
-      rows: registry.map((p) => ({ part: C(ix, p.path), pn: String(p.meta.partNumber ?? ""),
-        lifecycle: viewPartLifecycle(p), replacement: [p.meta.replacedBy ? "→ " + String(p.meta.replacedBy) : "",
-          p.meta.replaces ? "← " + String(p.meta.replaces) : ""].filter(Boolean).join(" ") })),
-      empty: "No parts match this lifecycle filter.",
-      note: "Lifecycle is separate from note status. A part remains in historical structure and BOM references even after it is obsolete." });
   } else if (lens === "compare") {
     if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
     const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)! : null;
@@ -698,26 +687,23 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     out.push({ id: "transitions", title: "Transitions", columns: [{ key: "from", label: "From" }, { key: "to", label: "To" }, { key: "trigger", label: "Trigger (accept)", wide: true }, { key: "guard", label: "Guard (if)", wide: true }, { key: "effect", label: "Effect (do)", wide: true }],
       rows: f.edges.map((e) => { const g = f.guards.find((x) => x.from === e.from && x.to === e.to); return { from: e.from, to: e.to, trigger: g?.trigger ?? "", guard: g?.guard ?? "", effect: g?.effect ?? "" }; }), empty: "No transitions.", note: f.unresolved.length ? "Not drawn: " + f.unresolved.join("; ") : "" });
   } else if (lens === "functional") {
-    const all = functionalTrace(ix), rows = scope === "selected" && has ? all.filter((r) => funcRelated(r, sel)) : all;
-    out.push({ id: "functional", title: scope === "selected" && has ? `Functional trace around ${n!.title}` : "Functional trace (all functions)", columns: [{ key: "fn", label: "Function" }, { key: "by", label: "Performed by" }, { key: "sat", label: "Satisfies" }, { key: "ver", label: "Verified by", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "act", label: "Actions", wide: true }, { key: "gaps", label: "Gaps" }],
-      rows: rows.map((r) => ({ fn: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, by: Cs(ix, r.performedBy), sat: [...Cs(ix, r.satisfies), ...Cs(ix, r.satisfiesViaPerformer).map((c) => ({ ...c, text: c.text + " (via performer)" }))], ver: Cs(ix, r.verifiedBy), alloc: Cs(ix, r.allocatedTo), act: r.actions.join(", "), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No functions are related to this note." : "No Behavior notes in the vault.",
-      note: `${all.length} function(s) in the vault; ${all.filter((r) => r.gaps.length).length} with gaps.` });
+    const all = has ? functionalTrace(ix) : [], rows = has ? all.filter((r) => funcRelated(r, sel)) : [];
+    out.push({ id: "functional", title: has ? `Functional trace around ${n!.title}` : "Functional trace", columns: [{ key: "fn", label: "Function" }, { key: "by", label: "Performed by" }, { key: "sat", label: "Satisfies" }, { key: "ver", label: "Verified by", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "act", label: "Actions", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ fn: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, by: Cs(ix, r.performedBy), sat: [...Cs(ix, r.satisfies), ...Cs(ix, r.satisfiesViaPerformer).map((c) => ({ ...c, text: c.text + " (via performer)" }))], ver: Cs(ix, r.verifiedBy), alloc: Cs(ix, r.allocatedTo), act: r.actions.join(", "), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has ? "No functions are related to this note. Use Search to find unrelated elements." : "Select a governed engineering note to see its related functions.",
+      note: `${rows.length} function(s) related to the selected element; ${rows.filter((r) => r.gaps.length).length} with gaps.` });
   } else if (lens === "requirements") {
-    const t = traceMatrix(ix), rows = scope === "selected" && has ? t.rows.filter((r) => traceRelated(r, sel)) : t.rows;
-    out.push({ id: "requirements", title: scope === "selected" && has ? `Requirements trace around ${n!.title}` : "Requirements trace (all requirements)", columns: [{ key: "req", label: "Requirement" }, { key: "sub", label: "Subtype" }, { key: "txt", label: "Text", wide: true }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
-      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, sub: r.subtype, txt: r.text, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has && scope === "selected" ? "No requirements are related to this note." : "No requirements in the vault.",
-      note: `${t.total} requirement(s): ${t.satisfied} satisfied, ${t.verified} verified.` });
+    const t = has ? traceMatrix(ix) : null, rows = t ? t.rows.filter((r) => traceRelated(r, sel)) : [];
+    out.push({ id: "requirements", title: has ? `Requirements trace around ${n!.title}` : "Requirements trace", columns: [{ key: "req", label: "Requirement" }, { key: "sub", label: "Subtype" }, { key: "txt", label: "Text", wide: true }, { key: "sat", label: "Satisfied by" }, { key: "ver", label: "Verified by" }, { key: "from", label: "Derived from", wide: true }, { key: "der", label: "Derives", wide: true }, { key: "alloc", label: "Allocated to", wide: true }, { key: "gaps", label: "Gaps" }],
+      rows: rows.map((r) => ({ req: { text: (r.id ? r.id + "  " : "") + r.title, path: r.path } as Cell, sub: r.subtype, txt: r.text, sat: Cs(ix, r.satisfiedBy), ver: Cs(ix, r.verifiedBy), from: Cs(ix, r.derivedFrom), der: Cs(ix, r.derives), alloc: Cs(ix, r.allocatedTo), gaps: { text: r.gaps.join(", "), cls: r.gaps.length ? "gap" : "" } }) as unknown as Record<string, TableCell>), empty: has ? "No requirements are related to this note. Use Search to find unrelated elements." : "Select a governed engineering note to see its related requirements.",
+      note: `${rows.length} requirement(s) related to the selected element.` });
   } else if (lens === "tables") {
-    const which = o.table ?? "relationships";
-    if (which === "notes") {
-      const rows = tableRows(ix, { ...(o.text ? { text: o.text } : {}), sort: "id" });
-      out.push({ id: "notes", title: "Notes", columns: [{ key: "id", label: "Id" }, { key: "file", label: "File" }, { key: "title", label: "Title" }, { key: "type", label: "Type" }, { key: "status", label: "Status" }, { key: "folder", label: "Folder", wide: true }, { key: "flags", label: "Flags" }, { key: "dangling", label: "Unresolved", wide: true }], rows: rows.map((r) => ({ id: r.id, file: r.file, title: { text: r.title, path: r.path } as Cell, type: r.type + (r.subtype ? "/" + r.subtype : ""), status: r.status, folder: r.folder, flags: String(r.flags || ""), dangling: String(r.dangling || "") })), empty: "No notes match." });
-    } else if (which === "usages") {
+    const which = o.table === "usages" ? "usages" : "relationships";
+    if (which === "usages") {
       const u = n?.def?.usages ?? [];
       out.push({ id: "usages", title: n ? `Usages in ${n.title}` : "Usages", columns: [{ key: "kind", label: "Kind" }, { key: "name", label: "Name" }, { key: "type", label: "Type" }, { key: "mult", label: "Multiplicity" }], rows: u.map((x) => ({ kind: (x.dir ? x.dir + " " : "") + x.kind, name: x.name, type: x.type ? ({ text: ix.bySymbol.get(x.type) ? nm(ix, ix.bySymbol.get(x.type)!, x.type) : x.type + " (not in vault)", path: ix.bySymbol.get(x.type) ?? null } as Cell) : { text: "untyped", cls: "gap" } as Cell, mult: x.mult ?? "" })), empty: n ? "No usages." : "Select a note." });
     } else {
-      const rows = relationshipRows(ix, [], o.text ?? "").filter((r) => !sel || scope === "all" || r.from === sel || r.to === sel);
-      out.push({ id: "relationships", title: sel && scope === "selected" ? `Relationships of ${n?.title ?? "note"}` : "All relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }, { key: "edit", label: "" }], rows: rows.map((r) => ({ edit: r.ref ? { text: "Edit", action: r.ref } as Cell : "", from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" } as Cell : { text: r.fromTitle, path: r.from } as Cell, kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to } as Cell : { text: r.toTitle + " (not in vault)", cls: "gap" } as Cell, label: r.label })), empty: "No relationships." });
+      const rows = has ? relationshipRows(ix, [], o.text ?? "").filter((r) => r.from === sel || r.to === sel) : [];
+      out.push({ id: "relationships", title: n ? `Relationships of ${n.title}` : "Relationships", columns: [{ key: "from", label: "From" }, { key: "kind", label: "Kind" }, { key: "to", label: "To" }, { key: "label", label: "Label", wide: true }, { key: "edit", label: "" }], rows: rows.map((r) => ({ edit: r.ref ? { text: "Edit", action: r.ref } as Cell : "", from: r.from === null ? { text: r.fromTitle + " (not in vault)", cls: "gap" } as Cell : { text: r.fromTitle, path: r.from } as Cell, kind: r.kind, to: r.resolved || r.from === null ? { text: r.toTitle, path: r.to } as Cell : { text: r.toTitle + " (not in vault)", cls: "gap" } as Cell, label: r.label })), empty: has ? "No relationships of this element. Use Search to add unrelated notes." : "Select a governed engineering note to see its relationships." });
     }
   }
   return out;

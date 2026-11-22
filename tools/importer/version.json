@@ -1,6 +1,12 @@
 {
-  "version": "0.11.1",
+  "version": "0.11.2",
   "history": [
+    {
+      "version": "0.11.2",
+      "date": "2026-11-22",
+      "status": "candidate",
+      "summary": "Context-only workflow projections; unrelated elements are introduced explicitly through vault Search and Canvas addition."
+    },
     {
       "version": "0.11.1",
       "date": "2026-11-21",

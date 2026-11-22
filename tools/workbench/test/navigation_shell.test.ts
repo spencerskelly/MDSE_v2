@@ -160,3 +160,18 @@ test("Canvas tab changes refresh search destination without resetting an active 
   assert.match(pluginSource, /panel\.lens\?\.\(\) !== "edit"/);
   assert.match(pluginSource, /panel\.refresh\?\.\(\)/);
 });
+
+
+test("all workflow lenses are context-scoped; unlinked elements use Search", () => {
+  const panel = fs.readFileSync(new URL("../src/panel.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(panel, /everything in the vault/);
+  assert.doesNotMatch(panel, /\["notes", "All notes"\]/);
+  assert.doesNotMatch(panel, /scope = "all"/);
+  assert.match(panel, /Search to add unrelated notes to a Canvas/);
+  assert.match(panel, /"Add selected to current Canvas"/);
+  assert.match(panel, /"Select shown"/);
+  assert.match(panel, /selected to Canvas/);
+  const views = fs.readFileSync(new URL("../src/views.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(views, /id: "part-registry"/);
+  assert.doesNotMatch(views, /title: "All relationships"/);
+});

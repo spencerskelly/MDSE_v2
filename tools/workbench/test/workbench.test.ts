@@ -305,18 +305,32 @@ test("status choices include the vocabulary in use plus Draft and Retired", () =
   assert.equal(new Set(c).size, c.length);
 });
 
-test("lens tables: every lens that has a table returns well-formed data; scope switches between note and vault", () => {
-  const sel = [...ix.notes.keys()][0];
+test("workflow tables never fall back to the whole vault, even with legacy all scope", () => {
+  const sel = byTitle("Charger");
   for (const [lens] of V.LENSES) {
-    if (!V.lensHasTable(lens) || lens === "review") continue;   // Review is drawn by the panel itself
-    for (const scope of ["selected", "all"] as const) {
-      const ts = V.lensTables(ix, lens, sel, { scope });
-      assert.ok(ts.length > 0, lens);
-      for (const t of ts) for (const r of t.rows) for (const c of t.columns) assert.ok(c.key in r || true);
-    }
+    if (!V.lensHasTable(lens) || lens === "review") continue;
+    const ts = V.lensTables(ix, lens, sel);
+    assert.ok(ts.length > 0, lens);
+    for (const t of ts) for (const r of t.rows) for (const c of t.columns)
+      assert.ok(c.key in r || true);
+    assert.deepEqual(V.lensTables(ix, lens, sel, { scope: "all" }), ts,
+      "legacy all-scope must not broaden workflow " + lens);
   }
-  const all = V.lensTables(ix, "tables", sel, { scope: "all", table: "notes" })[0].rows.length;
-  assert.equal(all, ix.notes.size);
+
+  for (const lens of ["functional", "requirements", "tables"] as const) {
+    const results = V.lensTables(ix, lens, "");
+    assert.ok(results.every((t) => t.rows.length === 0), lens + " requires a selected note");
+  }
+  const tables = V.lensTables(ix, "tables", sel, { table: "relationships", scope: "all" });
+  assert.ok(tables[0]!.rows.every((r) => {
+    const from = r.from as V.Cell, to = r.to as V.Cell;
+    return from.path === sel || to.path === sel;
+  }), "every relationship row must touch the selected note");
+  assert.equal(V.lensTables(ix, "tables", sel, { table: "notes" as any })[0]!.id,
+    "relationships", "legacy All notes mode must not enumerate the vault");
+  assert.ok(!V.lensTables(ix, "structure", sel).some((t) => t.id === "part-registry"),
+    "Structure must not embed an unrelated global parts registry");
+  assert.ok(V.lensTables(ix, "tables", sel, { table: "usages" })[0]!.id === "usages");
 });
 
 test("functional trace lists behaviors with their gaps", () => {
