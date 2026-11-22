@@ -153,3 +153,10 @@ test("Canvas search action adds multiple notes to the named Canvas without repla
   assert.equal(output.nodes.length, 3);
   assert.deepEqual(output.nodes[0], existing.nodes[0]);
 });
+
+
+test("Canvas tab changes refresh search destination without resetting an active edit form", () => {
+  assert.match(pluginSource, /workspace\.on\("active-leaf-change"/);
+  assert.match(pluginSource, /panel\.lens\?\.\(\) !== "edit"/);
+  assert.match(pluginSource, /panel\.refresh\?\.\(\)/);
+});
