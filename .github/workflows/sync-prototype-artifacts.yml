@@ -1,12 +1,12 @@
-name: Sync prototype generated artifacts (review branch only)
+name: Sync context-scoped Workbench candidate
 
 # One-shot build triggered only by adding or changing this workflow itself.
-# Re-synchronize paired artifacts for reviewed cross-type term connection discovery (2026-11-20).
+# Re-synchronize Workbench and paired importer for context-only workflow candidate.
 # The build commit changes dist/*, not this workflow, so it does not rerun.
 on:
   push:
     branches:
-      - ux/pass08-workarea-prototype-20261119
+      - feat/context-scoped-workflows-20261122
     paths:
       - .github/workflows/sync-prototype-artifacts.yml
 
@@ -14,12 +14,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: mdse-ux-prototype-artifact-sync
+  group: mdse-context-workflow-artifact-sync
   cancel-in-progress: false
 
 jobs:
   synchronize-generated-artifacts:
-    if: github.repository == 'spencerskelly/MDSE_v2' && github.ref == 'refs/heads/ux/pass08-workarea-prototype-20261119'
+    if: github.repository == 'spencerskelly/MDSE_v2' && github.ref == 'refs/heads/feat/context-scoped-workflows-20261122'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
