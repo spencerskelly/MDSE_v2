@@ -1,7 +1,7 @@
 {
   "name": "mdse",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Markdown Systems Engineering: rules, schemas and tools for an Obsidian vault backed by SysML v2 text.",
   "engines": {
     "node": ">=22"
@@ -24,6 +24,7 @@
     "check:workbench": "node tools/workbench/build.mjs --check",
     "build": "npm run build:workbench && npm run build:importer",
     "check:ea-paths": "node scripts/build-ea-paths.mjs",
-    "ea-paths:write": "node scripts/build-ea-paths.mjs --write"
+    "ea-paths:write": "node scripts/build-ea-paths.mjs --write",
+    "check:versions": "node scripts/check-versions.mjs"
   }
 }
