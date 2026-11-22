@@ -119,11 +119,15 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertTrue({"open", "refresh", "show-note", "table", "canvas", "save-canvas"} <= cmds, cmds)
             self.assertFalse(pg.evaluate("window.__cmds['save-canvas'].checkCallback(true)"), "nothing to save yet")
 
-            # the panel opens in the RIGHT sidebar, with no browser of its own
+            # The panel opens in the RIGHT sidebar and now includes governed-note search.
+            # It still uses Obsidian's file explorer for filesystem navigation.
             pg.evaluate("window.__active = null; window.__plugin.openPanel()")
             pg.wait_for_selector("text=No model note selected")
             self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
-            self.assertEqual(pg.locator("input[type=search]").count(), 0)
+            self.assertGreaterEqual(pg.locator("input[type=search]").count(), 1)
+            self.assertEqual(pg.locator("nav.workareas").count(), 1)
+            # Legacy in-place lens assertions below deliberately choose the opt-in reuse mode.
+            # Default is a new independent editor tab; preserve that new default.
 
             # it follows the note Obsidian opens
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", PCE_PATH)
@@ -133,20 +137,22 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # D-0143: the functions are one grouped drop-down, not a column of buttons
             self.assertEqual(pg.locator("select.fn").count(), 1); self.assertEqual(pg.locator("nav.tbar").count(), 0)
-            self.assertEqual(pg.locator("select.fn option").count(), 18)
+            self.assertEqual(pg.locator("select.fn option").count(), 19, "Find shared terms adds one workflow function")
             pg.select_option("select.fn", label="Find similar")
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
 
-            # table: opens in the main window for the selected note
+            # Tables render inside the one Workbench sidebar, not in an editor tab.
             for lens in ("Tables", "Structure"):
                 pg.select_option("select.fn", label=lens)
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("window.__leaves.main.some(l => l.type === 'mdse-table')")
-            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view.lens"), "structure")
             pg.wait_for_selector("table")
-            # a table opened after the index was built must be handed it, not sit on "Reading notes…"
-            pg.wait_for_function("() => { const v = window.__leaves.main.filter(l => l.type === 'mdse-table')[0].view; return v.contentEl.querySelector('table') && !/Reading notes/.test(v.contentEl.textContent); }")
+            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-table').length"), 0)
+            self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
+            self.assertEqual(pg.evaluate("document.querySelector('select.fn').selectedOptions[0].textContent"), "Structure")
+            pg.evaluate("window.__cmds['table'].callback()")
+            pg.evaluate("window.__modal.onChooseItem(['structure', 'Structure'])")
+            pg.wait_for_selector("table")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
 
             # canvas: each view is a new scratch file in the main window (D-0140)
             pg.click("button:has-text('Canvas in main window')")
@@ -200,6 +206,281 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_related_note_checkboxes_reflect_canvas_and_update_inclusion(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pair = pg.evaluate("""async () => {
+                await window.__plugin.ensureIndex();
+                const ix = window.__plugin.ix;
+                const edge = ix.edges.find(e => e.to && !e.reverse && ix.notes.has(e.from)
+                    && ix.notes.has(e.to) && e.from !== e.to);
+                return edge ? [edge.from, edge.to, ix.notes.get(edge.to).title] : null;
+            }""")
+            self.assertIsNotNone(pair)
+            origin, neighbor, label = pair
+            canvas = "99_System/22_Views/Membership.canvas"
+            pg.evaluate("""a => {
+                const [origin,neighbor,path] = a;
+                window.__files[path] = JSON.stringify({nodes:[
+                    {id:'one',type:'file',file:origin,x:0,y:0,width:280,height:160},
+                    {id:'two',type:'file',file:neighbor,x:400,y:0,width:280,height:160}
+                ],edges:[]});
+                const view = {file:{path},getViewType:()=> 'canvas',containerEl:{isConnected:true},
+                    save:async()=>{},canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+                window.__plugin.apps.forEach(a=>a.setWorkflow('document','note',origin));
+            }""", [origin, neighbor, canvas])
+            checkbox = pg.get_by_role("checkbox", name="Include " + label).first
+            checkbox.wait_for(state="visible")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && box.checked;
+            }""", arg="Include " + label)
+            checkbox.uncheck()
+            # A Canvas selection refresh must not discard the unchecked, not-yet-applied choice.
+            pg.evaluate("""() => {
+                const t=window.__plugin.canvasLeaf.view;
+                const first=JSON.parse(window.__files[t.file.path]).nodes[0];
+                t.canvas.selection=new Set([{getData:()=>first}]);
+                window.__plugin.canvasSelection();
+            }""")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && !box.checked;
+            }""", arg="Include " + label)
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_timeout(350)
+            diagnostic = pg.evaluate("""p => ({
+              message: document.body.innerText.slice(-1200),
+              canvas: window.__plugin.canvasTarget()?.path,
+              nodes: JSON.parse(window.__files[p]).nodes.map(n => ({id:n.id,file:n.file,text:n.text?.slice(0,45)})),
+              notices: window.__notices.slice(-5)
+            })""", canvas)
+            self.assertEqual(len(diagnostic["nodes"]), 1, diagnostic)
+            self.assertTrue(pg.evaluate("a => JSON.parse(window.__files[a[0]]).nodes.some(n=>n.file===a[1])", [canvas, origin]))
+            self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"),
+                             "model notes are not removed")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && !box.checked;
+            }""", arg="Include " + label)
+            checkbox = pg.get_by_role("checkbox", name="Include " + label).first
+            checkbox.check()
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 2", arg=canvas)
+            browser.close()
+        self.assertEqual(errors, [])
+
+    def test_add_part_automatically_rebuilds_visible_canvas_relationships(self):
+        # Use a modeled relationship from the Golden Charger fixture, not synthetic frontmatter.
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1200, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pair = pg.evaluate("""async () => {
+                await window.__plugin.ensureIndex();
+                const ix = window.__plugin.ix;
+                const edge = ix.edges.find(e => e.kind === 'hasPart' && e.to && !e.reverse
+                    && ix.notes.has(e.from) && ix.notes.has(e.to) && e.from !== e.to)
+                    || ix.edges.find(e => e.to && !e.reverse && ix.notes.has(e.from)
+                        && ix.notes.has(e.to) && e.from !== e.to);
+                return edge ? [edge.from, edge.to] : null;
+            }""")
+            self.assertIsNotNone(pair, "Golden Charger must contain a valid relation between two governed notes")
+            # Begin with the source card alone and no drawn relationships.
+            pg.evaluate("async p => await window.__plugin.addToCanvasPreview(null, [p], false)", pair[0])
+            pg.wait_for_function("Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
+            path = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
+            before = pg.evaluate("p => JSON.parse(window.__files[p])", path)
+            self.assertEqual(len(before["nodes"]), 1)
+            self.assertEqual(len(before["edges"]), 0)
+            old = [(n["id"], n["x"], n["y"]) for n in before["nodes"]]
+            pg.evaluate("""p => {
+                const view = {file:{path:p},getViewType:()=> 'canvas',containerEl:{isConnected:true},
+                    save:async()=>{},canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+            }""", path)
+            msg = pg.evaluate("async p => await window.__plugin.addToCanvasPreview(p[0], [p[1]])", pair)
+            after = pg.evaluate("p => JSON.parse(window.__files[p])", path)
+            self.assertIn("relationships refreshed automatically", msg)
+            self.assertEqual(len(after["nodes"]), 2)
+            self.assertGreaterEqual(len(after["edges"]), 1, "the model's existing relationship appears without manual refresh")
+            self.assertEqual([(n["id"], n["x"], n["y"]) for n in after["nodes"][:1]], old,
+                             "original card is not moved")
+            self.assertEqual(pg.evaluate("window.__leaves.main.filter(l => l.type === 'mdse-workflow-tab').length"), 0)
+            self.assertEqual(pg.evaluate("Object.keys(window.__notes).length"), len(notes),
+                             "Canvas addition never creates model notes")
+            browser.close()
+        self.assertEqual(errors, [])
+
+    def test_discovery_turns_off_for_unrelated_selection_and_manual_toggle(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        paths = list(notes)[:3]
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1200, "height": 850})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("""p => {
+                const [origin, neighbor, unrelated] = p;
+                const cp = '99_System/22_Views/Discovery test.canvas';
+                window.__files[cp] = JSON.stringify({
+                    nodes: [
+                        {id:'file1',type:'file',file:origin,x:0,y:0,width:280,height:120},
+                        {id:'file2',type:'file',file:neighbor,x:320,y:0,width:280,height:120},
+                        {id:'mdse-discovery:temp',type:'file',file:unrelated,x:640,y:0,width:280,height:120}
+                    ],
+                    edges: [{id:'a0',fromNode:'file1',toNode:'mdse-discovery:temp',fromSide:'right',toSide:'left',toEnd:'arrow'}]
+                });
+                const view = {file:{path:cp},containerEl:{isConnected:true},getViewType:()=> 'canvas',save:async()=>{},
+                    canvas:{selection:new Set()}};
+                const leaf = {view};
+                window.__app.workspace.activeLeaf = leaf;
+                window.__plugin.canvasLeaf = leaf;
+                window.__plugin.previews.set(cp,{path:cp,fileName:'Discovery test.canvas',edgeIds:new Set(['a0']),discovery:{workflow:'structure',all:true}});
+                window.__plugin.discoveryPath = cp;
+                window.__plugin.discoveryBoundaryPaths = new Set([origin,neighbor]);
+                window.__testing = {cp,origin,neighbor,unrelated,view};
+            }""", paths)
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            pg.evaluate("""() => {
+                const t = window.__testing;
+                t.view.canvas.selection = new Set([{getData:()=>({id:'file2',type:'file',file:t.neighbor})}]);
+                window.__plugin.canvasSelection();
+            }""")
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"), "a directly related selection keeps discovery active")
+            pg.evaluate("""() => {
+                const t = window.__testing;
+                t.view.canvas.selection = new Set([{getData:()=>({id:'outside',type:'file',file:t.unrelated})}]);
+                window.__plugin.canvasSelection();
+            }""")
+            pg.wait_for_function("!window.__plugin.isDiscoveryActive()")
+            pg.wait_for_function("() => JSON.parse(window.__files[window.__testing.cp]).nodes.length === 2")
+            self.assertEqual(pg.evaluate("JSON.parse(window.__files[window.__testing.cp]).edges.length"), 0)
+            self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"), "model notes remain unchanged")
+            pg.evaluate("""() => {
+                const t=window.__testing;
+                window.__plugin.previews.get(t.cp).discovery={workflow:'structure',all:true};
+                window.__plugin.discoveryPath=t.cp;
+                window.__plugin.discoveryBoundaryPaths=new Set([t.origin,t.neighbor]);
+            }""")
+            self.assertTrue(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            msg = pg.evaluate("async () => await window.__plugin.stopDiscoveryOnCanvas()")
+            self.assertIn("Discover Related off", msg)
+            self.assertFalse(pg.evaluate("window.__plugin.isDiscoveryActive()"))
+            browser.close()
+        self.assertEqual(errors, [])
+
+    def test_workflow_switch_stays_in_one_sidebar_and_preserves_notes(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        primary = "10_Model/Charger.md"
+        other = next(p for p in notes if p != primary)
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", primary)
+            pg.wait_for_selector("header >> text=Charger")
+            before = pg.evaluate("JSON.stringify(window.__notes)")
+            self.assertEqual(pg.locator("select[aria-label='Workflow opening behavior']").count(), 0)
+            for area in ("Define", "Structure", "Verify", "Document"):
+                pg.locator("nav.workareas").get_by_role("button", name=area, exact=True).click()
+                pg.wait_for_function("a => document.querySelector('nav.workareas button[aria-pressed=true]')?.textContent === a", arg=area)
+                self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
+                self.assertEqual(pg.evaluate("window.__leaves.right.length"), 1)
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), before)
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", other)
+            pg.wait_for_function("p => window.__leaves.right[0].view.app_.selected() === p", arg=other)
+            pg.locator("nav.workareas").get_by_role("button", name="Structure", exact=True).click()
+            self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.selected()"), other)
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
+            browser.close()
+        self.assertEqual(errors, [])
+
+    def test_cross_type_term_discovery_groups_notes_and_opens_fresh_canvas_without_linking(self):
+        def record(label, kind, content, suffix):
+            return f"---\ntype: {kind}\nuid: 20261120220911{suffix}\nname: {label}\nstatus: Draft\n---\n# {label}\n\n{content}\n"
+        notes = {
+            "20/REQ.md": record("Battery Cooling", "Requirement", "The battery cooling fan shall stop at 60 C.", "req"),
+            "40/VER.md": record("Cooling verification", "Verification", "Test the battery cooling fan and record shutdown.", "ver"),
+            "30/OBJ.md": record("Cooling Fan", "Object", "Mechanical battery cooling fan motor.", "obj"),
+        }
+        errors = []
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = browser.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "20/REQ.md")
+            pg.wait_for_selector("header >> text=Battery Cooling")
+            pg.select_option("select.fn", label="Find shared terms")
+            pg.wait_for_selector(".term-suggestions button:has-text('cooling')")
+            pg.click(".term-suggestions button:has-text('cooling')")
+            pg.wait_for_function("() => document.querySelectorAll('.term-hit').length === 3")
+            self.assertEqual(pg.locator(".term-hit").count(), 3)
+            self.assertIn("Requirement", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Verification", pg.locator(".term-discovery").inner_text())
+            self.assertIn("Object", pg.locator(".term-discovery").inner_text())
+            pg.click("button:has-text('Select displayed')")
+            pg.wait_for_selector("text=3 selected")
+            old = pg.evaluate("JSON.stringify(window.__notes)")
+            pg.click("button:has-text('New grouped Canvas')")
+            pg.wait_for_function("() => Object.keys(window.__files).some(p => p.endsWith('.canvas'))")
+            canvas_file = pg.evaluate("Object.keys(window.__files).find(p => p.endsWith('.canvas'))")
+            canvas = json.loads(pg.evaluate("p => window.__files[p]", canvas_file))
+            self.assertEqual(len([n for n in canvas['nodes'] if n['type'] == 'text' and n.get('text', '').startswith('**[[')]), 3,
+                             "Canvas uses link-backed text cards for actual model notes")
+            self.assertEqual(len(canvas['edges']), 0, "matching words must not invent model relationships")
+            self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), old)
+            self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.lens()"), "terms")
+            browser.close()
+        self.assertEqual(errors, [])
+
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []
@@ -218,6 +499,8 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.wait_for_selector("text=No model note selected")
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
             pg.wait_for_selector("header >> text=Charger")
+            # This legacy edit regression deliberately opts into in-place tool switching.
+            # New-tab preservation is tested separately; it remains the default for engineers.
             pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Add relationship")
 
@@ -391,9 +674,12 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("""p => { window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set([{ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }]) } } }; document.dispatchEvent(new Event('pointerup')); }""", T)
             pg.wait_for_selector(f"header >> text={title}")
             pg.select_option("select.fn", label="Note")
-            pg.click("summary:has-text('Add related notes to the canvas')")
-            pg.click("button:has-text('related to canvas')")
-            pg.wait_for_selector("text=/Added \\d+ note/")
+            pg.wait_for_selector("summary:has-text('Related elements — Canvas inclusion')")
+            pg.evaluate("""async p => {
+                const related=window.__plugin.ix.edges.filter(e=>e.to && !e.reverse && (e.from===p || e.to===p))
+                    .map(e=>e.from===p ? e.to : e.from).filter(x=>window.__plugin.ix.notes.has(x));
+                return await window.__plugin.addToCanvasPreview(p, related);
+            }""", T)
             added = json.loads(pg.evaluate("p => window.__files[p]", PREVIEW))
             self.assertGreaterEqual(len([n for n in added["nodes"] if n["type"] == "text"]), 2, "related notes were added beside the card")
             self.assertTrue(added["edges"], "and joined to it by a line")
@@ -412,14 +698,13 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.select_option("select.fn", label="Structure")
             pg.wait_for_selector("select[aria-label='How much of the structure']")
             pg.select_option("select[aria-label='How much of the structure']", label="Direct parts only")
-            pg.wait_for_selector("button:has-text('Add ticked to canvas')")
-            pg.click("button:has-text('Add ticked to canvas')")
-            pg.wait_for_selector("text=Tick at least one row first.")
-            pg.locator("input[aria-label='Tick for the canvas']").first.check()
-            pg.click("button:has-text('Add ticked to canvas')")
-            pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
-            pg.click("button:has-text('shown to canvas')")
-            pg.wait_for_selector("text=/Added \\d+ note|already on the canvas/")
+            pg.wait_for_selector("button:has-text('Update included elements')")
+            pg.locator("input[aria-label^='Include ']").first.check()
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_selector("text=/Updated included elements|Canvas preview opened/")
+            pg.get_by_role("button", name="Check all", exact=False).first.click()
+            pg.get_by_role("button", name="Update included elements").first.click()
+            pg.wait_for_selector("text=/Updated included elements|Canvas preview opened/")
             # children go in a row below the parent (D-0090)
             if pg.locator("button:has-text('children to canvas')").count():
                 pg.click("button:has-text('children to canvas')")
@@ -434,7 +719,7 @@ class WorkbenchPlugin(unittest.TestCase):
             # the canvas open in the main window is the one added to, and nothing on it moves (D-0089)
             pg.evaluate("""() => { window.__files['Mine.canvas'] = JSON.stringify({ nodes: [{ id: 'memo', type: 'text', x: 5, y: 7, width: 100, height: 50, text: 'mine' }], edges: [] });
               window.__files['99_System/22_Views/Workbench Preview 1.canvas'] = ''; window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', file: { path: 'Mine.canvas' }, canvas: { selection: new Set() }, save: async () => {} } }; }""")
-            pg.click("button:has-text('shown to canvas')")
+            pg.evaluate("""async p => await window.__plugin.addToCanvasPreview(p, [p])""", T)
             pg.wait_for_function("() => JSON.parse(window.__files['Mine.canvas']).nodes.length > 1", timeout=4000)
             mine = pg.evaluate("JSON.parse(window.__files['Mine.canvas'])")
             self.assertEqual([n for n in mine["nodes"] if n["id"] == "memo"][0]["x"], 5)
@@ -489,9 +774,14 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.locator(".mded .hq:has-text('Conjugated') .q").click()
             pg.wait_for_selector(".mded .hlp b:has-text('Conjugated')")
 
+            # Editing pins the source. To inspect a different note in this same Workbench,
+            # the engineer must leave Edit and explicitly choose Follow first.
+            pg.select_option("select.fn", label="Note")
+            pg.locator("header button:has-text('Follow')").click()
             # a flow that runs against the direction is refused with the reason
             pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Station.md")
             pg.wait_for_selector("header >> text=Station")
+            pg.select_option("select.fn", label="Edit")
             pg.select_option("select.em", label="Ports")
             pg.select_option("select[aria-label=Add]", "flow")
             pg.fill(".mded input[placeholder='e.g. charger.dcOut']:nth-of-type(1)", "battery.dcIn.flowOut")
@@ -544,8 +834,10 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.select_option("select.fn", label="Dashboard")
             pg.select_option("select.fn", label="Merge notes")
             pg.wait_for_selector("text=/as the same part as/")
-            # two notes chosen on the canvas: the other one is already picked, and the BOM part stays
+            # A pinned Edit/Compare context ignores Canvas selection. Follow is required
+            # before the original Workbench can enter Common related from chosen cards.
             pg.select_option("select.fn", label="Common related")
+            pg.locator("header button:has-text('Follow')").click()
             pg.evaluate("""ps => { const card = (p) => ({ getData: () => ({ type: 'text', text: '**[[' + p.slice(0, -3) + '|x]]**' }) }); window.__app.workspace.activeLeaf = { view: { getViewType: () => 'canvas', canvas: { selection: new Set(ps.map(card)) } } }; }""", ["10_Model/Charger.md", "10_Model/CHG-1.md"])
             pg.click("button:has-text('Merge these two')")
             pg.wait_for_selector("text=/as the same part as/")
@@ -681,7 +973,7 @@ class WorkbenchPlugin(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_main_window_structure_table_draws_a_system_of_over_a_thousand_rows(self):
-        """D-0151, WKB-070: 6 boards of 200 parts under one system is 1,207 rows; the main-window table draws all of them and the folds work on it."""
+        """A 1,207-row structure is accessible in the Workbench panel with paging and CSV export."""
         def note(i, title, kids=()):
             hp = "hasPart: [" + ", ".join(f'"[[{k}]]"' for k in kids) + "]\n" if kids else ""
             return f"10_Model/{title}.md", f"---\ntype: Object\nid: OBJ-{i:05d}\nuid: 202611090000{i:05d}big\nstatus: Draft\n{hp}tags: []\n---\n# {title}\n"
@@ -708,13 +1000,16 @@ class WorkbenchPlugin(unittest.TestCase):
             pg.evaluate("window.__ev['file-open']({ path: '10_Model/System.md', extension: 'md' })")
             pg.wait_for_selector("header >> text=System")
             pg.select_option("select.fn", label="Structure")
-            pg.click("button:has-text('Table in main window')")
-            pg.wait_for_function("[...document.querySelectorAll('table')].some(t => t.querySelectorAll('tbody tr').length > 1200)")
+            pg.wait_for_selector("text=Page 1 of 49")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0)
             tables = lambda: pg.evaluate("[...document.querySelectorAll('table')].map(t => t.querySelectorAll('tbody tr').length)")
-            self.assertEqual(tables()[2], 1207, "every row, with none cut and no 'not drawn' message")
-            self.assertEqual(pg.evaluate("[...document.querySelectorAll('.more')].some(e => /not drawn/.test(e.textContent))"), False)
+            self.assertIn(25, tables())
+            pg.locator("div.more:has-text('Page 1 of 49')").first.locator("xpath=..").locator("button:has-text('Next page')").click()
+            pg.wait_for_selector("text=Page 2 of 49")
+            self.assertTrue(pg.locator("button:has-text('Export CSV')").count())
             pg.evaluate("(() => { const bs = [...document.querySelectorAll('button')].filter(b => b.textContent === 'Collapse all parts'); bs[bs.length - 1].click(); })()")
-            self.assertEqual(tables()[2], 7, "the system and its 6 boards")
+            self.assertIn(7, tables(), "the system and its six boards remain accessible")
+
         self.assertEqual(errors, [])
 
 

@@ -571,35 +571,46 @@ const funcRelated = (r: FuncRow, sel: string): boolean => r.path === sel || [r.p
 const traceRelated = (r: TraceRow, sel: string): boolean => r.path === sel || [r.satisfiedBy, r.verifiedBy, r.derivedFrom, r.derives, r.refines, r.refinedBy, r.allocatedTo].some((l) => l.includes(sel));
 
 /* ---- Lenses: the same data as plain tables, for the narrow panel and the main window ------------------------------ */
-export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "keywords" | "pick" | "common" | "layout" | "compare" | "merge" | "edit" | "similar";
-export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
+export type Lens = "dashboard" | "note" | "tables" | "structure" | "design" | "internal" | "functional" | "states" | "requirements" | "review" | "keywords" | "pick" | "terms" | "common" | "layout" | "compare" | "merge" | "edit" | "similar";
+export const LENSES: Array<[Lens, string]> = [["dashboard", "Dashboard"], ["note", "Note"], ["tables", "Tables"], ["structure", "Structure"], ["design", "Design types"], ["internal", "Internal structure"], ["functional", "Function"], ["states", "States"], ["requirements", "Requirements"], ["review", "Review"], ["keywords", "Keywords (BOM categories)"], ["pick", "Pick notes"], ["terms", "Find shared terms"], ["common", "Common related"], ["layout", "Auto-layout and refresh"], ["compare", "Compare notes"], ["merge", "Merge notes"], ["edit", "Edit"], ["similar", "Find similar"]];
 /** The three menus of the panel (D-0084): what to see of a note, what to see of the model, and the canvas tools. */
 export const LENS_GROUPS: Array<{ id: "note" | "model" | "canvas"; label: string; lenses: Lens[] }> = [
   { id: "note", label: "Note", lenses: ["note", "structure", "design", "internal", "functional", "states", "requirements", "similar", "compare", "merge", "edit"] },
   { id: "model", label: "Model", lenses: ["dashboard", "tables", "review", "keywords"] },
-  { id: "canvas", label: "Canvas", lenses: ["pick", "common", "layout"] },
+  { id: "canvas", label: "Canvas", lenses: ["pick", "terms", "common", "layout"] },
 ];
 /** The panel's vertical toolbar: every lens once, in task groups (feature request 2026-10-29). Individual functions live here; a view's own options sit at the top of that view. `needsEdit` buttons show disabled where the host cannot edit. */
 export interface ToolbarItem { lens: Lens; glyph: string; label: string; needsEdit?: boolean }
 export const TOOLBAR_GROUPS: Array<{ id: string; label: string; items: ToolbarItem[] }> = [
   { id: "navigate", label: "Navigate", items: [{ lens: "dashboard", glyph: "▦", label: "Dashboard" }, { lens: "note", glyph: "☰", label: "Note" }, { lens: "tables", glyph: "▤", label: "Tables" }] },
-  { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
+  { id: "find", label: "Find", items: [{ lens: "similar", glyph: "≈", label: "Find similar" }, { lens: "pick", glyph: "⌕", label: "Pick notes" }, { lens: "terms", glyph: "≋", label: "Find shared terms" }, { lens: "common", glyph: "∩", label: "Common related" }, { lens: "compare", glyph: "⇄", label: "Compare notes" }] },
   { id: "trace", label: "Trace", items: [{ lens: "structure", glyph: "⌥", label: "Structure" }, { lens: "design", glyph: "◇", label: "Design types" }, { lens: "internal", glyph: "◫", label: "Internal structure" }, { lens: "functional", glyph: "ƒ", label: "Function" }, { lens: "states", glyph: "◉", label: "States" }, { lens: "requirements", glyph: "✓", label: "Requirements" }] },
   { id: "edit", label: "Create and edit", items: [{ lens: "edit", glyph: "✎", label: "Edit", needsEdit: true }, { lens: "merge", glyph: "⊕", label: "Merge notes", needsEdit: true }] },
   { id: "review", label: "Review", items: [{ lens: "review", glyph: "⚑", label: "Review" }, { lens: "keywords", glyph: "⌘", label: "Keywords (BOM categories)" }] },
   { id: "canvas", label: "Canvas", items: [{ lens: "layout", glyph: "⊞", label: "Auto-layout and refresh" }] },
 ];
-export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
+export const LENS_PROFILE: Record<Lens, string> = { dashboard: "Everything", note: "Everything", tables: "Everything", structure: "Structure trace", design: "Everything", internal: "Everything", functional: "Functional trace", states: "Everything", requirements: "Requirements trace", review: "Everything", keywords: "Everything", pick: "Everything", terms: "Everything", common: "Everything", layout: "Everything", compare: "Everything", merge: "Everything", edit: "Everything", similar: "Everything" };
 export const lensHasCanvas = (l: Lens): boolean => l === "structure" || l === "compare" || l === "internal" || l === "functional" || l === "requirements" || l === "tables";
-export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
+export const lensHasTable = (l: Lens): boolean => l !== "dashboard" && l !== "note" && l !== "edit" && l !== "pick" && l !== "terms" && l !== "common" && l !== "layout" && l !== "merge" && l !== "similar" && l !== "keywords";
 
 export interface Cell { text: string; path?: string | null; cls?: string; /** a button that opens this relationship in the Edit lens */ action?: EdgeRef }
 export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string; /** D-0150: rows are depth-first and each has a `level`; the first column's cell can be folded and unfolded */ outline?: boolean }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
+export interface LensOptions { scope?: "selected" | "all"; partScope?: "current" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
 
+/** Part lifecycle is independent of note review status. Legacy parts with no field remain
+ * current until specifically classified; proposed replacements are visible under All. */
+export function viewPartLifecycle(n: Note): "proposed" | "current" | "obsolete" {
+  const v = String(n.meta.partLifecycle ?? "").toLowerCase();
+  if (v === "obsolete" || n.status === "Retired" || n.meta.mergedInto) return "obsolete";
+  if (v === "proposed") return "proposed";
+  return "current";
+}
+export function viewIsPart(n: Note): boolean {
+  return n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
+}
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
   const out: TableData[] = [];
@@ -607,7 +618,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
     const st = structure(ix, sel, o.tree === "direct" ? 1 : LIMIT_LEVELS, LIMIT_PER_PARENT, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
     const walk = (t: TreeNode, level: number): void => {
-      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
+      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", lifecycle: t.path && ix.notes.has(t.path) && viewIsPart(ix.notes.get(t.path)!) ? viewPartLifecycle(ix.notes.get(t.path)!) : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
       /* D-0150: say so when parts are left out, instead of ending the list quietly */
       const cut = o.tree === "direct" ? 0 : t.cut ?? 0;                      // the direct view stops at one level on purpose
@@ -615,14 +626,25 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
       if (why) flat.push({ level: String(level + 1), name: { text: "\u00a0\u00a0".repeat(level + 1) + why, cls: "gap" }, role: "", mult: "", type: "", id: "", note: "" });
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "lifecycle", label: "Lifecycle" }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const direct = o.tree === "direct", b = bom(ix, sel, direct ? 1 : 12);
-    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.filter((x) => o.partScope === "all" || !ix.notes.has(x.path) || viewPartLifecycle(ix.notes.get(x.path)!) === "current").map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
     const w = whereUsed(ix, sel), up: Array<Record<string, TableCell>> = [];
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+    const registry = [...ix.notes.values()].filter(viewIsPart)
+      .filter((p) => o.partScope === "all" || viewPartLifecycle(p) === "current")
+      .sort((a, b) => a.title.localeCompare(b.title));
+    out.push({ id: "part-registry", title: o.partScope === "all" ? "All parts in vault" : "Current parts in vault",
+      columns: [{ key: "part", label: "Part", wide: true }, { key: "pn", label: "Part number" },
+        { key: "lifecycle", label: "Lifecycle" }, { key: "replacement", label: "Replaced by / replaces" }],
+      rows: registry.map((p) => ({ part: C(ix, p.path), pn: String(p.meta.partNumber ?? ""),
+        lifecycle: viewPartLifecycle(p), replacement: [p.meta.replacedBy ? "→ " + String(p.meta.replacedBy) : "",
+          p.meta.replaces ? "← " + String(p.meta.replaces) : ""].filter(Boolean).join(" ") })),
+      empty: "No parts match this lifecycle filter.",
+      note: "Lifecycle is separate from note status. A part remains in historical structure and BOM references even after it is obsolete." });
   } else if (lens === "compare") {
     if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
     const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)! : null;

@@ -182,23 +182,103 @@ export function cardNotePath(node: CanvasNode | undefined): string | null {
 }
 
 /** Notes related to `path` (D-0082): every resolved relationship either way, as the other note's path with the kinds that join them. */
-export function relatedNotes(ix: ModelIndex, path: string): Array<{ path: string; kinds: string[] }> {
-  const by = new Map<string, Set<string>>();
+export function relatedNotes(ix: ModelIndex, path: string, kinds?: readonly string[]): Array<{ path: string; kinds: string[] }> {
+  const by = new Map<string, Set<string>>(), allow = kinds ? new Set(kinds) : null;
   for (const e of ix.edges) {
-    if (!e.to || e.reverse) continue;
+    if (!e.to || e.reverse || (allow && !allow.has(e.kind))) continue;
     const other = e.from === path ? e.to : e.to === path ? e.from : null;
     if (other && other !== path && ix.notes.has(other) && !ix.notes.get(other)!.meta.mergedInto) (by.get(other) ?? by.set(other, new Set()).get(other)!).add(e.kind);
   }
   return [...by].map(([p, k]) => ({ path: p, kinds: [...k].sort() })).sort((a, b) => ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
 }
 
-/** Notes related to two or more of the given notes (D-0084). `all` are related to every one of them, with the kinds that join each; `some` are related to at least two but not all, most first. The given notes themselves are left out. */
-export function commonRelated(ix: ModelIndex, paths: string[]): { all: Array<{ path: string; by: Array<{ from: string; kinds: string[] }> }>; some: Array<{ path: string; count: number; by: Array<{ from: string; kinds: string[] }> }> } {
-  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p).map((r) => [r.path, r.kinds] as const))] as const);
+/** Notes related to selected notes (D-0084 / UX discovery). `all` touch every selected source; `some` touch 1..N-1 sources, ranked most to least common. Each source counts once regardless of how many edges join it to a candidate. Selected and retired notes are excluded. */
+export function commonRelated(ix: ModelIndex, paths: string[], kinds?: readonly string[]): { all: Array<{ path: string; by: Array<{ from: string; kinds: string[] }> }>; some: Array<{ path: string; count: number; by: Array<{ from: string; kinds: string[] }> }> } {
+  const given = [...new Set(paths)].filter((p) => ix.notes.has(p)), per = given.map((p) => [p, new Map(relatedNotes(ix, p, kinds).map((r) => [r.path, r.kinds] as const))] as const);
   const count = new Map<string, Array<{ from: string; kinds: string[] }>>();
   for (const [p, m] of per) for (const [q, kinds] of m) if (!given.includes(q)) (count.get(q) ?? count.set(q, []).get(q)!).push({ from: p, kinds });
-  const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).filter((r) => r.count >= 2 || given.length === 1).sort((a, b) => b.count - a.count || ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
+  const rows = [...count].map(([path, by]) => ({ path, count: by.length, by })).sort((a, b) => b.count - a.count || ix.notes.get(a.path)!.title.localeCompare(ix.notes.get(b.path)!.title) || a.path.localeCompare(b.path));
   return { all: given.length >= 2 ? rows.filter((r) => r.count === given.length).map(({ path, by }) => ({ path, by })) : [], some: rows.filter((r) => r.count < given.length) };
+}
+
+/** Workbench-area discovery filters. These govern candidate discovery only, never model meaning.
+ * Always provide an unrestricted option because a focused view is not a complete relationship audit. */
+export type DiscoveryArea = "document" | "define" | "structure" | "verify";
+export const DISCOVERY_KINDS: Record<DiscoveryArea, readonly string[]> = {
+  document: ["describes", "trace", "dependsOn", "uses", "references", "supersedes"],
+  define: ["hasRequirement", "hasAction", "hasState", "satisfies", "refines", "derivedFrom",
+    "performs", "allocatedTo", "specializes", "includes", "extendedBy", "dependsOn", "has"],
+  structure: ["hasPart", "hasPort", "hasFlow", "references", "specializes", "allocatedTo",
+    "implements", "has", "connects", "binds", "hasState"],
+  verify: ["verifies", "hasVerification", "satisfies", "derivedFrom", "refines",
+    "trace", "allocatedTo", "hasRequirement", "dependsOn"],
+};
+
+/** Fixed boundary for a discovery session: original source(s) and their direct, resolved
+ * neighbors under the chosen workflow filter. Re-centering the overlay on a neighbor must
+ * not expand this boundary to unrelated second-hop items. */
+export function discoveryBoundary(ix: ModelIndex, sources: string[], mode: { workflow?: DiscoveryArea; all?: boolean } = {}): Set<string> {
+  const roots = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const allowed = new Set(roots);
+  for (const root of roots) for (const neighbor of relatedNotes(ix, root, kinds)) allowed.add(neighbor.path);
+  return allowed;
+}
+
+/** Discovery cards exist only in scratch previews. They are not model elements or saved Canvas content. */
+export const DISCOVERY_PREFIX = "mdse-discovery:";
+const DISCOVERY_MARK = "\n\n*◇ Discovery candidate — select and Keep to retain*";
+export const isDiscoveryNode = (n: CanvasNode): boolean => n.id.startsWith(DISCOVERY_PREFIX);
+
+/** Remove all temporary candidates and every line touching one. Never moves kept cards. */
+export function clearDiscovery(doc: CanvasDoc): CanvasDoc {
+  const temporary = new Set(doc.nodes.filter(isDiscoveryNode).map((n) => n.id));
+  return { nodes: doc.nodes.filter((n) => !temporary.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !temporary.has(e.fromNode) && !temporary.has(e.toNode)).map((e) => ({ ...e })) };
+}
+
+/** Overlay up to `limit` related notes on a copy of a kept view, preserving all prior card positions.
+ * For multiple sources the N-of-N / ... / 1-of-N order comes from commonRelated.
+ * Temporary status is encoded in card IDs, not in model notes or extra Canvas schema fields. */
+export function discoveryOverlay(doc: CanvasDoc, ix: ModelIndex, sources: string[], limit = 24,
+  mode: { workflow?: DiscoveryArea; all?: boolean } = {}): { doc: CanvasDoc; shown: number; available: number } {
+  const kept = clearDiscovery(doc), given = [...new Set(sources)].filter((p) => ix.notes.has(p));
+  if (!given.length) return { doc: kept, shown: 0, available: 0 };
+  const kinds = !mode.all && mode.workflow ? DISCOVERY_KINDS[mode.workflow] : undefined;
+  const related = given.length === 1
+    ? relatedNotes(ix, given[0]!, kinds).map((r) => r.path)
+    : ((r) => [...r.all, ...r.some].map((x) => x.path))(commonRelated(ix, given, kinds));
+  const onCanvas = new Set(kept.nodes.map(cardNotePath).filter((p): p is string => !!p));
+  const candidates = related.filter((p) => !onCanvas.has(p));
+  const chosen = candidates.slice(0, Math.max(0, Math.floor(limit)));
+  if (!chosen.length) return { doc: kept, shown: 0, available: candidates.length };
+  const before = new Set(kept.nodes.map((n) => n.id));
+  const placed = addToCanvas(kept, ix, given[0]!, chosen);
+  const renamed = new Map(placed.doc.nodes.filter((n) => !before.has(n.id)).map((n) => [n.id, DISCOVERY_PREFIX + n.id] as const));
+  const nodes = placed.doc.nodes.map((n) => renamed.has(n.id) ? { ...n, id: renamed.get(n.id)!, color: "5", text: (n.text ?? "") + DISCOVERY_MARK } : n);
+  const edges = placed.doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, shown: renamed.size, available: candidates.length };
+}
+
+/** Keep selected temporary cards, retaining their user-adjusted positions. Other candidates stay temporary. */
+export function keepDiscoveryCandidates(doc: CanvasDoc, ix: ModelIndex, paths: string[]): { doc: CanvasDoc; kept: number } {
+  const wanted = new Set(paths), renamed = new Map<string, string>();
+  const nodes = doc.nodes.map((n) => {
+    if (!isDiscoveryNode(n) || !wanted.has(cardNotePath(n) ?? "")) return { ...n };
+    const id = n.id.slice(DISCOVERY_PREFIX.length), path = cardNotePath(n)!;
+    renamed.set(n.id, id);
+    const restored = noteCard(ix, path, id);
+    return { ...n, id, color: restored.color, text: (n.text ?? "").replace(DISCOVERY_MARK, "") };
+  });
+  const edges = doc.edges.map((e) => ({ ...e, fromNode: renamed.get(e.fromNode) ?? e.fromNode, toNode: renamed.get(e.toNode) ?? e.toNode }));
+  return { doc: { nodes, edges }, kept: renamed.size };
+}
+
+/** Dismiss only the requested temporary candidates, leaving kept cards and other candidates intact. */
+export function dismissDiscoveryCandidates(doc: CanvasDoc, paths: string[]): { doc: CanvasDoc; dismissed: number } {
+  const wanted = new Set(paths), removed = new Set(doc.nodes.filter((n) => isDiscoveryNode(n) && wanted.has(cardNotePath(n) ?? "")).map((n) => n.id));
+  return { doc: { nodes: doc.nodes.filter((n) => !removed.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !removed.has(e.fromNode) && !removed.has(e.toNode)).map((e) => ({ ...e })) }, dismissed: removed.size };
 }
 
 /** The tier of a kind of note on a canvas, top first (D-0085): use cases, then requirements, then functions and test cases, then objects. */
@@ -325,6 +405,35 @@ export function addChildren(doc: CanvasDoc, ix: ModelIndex, parent: string, path
   return { doc: cur, added: fresh.length + extra, present: there.size, lineIds };
 }
 
+/** Reconcile inclusion only for a list's displayed scope. Outside cards, free text,
+ * groups and the coordinates of all retained cards are unchanged. Removing a card also
+ * removes its incident Canvas lines, but never mutates the authoritative SysML model. */
+export function updateIncludedCanvas(doc: CanvasDoc, ix: ModelIndex, scope: string[], checked: string[],
+  anchor: string | null = null, directChildren: string[] = []):
+  { doc: CanvasDoc; added: number; removed: number; unchanged: number } {
+  const allowed = new Set(scope.filter((p) => ix.notes.has(p)));
+  const desired = new Set(checked.filter((p) => allowed.has(p)));
+  const existing = new Set(doc.nodes.filter((n) => !isDiscoveryNode(n)).map(cardNotePath).filter((p): p is string => !!p));
+  const removedIds = new Set(doc.nodes.filter((n) => {
+    if (n.type === "group" || isDiscoveryNode(n)) return false;
+    const path = cardNotePath(n);
+    return !!path && allowed.has(path) && !desired.has(path);
+  }).map((n) => n.id));
+  const original: CanvasDoc = {
+    nodes: doc.nodes.filter((n) => !removedIds.has(n.id)).map((n) => ({ ...n })),
+    edges: doc.edges.filter((e) => !removedIds.has(e.fromNode) && !removedIds.has(e.toNode)).map((e) => ({ ...e })),
+  };
+  const missing = [...desired].filter((p) => !existing.has(p));
+  const child = anchor && (desired.has(anchor) || (!allowed.has(anchor) && existing.has(anchor)))
+    ? missing.filter((p) => directChildren.includes(p)) : [];
+  const rest = missing.filter((p) => !child.includes(p));
+  const placed = child.length && anchor ? addChildren(original, ix, anchor, child) : { doc: original, added: 0 };
+  const other = rest.length ? addToCanvas(placed.doc, ix, anchor, rest) : { doc: placed.doc, added: 0 };
+  const refreshed = refreshCanvas(other.doc, ix, { completeRelationships: true });
+  return { doc: refreshed.doc, added: placed.added + other.added, removed: removedIds.size,
+    unchanged: [...desired].filter((p) => existing.has(p)).length };
+}
+
 /** Collapse and expand (D-0094). The collapsed state lives on the card itself, as a last line "▸ +N hidden" (N = direct parts not on the canvas), so it survives saving and needs no sidecar. A card with no marker is expanded. */
 const CV_COLLAPSE_RE = /<br><small>▸ \+\d+ hidden<\/small>$/;
 export const isCollapsed = (n: CanvasNode | undefined): boolean => !!n && n.type === "text" && CV_COLLAPSE_RE.test(n.text ?? "");
@@ -426,8 +535,8 @@ export function cardAction(doc: CanvasDoc, ix: ModelIndex, parent: string, kind:
   const r = expandAll(doc, ix, parent); return { doc: r.doc, action: r.added ? "expanded" : "none", changed: r.added, capped: r.capped };
 }
 
-/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. */
-export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
+/** Canvas refresh (D-0091): brings the note cards of a canvas up to date with the vault. A card is redrawn from its note (name, part number or id, colour, size) where it is; a note that is retired shows red with the note it went into; a note that is not in the vault any more shows red as "not found". Where the canvas has lines the Workbench drew, lines whose relationship no longer exists are removed, labels are updated, and lines for relationships between cards that are now in the vault are added. Positions never change and the person's own lines and cards are left alone. When a Workbench add operation calls completeRelationships, all existing modeled connections between visible notes are rebuilt even if the canvas had no prior generated lines. */
+export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex, opts: { completeRelationships?: boolean } = {}): { doc: CanvasDoc; redrawn: number; missing: number; linesAdded: number; linesRemoved: number } {
   const out: CanvasDoc = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   let redrawn = 0, missing = 0;
   const cardOf = new Map<string, CanvasNode>();
@@ -463,7 +572,7 @@ export function refreshCanvas(doc: CanvasDoc, ix: ModelIndex): { doc: CanvasDoc;
     if (!live) linesRemoved++;
     return live;
   });
-  if (hadDrawn) {
+  if (hadDrawn || opts.completeRelationships) {
     const taken = new Set(out.edges.map((e) => e.id)); let k = 0;
     for (const r of real) {
       const f = cardOf.get(r.from), t = cardOf.get(r.to!); if (!f || !t || f === t) continue;

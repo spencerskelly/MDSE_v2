@@ -4,7 +4,7 @@ MDSE is one linked engineering model kept as plain Markdown and YAML in an Obsid
 
 This repository holds the rules, schemas and every tool that builds and serves an MDSE vault. It does **not** hold a model. Real engineering data never enters it ([DAT-002](governance/RULESET.md#dat--data-and-security)).
 
-**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.**
+**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.** For an exact build and safe staging/live vault update, follow [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). The current PR #4 artifact build and uncompleted Obsidian checks are recorded in [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
 
 ## Where things are
 
@@ -24,9 +24,10 @@ This repository holds the rules, schemas and every tool that builds and serves a
 
 | Phase | Scope | State |
 |---|---|---|
-| **P1** | EA import, Base Vault and Bootstrap, read-only Workbench | In progress. QEAX reader, note format, merge and ZIP writer are built and tested. QEAX-to-notes, SysML writer, Bootstrap and Workbench are not built. |
-| P2 | BOM import, merge and approval | Rules drafted, blocked by [OD-04](governance/OPEN_DECISIONS.md) |
-| P3 | Workbench editing | Not started |
+| **P1** | EA import, Base Vault and Bootstrap, Workbench | Importer, Base Vault payload, Bootstrap and Workbench are implemented in source; full parser, real-vault acceptance, controlled release lock and first-open gates remain open. |
+| P2 | BOM import, merge and approval | BOM importer and partial update scan exist; real-data acceptance and full approval flow remain open. |
+| P3 | Workbench editing | Existing model editing and governed relationship actions are implemented, with synthetic tests; real Obsidian validation and release acceptance remain open. |
+| **UX prototype** | Document / Define / Structure / Verify; Canvas discovery; independent workspaces | Developed in draft PR #4 on `ux/pass08-workarea-prototype-20261119`; not merged or deployed. See [toolset update and acceptance](docs/TOOLSET_UPDATE.md).
 
 Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 
@@ -37,13 +38,15 @@ Requirements: Node 22 (`.nvmrc`), Python 3.12+ with `pip install -r testing/requ
 ```bash
 npm test                 # everything CI runs, except the parser gate (Java; CI runs it on every push to main)
 npm run check:rules      # ruleset format and generated register
-npm run build:importer   # rebuild tools/importer/dist/mdse_importer.html after changing tools/core or tools/importer
+npm run build            # rebuild Workbench, then importer (the importer bundles the generated Workbench)
+npm run check:workbench  # verify committed Workbench HTML and Obsidian plugin match source
+npm run check:importer   # verify importer HTML and generated translation reference match source
 ```
 
 ## How work is done here
 
 - Rules change only through [governance/DECISIONS.md](governance/DECISIONS.md) and [governance/RULESET.md](governance/RULESET.md), in the same commit.
-- Changes go straight to `main`; CI must stay green ([GOV-001](governance/RULESET.md#governance)).
+- The active UX prototype is isolated in [draft PR #4](https://github.com/spencerskelly/MDSE_v2/pull/4); do not merge or deploy until approved and build/runtime gates pass. Governance for normal `main` changes remains in [CONTRIBUTING.md](CONTRIBUTING.md).
 - See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## History

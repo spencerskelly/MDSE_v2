@@ -38,6 +38,17 @@ test("only a line the Workbench did not draw is the person's, and each end is th
   assert.equal(cdNotePath({ id: "q", type: "text", x: 0, y: 0, width: 1, height: 1, text: `**[[${req.path.replace(/\.md$/, "")}|R]]** · functional\n\ntext` }), req.path, "a requirement card is its note");
 });
 
+test("refresh-generated model edges never trigger a new-relationship prompt", () => {
+  const { doc, known } = withDrawnLine(part.path, req.path);
+  const template = doc.edges[0] ?? doc.edges[doc.edges.length - 1]!;
+  doc.edges.push({ ...template, id: "a21" });
+  doc.edges.push({ ...template, id: "e7~r~%7B%22owner%22%3A%22X%22%7D" });
+  const found = cdDrawnLines(doc, known);
+  assert.deepEqual(found.map((x) => x.id), ["9f3a1c7e5b2d4a60"],
+    "only a genuine hand-drawn line is eligible for relationship creation");
+  assert.deepEqual(cdDrawnLines({ ...doc, edges: doc.edges.filter((e) => e.id !== "9f3a1c7e5b2d4a60") }, known), []);
+});
+
 test("the dropdown lists only kinds the source allows and that can be written now", () => {
   const ch = cdChoices(ix, base, part.path, req.path);
   assert.ok(ch.some((c) => c.rel.id === "satisfy" && c.ok), "a part can satisfy a requirement");
