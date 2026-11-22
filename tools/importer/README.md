@@ -1,6 +1,6 @@
 # importer
 
-**Version identification:** the offline HTML header shows independent **Importer vX.Y.Z**, **toolset vX.Y.Z**, and the content build fingerprint. The Importer version is controlled by `tools/importer/version.json`; the toolset version comes from root `package.json`. Both must increase for an Importer code change, and the paired distribution must be rebuilt. See [versioning policy](../../docs/VERSIONING.md). The offline HTML cannot automatically discover a newer online release.
+**Version identification:** the offline HTML header shows independent **Importer vX.Y.Z**, **toolset vX.Y.Z**, and the content build fingerprint. The Importer version is controlled by `tools/importer/version.json`; the toolset version comes from root `package.json`. Both must increase for an Importer code change, and the paired distribution must be rebuilt. See [versioning policy](../../docs/VERSIONING.md). The offline HTML includes a locally bundled **Importer version history**, maintained alongside the version in `tools/importer/version.json`. It cannot automatically discover a newer online release.
 
 Turns source files into an MDSE vault. Phase 1: EA `.qeax`. Phase 2: product BOMs. Shipped to users as **one offline HTML file** (`dist/mdse_importer.html`): double-click, no install, no network.
 
