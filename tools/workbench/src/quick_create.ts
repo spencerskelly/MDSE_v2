@@ -124,7 +124,7 @@ const replaceFm = (text: string, key: string, value: string): string => {
   const next = re.test(current) ? current.replace(re, key + ": " + value) : current + "\n" + key + ": " + value;
   return text.replace(fm[0], "---\n" + next + "\n---");
 };
-export interface PartReplaceOptions { title: string; folder: string; change: string; author: string; now?: Date }
+export interface PartReplaceOptions { title: string; folder: string; change: string; partNumber?: string; author: string; now?: Date }
 /** Preview-first clone: new identity and SysML namespace, copied engineering definition,
  * explicit native dependency tagged supersedes, unchanged predecessor. */
 export function planReplacePart(ix: ModelIndex, files: Map<string, string>, classes: EdClasses,
@@ -135,6 +135,10 @@ export function planReplacePart(ix: ModelIndex, files: Map<string, string>, clas
     return bad("Select a governed Object/part containing a native SysML part definition.");
   if (partLifecycle(source) === "obsolete") return bad("Select a current or proposed source part; obsolete parts require an explicit exception.");
   if (!o.change.trim()) return bad("Document what is changing before previewing the replacement.");
+  const partNumber = (o.partNumber ?? "").trim();
+  if (partNumber && (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(partNumber) ||
+    [...ix.notes.values()].some((n) => String(n.meta.partNumber ?? "").toLowerCase() === partNumber.toLowerCase())))
+    return bad("A new part number must be file-safe and not already assigned to another modeled part.");
   const plan = planAddElement(ix, classes, { type: source.type, subtype: source.subtype, title: o.title,
     folder: o.folder || source.folder, text: "", author: o.author, now: o.now });
   if (plan.problems.length || !plan.writes.length) return plan;
@@ -162,6 +166,7 @@ export function planReplacePart(ix: ModelIndex, files: Map<string, string>, clas
     : clone.replace(/;\s*$/, " {\n        " + dependency + "\n    }");
   let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
     joined + newBlock.slice(newEnd));
+  if (partNumber) after = replaceFm(after, "partNumber", yamlScalar(partNumber));
   after = replaceFm(after, "partLifecycle", "proposed");
   after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
   after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
