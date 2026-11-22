@@ -1,3 +1,17 @@
 {
-  "version": "0.11.0"
+  "version": "0.11.0",
+  "history": [
+    {
+      "version": "0.11.0",
+      "date": "2026-11-21",
+      "status": "candidate",
+      "summary": "Independent Importer version, visible toolset version, content fingerprint and CI version-bump enforcement."
+    },
+    {
+      "version": "0.10.0",
+      "date": "before 2026-11-21",
+      "status": "legacy inherited",
+      "summary": "Importer inherited the 0.10.0 toolset release and displayed a build hash; there was no separately maintained Importer version."
+    }
+  ]
 }
