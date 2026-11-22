@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
 import { followSelection, navigateToWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
@@ -8,6 +9,17 @@ import { importedVault, classes } from "./harness.ts";
 const files = await importedVault();
 const ix = buildIndex(files, { classes, parserReport: files.get("99_System/11_Import/Parser Check.md") });
 const byTitle = (t: string): string => [...ix.notes.values()].find((n) => n.title === t)!.path;
+
+test("plugin runtime WB API exports every helper invoked by the Obsidian shell", () => {
+  const plugin = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
+  const build = readFileSync(new URL("../build.mjs", import.meta.url), "utf8");
+  const api = /const api = "\\{([^"]+)\\}"/.exec(build);
+  assert.ok(api, "the build must declare its runtime WB export surface");
+  const exported = new Set(api![1]!.split(",").map((s) => s.trim()));
+  const referenced = [...new Set([...plugin.matchAll(/\\bWB\\.(\\w+)/g)].map((m) => m[1]!))].sort();
+  assert.deepEqual(referenced.filter((name) => !exported.has(name)), [],
+    "a helper compiled into the bundle is still unavailable until exported in build.mjs");
+});
 
 test("Open in workflow launches independent tabs with the exact selected engineering item", async () => {
   const path = byTitle("Charger"), prior = { path, workflow: "document", lens: "note", pinned: true };
