@@ -32,6 +32,14 @@ const components = [
 const run = (...args) => execFileSync("git",args,{cwd:new URL(".",root),encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
 let errors = 0;
 for (const c of components) { try { semver(read(c.path)); } catch (e) { console.error(c.label+": "+e.message);errors++; } }
+try {
+  const importer = JSON.parse(readFileSync(new URL("tools/importer/version.json",root),"utf8"));
+  if (!Array.isArray(importer.history) || importer.history[0]?.version !== importer.version) throw Error("Importer history must begin with its current semantic version");
+  for (let i=0;i<importer.history.length;i++) {
+    semver(importer.history[i]?.version);
+    if (i && cmp(importer.history[i-1].version,importer.history[i].version) <= 0) throw Error("Importer history must contain unique, descending version numbers");
+  }
+} catch(e) { console.error("Importer version history: "+e.message);errors++; }
 const at = process.argv.indexOf("--base");
 if (at >= 0) {
   const candidate = process.argv[at+1];
