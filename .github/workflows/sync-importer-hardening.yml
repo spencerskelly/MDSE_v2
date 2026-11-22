@@ -1,0 +1,57 @@
+name: Synchronize clean importer-hardening integration artifacts
+
+on:
+  push:
+    branches:
+      - integration/importer-hardening-after-workbench-20261121
+    paths:
+      - .github/workflows/sync-importer-hardening.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mdse-importer-hardening-sync
+  cancel-in-progress: false
+
+jobs:
+  paired-build-and-sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Rebuild Workbench and importer from one source ref
+        run: npm run build
+      - name: Run source tests
+        run: |
+          npm run test:workbench
+          npm run test:importer
+          npm run test:core
+          npm run test:bootstrap
+      - name: Deterministic distribution checks
+        run: |
+          npm run check:workbench
+          npm run check:importer
+      - name: Commit paired distributions only if generated files differ
+        run: |
+          set -euo pipefail
+          git add -- tools/workbench/dist tools/importer/dist tools/importer/TRANSLATION.md
+          if git diff --cached --quiet; then
+            echo "Paired distributions already current."
+            exit 0
+          fi
+          git fetch origin "${GITHUB_REF_NAME}"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "origin/${GITHUB_REF_NAME}")" || {
+            echo "Branch changed during build; refuse stale artifacts." >&2
+            exit 1
+          }
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "build: synchronize Workbench and hardened importer artifacts"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
