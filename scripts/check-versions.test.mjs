@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 const checker = fileURLToPath(new URL("./check-versions.mjs", import.meta.url));
 const write = (root, path, value) => { const p = join(root,path); mkdirSync(dirname(p),{recursive:true}); writeFileSync(p,value); };
 const version = (n) => JSON.stringify({version:n})+"\n";
+const importerVersion = (n) => JSON.stringify({version:n,history:[{version:n,date:"candidate"}]})+"\n";
 const git = (root, args) => {
   const r=spawnSync("git",args,{cwd:root,encoding:"utf8"});
   assert.equal(r.status,0,r.stderr); return r.stdout.trim();
@@ -32,7 +33,7 @@ test("shipped source cannot change without both component and toolset version bu
     const base=git(dir,["rev-parse","HEAD"]);
 
     write(dir,"tools/importer/src/run.ts","// changed importer behavior\n");
-    write(dir,"tools/importer/version.json",version("0.11.0"));
+    write(dir,"tools/importer/version.json",importerVersion("0.11.0"));
     git(dir,["add","."]);git(dir,["commit","-qm","importer changed without toolset bump"]);
     let result=run(dir,base);
     assert.notEqual(result.status,0,"toolset bump must be required");
@@ -49,7 +50,7 @@ test("shipped source cannot change without both component and toolset version bu
     assert.notEqual(result.status,0);
     assert.match(result.stderr,/Workbench/);
     write(dir,"tools/workbench/manifest.json",version("0.10.1"));
-    write(dir,"tools/importer/version.json",version("0.11.1"));
+    write(dir,"tools/importer/version.json",importerVersion("0.11.1"));
     write(dir,"package.json",version("0.11.1"));
     git(dir,["add","."]);git(dir,["commit","-qm","bump workbench and toolset"]);
     result=run(dir,base);
