@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks } from "../src/quick_create.ts";
+import { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, planReplacePart, planPartLifecycle, partLifecycle, contextLinkChoices, previewContextLinks } from "../src/quick_create.ts";
 import { planAddElement, planAddRelationship } from "../src/edit.ts";
 import { buildIndex } from "../src/index.ts";
 import { buildBaseVault } from "../../base-vault/src/base_vault.ts";
@@ -167,3 +167,64 @@ test("pre-create context preview inspects a virtual governed note and never writ
   assert.deepEqual(previewContextLinks(ix, files, origin, plain).choices, [],
     "ordinary Markdown cannot acquire a native SysML relationship in creation preview");
 });
+
+test("Structure replacement copies the SysML part definition under new identity and resolves native supersession", () => {
+  const author = "skellyspencer", now = new Date("2026-11-21T11:00:00");
+  const vault = new Map<string, string>();
+  const base = planAddElement(buildIndex(vault, { classes }), classes, {
+    type: "Object", subtype: "part", title: "Power relay old", folder: "20_Model/Parts", author, now,
+  });
+  assert.deepEqual(base.problems, []);
+  const src = base.writes[0]!;
+  const original = src.after.replace("part def PowerRelayOld;", "part def PowerRelayOld {\n        attribute ampRating = 100;\n    }");
+  vault.set(src.path, original);
+  const ix = buildIndex(vault, { classes });
+  const plan = planReplacePart(ix, vault, classes, src.path, {
+    title: "Power relay replacement", folder: "20_Model/Parts",
+    change: "Increase relay rating to 150 A and revise coil.", author, now,
+  });
+  assert.deepEqual(plan.problems, []);
+  assert.equal(plan.writes.length, 1, "the predecessor is not edited");
+  const created = plan.writes[0]!;
+  assert.notEqual(created.path, src.path);
+  assert.match(created.after, /partLifecycle: proposed/);
+  assert.match(created.after, /changeSummary:.*Increase relay rating/);
+  assert.match(created.after, /part def PowerRelayReplacement \{/);
+  assert.match(created.after, /attribute ampRating = 100;/, "the original detail is copied, not silently changed");
+  assert.match(created.after, /dependency from .* to .*; \/\/ supersedes/);
+  assert.notEqual(/^uid: (.*)$/m.exec(original)?.[1], /^uid: (.*)$/m.exec(created.after)?.[1]);
+  assert.notEqual(/^primarySymbol: (.*)$/m.exec(original)?.[1], /^primarySymbol: (.*)$/m.exec(created.after)?.[1]);
+  assert.equal(vault.get(src.path), original);
+  const after = new Map(vault); after.set(created.path, created.after);
+  const built = buildIndex(after, { classes });
+  assert.ok(built.notes.has(created.path), "replacement is a governed note");
+  assert.ok(built.edges.some((e) => e.from === created.path && e.to === src.path && e.kind === "supersedes" && e.via === "sysml"),
+    "supersession is a resolved native dependency");
+  assert.deepEqual(built.notes.get(created.path)?.warnings, [], "copied SysML scans without warnings");
+  assert.equal(partLifecycle(built.notes.get(created.path)!), "proposed");
+  assert.equal(partLifecycle(built.notes.get(src.path)!), "current");
+  assert.ok(planReplacePart(ix, vault, classes, src.path, {
+    title: "Replacement", folder: "", change: "", author, now,
+  }).problems.length, "change rationale is mandatory");
+});
+
+test("part lifecycle is independent of model review status and does not rewrite historical usages", () => {
+  const author = "skellyspencer", now = new Date("2026-11-21T12:00:00"), vault = new Map<string, string>();
+  const source = planAddElement(buildIndex(vault, { classes }), classes,
+    { type: "Object", subtype: "part", title: "Legacy module", folder: "Parts", author, now }).writes[0]!;
+  vault.set(source.path, source.after);
+  const ix = buildIndex(vault, { classes });
+  const obsolete = planPartLifecycle(ix, vault, source.path, "obsolete");
+  assert.deepEqual(obsolete.problems, []);
+  assert.equal(obsolete.writes.length, 1);
+  assert.match(obsolete.writes[0]!.after, /partLifecycle: obsolete/);
+  assert.match(obsolete.writes[0]!.after, /status: Draft/, "review status is not the physical part lifecycle");
+  assert.equal(vault.get(source.path), source.after, "preview does not write the vault");
+  const after = new Map(vault); after.set(source.path, obsolete.writes[0]!.after);
+  assert.equal(partLifecycle(buildIndex(after, { classes }).notes.get(source.path)!), "obsolete");
+  const current = planPartLifecycle(buildIndex(after, { classes }), after, source.path, "current");
+  assert.deepEqual(current.problems, []);
+  assert.equal(partLifecycle(buildIndex(new Map([[source.path, current.writes[0]!.after]]), { classes }).notes.get(source.path)!), "current");
+  assert.ok(planPartLifecycle(ix, vault, "missing.md", "obsolete").problems.length);
+});
+
