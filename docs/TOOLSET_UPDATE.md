@@ -84,13 +84,13 @@ For live-vault index integrity, the existing `MDSE_v2_live/scripts/check-live-wo
 
 ## Step 5 — Release and traceability gate
 
-Do **not** merge or deploy solely because source tests pass. Before promoting the UX branch, require:
+Do **not** deploy solely because source tests passed and PRs #8/#9 merged. Before promoting a built toolset into a live vault, require:
 
 - Source and generated files match at the **same SHA**; complete CI including artifact checks is green.
 - No unexpected changes to template/schema/base-vault settings or engineering notes.
 - Obsidian manual UX test evidence for tab focus, Follow/Pin, discovery/Keep/Save and pop-out.
 - A recorded version/payload SHA and, when a governed release is made, matching Bootstrap lock/release metadata.
-- Approved merge to tool `main`, followed by a separately authorized update to `MDSE_v2_live/main`.
+- Verify the reviewed sources and built artifacts are already on tool `main`; obtain separate authorization for any update to `MDSE_v2_live/main`.
 
 Record the source SHA, test run URL, artifact hashes, deployed files, target vault commit (if deployed), observed Obsidian version and operator's acceptance. If a test fails, restore the backed-up plugin files or staging vault; preserve the failure report and do not declare the release complete.
 
