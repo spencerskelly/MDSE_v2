@@ -35,6 +35,8 @@ export interface PanelHost {
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
   addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  /** Last active open Canvas destination; null when no Canvas tab is available. */
+  activeCanvasPath?(): string | null;
   /** The actual note cards in the open Canvas; temporary discovery candidates excluded. */
   canvasIncluded?(): Promise<{ canvas: string | null; included: string[] }>;
   /** Set membership for this list only: checked cards included, unchecked cards removed. */
@@ -109,11 +111,18 @@ const PANEL_STYLE = `
 .mdp .lenses{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}.mdp .lenses button{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select{padding:2px 8px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}.mdp .lenses select.cur{background:var(--acc);color:#fff;border-color:var(--acc)}.mdp .lenses select.cur option{color:var(--fg);background:var(--bg)}
 .mdw.mdp.tb{overflow:hidden;padding:0}.mdp .split{display:flex;height:100%;min-height:0}.mdp .main{flex:1;min-width:0;overflow:auto;padding-bottom:24px}
 .mdp .workareas{display:flex;flex-wrap:wrap;gap:4px;padding:7px 10px;border-bottom:1px solid var(--line)}.mdp .workareas button{font-size:12px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdp .workareas button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:#fff}.mdp .workareas button:disabled{opacity:.48;cursor:not-allowed}.mdp .workareas button.review{margin-left:auto}
-.mdw .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdw .globalsearch input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
+.mdw .globalsearch{padding:7px 10px;border-bottom:1px solid var(--line)}.mdw .globalsearch > input{box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg)}
 .mdw .searchhits{max-height:250px;overflow-y:auto;margin-top:4px;border:1px solid var(--line);border-radius:6px}
 .mdw .searchhits button{display:block;width:100%;text-align:left;padding:5px 8px;background:var(--bg2);border:0;border-bottom:1px solid var(--line);color:var(--fg);cursor:pointer}
 .mdw .searchhits button:hover,.mdw .searchhits button:focus-visible{background:var(--bg)}
 .mdw .searchhits small{display:block;color:var(--mut);font-size:11px}
+.mdw .searchhits .searchrow{display:flex;align-items:center;gap:6px;padding:2px 6px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.mdw .searchhits .searchrow > input[type=checkbox]{flex:0 0 auto;width:auto}
+.mdw .searchhits .searchrow > button.search-open{flex:1;min-width:0;width:auto;padding:4px 2px;border:0;border-radius:0}
+.mdw .searchhits .searchrow > button.search-add{flex:0 0 auto;width:auto;white-space:nowrap;padding:2px 6px;border:1px solid var(--line);border-radius:6px}
+.mdw .searchhits .searchrow > button.search-add:disabled{opacity:.45;cursor:not-allowed}
+.mdw .globalsearch .search-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0 0}
+.mdw .globalsearch .search-target{font-size:11px;margin-top:4px;overflow-wrap:anywhere}
 .mdp .fnrow{padding:6px 10px;border-bottom:1px solid var(--line)}.mdp .fnrow select{width:100%;font-size:13px;padding:4px 6px}.mdp .tbar{flex:0 0 38px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden}.mdp .tbar .tg{width:24px;border-top:1px solid var(--line);margin:4px 0 2px}.mdp .tbar button{width:30px;height:30px;padding:0;font-size:15px;line-height:1;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}.mdp .tbar button:hover:not(:disabled){border-color:var(--acc)}.mdp .tbar button[aria-pressed=true]{background:var(--acc);color:#fff}.mdp .tbar button:disabled{opacity:.35;cursor:not-allowed}
 .mdw .contextmode{display:flex;gap:4px;align-items:center;margin-top:6px;flex-wrap:wrap}.mdw .contextmode button{font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg);cursor:pointer}.mdw .contextmode button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}.mdw .contextmode button:disabled{opacity:.55;cursor:not-allowed}
 .mdw .relation-workflow{margin-left:6px;max-width:110px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:5px;background:var(--bg2);color:var(--fg)}
@@ -135,6 +144,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
   let workArea: "document" | "define" | "structure" | "verify" = opt.area ?? "document", reviewReturn: V.Lens = "note", searchText = "", discoveryAll = false;
+  const searchPicked = new Set<string>(); // Persistent across global-search filters; independent of the active workflow/Canvas
   let scope: "selected" | "all" = "selected", table: "notes" | "relationships" | "usages" = "relationships", text = "", spec: Partial<V.ViewSpec> = {}, revFilter = "", pinned = !!opt.fixedContext, inherit: V.InheritFrom[] = [];   // D-0101
 
   const note = (p: string | null | undefined): Note | undefined => (p ? ix?.notes.get(p) : undefined);
@@ -816,16 +826,52 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const searchBox = h("div", { class: "globalsearch" }, searchInput);
     if (ix && searchText.trim()) {
       const found = V.search(ix, searchText, 21), limited = found.slice(0, 20);
+      const target = host.activeCanvasPath?.() ?? null;
+      const picked = (): string[] => [...searchPicked].filter((p) => ix!.notes.has(p));
+      const count = h("span", { class: "mut" }, `${picked().length} selected`);
+      const addSelected = h("button", { class: "sm pri", type: "button",
+        disabled: !host.addToCanvas || !target || !picked().length || undefined,
+        title: target ? `Add selected engineering notes to ${target} without replacing or rearranging existing cards` : "Open a Canvas tab before adding results",
+        onclick: () => { if (target && host.addToCanvas && picked().length) busy(addSelected, "Adding…", () => host.addToCanvas!("", picked())); }
+      }, `Add ${picked().length} selected to Canvas`);
       const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
-        ...limited.map((hit) => h("button", { type: "button",
-          onclick: () => {
-            sel = hit.path; searchText = ""; workArea = "document"; lens = "note"; editEl = null;
-            host.openNote(hit.path); draw();
-          }
-        }, hit.title, h("small", {}, [hit.id, hit.type, String(hit.meta.partNumber ?? "")].filter(Boolean).join(" · ")))));
+        ...limited.map((hit) => h("div", { class: "searchrow" },
+          h("input", { type: "checkbox", checked: searchPicked.has(hit.path),
+            "aria-label": `Select ${hit.title} for Canvas`,
+            onchange: (e: Event) => {
+              if ((e.target as HTMLInputElement).checked) searchPicked.add(hit.path); else searchPicked.delete(hit.path);
+              const paths = picked(); count.textContent = `${paths.length} selected`;
+              addSelected.textContent = `Add ${paths.length} selected to Canvas`;
+              if (target && paths.length) addSelected.removeAttribute("disabled"); else addSelected.setAttribute("disabled", "");
+            }
+          }),
+          h("button", { class: "search-open", type: "button",
+            title: "Open note in a separate editor tab", onclick: () => {
+              sel = hit.path; searchText = ""; workArea = "document"; lens = "note"; editEl = null;
+              host.openNote(hit.path); draw();
+            }
+          }, hit.title, h("small", {}, [hit.id, hit.type, String(hit.meta.partNumber ?? "")].filter(Boolean).join(" · "))),
+          host.addToCanvas ? h("button", { class: "search-add", type: "button",
+            disabled: !target || undefined,
+            title: target ? `Add this note to ${target}` : "Open a Canvas tab before adding results",
+            "aria-label": `Add ${hit.title} to active Canvas`,
+            onclick: (e: Event) => {
+              if (!target) return;
+              const b = e.currentTarget as HTMLElement;
+              busy(b, "Adding…", () => host.addToCanvas!("", [hit.path]));
+            }
+          }, "+ Canvas") : null
+        )));
       if (!limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "No matching model notes."));
-      if (found.length > limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "More matches exist; refine the search."));
-      searchBox.append(hits);
+      if (found.length > limited.length) hits.append(h("div", { class: "mut", style: "padding:7px" }, "Showing first 20 matches; refine the search for more."));
+      const actions = h("div", { class: "search-actions" },
+        h("button", { class: "sm", type: "button", disabled: !limited.length || undefined,
+          onclick: () => { for (const hit of limited) searchPicked.add(hit.path); draw(); } }, "Select shown"),
+        h("button", { class: "sm", type: "button", disabled: !picked().length || undefined,
+          onclick: () => { searchPicked.clear(); draw(); } }, "Clear selection"),
+        count, host.addToCanvas ? addSelected : null);
+      searchBox.append(h("div", { class: "mut search-target" },
+        target ? `Target Canvas: ${target}` : "No open Canvas — open a Canvas tab to add search results."), hits, actions);
     }
     const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
