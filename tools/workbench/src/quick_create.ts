@@ -152,10 +152,16 @@ export function planReplacePart(ix: ModelIndex, files: Map<string, string>, clas
   if (clone === oldDef && source.def.name !== newName) return bad("Could not rename the copied definition.");
   const newStart = newBlock.lastIndexOf("\n", newSpot.nameEnd) + 1;
   const newEnd = newSpot.open ? newSpot.close + 1 : newSpot.term + 1;
-  const dependency = "\n    dependency from " + record.after.match(/^primarySymbol:\s*(.+)$/m)![1] +
-    " to " + source.def.symbol + "; // supersedes\n";
+  const dependency = "dependency from " + record.after.match(/^primarySymbol:\s*(.+)$/m)![1] +
+    " to " + source.def.symbol + "; // supersedes";
+  // Place dependency INSIDE the part definition: the current scanner associates statements
+  // with the containing definition, not with a package-level trailing statement.
+  const closeAt = clone.lastIndexOf("}");
+  const joined = oldSpot.open && closeAt >= 0
+    ? clone.slice(0, closeAt).replace(/[ \t]*$/, "") + "\n        " + dependency + "\n    " + clone.slice(closeAt)
+    : clone.replace(/;\s*$/, " {\n        " + dependency + "\n    }");
   let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
-    clone + dependency + newBlock.slice(newEnd));
+    joined + newBlock.slice(newEnd));
   after = replaceFm(after, "partLifecycle", "proposed");
   after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
   after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
