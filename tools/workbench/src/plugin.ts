@@ -445,6 +445,7 @@ function hostFor(plugin: any): any {
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
     addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
+    activeCanvasPath: () => plugin.canvasTarget()?.path ?? null,
     canvasIncluded: () => plugin.canvasIncluded(),
     updateIncluded: (anchor: string, scope: string[], checked: string[], directChildren: string[]) => plugin.updateCanvasIncluded(anchor, scope, checked, directChildren),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
