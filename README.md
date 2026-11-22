@@ -4,7 +4,7 @@ MDSE is one linked engineering model kept as plain Markdown and YAML in an Obsid
 
 This repository holds the rules, schemas and every tool that builds and serves an MDSE vault. It does **not** hold a model. Real engineering data never enters it ([DAT-002](governance/RULESET.md#dat--data-and-security)).
 
-**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.** For an exact build and safe staging/live vault update, follow [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). The current PR #4 artifact build and uncompleted Obsidian checks are recorded in [docs/STAGING_VALIDATION_PR4.md](docs/STAGING_VALIDATION_PR4.md).
+**New to the project? Read [docs/HANDOVER.md](docs/HANDOVER.md) first.** For an exact build and safe staging/live vault update, follow [docs/TOOLSET_UPDATE.md](docs/TOOLSET_UPDATE.md). The merged Workbench/importer implementation and outstanding runtime gates are recorded in [docs/BRANCH_CONSOLIDATION_2026-11-21.md](docs/BRANCH_CONSOLIDATION_2026-11-21.md) and [testing/WORKBENCH_IMPORTER_ACCEPTANCE.md](testing/WORKBENCH_IMPORTER_ACCEPTANCE.md).
 
 ## Where things are
 
@@ -27,7 +27,7 @@ This repository holds the rules, schemas and every tool that builds and serves a
 | **P1** | EA import, Base Vault and Bootstrap, Workbench | Importer, Base Vault payload, Bootstrap and Workbench are implemented in source; full parser, real-vault acceptance, controlled release lock and first-open gates remain open. |
 | P2 | BOM import, merge and approval | BOM importer and partial update scan exist; real-data acceptance and full approval flow remain open. |
 | P3 | Workbench editing | Existing model editing and governed relationship actions are implemented, with synthetic tests; real Obsidian validation and release acceptance remain open. |
-| **UX prototype** | Document / Define / Structure / Verify; Canvas discovery; independent workspaces | Developed in draft PR #4 on `ux/pass08-workarea-prototype-20261119`; not merged or deployed. See [toolset update and acceptance](docs/TOOLSET_UPDATE.md).
+| **Four-workflow Workbench** | Document / Define / Structure / Verify; Canvas discovery; independent note and canvas editor tabs | Source and paired build merged through PR #8. Staging/live runtime acceptance still open; see [toolset update and acceptance](docs/TOOLSET_UPDATE.md).
 
 Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 
@@ -46,7 +46,7 @@ npm run check:importer   # verify importer HTML and generated translation refere
 ## How work is done here
 
 - Rules change only through [governance/DECISIONS.md](governance/DECISIONS.md) and [governance/RULESET.md](governance/RULESET.md), in the same commit.
-- The active UX prototype is isolated in [draft PR #4](https://github.com/spencerskelly/MDSE_v2/pull/4); do not merge or deploy until approved and build/runtime gates pass. Governance for normal `main` changes remains in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Workbench integration [PR #8](https://github.com/spencerskelly/MDSE_v2/pull/8) and importer safety [PR #9](https://github.com/spencerskelly/MDSE_v2/pull/9) were merged to `main`. Do not confuse source merge with a validated deployment to a live vault. Governance for normal `main` changes remains in [CONTRIBUTING.md](CONTRIBUTING.md).
 - See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## History

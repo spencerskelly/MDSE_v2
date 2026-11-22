@@ -1,12 +1,12 @@
 # MDSE importer: Windows / macOS update and import hardening
 
-**Status:** clean integration branch `integration/importer-hardening-after-workbench-20261121` based on the already merged four-workflow Workbench. **Not yet accepted on real NTFS and APFS vaults.** Do not merge or deploy to MDSE_v2_live until the native staging tests below pass and the owner authorizes promotion.
+**Status:** importer hardening merged into `MDSE_v2/main` via [PR #9](https://github.com/spencerskelly/MDSE_v2/pull/9), merge commit `f0e0300a26dd1488cc3a9ee3c6b9cd41535b7812`. **Real NTFS/APFS vault and Obsidian acceptance remains open.** Code merge is not live deployment.
 
 ## Build and automated validation evidence
 
-- Latest paired artifact sync: [Actions 44860595454](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860595454) — passed, artifact commit `6ea024c12b8f0fbc2579ae14734fe81203ffa0bd`. The generated importer HTML includes the final missing-parent rollback guard.
-- Native platform regression: [Windows/macOS Actions 44860224606](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860224606) — passed on both operating systems. A separate latest-source run is also part of PR #5.
-- Browser failure-injection regression: latest PR CI run must pass with the exact generated importer HTML. **Do not mark this accepted until confirmed.**
+- Historical hardening-branch artifact sync: [Actions 44860595454](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860595454). The clean merged branch regenerated its importer bundle at `c533e8ab4ccc8f12699a2602aec39a9fb6d04fe3` against the PR #8 Workbench. This is source integration evidence, not an installed-vault hash record.
+- Native platform regression: historical [Actions 44860224606](https://github.com/spencerskelly/MDSE_v2/actions/runs/44860224606) passed; clean integration [Actions 44982882164](https://github.com/spencerskelly/MDSE_v2/actions/runs/44982882164) completed successfully for Windows and macOS. These are automated tests; the physical vault ledger below is still blank.
+- Paired importer/Workbench build [Actions 44982882156](https://github.com/spencerskelly/MDSE_v2/actions/runs/44982882156) passed after generated-artifact synchronization. An independent parser and real-vault failure-injection evidence are still required for a released toolset.
 - Physical Windows NTFS / macOS APFS folder update and Obsidian runtime: **not yet performed**.
 
 ## Supported browser / folder workflow

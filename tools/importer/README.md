@@ -39,8 +39,8 @@ Step 4 of the page. Choose a vault folder in step 2, press **Preview vault updat
 
 | Files | What happens |
 |---|---|
-| `99_System/02_AI`, `03_Schemas`, `05_Templates`, `.obsidian/plugin-lock.yaml` | Replaced when different. The old copy is saved first under `99_System/11_Import/Update <date>/Replaced/`. |
-| `.obsidian/plugins/mdse-workbench/` (`main.js`, `manifest.json`, `styles.css`) | Replaced when different (the release is reproducible, so no copy). |
+| `99_System/02_AI`, `03_Schemas`, `04_Language`, `05_Templates`, `.obsidian/plugin-lock.yaml` | Replaced when different. Original backed up before mutation under `99_System/11_Import/Update <date>/Replaced/`. |
+| `.obsidian/plugins/mdse-workbench/` (`main.js`, `manifest.json`, `styles.css`) | Replaced when different; original plugin bytes are archived before writes. |
 | `.obsidian/community-plugins.json`, `core-plugins.json` | Shipped entries added; your other entries kept. |
 | `.obsidian/app.json` | The governed keys are set; your other settings kept. |
 | `.gitignore` | Missing shipped lines appended; nothing removed. |
@@ -49,6 +49,8 @@ Step 4 of the page. Choose a vault folder in step 2, press **Preview vault updat
 | Notes, attachments, plugin `data.json`, workspace files, anything not shipped | Not read, not touched. Nothing is deleted. |
 
 A folder with no vault gets the whole base vault. A `Vault Update <date>.md` note in `99_System/11_Import` lists every change. A malformed JSON config is left alone and reported. Running it again changes nothing.
+
+**Merged importer hardening (PR #9):** Preview captures original target contents and rejects Apply if a target, backup, or report path changed. Controlled, merged and plugin originals are backed up before mutations; writes are read back; a failed update attempts rollback without deleting recovery archives. Existing-vault imports similarly preserve original target bytes, including binary files; unchanged bytes are not rewritten, and changed files are checked before writes. Windows/macOS filename, Unicode/case collision and relative-path length checks are enforced. **Rollback is best effort, not an ACID transaction; keep a full vault backup.** Synthetic/native-runner regressions passed, but actual NTFS/APFS vault and real Obsidian acceptance is still open. See [cross-platform staging acceptance](../../docs/CROSS_PLATFORM_IMPORT_ACCEPTANCE.md).
 
 ## Run and update the managed toolset
 
