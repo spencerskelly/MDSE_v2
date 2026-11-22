@@ -13,10 +13,10 @@ const byTitle = (t: string): string => [...ix.notes.values()].find((n) => n.titl
 test("plugin runtime WB API exports every helper invoked by the Obsidian shell", () => {
   const plugin = readFileSync(new URL("../src/plugin.ts", import.meta.url), "utf8");
   const build = readFileSync(new URL("../build.mjs", import.meta.url), "utf8");
-  const api = /const api = "\\{([^"]+)\\}"/.exec(build);
+  const api = /const api = "\{([^"]+)\}"/.exec(build);
   assert.ok(api, "the build must declare its runtime WB export surface");
   const exported = new Set(api![1]!.split(",").map((s) => s.trim()));
-  const referenced = [...new Set([...plugin.matchAll(/\\bWB\\.(\\w+)/g)].map((m) => m[1]!))].sort();
+  const referenced = [...new Set([...plugin.matchAll(/\bWB\.(\w+)/g)].map((m) => m[1]!))].sort();
   assert.deepEqual(referenced.filter((name) => !exported.has(name)), [],
     "a helper compiled into the bundle is still unavailable until exported in build.mjs");
 });
