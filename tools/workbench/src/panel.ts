@@ -34,7 +34,7 @@ export interface PanelHost {
   openMemberCanvas?(owner: string, key: string): Promise<string>;
   /** Put the picked notes on a canvas preview (D-0078). */
   /** Put notes on the canvas preview beside the selected note's card (D-0082). */
-  addToCanvas?(anchor: string, paths: string[]): Promise<string>;
+  addToCanvas?(anchor: string, paths: string[], expectedCanvasPath?: string): Promise<string>;
   /** Last active open Canvas destination; null when no Canvas tab is available. */
   activeCanvasPath?(): string | null;
   /** The actual note cards in the open Canvas; temporary discovery candidates excluded. */
@@ -558,12 +558,19 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
 
   /* D-0078: search a word or phrase in name or description, tick notes, place them on a canvas. */
   function pickView(): HTMLElement {
+    const destination = host.activeCanvasPath?.() ?? null;
     const types = [...new Set([...ix!.notes.values()].map((n) => n.type))].sort(), found = V.pickRows(ix!, pickText, pickType), notes = found.notes;
     const count = h("span", { class: "mut" }), boxes = new Map<string, HTMLInputElement>();
     const upd = (): void => { count.textContent = `${pickSel.size} ticked`; };
     const tickAll = (on: boolean): void => { for (const n of notes) { if (on) pickSel.add(n.path); else pickSel.delete(n.path); const b = boxes.get(n.path); if (b) b.checked = on; } upd(); };
-    const place = h("button", { class: "sm pri", title: "Add the ticked notes to the canvas preview that is open; nothing already on it moves, and related notes are put next to each other. With none open this makes one. Nothing is saved until you choose Save canvas." }, "Place on canvas");
-    place.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(place, "Placing…", () => host.openPickCanvas!([...pickSel], pickText, pickRel, pickGroup, false)); });
+    const place = h("button", { class: "sm pri", type: "button", disabled: !destination || !host.addToCanvas || undefined,
+      title: destination ? `Add ticked notes to ${destination} without creating a new Canvas or moving existing cards` : "Open a Canvas editor tab before adding notes" }, "Add selected to current Canvas");
+    place.addEventListener("click", () => {
+      if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; }
+      if (!destination || host.activeCanvasPath?.() !== destination) { msg = "Canvas target changed or closed. Recheck the destination and try again."; draw(); return; }
+      if (!host.addToCanvas) { msg = "Canvas editing is not available in this Workbench."; draw(); return; }
+      busy(place, "Adding…", () => host.addToCanvas!("", [...pickSel], destination));
+    });
     const fresh = h("button", { class: "sm", title: "Replace the canvas preview with a new one made of the ticked notes (boxed by type when that is ticked)" }, "New canvas");
     fresh.addEventListener("click", () => { if (!pickSel.size) { msg = "Tick at least one note first."; draw(); return; } busy(fresh, "Creating…", () => host.openPickCanvas!([...pickSel], pickText, pickRel, pickGroup, true)); });
     const bar = h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" },
@@ -571,7 +578,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       h("button", { class: "sm", onclick: () => { pickSel.clear(); for (const b of boxes.values()) b.checked = false; upd(); } }, "Clear all"),
       h("label", { title: "Draw the relationships that run between the ticked notes" }, h("input", { type: "checkbox", checked: pickRel, onchange: (e: Event) => { pickRel = (e.target as HTMLInputElement).checked; } }), " draw relationships"),
       h("label", { title: "Put the notes in one labelled box for each type, so a long list is easy to move around. Applies to a new canvas." }, h("input", { type: "checkbox", checked: pickGroup, onchange: (e: Event) => { pickGroup = (e.target as HTMLInputElement).checked; } }), " group by type"), count,
-      host.openPickCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."), host.openPickCanvas ? fresh : null);
+      host.addToCanvas ? place : h("span", { class: "mut" }, "Canvas needs Obsidian."), host.openPickCanvas ? fresh : null);
     if (host.saveCanvas && host.hasPreview?.()) { const b = h("button", { class: "sm" }, "Save canvas…"); b.addEventListener("click", () => busy(b, "Saving…", () => host.saveCanvas!())); bar.append(b); }
     upd();
     const list = h("div", {}, ...notes.map((n) => {
@@ -582,6 +589,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     }));
     return h("div", {},
       h("div", { class: "mut" }, "Words are matched in the name, description, id, part number and aliases. Every word must be there."),
+      h("div", { class: "mut search-target" }, destination ? `Target Canvas: ${destination}` : "No open Canvas — open a Canvas tab, or use New canvas."),
       h("div", { class: "chips", style: "display:flex;gap:6px;margin:6px 0" },
         h("input", { type: "search", placeholder: "Word or phrase", value: pickText, "aria-label": "Search for notes to place on a canvas", style: "flex:1", onchange: (e: Event) => { pickText = (e.target as HTMLInputElement).value; draw(); } }),
         h("select", { "aria-label": "Type", onchange: (e: Event) => { pickType = (e.target as HTMLSelectElement).value; draw(); } }, h("option", { value: "" }, "all types"), ...types.map((t) => h("option", { value: t, selected: pickType === t }, t)))),
@@ -839,7 +847,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       const addSelected = h("button", { class: "sm pri", type: "button",
         disabled: !host.addToCanvas || !target || !picked().length || undefined,
         title: target ? `Add selected engineering notes to ${target} without replacing or rearranging existing cards` : "Open a Canvas tab before adding results",
-        onclick: () => { if (target && host.addToCanvas && picked().length && confirmTarget()) busy(addSelected, "Adding…", () => host.addToCanvas!("", picked())); }
+        onclick: () => { if (target && host.addToCanvas && picked().length && confirmTarget()) busy(addSelected, "Adding…", () => host.addToCanvas!("", picked(), target)); }
       }, `Add ${picked().length} selected to Canvas`);
       const hits = h("div", { class: "searchhits", role: "group", "aria-label": "Search matches" },
         ...limited.map((hit) => h("div", { class: "searchrow" },
@@ -865,7 +873,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
             onclick: (e: Event) => {
               if (!confirmTarget()) return;
               const b = e.currentTarget as HTMLElement;
-              busy(b, "Adding…", () => host.addToCanvas!("", [hit.path]));
+              busy(b, "Adding…", () => host.addToCanvas!("", [hit.path], target!));
             }
           }, "+ Canvas") : null
         )));
