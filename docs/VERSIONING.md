@@ -18,7 +18,7 @@ A source change must update its own component version **and** the coordinated to
 
 ## Status and version identification
 
-- The single offline Importer HTML displays **Importer vX.Y.Z • toolset vX.Y.Z • build <content-hash>** in the header. The build hash changes with packaged bytes; it is not a human-facing release number.
+- The single offline Importer HTML displays **Importer vX.Y.Z • toolset vX.Y.Z • build <content-hash>** in the header. Its expanded **Importer version history** is bundled from `tools/importer/version.json` and shows known version notes even with no network. The newest entry must match the current Importer version. This is local history, not live online freshness detection. The build hash changes with packaged bytes; it is not a human-facing release number.
 - The Workbench Obsidian plugin manifest displays its independently versioned release; Bootstrap likewise.
 - The importer’s existing **Toolset version check** shows the selected vault’s installed release plus installed Workbench/Bootstrap versions and file drift. A vault can be behind, ahead or have changed files despite matching version labels.
 - An importer is an **offline file**. It cannot know the latest GitHub release without explicit comparison or opening a newer downloaded file; never claim automatic online updating. Check the version and build hash against a known approved release record before installing.
