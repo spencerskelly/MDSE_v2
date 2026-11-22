@@ -274,11 +274,14 @@ class QuickCreateModal extends obsidian.Modal {
         "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
     const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
     const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-    let title = t.id === "daily" ? dateLabel : t.id === "part-replacement" ? (p.ix?.notes.get(this.origin)?.title ?? "") + " Replacement" : "", folder = originFolder, detail = "";
+    let title = t.id === "daily" ? dateLabel : t.id === "part-replacement" ? (p.ix?.notes.get(this.origin)?.title ?? "") + " Replacement" : "", folder = originFolder, detail = "", partNumber = "";
     new obsidian.Setting(el).setName("Name").addText((x: any) =>
       x.setPlaceholder("New note title").setValue(title).onChange((v: string) => { title = v; invalidate(); }));
     new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
       .addText((x: any) => x.setValue(folder).onChange((v: string) => { folder = v; invalidate(); }));
+    if (t.id === "part-replacement") new obsidian.Setting(el).setName("New part number (optional)")
+      .setDesc("Do not reuse the predecessor's part number. Leave blank until the new PN is assigned.")
+      .addText((x: any) => x.setPlaceholder("New PN").setValue(partNumber).onChange((v: string) => { partNumber = v; invalidate(); }));
     if (t.kind === "governed") new obsidian.Setting(el).setName(t.id === "part-replacement" ? "What is changing? (required)" : "Description / requirement text")
       .addTextArea((x: any) => x.setValue(detail).onChange((v: string) => { detail = v; invalidate(); }));
     const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
@@ -296,7 +299,7 @@ class QuickCreateModal extends obsidian.Modal {
     see.addEventListener("click", () => {
       const existing = new Set<string>([...p.files.keys(), ...[...p.ix.notes.keys()]]);
       plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) : t.id === "part-replacement"
-        ? WB.planReplacePart(p.ix, p.files, CLASSES, this.origin, { title, folder, change: detail, author: p.author })
+        ? WB.planReplacePart(p.ix, p.files, CLASSES, this.origin, { title, folder, change: detail, partNumber, author: p.author })
         : WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
       relationshipPreview.empty();
       if (plan.problems.length) {
