@@ -7875,7 +7875,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async canvasIncluded()                                                         {
     const target = this.canvasTarget();
     if (!target) return { canvas: null, included: [] };
-    try { await target.leaf?.view?.save?.(); } catch { /* optional Canvas save API */ }
+    // A membership query must be read-only. Calling CanvasView.save() here can overwrite
+    // the programmatic included-element update with an older in-memory Canvas snapshot,
+    // and spuriously fire draw-to-relate detection on an otherwise unchanged view.
     const file = this.app.vault.getAbstractFileByPath(target.path);
     if (!file) return { canvas: null, included: [] };
     const doc = parseDoc(await this.app.vault.read(file));
