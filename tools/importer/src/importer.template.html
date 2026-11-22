@@ -33,6 +33,7 @@ dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);bord
 ol.how{padding-left:20px;margin:8px 0}ol.how li{margin:6px 0}
 </style></head><body><main>
 <h1>MDSE v2 Importer <span id="build" class="pill"></span></h1>
+<details class="card" style="padding:9px 12px;margin:10px 0"><summary>Importer version history</summary><div id="releaseHistory"></div><p class="mut">History bundled in this offline file. It cannot tell whether a newer approved release exists online.</p></details>
 <div class="mut">One file, no install, no network. Turns an EA export (QEAX) and a bill of materials into a complete Obsidian vault with the Workbench, Bootstrap and the working plugins already inside.</div>
 <div class="who" id="who"></div>
 <ol class="steps" aria-label="Steps">
@@ -114,12 +115,14 @@ const BASEVAULT = /*@@BASEVAULT@@*/;
 const CLASSES = /*@@CLASSES@@*/;
 const BUILD = "/*@@BUILD@@*/";
 const IMPORTER_VERSION = /*@@IMPORTER_VERSION@@*/;
+const IMPORTER_HISTORY = /*@@IMPORTER_HISTORY@@*/;
 const RELEASE = /*@@RELEASE@@*/;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));          // lets the browser repaint between heavy steps
 $("build").textContent = "Importer v" + IMPORTER_VERSION + " · toolset v" + RELEASE + " · " + BUILD;
+$("releaseHistory").innerHTML = "<ul>" + IMPORTER_HISTORY.map((r) => "<li><b>v" + esc(r.version) + "</b> · " + esc(r.date) + " · " + esc(r.status) + " — " + esc(r.summary) + "</li>").join("") + "</ul>";
 let source = null, bom = null, sales = null, vaultHandle = null, person = null;
 
 /* ---- Step 1: who ------------------------------------------------------------------------------------------------------- */
