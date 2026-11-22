@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { buildIndex, buildIndexAsync } from "../src/index.ts";
 import * as V from "../src/views.ts";
 import { followSelection, navigateToWorkflow, WORKFLOW_ENTRY_LENS } from "../src/panel.ts";
@@ -176,6 +175,7 @@ test("scale: a 6,000-note vault indexes quickly", async () => {
 });
 
 /* ---- PCE25: a real note from the user's import, alone in an otherwise empty vault ---- */
+import { readFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { cdNotePath } from "../src/canvas_draw.ts";
 import { refreshCanvas, updateIncludedCanvas, addChildren, autoLayout, structureCanvas, toCanvas, pickCanvas, cardName, addToCanvas, relatedNotes, commonRelated, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, withCanvasCap, buildWithLimit, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, layoutTier } from "../src/canvas.ts";
