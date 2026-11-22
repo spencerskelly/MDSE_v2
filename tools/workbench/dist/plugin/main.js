@@ -8379,6 +8379,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       }));
       menu.addItem((i     ) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e     ) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
     }));
+    // Keep the Search/Pick notes destination label synchronized when Canvas tabs change.
+    // Avoid rebuilding an active editor form just because another artifact received focus.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf     ) => {
+      if (leaf?.view?.getViewType?.() === "canvas") this.canvasLeaf = leaf;
+      this.apps.forEach((panel     ) => { if (panel.lens?.() !== "edit") panel.refresh?.(); });
+    }));
     this.registerEvent(this.app.workspace.on("file-open", (f     ) => this.onFileOpen(f)));
     for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
     this.registerInterval(window.setInterval(() => { try { this.canvasSelection(); } catch { /* a canvas internal that moved must never break the plugin */ } }, 300));
