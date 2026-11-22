@@ -43,3 +43,12 @@ The CI run against source commit `0e6d830` began before the bot committed rebuil
 ## Contextual New menu extension (2026-11-21)
 
 The four-workflow Workbench quick-create catalog now offers the following additional governed note actions: **Define → Design** (`Condition/design`, native `state def`); **Define → State** (`Condition/state`, native `state def`); **Verify → Requirement** (`Requirement/functional`, native `requirement def`). Define's existing Requirement remains available. Creation remains preview-first, generates governed IDs/UIDs, and does not implicitly write contextual SysML relationships. The workflow test suite checks the exact schema mappings and native definition syntax. This documentation-only commit requests a CI run against the synchronized plugin and importer artifacts after the paired build.
+
+## Canvas inclusion and refresh defect repair — 2026-11-21
+
+Two Obsidian acceptance regressions were diagnosed and addressed on this integration branch:
+
+1. **Update included elements:** staging a checked/unchecked change now sets an explicit dirty flag, so Canvas selection changes, readbacks, and refreshes do not silently reset the pending choice. Inclusion queries no longer call CanvasView.save(), which could trigger a stale save during an otherwise read-only operation. A browser regression verifies that an unchecked related card remains unchecked through a Canvas selection event, then is removed by Update.
+2. **Refresh canvas creating a new-relationship prompt:** model-generated `aN` and `eN` edges are explicitly excluded from draw-to-relate candidate detection, even if a prior preview ledger is stale. Refresh also records newly generated model edges before committing its Canvas file write. A unit regression verifies generated edges never request a SysML relationship.
+
+These changes only affect view membership and detection of manually drawn Canvas edges; they do not edit model notes or create SysML relationships. This documentation-only commit requests full CI against synchronized generated plugin/importer outputs. Native Obsidian acceptance remains required before promotion to main.
