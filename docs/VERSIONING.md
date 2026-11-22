@@ -28,7 +28,7 @@ Version numbers use **MAJOR.MINOR.PATCH**. For development, use:
 
 Once `1.0.0` is formally approved, use conventional semantic versioning: PATCH for compatible fixes, MINOR for backward-compatible capabilities, MAJOR for incompatible changes. **Never reuse a version for different shipped code**. No nightly date-based versioning. Component versions and the bundled Importer/toolset versions may differ because they represent different independently maintained software, but every changed distributable has an increased, traceable version.
 
-A source change must update its own component version **and** the coordinated toolset version in the same PR. `scripts/check-versions.mjs` compares implementation changes to the PR base or prior main commit and fails CI when a required component version was not increased. Docs/test-only changes need no bump. A tag is an approved release only after staged runtime acceptance.
+A source change must update its own component version **and** the coordinated toolset version in the same PR. `scripts/check-versions.mjs` compares implementation changes to the PR base or prior main commit and fails CI when a required component version was not increased. Docs/test-only changes need no bump. A source merge, version bump or Git tag is never sufficient evidence of release approval; any optional pre-1.0 test tag must be clearly identified as a development candidate, and a release-for-use tag is reserved for the approved 1.0.0 milestone.
 
 ## Status and version identification
 
