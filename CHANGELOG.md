@@ -4,6 +4,14 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.11.0 — explicit Importer version progression (not deployed)
+
+- **Importer 0.11.0**: first independently tracked Importer release number; previously the Importer displayed only the inherited toolset 0.10.0 plus a content hash. The offline header now displays **Importer**, **toolset**, and content build fingerprint separately.
+- **Toolset 0.11.0**: coordinated packaging version for the new Importer and bundled Base Vault.
+- **Workbench 0.10.0 / Bootstrap 0.1.0**: unchanged component implementations and versions; do not claim they were updated or acceptance-tested by this metadata change.
+- Introduced [versioning policy](docs/VERSIONING.md), monotonic component version checking against changed source in CI, and explicit upgrade/downgrade interpretation. Staged runtime and parser acceptance remain separate from merging source.
+
+
 - **2026-11-21 branch consolidation:** [PR #8](https://github.com/spencerskelly/MDSE_v2/pull/8) merged the persistent one-panel Document/Define/Structure/Verify Workbench, stable note/Canvas artifact tabs, discovery, member view and preview-first engineering workflows. [PR #9](https://github.com/spencerskelly/MDSE_v2/pull/9) merged the unique guarded importer/vault-update work and Windows/macOS automated regression tests from old PR #5. The detailed acceptance contracts from the closed test/acceptance branches are retained in [testing/WORKBENCH_IMPORTER_ACCEPTANCE.md](testing/WORKBENCH_IMPORTER_ACCEPTANCE.md). **Code integration is complete; real-Obsidian/physical NTFS+APFS and independent SysML parser sign-off are not claimed.** Earlier "review branch/unmerged" bullets below are historical development notes, not a statement of current branch state.
 
 
