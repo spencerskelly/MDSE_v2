@@ -113,12 +113,13 @@ const TAGS = /*@@TAGS@@*/;
 const BASEVAULT = /*@@BASEVAULT@@*/;
 const CLASSES = /*@@CLASSES@@*/;
 const BUILD = "/*@@BUILD@@*/";
+const IMPORTER_VERSION = /*@@IMPORTER_VERSION@@*/;
 const RELEASE = /*@@RELEASE@@*/;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const log = (m) => { $("log").textContent += m + "\n"; };
 const tick = () => new Promise((r) => setTimeout(r, 0));          // lets the browser repaint between heavy steps
-$("build").textContent = BUILD + " · toolset " + RELEASE;
+$("build").textContent = "Importer v" + IMPORTER_VERSION + " · toolset v" + RELEASE + " · " + BUILD;
 let source = null, bom = null, sales = null, vaultHandle = null, person = null;
 
 /* ---- Step 1: who ------------------------------------------------------------------------------------------------------- */
