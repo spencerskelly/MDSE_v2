@@ -6108,8 +6108,8 @@ const partLifecycle = (n                                                        
 };
 const isPartNote = (n                                                                     )          =>
   n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
-const yamlScalar = (s        )         => JSON.stringify(s);
-const replaceFm = (text        , key        , value        )         => {
+const qcYamlScalar = (s        )         => JSON.stringify(s);
+const qcReplaceFm = (text        , key        , value        )         => {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!fm) throw new Error("The governed note has no YAML frontmatter.");
   const re = new RegExp("^" + key + ":[^\\r\\n]*$", "m");
@@ -6117,7 +6117,7 @@ const replaceFm = (text        , key        , value        )         => {
   const next = re.test(current) ? current.replace(re, key + ": " + value) : current + "\n" + key + ": " + value;
   return text.replace(fm[0], "---\n" + next + "\n---");
 };
-                                                                                                          
+                                                                                                                               
 /** Preview-first clone: new identity and SysML namespace, copied engineering definition,
  * explicit native dependency tagged supersedes, unchanged predecessor. */
 function planReplacePart(ix            , files                     , classes           ,
@@ -6128,6 +6128,10 @@ function planReplacePart(ix            , files                     , classes    
     return bad("Select a governed Object/part containing a native SysML part definition.");
   if (partLifecycle(source) === "obsolete") return bad("Select a current or proposed source part; obsolete parts require an explicit exception.");
   if (!o.change.trim()) return bad("Document what is changing before previewing the replacement.");
+  const partNumber = (o.partNumber ?? "").trim();
+  if (partNumber && (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(partNumber) ||
+    [...ix.notes.values()].some((n) => String(n.meta.partNumber ?? "").toLowerCase() === partNumber.toLowerCase())))
+    return bad("A new part number must be file-safe and not already assigned to another modeled part.");
   const plan = planAddElement(ix, classes, { type: source.type, subtype: source.subtype, title: o.title,
     folder: o.folder || source.folder, text: "", author: o.author, now: o.now });
   if (plan.problems.length || !plan.writes.length) return plan;
@@ -6155,9 +6159,10 @@ function planReplacePart(ix            , files                     , classes    
     : clone.replace(/;\s*$/, " {\n        " + dependency + "\n    }");
   let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
     joined + newBlock.slice(newEnd));
-  after = replaceFm(after, "partLifecycle", "proposed");
-  after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
-  after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
+  if (partNumber) after = qcReplaceFm(after, "partNumber", qcYamlScalar(partNumber));
+  after = qcReplaceFm(after, "partLifecycle", "proposed");
+  after = qcReplaceFm(after, "replaces", qcYamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
+  after = qcReplaceFm(after, "changeSummary", qcYamlScalar(o.change.trim()));
   record.after = after;
   plan.summary = "Create proposed replacement " + record.path + " from " + sourcePath +
     ". Definition copied with fresh ID/UID/symbol; the predecessor stays current and every BOM usage remains unchanged.";
@@ -6172,8 +6177,8 @@ function planPartLifecycle(ix            , files                     , path     
   if (replacement && (!ix.notes.has(replacement) || !isPartNote(ix.notes.get(replacement) )))
     return bad("The replacement must be an existing governed part.");
   if (replacement === path) return bad("A part cannot replace itself.");
-  let after = replaceFm(before, "partLifecycle", next);
-  if (replacement && next === "obsolete") after = replaceFm(after, "replacedBy", yamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
+  let after = qcReplaceFm(before, "partLifecycle", next);
+  if (replacement && next === "obsolete") after = qcReplaceFm(after, "replacedBy", qcYamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
   if (after === before) return bad("The part already has the requested lifecycle.");
   const whereUsed = ix.edges.filter((e) => e.to === path && e.kind === "hasPart" && !e.reverse);
   return { summary: "Set part " + n.title + " to " + next +
@@ -6634,7 +6639,7 @@ function mountPanel(root             , host           , opt                     
   function noteView()              {
     const n = note(sel); if (!n) return empty("Open a model note in Obsidian.");
     const box = h("div", {});
-    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null, h("button", { class: "sm", style: "margin-left:4px", title: "List what differs between this note and another, with the structure down to the parts that differ", onclick: () => openCompare("") }, "Compare with another note…")));
+    box.append(h("div", {}, tag(n.type + (n.subtype ? "/" + n.subtype : "")), tag(n.id), tag(n.status || "no status"), V.viewIsPart(n) ? tag("Part: " + V.viewPartLifecycle(n)) : null, h("button", { class: "sm", style: "margin-left:8px", onclick: () => host.openNote(n.path) }, "Open note"), host.edit && n.type === "Object" ? h("button", { class: "sm", style: "margin-left:4px", title: "Merge this part with another note, for example a BOM part with the model element it is", onclick: () => openMerge("") }, "Merge with another note…") : null, h("button", { class: "sm", style: "margin-left:4px", title: "List what differs between this note and another, with the structure down to the parts that differ", onclick: () => openCompare("") }, "Compare with another note…")));
     for (const f of n.flags) box.append(h("div", { class: "callout " + f.type }, h("b", {}, f.type.replace("flag", "") + ": " + f.title), f.detail ? h("div", {}, f.detail) : null));
     if (n.def?.doc) box.append(h("div", { class: "reqtext", style: "white-space:pre-wrap;margin:8px 0;padding:6px 10px;border-left:3px solid var(--text-accent,#b25e00)" }, n.def.doc));
     const rel = (edges                             , dir              )              => {
