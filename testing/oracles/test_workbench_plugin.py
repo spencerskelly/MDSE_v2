@@ -249,6 +249,17 @@ class WorkbenchPlugin(unittest.TestCase):
                 return !!box && !box.disabled && box.checked;
             }""", arg="Include " + label)
             checkbox.uncheck()
+            # A Canvas selection refresh must not discard the unchecked, not-yet-applied choice.
+            pg.evaluate("""() => {
+                const t=window.__plugin.canvasLeaf.view;
+                const first=JSON.parse(window.__files[t.file.path]).nodes[0];
+                t.canvas.selection=new Set([{getData:()=>first}]);
+                window.__plugin.canvasSelection();
+            }""")
+            pg.wait_for_function("""n => {
+                const box=[...document.querySelectorAll('input[type=checkbox]')].find(x=>x.getAttribute('aria-label')===n);
+                return !!box && !box.disabled && !box.checked;
+            }""", arg="Include " + label)
             pg.get_by_role("button", name="Update included elements").first.click()
             pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 1", arg=canvas)
             self.assertTrue(pg.evaluate("p => JSON.parse(window.__files[p]).nodes.some(n=>n.file===p)", origin))
