@@ -269,7 +269,7 @@ class WorkbenchPlugin(unittest.TestCase):
               notices: window.__notices.slice(-5)
             })""", canvas)
             self.assertEqual(len(diagnostic["nodes"]), 1, diagnostic)
-            self.assertTrue(pg.evaluate("p => JSON.parse(window.__files[p]).nodes.some(n=>n.file===p)", origin))
+            self.assertTrue(pg.evaluate("a => JSON.parse(window.__files[a[0]]).nodes.some(n=>n.file===a[1])", [canvas, origin]))
             self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"),
                              "model notes are not removed")
             pg.wait_for_function("""n => {
