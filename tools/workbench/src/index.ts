@@ -30,9 +30,9 @@ const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 export const baseName = (path: string): string => path.split("/").pop()!.replace(/\.md$/i, "");
 const SYSML_TO_KIND: Record<string, string> = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
 /** D-0108: relationships the importer repeats as YAML so people and AI can read them. On a note that has a SysML block the block is the authority and these YAML fields are never counted, so an edit made to the block cannot be undone by a stale copy. */
-const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "includes", "extendedBy"]);
+const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "replaces", "includes", "extendedBy"]);
 /** MOD-186 (D-0128): `implementedBy` is the stored inverse of `implements`. The forward link on the part is the relationship; counting the inverse too would double every implements edge. */
-const STORED_INVERSE = new Set(["implementedBy"]);
+const STORED_INVERSE = new Set(["implementedBy", "replacedBy"]);
 const DEP_KIND: Record<string, string> = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path: string, text: string, o: BuildOptions): Note | null {
