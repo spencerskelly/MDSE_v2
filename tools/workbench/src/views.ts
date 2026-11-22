@@ -633,6 +633,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     const w = whereUsed(ix, sel), up: Array<Record<string, TableCell>> = [];
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
+    out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
     const registry = [...ix.notes.values()].filter(viewIsPart)
       .filter((p) => o.partScope === "all" || viewPartLifecycle(p) === "current")
       .sort((a, b) => a.title.localeCompare(b.title));
@@ -644,7 +645,6 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
           p.meta.replaces ? "← " + String(p.meta.replaces) : ""].filter(Boolean).join(" ") })),
       empty: "No parts match this lifecycle filter.",
       note: "Lifecycle is separate from note status. A part remains in historical structure and BOM references even after it is obsolete." });
-    out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
   } else if (lens === "compare") {
     if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
     const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)! : null;
