@@ -6148,7 +6148,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
                                                                                     
                                        
                   
-                               
+                                                  
                                                       
  
 
@@ -6238,13 +6238,16 @@ function mountPanel(root             , host           , opt                     
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set        ();
   let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let membershipLoading = false, membershipReady = false, membershipEpoch = 0;
+  let membershipDirty = false, membershipApplying = false;
   let membershipContext = ""; let activeCanvasName                = null;
   /** Read the actual Canvas before presenting membership checkboxes. Avoid treating an unchecked
    * list row as an instruction to delete it until the current Canvas was successfully read. */
   function loadIncluded(context        , force = false)       {
     if (!host.canvasIncluded) return;
-    if (!force && membershipContext === context) return;
+    if (membershipApplying || (!force && membershipContext === context)) return;
+    if (membershipDirty && context === membershipContext) return; // never discard staged edits on a Canvas refresh/selection event
     membershipContext = context;
+    membershipDirty = false;
     membershipReady = false; membershipLoading = true;
     rowTicks.clear();
     const epoch = ++membershipEpoch;
@@ -6264,15 +6267,22 @@ function mountPanel(root             , host           , opt                     
   async function applyIncluded(anchor        , eligible          , children           = [])                  {
     if (!membershipReady || !host.updateIncluded) return "The current Canvas inclusion has not been loaded.";
     const checked = eligible.filter((p) => rowTicks.has(p));
-    const result = await host.updateIncluded(anchor, eligible, checked, children);
-    loadIncluded(membershipContext, true);
-    return result;
+    membershipApplying = true;
+    try {
+      const result = await host.updateIncluded(anchor, eligible, checked, children);
+      membershipDirty = false;
+      return result;
+    } finally {
+      membershipApplying = false;
+      if (!membershipDirty) loadIncluded(membershipContext, true);
+    }
   }
   const includeCheck = (p        , label        )              => h("input", {
     type: "checkbox", "aria-label": "Include " + label, checked: rowTicks.has(p),
     disabled: !membershipReady || undefined,
     onchange: (e       ) => {
       if ((e.target                    ).checked) rowTicks.add(p); else rowTicks.delete(p);
+      membershipDirty = true;
       if (tickCount) tickCount.textContent = `${rowTicks.size} currently selected`;
     }
   });
@@ -6405,7 +6415,7 @@ function mountPanel(root             , host           , opt                     
     some.addEventListener("click", () => busy(some, "Updating…", () => applyIncluded(anchor, eligible, kidsOf)));
     const every = h("button", { class: "sm", disabled: !membershipReady || undefined,
       title: "Check every item in the current list; use Update included elements to apply." }, `Check all ${eligible.length} listed`);
-    every.addEventListener("click", () => { for (const p of eligible) rowTicks.add(p); draw(); });
+    every.addEventListener("click", () => { for (const p of eligible) rowTicks.add(p); membershipDirty = true; draw(); });
     tickCount = h("span", { class: "mut" }, membershipReady
       ? `${eligible.filter((p) => rowTicks.has(p)).length} of ${eligible.length} included/selected`
       : membershipLoading ? "Reading Canvas inclusion…" : "Canvas inclusion unavailable");
@@ -6416,7 +6426,7 @@ function mountPanel(root             , host           , opt                     
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom (anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", disabled: !membershipReady || undefined, onclick: () => { for (const p of eligible) rowTicks.delete(p); draw(); } }, "Uncheck listed"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", disabled: !membershipReady || undefined, onclick: () => { for (const p of eligible) rowTicks.delete(p); membershipDirty = true; draw(); } }, "Uncheck listed"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -6516,7 +6526,7 @@ function mountPanel(root             , host           , opt                     
         title: "Synchronize this related-element list with the current Canvas. Unchecked related cards are removed only from the Canvas." }, "Update included elements");
       update.addEventListener("click", () => busy(update, "Updating…", () => applyIncluded(n.path, eligible)));
       const all = h("button", { class: "sm", disabled: !membershipReady || undefined,
-        onclick: () => { for (const p of eligible) rowTicks.add(p); draw(); } }, "Check all related");
+        onclick: () => { for (const p of eligible) rowTicks.add(p); membershipDirty = true; draw(); } }, "Check all related");
       box.append(sec("rel-add", "Related elements — Canvas inclusion", [
         h("div", { class: "mut" }, membershipReady ? `Checked elements are already in ${activeCanvasName ?? "the current view"} or staged for inclusion. Changes apply only after Update.` : "Reading Canvas membership…"),
         h("div", { class: "row" }, update, all),
@@ -6975,7 +6985,12 @@ function mountPanel(root             , host           , opt                     
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     refresh() { draw(); },
-    reloadCanvasIncluded() { if (ix && (lens === "note" || ADDABLE.has(lens))) loadIncluded(lens + "|" + sel, true); },
+    reloadCanvasIncluded(canvasPath         ) {
+      if (!ix || !(lens === "note" || ADDABLE.has(lens))) return;
+      const switchedCanvas = typeof canvasPath === "string" && !!canvasPath && canvasPath !== activeCanvasName;
+      if (switchedCanvas) membershipDirty = false;
+      if (!membershipDirty && !membershipApplying) loadIncluded(lens + "|" + sel, true);
+    },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
@@ -7632,7 +7647,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
     if (key === this.canvasKey) return;
     this.canvasKey = key;
-    this.apps.forEach((app     ) => app.reloadCanvasIncluded?.());
+    this.apps.forEach((app     ) => app.reloadCanvasIncluded?.(path));
     clearTimeout(this.discoveryTimer);
     ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a     ) => a.setCanvasSelection?.([])); return; }
@@ -7742,7 +7757,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.files = await readVault(this.app); await this.rebuild(); await this.ensureIndex();
     const t = this.canvasTarget(); if (!t) return "Index refreshed. Open a canvas in the main window to refresh it too.";
     let res                                                                                        = null, changed = false;
-    await this.editTarget(t, (text) => { const r = WB.refreshCanvas(parseDoc(text), this.ix); res = r; const next = JSON.stringify(r.doc, null, 2); changed = r.redrawn + r.linesAdded + r.linesRemoved > 0; return changed ? next : null; });
+    await this.editTarget(t, (text) => {
+      const original = parseDoc(text), r = WB.refreshCanvas(original, this.ix);
+      res = r;
+      const next = JSON.stringify(r.doc, null, 2);
+      changed = r.redrawn + r.linesAdded + r.linesRemoved > 0;
+      if (changed) {
+        const known = this.previews.get(t.path)?.edgeIds;
+        if (known) {
+          const oldIds = WB.cdEdgeIds(original);
+          for (const edge of r.doc.edges) if (!oldIds.has(edge.id)) known.add(edge.id);
+          const retained = WB.cdEdgeIds(r.doc);
+          for (const edgeId of known) if (!retained.has(edgeId)) known.delete(edgeId);
+        }
+      }
+      return changed ? next : null;
+    });
     const r = res                                                                                         ;
     if (!r) return "Could not read that canvas.";
     this.app.workspace.revealLeaf(t.leaf);
