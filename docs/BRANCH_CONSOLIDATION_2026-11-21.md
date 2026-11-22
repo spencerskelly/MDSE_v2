@@ -26,3 +26,6 @@
 
 ## Release boundary
 A merge into MDSE_v2/main makes reviewed tool source available. It **does not** authorize activation or replacement of installed plugins in MDSE_v2_live. Public tools CI remains synthetic. Real engineering data is never committed here.
+
+## Paired distribution and fresh CI checkpoint
+- The review branch's one-shot build synchronized the hardened importer HTML at commit `c533e8ab4ccc8f12699a2602aec39a9fb6d04fe3`. The current Workbench plugin distribution was unchanged, so its verified source/compiled pair is preserved. After this documentation checkpoint, rerun all PR checks against the synchronized distribution rather than an earlier pre-build source commit.
