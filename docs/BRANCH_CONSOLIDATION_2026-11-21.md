@@ -29,3 +29,17 @@ A merge into MDSE_v2/main makes reviewed tool source available. It **does not** 
 
 ## Paired distribution and fresh CI checkpoint
 - The review branch's one-shot build synchronized the hardened importer HTML at commit `c533e8ab4ccc8f12699a2602aec39a9fb6d04fe3`. The current Workbench plugin distribution was unchanged, so its verified source/compiled pair is preserved. After this documentation checkpoint, rerun all PR checks against the synchronized distribution rather than an earlier pre-build source commit.
+
+
+## Final branch retirement disposition (2026-11-21)
+
+- Merged [PR #8](https://github.com/spencerskelly/MDSE_v2/pull/8) to `main` at `17098637222001302c9a36fed1e0a9a0a5f63b8b` (persistent Workbench and independent note/canvas tabs).
+- Merged [PR #9](https://github.com/spencerskelly/MDSE_v2/pull/9) to `main` at `f0e0300a26dd1488cc3a9ee3c6b9cd41535b7812` (Windows/macOS importer safety and the portable regression suite). The old PR #5 is closed without merge; original branch source files matched the final `main` blob SHAs for the core importer code/test files and native test workflow.
+- The old `test/functional-prototype-20261120` unique `navigation_shell.test.ts` was carried to `main` byte-for-byte (commit `1afc4679`). Its old plugin and panel implementation is superseded; **do not merge it**.
+- The detailed NAV-01–NAV-12 and WB-NAV-01–10/N01–N08/I01–I09/R01–R04 acceptance criteria, originally in the two branch-only acceptance documents, are consolidated in [Workbench/Importer Acceptance](../testing/WORKBENCH_IMPORTER_ACCEPTANCE.md). These are **requirements for acceptance**, not passed manual tests.
+- The original UX and connection-discovery branches are already ancestors of merged PR #8; there are no unmerged code changes to recover from them.
+- Historical source commits and closed PRs remain accessible after deleting their refs. No code is copied from branches with older Workbench-tab behavior.
+- **Safe to delete the seven original non-main branch refs** once this retirement record and acceptance matrix have merged into `main`: `ux/pass08-workarea-prototype-20261119`, `prototype/connection-discovery-20261120`, `prototype/workbench-importer-acceptance-20261120`, `test/functional-prototype-20261120`, `integration/four-workflows-single-workbench-20261120`, `hardening/cross-platform-import-update-20261120`, `integration/importer-hardening-after-workbench-20261121`.
+- The temporary `chore/branch-retirement-record-20261121` branch can be deleted after its PR merges. Do not delete `main`.
+
+**Separate release gate:** Real Obsidian, physical Windows/macOS vault update/import, parser conformity and safe `MDSE_v2_live` rollout are outstanding. Branch deletion does **not** certify or deploy the toolset.
