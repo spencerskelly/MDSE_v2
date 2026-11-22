@@ -69,7 +69,7 @@ test("documentation-only and metadata-only changes do not require a bump", () =>
   const dir=mkdtempSync(join(tmpdir(),"mdse-versions-doc-"));
   try {
     git(dir,["init","-q"]);git(dir,["config","user.email","ci@example.invalid"]);git(dir,["config","user.name","Version Regression"]);
-    for(const p of ["package.json","tools/importer/version.json","tools/workbench/manifest.json","tools/bootstrap/manifest.json"]) write(dir,p,version("0.2.0"));
+    for(const p of ["package.json","tools/importer/version.json","tools/workbench/manifest.json","tools/bootstrap/manifest.json"]) write(dir,p,p==="tools/importer/version.json" ? importerVersion("0.2.0") : version("0.2.0"));
     write(dir,"README.md","old\n");
     git(dir,["add","."]);git(dir,["commit","-qm","baseline"]);
     const base=git(dir,["rev-parse","HEAD"]);
