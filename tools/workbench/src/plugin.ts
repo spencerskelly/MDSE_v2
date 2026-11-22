@@ -14,6 +14,8 @@ declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
   WORKFLOW_ENTRY_LENS: Record<"document" | "define" | "structure" | "verify", string>;
   quickTemplate: (id: string) => { id: string; label: string; area: string; kind: "plain" | "governed"; type?: string; subtype?: string } | undefined;
+  planReplacePart: (ix: any, files: Map<string, string>, classes: any, source: string, options: any) => any;
+  planPartLifecycle: (ix: any, files: Map<string, string>, source: string, state: "current" | "obsolete", replacement?: string) => any;
   planPlainNote: (template: any, title: string, folder: string, existing: ReadonlySet<string>) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
   planAddElement: (ix: any, classes: any, options: { type: string; subtype: string; title: string; folder: string; text: string; author: string }) => { summary: string; writes: Array<{ path: string; before: null; after: string }>; problems: string[] };
   buildIndex: (files: Map<string, string>, options: unknown) => any;
@@ -213,6 +215,52 @@ class ContextLinkModal extends obsidian.Modal {
   }
 }
 
+/** Part lifecycle is a separate, previewed model-metadata change. A superseded part may still
+ * be used in old or current assemblies; neither its SysML definition nor usages are edited. */
+class PartLifecycleModal extends obsidian.Modal {
+  plugin: any; source: string; next: "obsolete" | "current";
+  constructor(plugin: any, source: string, next: "obsolete" | "current") {
+    super(plugin.app); this.plugin = plugin; this.source = source; this.next = next;
+  }
+  onOpen() {
+    const p = this.plugin, el = this.contentEl, n = p.ix?.notes.get(this.source);
+    el.empty();
+    el.createEl("h3", { text: "Mark part " + this.next });
+    el.createEl("p", { text: (n?.title ?? this.source) + " — lifecycle only. Existing BOMs, usages, model relationships and record status are unchanged." });
+    const candidate = p.ix?.edges.filter((e: any) => e.kind === "supersedes" && e.to === this.source).map((e: any) => e.from) ?? [];
+    const candidatePath = candidate.length === 1 ? candidate[0] : "";
+    let replacement = this.next === "obsolete" ? candidatePath : "";
+    if (this.next === "obsolete") {
+      new obsidian.Setting(el).setName("Replacement note (optional)").setDesc("If the new part is recorded as superseding this part, it can be referenced here.")
+        .addText((x: any) => x.setValue(replacement).onChange((v: string) => { replacement = v.trim(); invalidate(); }));
+    }
+    const view = el.createEl("pre"); view.style.whiteSpace = "pre-wrap";
+    const msg = el.createEl("p"), row = el.createDiv({ cls: "modal-button-container" });
+    const see = row.createEl("button", { text: "Preview" });
+    const apply = row.createEl("button", { text: "Apply lifecycle", cls: "mod-cta" });
+    apply.disabled = true;
+    row.createEl("button", { text: "Cancel" }).onclick = () => this.close();
+    let plan: any = null;
+    const invalidate = () => { plan = null; apply.disabled = true; view.setText(""); msg.setText("Preview required."); };
+    invalidate();
+    see.onclick = () => {
+      plan = WB.planPartLifecycle(p.ix, p.files, this.source, this.next, replacement || undefined);
+      if (plan.problems.length) { msg.setText(plan.problems.join("; ")); apply.disabled = true; return; }
+      view.setText(plan.writes.map((w: any) => w.path + "\n\n" + w.after).join("\n\n"));
+      msg.setText(plan.summary); apply.disabled = false;
+    };
+    apply.onclick = async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true;
+      try {
+        const result = await p.applyPlan(plan);
+        new obsidian.Notice("MDSE: " + result.message, 8000);
+        this.close();
+      } catch (e: any) { msg.setText(String(e?.message ?? e)); see.disabled = false; }
+    };
+  }
+}
+
 /** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
  * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
 class QuickCreateModal extends obsidian.Modal {
@@ -226,12 +274,12 @@ class QuickCreateModal extends obsidian.Modal {
         "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
     const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
     const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-    let title = t.id === "daily" ? dateLabel : "", folder = originFolder, detail = "";
+    let title = t.id === "daily" ? dateLabel : t.id === "part-replacement" ? (p.ix?.notes.get(this.origin)?.title ?? "") + " Replacement" : "", folder = originFolder, detail = "";
     new obsidian.Setting(el).setName("Name").addText((x: any) =>
       x.setPlaceholder("New note title").setValue(title).onChange((v: string) => { title = v; invalidate(); }));
     new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
       .addText((x: any) => x.setValue(folder).onChange((v: string) => { folder = v; invalidate(); }));
-    if (t.kind === "governed") new obsidian.Setting(el).setName("Description / requirement text")
+    if (t.kind === "governed") new obsidian.Setting(el).setName(t.id === "part-replacement" ? "What is changing? (required)" : "Description / requirement text")
       .addTextArea((x: any) => x.setValue(detail).onChange((v: string) => { detail = v; invalidate(); }));
     const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
     preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
@@ -247,14 +295,15 @@ class QuickCreateModal extends obsidian.Modal {
     invalidate();
     see.addEventListener("click", () => {
       const existing = new Set<string>([...p.files.keys(), ...[...p.ix.notes.keys()]]);
-      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
-        WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) : t.id === "part-replacement"
+        ? WB.planReplacePart(p.ix, p.files, CLASSES, this.origin, { title, folder, change: detail, author: p.author })
+        : WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
       relationshipPreview.empty();
       if (plan.problems.length) {
         status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
       }
       preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
-      if (t.kind === "governed") {
+      if (t.kind === "governed" && t.id !== "part-replacement") {
         const proposals = WB.previewContextLinks(p.ix, p.files, this.origin, plan);
         relationshipPreview.createEl("h4", { text: "Potential relationships — preview only" });
         relationshipPreview.createEl("p", { cls: "setting-item-description", text: proposals.message });
@@ -287,7 +336,7 @@ class QuickCreateModal extends obsidian.Modal {
         new obsidian.Notice(notice, 15000);
         // Creating the note is complete. Link approval, if offered, is a separate operation.
         relationshipPreview.empty(); // Replace hypothetical candidates with the actual post-creation validation.
-        const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
+        const linkOptions = t.kind === "governed" && t.id !== "part-replacement" && p.ix?.notes.has(this.origin)
           ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
         if (!linkOptions.length) { this.close(); return; }
         preview.setText("Created: " + createdPath + "\n\nNo SysML relationship has been added.");
@@ -688,7 +737,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const template = WB.quickTemplate(templateId);
     if (!template) throw new Error("Unknown creation template: " + templateId);
     await this.ensureIndex();
-    new QuickCreateModal(this, template, selectedPath).open();
+    if (templateId === "part-obsolete" || templateId === "part-current")
+      new PartLifecycleModal(this, selectedPath, templateId === "part-obsolete" ? "obsolete" : "current").open();
+    else new QuickCreateModal(this, template, selectedPath).open();
     return "";
   }
   /** Workflow navigation stays in the one Workbench sidebar or optional pop-out. */
