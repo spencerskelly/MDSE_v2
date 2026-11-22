@@ -85,7 +85,7 @@ export interface PanelApp {
   /** Open the Edit lens on one relationship (from a table row or a canvas line). */
   editRelationship(ref: EdgeRef): void;
   refresh(): void;
-  reloadCanvasIncluded(): void;
+  reloadCanvasIncluded(canvasPath?: string): void;
   lens(): V.Lens; selected(): string; destroy(): void;
 }
 
@@ -175,13 +175,16 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set<string>();
   let cmpOther = "", cmpText = "", tree: "full" | "direct" = "full", canvasSel: string[] = [], tickKey = "", tickCount: HTMLElement | null = null; const rowTicks = new Set<string>(); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set<string>();
   let membershipLoading = false, membershipReady = false, membershipEpoch = 0;
+  let membershipDirty = false, membershipApplying = false;
   let membershipContext = ""; let activeCanvasName: string | null = null;
   /** Read the actual Canvas before presenting membership checkboxes. Avoid treating an unchecked
    * list row as an instruction to delete it until the current Canvas was successfully read. */
   function loadIncluded(context: string, force = false): void {
     if (!host.canvasIncluded) return;
-    if (!force && membershipContext === context) return;
+    if (membershipApplying || (!force && membershipContext === context)) return;
+    if (membershipDirty && context === membershipContext) return; // never discard staged edits on a Canvas refresh/selection event
     membershipContext = context;
+    membershipDirty = false;
     membershipReady = false; membershipLoading = true;
     rowTicks.clear();
     const epoch = ++membershipEpoch;
@@ -201,15 +204,22 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
   async function applyIncluded(anchor: string, eligible: string[], children: string[] = []): Promise<string> {
     if (!membershipReady || !host.updateIncluded) return "The current Canvas inclusion has not been loaded.";
     const checked = eligible.filter((p) => rowTicks.has(p));
-    const result = await host.updateIncluded(anchor, eligible, checked, children);
-    loadIncluded(membershipContext, true);
-    return result;
+    membershipApplying = true;
+    try {
+      const result = await host.updateIncluded(anchor, eligible, checked, children);
+      membershipDirty = false;
+      return result;
+    } finally {
+      membershipApplying = false;
+      if (!membershipDirty) loadIncluded(membershipContext, true);
+    }
   }
   const includeCheck = (p: string, label: string): HTMLElement => h("input", {
     type: "checkbox", "aria-label": "Include " + label, checked: rowTicks.has(p),
     disabled: !membershipReady || undefined,
     onchange: (e: Event) => {
       if ((e.target as HTMLInputElement).checked) rowTicks.add(p); else rowTicks.delete(p);
+      membershipDirty = true;
       if (tickCount) tickCount.textContent = `${rowTicks.size} currently selected`;
     }
   });
@@ -912,7 +922,12 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     isPinned: () => pinned,
     setPinned: (next) => setContextPinned(next),
     refresh() { draw(); },
-    reloadCanvasIncluded() { if (ix && (lens === "note" || ADDABLE.has(lens))) loadIncluded(lens + "|" + sel, true); },
+    reloadCanvasIncluded(canvasPath?: string) {
+      if (!ix || !(lens === "note" || ADDABLE.has(lens))) return;
+      const switchedCanvas = typeof canvasPath === "string" && !!canvasPath && canvasPath !== activeCanvasName;
+      if (switchedCanvas) membershipDirty = false;
+      if (!membershipDirty && !membershipApplying) loadIncluded(lens + "|" + sel, true);
+    },
     lens: () => lens, selected: () => sel,
     destroy() { termDestroyed = true; termBuilding = null; termCatalog = null; wrap.remove(); style.remove(); },
   };
