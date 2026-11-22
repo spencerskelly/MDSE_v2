@@ -6,6 +6,8 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ### Candidate toolset 0.11.0 — explicit Importer version progression (not deployed)
 
+**Versioning decision (2026-11-21):** This and subsequent `0.x.x` builds remain **development/testing only**; `0.11.0` is the next development baseline, small changes advance PATCH (`0.11.1`, `0.11.2`), broader features advance MINOR (`0.12.0`), and significant breaking changes remain explicitly marked within `0.x`. **`1.0.0` is reserved for an explicitly approved first release for use.** No go-live decision or live-vault deployment is authorized by this version entry.
+
 - **Importer 0.11.0**: first independently tracked Importer release number; previously the Importer displayed only the inherited toolset 0.10.0 plus a content hash. Its offline HTML also contains a bundled, expandable version-history panel showing explicit lineage from the legacy inherited version. The offline header now displays **Importer**, **toolset**, and content build fingerprint separately.
 - **Toolset 0.11.0**: coordinated packaging version for the new Importer and bundled Base Vault.
 - **Workbench 0.10.0 / Bootstrap 0.1.0**: unchanged component implementations and versions; do not claim they were updated or acceptance-tested by this metadata change.

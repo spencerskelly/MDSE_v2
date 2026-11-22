@@ -12,9 +12,23 @@ The versions in the tool UI must represent **real progression**, not just repeat
 | **Coordinated toolset** | root `package.json` | Any change in a shipped component, source schema/template, pinned plugin or Base Vault payload |
 | **Third-party Obsidian plugins** | vendor manifests, validated by generated `plugin-lock.yaml` | Only when a specific pinned dependency changes; retain upstream version |
 
-Version numbers use **MAJOR.MINOR.PATCH** (e.g. 0.11.0): PATCH for a compatible fix, MINOR for a user-visible feature or workflow increment, MAJOR for breaking migration/incompatibility. Pre-1.0 may change minor for incompatible behavior. **Never reuse a version for different shipped code**; on an intentional hotfix, increase PATCH. No nightly date-based versioning.
+## Pre-1.0 development policy (engineering decision, 2026-11-21)
 
-A source change must update its own component version **and** the coordinated toolset version in the same PR. `scripts/check-versions.mjs` compares implementation changes to the PR base or prior main commit and fails CI when a required component version was not increased. Docs/test-only changes need no bump. A tag is an approved release only after staged runtime acceptance.
+**The MDSE toolset is not released for use and must remain in development/test status throughout the 0.x.x series. The next development baseline is 0.11.0. Version 1.0.0 is reserved for the first explicitly approved release for use, after the agreed acceptance and readiness gates.** A successful source merge, CI run, new version or distributable build is *not* that approval.
+
+Version numbers use **MAJOR.MINOR.PATCH**. For development, use:
+
+| Change | Version progression | Treatment |
+|---|---|---|
+| Next integrated development baseline | `0.11.0` | Candidate/testing, not live |
+| Small fix, refinement or incremental improvement | `0.11.0 → 0.11.1 → 0.11.2` | Increment PATCH; document effect in history |
+| Meaningful new feature, workflow or integration | `0.11.x → 0.12.0` | Increment MINOR and reset PATCH |
+| Significant architectural or compatibility break before 1.0 | e.g. `0.12.x → 0.13.0` | Advance MINOR with an explicit breaking/migration warning; **do not call it 1.0.0** |
+| First formally approved release for use | `1.0.0` | Requires explicit readiness/acceptance decision and a controlled release record |
+
+Once `1.0.0` is formally approved, use conventional semantic versioning: PATCH for compatible fixes, MINOR for backward-compatible capabilities, MAJOR for incompatible changes. **Never reuse a version for different shipped code**. No nightly date-based versioning. Component versions and the bundled Importer/toolset versions may differ because they represent different independently maintained software, but every changed distributable has an increased, traceable version.
+
+A source change must update its own component version **and** the coordinated toolset version in the same PR. `scripts/check-versions.mjs` compares implementation changes to the PR base or prior main commit and fails CI when a required component version was not increased. Docs/test-only changes need no bump. A source merge, version bump or Git tag is never sufficient evidence of release approval; any optional pre-1.0 test tag must be clearly identified as a development candidate, and a release-for-use tag is reserved for the approved 1.0.0 milestone.
 
 ## Status and version identification
 
@@ -32,8 +46,8 @@ A source change must update its own component version **and** the coordinated to
 3. Rebuild **in order** with `npm run build` (Workbench followed by Importer), commit paired `dist` outputs, plugin manifests and updated lock payload. Never rebuild only Workbench when Importer embeds it.
 4. Run `npm run check:versions`, full unit/browser/native CI, generated-artifact freshness checks and independent parser gates as applicable. The PR-specific version gate examines diff from base.
 5. Stage exact built artifacts in a disposable Obsidian/NTFS/APFS vault; compare installed versions and SHA, verify undo/restore.
-6. After approved acceptance, record the release in the changelog and create a matching Git tag such as `mdse-v0.11.0`; include artifact SHA256 and relevant acceptance evidence.
-7. Deploy through Importer’s **Preview vault update → Apply** and authorized Bootstrap lock. Verify the after-state. The active live vault has separate approval and no-branch governance.
+6. For **0.x development candidates**, retain version history, source SHA, built-artifact hash, test evidence and explicit status **candidate / internal testing only**. No version increment or successful CI result authorizes a released-for-use tag or production deployment.
+7. Only after an **explicit go-live decision** and completed acceptance/readiness gates, advance to **1.0.0**, document release approval and artifact SHA256, and create the approved release tag (for example, `mdse-v1.0.0`). Then deploy through Importer **Preview vault update → Apply** and an authorized Bootstrap lock, separately approving any change to `MDSE_v2_live`. Until then, test in disposable/staging vault copies.
 
 ## Initial explicit Importer baseline
 
