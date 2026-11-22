@@ -4,6 +4,13 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.11.2 — context-only Workbench workflows (2026-11-22)
+
+- **Workbench 0.10.2 / toolset and Importer 0.11.2:** Removed the vault-wide scope choice from Function, Requirements and Tables, the All notes table, and the unrelated vault-wide parts registry inside Structure. No-selection views now request a model note instead of enumerating the vault. The Structure part lifecycle filter continues to apply only to the selected element's related BOM entries.
+- **Deliberate cross-context addition:** Search/Find remains able to query the vault for unconnected concepts and add selected notes to the named open Canvas. Canvas placement does not imply a SysML relationship. Global review queues and diagnostics remain independent administrative views, not workflow scope choices.
+- **Release status:** internal candidate and test-vault only pending real Obsidian acceptance. Generated plugin and bundled importer must be rebuilt and checked together.
+
+
 ### Candidate toolset 0.11.0 — explicit Importer version progression (not deployed)
 
 **Versioning decision (2026-11-21):** This and subsequent `0.x.x` builds remain **development/testing only**; `0.11.0` is the next development baseline, small changes advance PATCH (`0.11.1`, `0.11.2`), broader features advance MINOR (`0.12.0`), and significant breaking changes remain explicitly marked within `0.x`. **`1.0.0` is reserved for an explicitly approved first release for use.** No go-live decision or live-vault deployment is authorized by this version entry.
