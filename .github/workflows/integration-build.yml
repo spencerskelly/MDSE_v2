@@ -25,12 +25,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # The navigation tests load committed dist/plugin/main.js: rebuild it from this
+      # source commit first, otherwise a legitimate source fix can fail on stale bundles
+      # and prevent the artifact-sync step from ever running.
+      - name: Rebuild Workbench and embedded importer distributables
+        run: npm run build
       - name: Test Workbench and navigation
         run: npm run test:workbench
       - name: Test importer
         run: npm run test:importer
-      - name: Rebuild Workbench and embedded importer distributables
-        run: npm run build
       - name: Verify deterministic builds
         run: |
           npm run check:workbench
