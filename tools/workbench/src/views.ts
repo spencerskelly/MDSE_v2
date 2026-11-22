@@ -598,8 +598,19 @@ export type TableCell = Cell | Cell[] | string;
 export interface TableData { id: string; title: string; columns: Array<{ key: string; label: string; wide?: boolean }>; rows: Array<Record<string, TableCell>>; empty: string; note?: string; /** D-0150: rows are depth-first and each has a `level`; the first column's cell can be folded and unfolded */ outline?: boolean }
 const C = (ix: ModelIndex, path: string | null, fallback = ""): Cell => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix: ModelIndex, paths: string[]): Cell[] => paths.map((p) => C(ix, p));
-export interface LensOptions { scope?: "selected" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
+export interface LensOptions { scope?: "selected" | "all"; partScope?: "current" | "all"; table?: "notes" | "relationships" | "usages"; text?: string; /** structure lens: the whole tree (default) or only the direct parts (D-0085) */ tree?: "full" | "direct"; /** compare lens: the second note (D-0092) */ other?: string; /** D-0101: inherited ports and parts to show on the Internal structure lens */ inherit?: readonly InheritFrom[] }
 
+/** Part lifecycle is independent of note review status. Legacy parts with no field remain
+ * current until specifically classified; proposed replacements are visible under All. */
+export function viewPartLifecycle(n: Note): "proposed" | "current" | "obsolete" {
+  const v = String(n.meta.partLifecycle ?? "").toLowerCase();
+  if (v === "obsolete" || n.status === "Retired" || n.meta.mergedInto) return "obsolete";
+  if (v === "proposed") return "proposed";
+  return "current";
+}
+export function viewIsPart(n: Note): boolean {
+  return n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
+}
 export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptions = {}): TableData[] {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)! : null;
   const out: TableData[] = [];
@@ -607,7 +618,7 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
     const st = structure(ix, sel, o.tree === "direct" ? 1 : LIMIT_LEVELS, LIMIT_PER_PARENT, ["hasPart"]), flat: Array<Record<string, TableCell>> = [];
     const walk = (t: TreeNode, level: number): void => {
-      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
+      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", lifecycle: t.path && ix.notes.has(t.path) && viewIsPart(ix.notes.get(t.path)!) ? viewPartLifecycle(ix.notes.get(t.path)!) : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
       /* D-0150: say so when parts are left out, instead of ending the list quietly */
       const cut = o.tree === "direct" ? 0 : t.cut ?? 0;                      // the direct view stops at one level on purpose
@@ -615,13 +626,24 @@ export function lensTables(ix: ModelIndex, lens: Lens, sel: string, o: LensOptio
       if (why) flat.push({ level: String(level + 1), name: { text: "\u00a0\u00a0".repeat(level + 1) + why, cls: "gap" }, role: "", mult: "", type: "", id: "", note: "" });
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "lifecycle", label: "Lifecycle" }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const direct = o.tree === "direct", b = bom(ix, sel, direct ? 1 : 12);
-    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.filter((x) => o.partScope === "all" || !ix.notes.has(x.path) || viewPartLifecycle(ix.notes.get(x.path)!) === "current").map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
     const w = whereUsed(ix, sel), up: Array<Record<string, TableCell>> = [];
     const walkUp = (t: TreeNode, level: number): void => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
+    const registry = [...ix.notes.values()].filter(viewIsPart)
+      .filter((p) => o.partScope === "all" || viewPartLifecycle(p) === "current")
+      .sort((a, b) => a.title.localeCompare(b.title));
+    out.push({ id: "part-registry", title: o.partScope === "all" ? "All parts in vault" : "Current parts in vault",
+      columns: [{ key: "part", label: "Part", wide: true }, { key: "pn", label: "Part number" },
+        { key: "lifecycle", label: "Lifecycle" }, { key: "replacement", label: "Replaced by / replaces" }],
+      rows: registry.map((p) => ({ part: C(ix, p.path), pn: String(p.meta.partNumber ?? ""),
+        lifecycle: viewPartLifecycle(p), replacement: [p.meta.replacedBy ? "→ " + String(p.meta.replacedBy) : "",
+          p.meta.replaces ? "← " + String(p.meta.replaces) : ""].filter(Boolean).join(" ") })),
+      empty: "No parts match this lifecycle filter.",
+      note: "Lifecycle is separate from note status. A part remains in historical structure and BOM references even after it is obsolete." });
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
   } else if (lens === "compare") {
     if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
