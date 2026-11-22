@@ -352,7 +352,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     some.addEventListener("click", () => busy(some, "Updating…", () => applyIncluded(anchor, eligible, kidsOf)));
     const every = h("button", { class: "sm", disabled: !membershipReady || undefined,
       title: "Check every item in the current list; use Update included elements to apply." }, `Check all ${eligible.length} listed`);
-    every.addEventListener("click", () => { for (const p of eligible) rowTicks.add(p); draw(); });
+    every.addEventListener("click", () => { for (const p of eligible) rowTicks.add(p); membershipDirty = true; draw(); });
     tickCount = h("span", { class: "mut" }, membershipReady
       ? `${eligible.filter((p) => rowTicks.has(p)).length} of ${eligible.length} included/selected`
       : membershipLoading ? "Reading Canvas inclusion…" : "Canvas inclusion unavailable");
@@ -363,7 +363,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "direct")),
       mk("Canvas: complete BOM", "A new canvas: this note, the assemblies it is directly in above it, and every layer of parts under it, joined bottom of assembly to top of part", () => host.openStructureCanvas!(root, "full")));
     else if (host.newCanvasFrom) fresh.push(mk("Canvas of this view", "A new canvas, replacing the preview, of this note and the notes this view lists, placed by how they relate", () => host.newCanvasFrom!(anchor, root && !shown.includes(root) ? [root, ...shown] : shown)));
-    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", disabled: !membershipReady || undefined, onclick: () => { for (const p of eligible) rowTicks.delete(p); draw(); } }, "Uncheck listed"), tickCount);
+    return h("div", { class: "chips", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0" }, ...fresh, some, every, layoutButton(), refreshButton(), collapseButtons(), h("button", { class: "sm", disabled: !membershipReady || undefined, onclick: () => { for (const p of eligible) rowTicks.delete(p); membershipDirty = true; draw(); } }, "Uncheck listed"), tickCount);
   }
 
   /** D-0086: the Merge tab of the Edit lens, from the Note menu, from a note, or with two notes chosen on the canvas. */
@@ -463,7 +463,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         title: "Synchronize this related-element list with the current Canvas. Unchecked related cards are removed only from the Canvas." }, "Update included elements");
       update.addEventListener("click", () => busy(update, "Updating…", () => applyIncluded(n.path, eligible)));
       const all = h("button", { class: "sm", disabled: !membershipReady || undefined,
-        onclick: () => { for (const p of eligible) rowTicks.add(p); draw(); } }, "Check all related");
+        onclick: () => { for (const p of eligible) rowTicks.add(p); membershipDirty = true; draw(); } }, "Check all related");
       box.append(sec("rel-add", "Related elements — Canvas inclusion", [
         h("div", { class: "mut" }, membershipReady ? `Checked elements are already in ${activeCanvasName ?? "the current view"} or staged for inclusion. Changes apply only after Update.` : "Reading Canvas membership…"),
         h("div", { class: "row" }, update, all),
