@@ -96,6 +96,7 @@ async () => {
   await put('README.md', '# my readme\n');
   await put('10_Model/Charger.md', 'my note\n');
   window.showDirectoryPicker = async () => root;
+  window.__write = put;
   window.confirm = () => true;
   window.__readPart = async (pn) => { const walk = async (d, pre) => { for await (const [n, h] of d.entries()) { if (h.kind === 'directory') { const r = await walk(h, pre + n + '/'); if (r) return r; } else if (n === pn + '.md' && pre.startsWith('BOM/Parts/')) return await (await h.getFile()).text(); } return null; }; return await walk(root, ''); };
   window.__read = async (path) => { try { let d = root; const ps = path.split('/'); for (const p of ps.slice(0, -1)) d = await d.getDirectoryHandle(p); return await (await (await d.getFileHandle(ps.at(-1))).getFile()).text(); } catch (_) { return null; } };
@@ -148,6 +149,101 @@ class VaultUpdateBrowser(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+    def test_nonempty_nonvault_folder_cannot_be_initialized_by_maintenance_update(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True)
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.evaluate("""async () => {
+              const root = await navigator.storage.getDirectory();
+              await root.removeEntry('.vault.yaml'); await root.removeEntry('.obsidian', {recursive: true});
+            }""")
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('no vault yet')")
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Preview blocked')")
+            self.assertIn("existing files but no vault marker", pg.inner_text("#updStatus"))
+            self.assertIsNone(pg.evaluate("window.__read('.vault.yaml')"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            b.close()
+        self.assertEqual(errors, [])
+
+    def test_preview_rejects_external_edit_or_new_occupied_backup_without_writes(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Ready')")
+            pg.evaluate("async () => { await window.__write('.obsidian/app.json', '{\"vimMode\": false, \"changedInObsidian\": true}'); }")
+            pg.click("#updApply")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Vault changed since Preview')")
+            self.assertIn("changedInObsidian", pg.evaluate("window.__read('.obsidian/app.json')"))
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\n")
+            self.assertIsNone(pg.evaluate("window.__read('.obsidian/plugins/mdse-workbench/main.js')"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            self.assertTrue(pg.is_disabled("#updApply"))
+            self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/CON.md'}, {path:'Docs/trailing. '}, {path:'Docs/a.md'}, {path:'Docs/A.md'}]).length >= 3"))
+            self.assertTrue(pg.evaluate("() => badPaths([{path:'Docs/Café.md'}, {path:'Docs/Cafe\\u0301.md'}]).length > 0"),
+                            "macOS Unicode-normalizing paths must not collide")
+            b.close()
+        self.assertEqual(errors, [])
+
+    def test_failed_mid_update_restores_targets_and_retains_verified_backups(self):
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.click("#updPreview")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Ready')")
+            pg.evaluate("""() => {
+              const original = writeFile; let failed = false;
+              writeFile = async (root, path, data) => {
+                if (!failed && path === '.obsidian/community-plugins.json') {
+                  failed = true; throw Error('Simulated interrupted write');
+                }
+                return original(root, path, data);
+              };
+            }""")
+            pg.click("#updApply")
+            pg.wait_for_function("document.getElementById('updStatus').textContent.includes('Update stopped')")
+            status = pg.inner_text("#updStatus")
+            self.assertIn("Simulated interrupted write", status)
+            self.assertNotIn("Rollback incomplete", status)
+            self.assertEqual(pg.evaluate("window.__read('.obsidian/app.json')"), '{"vimMode": true}')
+            self.assertEqual(pg.evaluate("window.__read('.obsidian/community-plugins.json')"), '["templater-obsidian"]')
+            self.assertIsNone(pg.evaluate("window.__read('.gitignore')"), "new config files must be removed in rollback")
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            self.assertEqual(pg.evaluate("window.__read('99_System/05_Templates/Template - Requirement.md')"), "stale template\n")
+            self.assertTrue(pg.evaluate("""async () => {
+              const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('99_System');
+              const imp = await d.getDirectoryHandle('11_Import');
+              for await (const [name] of imp.entries()) if (name.startsWith('Update ')) return true;
+              return false;
+            }"""), "recoverable backups must remain after rollback")
+            b.close()
+        self.assertEqual(errors, [])
+
+
 BOM_TSV = "\n".join(["Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2",
     "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t1\t01191\t-0\t99\tCONNECTOR HOUSING\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t2\tea\t01141-002-N99",
     "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t4\t01798-006-M\t-0\t01\tWIRE 22AWG\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t0.559\tM\t01141-002-N99"]) + "\n"
@@ -189,6 +285,42 @@ class FullVaultBuild(unittest.TestCase):
             self.assertEqual(len(parts), 6, "3 part numbers and a note for each CL1 (D-0135)")
             self.assertTrue(any(n.startswith("99_System/11_Import/BOM Findings") for n in names))
             self.assertIn("Trust author and enable plugins", pg.inner_text("#trustBody"))
+            b.close()
+        self.assertEqual(errors, [])
+
+
+@unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
+class InterruptedExistingImportBrowser(unittest.TestCase):
+    def test_import_rollback_removes_new_parts_and_preserves_existing_note(self):
+        errors = []
+        with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
+            src = pathlib.Path(d) / "bom.tsv"; src.write_text(BOM_TSV)
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(accept_downloads=True)
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.route("https://mdse.test/importer.html", lambda r: r.fulfill(status=200, content_type="text/html", body=HTML.read_text()))
+            pg.goto("https://mdse.test/importer.html")
+            pg.fill("#whoName", "Pat Example"); pg.click("#whoSave")
+            pg.evaluate(SEED)
+            pg.click("#pick")
+            pg.wait_for_function("document.getElementById('vaultStatus').textContent.includes('existing vault')")
+            pg.set_input_files("#bomFile", str(src))
+            pg.wait_for_function("document.getElementById('bomStatus').textContent.includes('bom.tsv')")
+            pg.uncheck("#toolUpd")
+            pg.evaluate("""() => {
+              const original = writeFile; let n = 0;
+              writeFile = async (root, path, data) => {
+                if (path.startsWith('BOM/Parts/') && ++n === 2) throw Error('Injected BOM import interruption');
+                return original(root, path, data);
+              };
+            }""")
+            pg.click("#genAdd")
+            pg.wait_for_function("document.getElementById('genStatus').textContent.includes('Import stopped and attempted rollback')")
+            self.assertIn("Injected BOM import interruption", pg.inner_text("#genStatus"))
+            self.assertEqual(pg.evaluate("window.__read('10_Model/Charger.md')"), "my note\n")
+            self.assertNotIn("INCOMPLETE rollback", pg.inner_text("#genStatus"))
+            self.assertIsNone(pg.evaluate("window.__readPart('01141-002')"),
+                              "no partially imported part should remain after a successful rollback")
             b.close()
         self.assertEqual(errors, [])
 
