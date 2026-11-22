@@ -1,0 +1,41 @@
+name: Temporary paired artifact build for versioning PR
+on:
+  push:
+    branches: [feature/explicit-tool-versions-20261121]
+    paths:
+      - '.github/workflows/versioning-paired-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/explicit-tool-versions-20261121
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Build paired Workbench and Importer
+        run: npm run build
+      - name: Verify metadata and version policy fixture tests
+        run: |
+          npm run check:versions
+          npm run test:versions
+      - name: Commit only generated distribution files
+        run: |
+          git config user.name "mdse-ci"
+          git config user.email "mdse-ci@users.noreply.github.com"
+          git add tools/importer/dist/mdse_importer.html tools/importer/TRANSLATION.md tools/workbench/dist
+          if git diff --cached --quiet; then
+            echo "Paired generated artifacts already match current source."
+          else
+            git commit -m "release-build: sync offline Importer version history distribution"
+            git push origin HEAD:refs/heads/feature/explicit-tool-versions-20261121
+          fi
