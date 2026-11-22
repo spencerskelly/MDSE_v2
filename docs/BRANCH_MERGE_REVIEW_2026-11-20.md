@@ -52,3 +52,7 @@ Two Obsidian acceptance regressions were diagnosed and addressed on this integra
 2. **Refresh canvas creating a new-relationship prompt:** model-generated `aN` and `eN` edges are explicitly excluded from draw-to-relate candidate detection, even if a prior preview ledger is stale. Refresh also records newly generated model edges before committing its Canvas file write. A unit regression verifies generated edges never request a SysML relationship.
 
 These changes only affect view membership and detection of manually drawn Canvas edges; they do not edit model notes or create SysML relationships. This documentation-only commit requests full CI against synchronized generated plugin/importer outputs. Native Obsidian acceptance remains required before promotion to main.
+
+### Runtime export correction
+
+A browser acceptance regression identified that the plugin's `WB.updateIncludedCanvas` function existed in `canvas.ts` but was missing from the explicit `WB` export API in `tools/workbench/build.mjs`. The same export audit identified `WB.discoveryBoundary` missing. Both are now exported in the generated plugin and embedded importer. A new build-time parity test checks every `WB.*` call made by `plugin.ts` against the build export API to prevent recurrence. This documentation-only commit requests the final CI run against the paired generated build.
