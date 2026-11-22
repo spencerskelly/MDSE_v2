@@ -6,7 +6,7 @@ The versions in the tool UI must represent **real progression**, not just repeat
 
 | Version | Source of truth | When it changes |
 |---|---|---|
-| **Importer** | `tools/importer/version.json` | Any source/UI/translation change to the Importer or shared Core components bundled into it, including governed schema changes |
+| **Importer** | `tools/importer/version.json` | Any source/UI/translation change to the Importer **or any bundled component** (Workbench, Bootstrap, Base Vault, shared Core, governed schemas or pinned third-party payload). Every different packaged HTML must have a new Importer version |
 | **Workbench** | `tools/workbench/manifest.json` | Workbench source, shell or build behavior changes |
 | **Bootstrap** | `tools/bootstrap/manifest.json` | Bootstrap source/runtime behavior changes |
 | **Coordinated toolset** | root `package.json` | Any change in a shipped component, source schema/template, pinned plugin or Base Vault payload |
