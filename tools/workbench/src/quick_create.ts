@@ -20,6 +20,9 @@ export const QUICK_TEMPLATES: readonly QuickTemplate[] = [
   { id: "design", label: "Design", area: "define", kind: "governed", type: "Condition", subtype: "design" },
   { id: "state", label: "State", area: "define", kind: "governed", type: "Condition", subtype: "state" },
   { id: "part", label: "Part / assembly definition", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-replacement", label: "Replace selected part (copy definition)", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-obsolete", label: "Mark selected part obsolete", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-current", label: "Mark selected part current", area: "structure", kind: "governed", type: "Object", subtype: "part" },
   { id: "interface", label: "Interface definition", area: "structure", kind: "governed", type: "Object", subtype: "interface" },
   { id: "configuration-procedure", label: "Configuration procedure", area: "structure", kind: "governed", type: "Procedure", subtype: "configuration" },
   { id: "verify-requirement", label: "Requirement", area: "verify", kind: "governed", type: "Requirement", subtype: "functional" },
@@ -110,7 +113,8 @@ export const partLifecycle = (n: { type: string; subtype: string; status: string
   if (String(n.meta.partLifecycle ?? "").toLowerCase() === "proposed") return "proposed";
   return "current"; // legacy parts without an explicit lifecycle remain visible by default
 };
-export const isPartNote = (n: { type: string; subtype: string }): boolean => n.type === "Object" && n.subtype === "part";
+export const isPartNote = (n: { type: string; subtype: string; def?: { keyword: string } | null }): boolean =>
+  n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
 const yamlScalar = (s: string): string => JSON.stringify(s);
 const replaceFm = (text: string, key: string, value: string): string => {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
