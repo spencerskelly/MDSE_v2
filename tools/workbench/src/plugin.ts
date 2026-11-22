@@ -647,7 +647,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const key = path + "\n" + paths.join("\n") + (candidateSelected ? "\ncandidate" : "");
     if (key === this.canvasKey) return;
     this.canvasKey = key;
-    this.apps.forEach((app: any) => app.reloadCanvasIncluded?.());
+    this.apps.forEach((app: any) => app.reloadCanvasIncluded?.(path));
     clearTimeout(this.discoveryTimer);
     ++this.discoveryEpoch;
     if (!paths.length) { this.apps.forEach((a: any) => a.setCanvasSelection?.([])); return; }
@@ -757,7 +757,22 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     this.files = await readVault(this.app); await this.rebuild(); await this.ensureIndex();
     const t = this.canvasTarget(); if (!t) return "Index refreshed. Open a canvas in the main window to refresh it too.";
     let res: { redrawn: number; missing: number; linesAdded: number; linesRemoved: number } | null = null, changed = false;
-    await this.editTarget(t, (text) => { const r = WB.refreshCanvas(parseDoc(text), this.ix); res = r; const next = JSON.stringify(r.doc, null, 2); changed = r.redrawn + r.linesAdded + r.linesRemoved > 0; return changed ? next : null; });
+    await this.editTarget(t, (text) => {
+      const original = parseDoc(text), r = WB.refreshCanvas(original, this.ix);
+      res = r;
+      const next = JSON.stringify(r.doc, null, 2);
+      changed = r.redrawn + r.linesAdded + r.linesRemoved > 0;
+      if (changed) {
+        const known = this.previews.get(t.path)?.edgeIds;
+        if (known) {
+          const oldIds = WB.cdEdgeIds(original);
+          for (const edge of r.doc.edges) if (!oldIds.has(edge.id)) known.add(edge.id);
+          const retained = WB.cdEdgeIds(r.doc);
+          for (const edgeId of known) if (!retained.has(edgeId)) known.delete(edgeId);
+        }
+      }
+      return changed ? next : null;
+    });
     const r = res as { redrawn: number; missing: number; linesAdded: number; linesRemoved: number } | null;
     if (!r) return "Could not read that canvas.";
     this.app.workspace.revealLeaf(t.leaf);
