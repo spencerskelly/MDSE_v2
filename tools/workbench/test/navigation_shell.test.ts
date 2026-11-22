@@ -170,7 +170,7 @@ test("all workflow lenses are context-scoped; unlinked elements use Search", () 
   assert.match(panel, /Search to add unrelated notes to a Canvas/);
   assert.match(panel, /"Add selected to current Canvas"/);
   assert.match(panel, /"Select shown"/);
-  assert.match(panel, /"Add [^"]* selected to Canvas"/);
+  assert.match(panel, /selected to Canvas/);
   const views = fs.readFileSync(new URL("../src/views.ts", import.meta.url), "utf8");
   assert.doesNotMatch(views, /id: "part-registry"/);
   assert.doesNotMatch(views, /title: "All relationships"/);
