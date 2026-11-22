@@ -2,6 +2,10 @@
 
 **Status:** source integrations PR #8 and PR #9 merged to `MDSE_v2/main` (2026-11-21). **Not an approved deployed release.** This is the staging/build/update procedure; real-Obsidian acceptance, real NTFS/APFS source import and independent SysML parser sign-off remain open. See [consolidated acceptance](../testing/WORKBENCH_IMPORTER_ACCEPTANCE.md) and [branch consolidation](BRANCH_CONSOLIDATION_2026-11-21.md).
 
+## Version and age checks
+
+The Importer now has an **independent semantic version** in `tools/importer/version.json`. The offline header identifies **Importer vX.Y.Z**, **toolset vX.Y.Z** and a content build hash; `package.json` governs the paired toolset release. Workbench and Bootstrap versions are separately pinned in their `manifest.json` files and checked against installed versions by the Importer toolset comparison. For each shipped code change the applicable component and toolset version must increase; the CI version gate enforces this against PR base. The complete policy and release steps are in [VERSIONING.md](VERSIONING.md). An offline Importer cannot know if a newer release exists unless compared to an approved release record; do not infer currency from a matching file hash alone.
+
 ## Repository responsibility and release boundary
 
 - `MDSE_v2` owns the tool source, governance, build outputs and importer release payload.
