@@ -24,6 +24,7 @@ jobs:
           node-version-file: .nvmrc
       - name: Build paired Workbench and Importer
         run: npm run build
+      # Re-run after version-history fixture correction.
       - name: Verify metadata and version policy fixture tests
         run: |
           npm run check:versions
