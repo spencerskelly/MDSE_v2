@@ -1,22 +1,22 @@
 # MDSE toolset update and Workbench acceptance
 
-**Status:** review-branch procedure; not an approved release. Updated 2026-11-20 for the four-workflow UX prototype. **The paired Workbench/importer distributions were synchronized at commit `5735b195`**; see the [PR #4 staging acceptance ledger](STAGING_VALIDATION_PR4.md) for exact evidence and pending real-Obsidian checks. This file is the canonical update procedure for `MDSE_v2` tool builders and the `MDSE_v2_live` integration vault.
+**Status:** source integrations PR #8 and PR #9 merged to `MDSE_v2/main` (2026-11-21). **Not an approved deployed release.** This is the staging/build/update procedure; real-Obsidian acceptance, real NTFS/APFS source import and independent SysML parser sign-off remain open. See [consolidated acceptance](../testing/WORKBENCH_IMPORTER_ACCEPTANCE.md) and [branch consolidation](BRANCH_CONSOLIDATION_2026-11-21.md).
 
 ## Repository responsibility and release boundary
 
 - `MDSE_v2` owns the tool source, governance, build outputs and importer release payload.
 - `MDSE_v2_live` is the main-only engineering-definition and integration vault. Its installed `.obsidian/plugins/mdse-workbench/` files are **built runtime artifacts**, not source code. Do not push experimental source or unvalidated plugin builds to live `main`.
-- The current UX prototype is on `ux/pass08-workarea-prototype-20261119`, draft [PR #4](https://github.com/spencerskelly/MDSE_v2/pull/4); `MDSE_v2/main` does not receive prototype changes until review and merge approval.
-- `package.json` may still report 0.10.0 on the review branch. A successful branch build is **not** a new pinned release or a verified Bootstrap lock. Never describe the branch as deployed to live.
+- The persistent Workbench is merged through [PR #8](https://github.com/spencerskelly/MDSE_v2/pull/8); hardened existing-vault importer/update behavior is merged through [PR #9](https://github.com/spencerskelly/MDSE_v2/pull/9). No experimental branch needs to be checked out for these features.
+- A successful source build or merge is **not** a new pinned release or verified Bootstrap lock. Never describe the source from `main` as already deployed to live.
 - Engineering data stays out of the public tools repository (DAT-002). Run real-vault checks only in the private/live vault; do not upload private model content to tool CI.
 
 ## Step 1 — Choose and record the exact source
 
-In a local `MDSE_v2` checkout, fetch the branch chosen for evaluation; use `main` for a released toolset and the review branch only for an isolated pilot:
+In a local `MDSE_v2` checkout, fetch the merged source on `main`. Stage only in a separate vault copy until release gates are accepted:
 
 ```sh
 git fetch origin
-git switch ux/pass08-workarea-prototype-20261119
+git switch main
 git pull --ff-only
 git status --short
 git rev-parse HEAD
@@ -96,8 +96,8 @@ Record the source SHA, test run URL, artifact hashes, deployed files, target vau
 
 ## Prototype capabilities, limitations and documentation
 
-Implemented in *review-branch source* (not yet runtime-accepted): a **Find shared terms** view for cross-type term frequency, grouped governed-note matches and Canvas placement (no inferred links); contextual **+ New…** menus in all four workflows, preview-first creation, ordinary Markdown templates without model identity and governed creation through the existing identity/SysML planner, plus an in-memory **Potential relationships** preview before creation, a separate optional **Review relationship…** and **Apply relationship** transaction for a newly created governed element, and a read-only member-level inspector and scratch Canvas for explicit `connect`/`bind`/`flow` endpoints and resolved/unresolved usage references; four work areas; global model-note search; workflow-filtered neighbor discovery and unrestricted override; ranked multi-selection; scratch-Canvas temporary / kept / dismissed candidates; automatic neighbor refresh on selecting kept cards; separate workflow tabs by default; Follow/Pin with editing protection; contextual **Open in workflow** from selected items, note menus and individual related-result rows.
+Implemented in *merged `main` source* (not yet runtime-accepted): a **Find shared terms** view for cross-type term frequency, grouped governed-note matches and Canvas placement (no inferred links); contextual **+ New…** menus in all four workflows, preview-first creation, ordinary Markdown templates without model identity and governed creation through the existing identity/SysML planner, plus an in-memory **Potential relationships** preview before creation, a separate optional **Review relationship…** and **Apply relationship** transaction for a newly created governed element, and a read-only member-level inspector and scratch Canvas for explicit `connect`/`bind`/`flow` endpoints and resolved/unresolved usage references; four work areas; global model-note search; workflow-filtered neighbor discovery and unrestricted override; ranked multi-selection; scratch-Canvas temporary / kept / dismissed candidates; automatic neighbor refresh on selecting kept cards; one persistent Workbench sidebar/popout; Follow/Pin with editing protection; contextual **Open in workflow** from selected items, note menus and individual related-result rows.
 
 Not yet validated or complete: real Obsidian UX/focus/session behavior; broader multi-hop/cross-context member-level discovery beyond the explicit owner-local connection Canvas; generalized ordinary-Markdown search; full editable template-creation customization; Verify test-execution forms; Document publishing; bundled/signed release and controlled live deployment. Class templates and the four ordinary Markdown templates are generated under `99_System/05_Templates` by Base Vault. More specialized form-based creation and document publishing remain separate work.
 
-Related documentation: [Shared-Term Discovery](TERM_CONNECTION_DISCOVERY.md), [PR #4 staging acceptance ledger](STAGING_VALIDATION_PR4.md), [Workbench](../tools/workbench/README.md), [Importer](../tools/importer/README.md), [Base Vault](../tools/base-vault/README.md), [handover](HANDOVER.md), [pop-out acceptance](../tools/workbench/POPOUT_ACCEPTANCE.md), [live-vault baseline](https://github.com/spencerskelly/MDSE_v2_live/blob/main/LIVE_BASELINE.md).
+Related documentation: [Shared-Term Discovery](TERM_CONNECTION_DISCOVERY.md), [consolidated acceptance contract](../testing/WORKBENCH_IMPORTER_ACCEPTANCE.md), [historical PR #4 staging acceptance ledger](STAGING_VALIDATION_PR4.md), [Workbench](../tools/workbench/README.md), [Importer](../tools/importer/README.md), [Base Vault](../tools/base-vault/README.md), [handover](HANDOVER.md), [pop-out acceptance](../tools/workbench/POPOUT_ACCEPTANCE.md), [live-vault baseline](https://github.com/spencerskelly/MDSE_v2_live/blob/main/LIVE_BASELINE.md).
