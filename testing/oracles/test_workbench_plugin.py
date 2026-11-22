@@ -261,7 +261,14 @@ class WorkbenchPlugin(unittest.TestCase):
                 return !!box && !box.disabled && !box.checked;
             }""", arg="Include " + label)
             pg.get_by_role("button", name="Update included elements").first.click()
-            pg.wait_for_function("p => JSON.parse(window.__files[p]).nodes.length === 1", arg=canvas)
+            pg.wait_for_timeout(350)
+            diagnostic = pg.evaluate("""p => ({
+              message: document.body.innerText.slice(-1200),
+              canvas: window.__plugin.canvasTarget()?.path,
+              nodes: JSON.parse(window.__files[p]).nodes.map(n => ({id:n.id,file:n.file,text:n.text?.slice(0,45)})),
+              notices: window.__notices.slice(-5)
+            })""", canvas)
+            self.assertEqual(len(diagnostic["nodes"]), 1, diagnostic)
             self.assertTrue(pg.evaluate("p => JSON.parse(window.__files[p]).nodes.some(n=>n.file===p)", origin))
             self.assertEqual(len(notes), pg.evaluate("Object.keys(window.__notes).length"),
                              "model notes are not removed")
