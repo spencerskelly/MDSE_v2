@@ -115,8 +115,8 @@ export const partLifecycle = (n: { type: string; subtype: string; status: string
 };
 export const isPartNote = (n: { type: string; subtype: string; def?: { keyword: string } | null }): boolean =>
   n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
-const yamlScalar = (s: string): string => JSON.stringify(s);
-const replaceFm = (text: string, key: string, value: string): string => {
+const qcYamlScalar = (s: string): string => JSON.stringify(s);
+const qcReplaceFm = (text: string, key: string, value: string): string => {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!fm) throw new Error("The governed note has no YAML frontmatter.");
   const re = new RegExp("^" + key + ":[^\\r\\n]*$", "m");
@@ -166,10 +166,10 @@ export function planReplacePart(ix: ModelIndex, files: Map<string, string>, clas
     : clone.replace(/;\s*$/, " {\n        " + dependency + "\n    }");
   let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
     joined + newBlock.slice(newEnd));
-  if (partNumber) after = replaceFm(after, "partNumber", yamlScalar(partNumber));
-  after = replaceFm(after, "partLifecycle", "proposed");
-  after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
-  after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
+  if (partNumber) after = qcReplaceFm(after, "partNumber", qcYamlScalar(partNumber));
+  after = qcReplaceFm(after, "partLifecycle", "proposed");
+  after = qcReplaceFm(after, "replaces", qcYamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
+  after = qcReplaceFm(after, "changeSummary", qcYamlScalar(o.change.trim()));
   record.after = after;
   plan.summary = "Create proposed replacement " + record.path + " from " + sourcePath +
     ". Definition copied with fresh ID/UID/symbol; the predecessor stays current and every BOM usage remains unchanged.";
@@ -184,8 +184,8 @@ export function planPartLifecycle(ix: ModelIndex, files: Map<string, string>, pa
   if (replacement && (!ix.notes.has(replacement) || !isPartNote(ix.notes.get(replacement)!)))
     return bad("The replacement must be an existing governed part.");
   if (replacement === path) return bad("A part cannot replace itself.");
-  let after = replaceFm(before, "partLifecycle", next);
-  if (replacement && next === "obsolete") after = replaceFm(after, "replacedBy", yamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
+  let after = qcReplaceFm(before, "partLifecycle", next);
+  if (replacement && next === "obsolete") after = qcReplaceFm(after, "replacedBy", qcYamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
   if (after === before) return bad("The part already has the requested lifecycle.");
   const whereUsed = ix.edges.filter((e) => e.to === path && e.kind === "hasPart" && !e.reverse);
   return { summary: "Set part " + n.title + " to " + next +
