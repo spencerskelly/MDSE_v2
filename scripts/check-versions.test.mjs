@@ -49,6 +49,7 @@ test("shipped source cannot change without both component and toolset version bu
     assert.notEqual(result.status,0);
     assert.match(result.stderr,/Workbench/);
     write(dir,"tools/workbench/manifest.json",version("0.10.1"));
+    write(dir,"tools/importer/version.json",version("0.11.1"));
     write(dir,"package.json",version("0.11.1"));
     git(dir,["add","."]);git(dir,["commit","-qm","bump workbench and toolset"]);
     result=run(dir,base);
