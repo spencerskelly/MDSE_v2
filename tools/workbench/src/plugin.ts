@@ -444,7 +444,8 @@ function hostFor(plugin: any): any {
     quickCreate: (templateId: string, selectedPath: string) => plugin.openQuickCreate(templateId, selectedPath),
     openCanvas: (lens: string, spec: unknown) => plugin.openCanvas(lens, spec),
     openMemberCanvas: (owner: string, key: string) => plugin.openMemberCanvas(owner, key),
-    addToCanvas: (anchor: string, paths: string[]) => plugin.addToCanvasPreview(anchor, paths),
+    addToCanvas: (anchor: string, paths: string[], expectedCanvasPath?: string) => plugin.addToCanvasPreview(anchor, paths, true, false, null, expectedCanvasPath),
+    activeCanvasPath: () => plugin.canvasTarget()?.path ?? null,
     canvasIncluded: () => plugin.canvasIncluded(),
     updateIncluded: (anchor: string, scope: string[], checked: string[], directChildren: string[]) => plugin.updateCanvasIncluded(anchor, scope, checked, directChildren),
     discoverRelated: (sources: string[], mode: { workflow: "document" | "define" | "structure" | "verify"; all: boolean }) => plugin.discoverRelatedOnCanvas(sources, mode),
@@ -895,11 +896,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
 
   /** D-0082: put notes on the canvas preview next to the selected note's card. With no preview open, the selected note and these make a new one. */
-  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false, rowUnder: string | null = null): Promise<string> {
+  async addToCanvasPreview(anchor: string | null, paths: string[], relations = true, replace = false, rowUnder: string | null = null, expectedCanvasPath?: string): Promise<string> {
     await this.ensureIndex();
     if (paths.length > WB.CANVAS_WARN_AT) { const n = await this.askCanvasLimit(paths.length); if (n === null) return "Canvas cancelled."; paths = paths.slice(0, n); }   // D-0161
     const place = (doc: any) => rowUnder ? WB.addChildren(doc, this.ix, rowUnder, paths, { relations }) : WB.addToCanvas(doc, this.ix, anchor, paths, { relations });
     const target = replace ? null : this.canvasTarget();
+    if (expectedCanvasPath && target?.path !== expectedCanvasPath) throw new Error("Canvas target changed or closed; no notes were added. Recheck the destination.");
     if (target) {                                                                    // D-0089: the canvas that is open in the main window, whichever file it is
       let res: { added: number; present: number; linesAdded: number; linesRemoved: number } | null = null;
       await this.editTarget(target, (text) => {
@@ -1192,6 +1194,12 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         } catch (e: any) { new obsidian.Notice("MDSE: could not load model index: " + String(e?.message ?? e), 8000); }
       }));
       menu.addItem((i: any) => i.setTitle("Preview MDSE canvas").setIcon("layout-dashboard").onClick(() => { this.selected = f.path; lensPick("Which view for the canvas?", WB.lensHasCanvas, (l) => this.openCanvas(l, {}).then((m) => new obsidian.Notice("MDSE: " + m, 8000), (e: any) => new obsidian.Notice("MDSE canvas failed: " + String(e?.message ?? e), 8000))); }));
+    }));
+    // Keep the Search/Pick notes destination label synchronized when Canvas tabs change.
+    // Avoid rebuilding an active editor form just because another artifact received focus.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: any) => {
+      if (leaf?.view?.getViewType?.() === "canvas") this.canvasLeaf = leaf;
+      this.apps.forEach((panel: any) => { if (panel.lens?.() !== "edit") panel.refresh?.(); });
     }));
     this.registerEvent(this.app.workspace.on("file-open", (f: any) => this.onFileOpen(f)));
     for (const ev of ["pointerup", "keyup"]) this.registerDomEvent(document, ev, () => setTimeout(() => this.canvasSelection(), 60));
