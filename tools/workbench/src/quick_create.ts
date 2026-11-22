@@ -97,3 +97,83 @@ export function previewContextLinks(ix: ModelIndex, files: Map<string, string>, 
     ? "Potential native relationships (not saved). Choose Create, then separately review and Apply a relationship."
     : "No native SysML relationship is currently eligible. You can create the note independently." };
 }
+
+
+/* Part replacement is engineering change, not a SysML generalization or an automatic BOM edit.
+ * Keeping the old and new part definitions distinct preserves as-built configuration history.
+ * partLifecycle is separate from note review status (Draft/Approved/Retired). */
+import MDSE from "../../core/src/mdse_core.js";
+import { planAddElement, edFindDef, type EdClasses } from "./edit.ts";
+export type PartLifecycle = "proposed" | "current" | "obsolete";
+export const partLifecycle = (n: { type: string; subtype: string; status: string; meta: Record<string, unknown> }): PartLifecycle => {
+  if (String(n.meta.partLifecycle ?? "").toLowerCase() === "obsolete" || n.status === "Retired" || n.meta.mergedInto) return "obsolete";
+  if (String(n.meta.partLifecycle ?? "").toLowerCase() === "proposed") return "proposed";
+  return "current"; // legacy parts without an explicit lifecycle remain visible by default
+};
+export const isPartNote = (n: { type: string; subtype: string }): boolean => n.type === "Object" && n.subtype === "part";
+const yamlScalar = (s: string): string => JSON.stringify(s);
+const replaceFm = (text: string, key: string, value: string): string => {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!fm) throw new Error("The governed note has no YAML frontmatter.");
+  const re = new RegExp("^" + key + ":[^\\r\\n]*$", "m");
+  const current = fm[1]!;
+  const next = re.test(current) ? current.replace(re, key + ": " + value) : current + "\n" + key + ": " + value;
+  return text.replace(fm[0], "---\n" + next + "\n---");
+};
+export interface PartReplaceOptions { title: string; folder: string; change: string; author: string; now?: Date }
+/** Preview-first clone: new identity and SysML namespace, copied engineering definition,
+ * explicit native dependency tagged supersedes, unchanged predecessor. */
+export function planReplacePart(ix: ModelIndex, files: Map<string, string>, classes: EdClasses,
+  sourcePath: string, o: PartReplaceOptions): { summary: string; writes: Array<{ path: string; before: string | null; after: string }>; problems: string[] } {
+  const bad = (why: string) => ({ summary: "", writes: [], problems: [why] });
+  const source = ix.notes.get(sourcePath), original = files.get(sourcePath);
+  if (!source || !isPartNote(source) || !original || source.def?.keyword !== "part def")
+    return bad("Select a governed Object/part containing a native SysML part definition.");
+  if (partLifecycle(source) === "obsolete") return bad("Select a current or proposed source part; obsolete parts require an explicit exception.");
+  if (!o.change.trim()) return bad("Document what is changing before previewing the replacement.");
+  const plan = planAddElement(ix, classes, { type: source.type, subtype: source.subtype, title: o.title,
+    folder: o.folder || source.folder, text: "", author: o.author, now: o.now });
+  if (plan.problems.length || !plan.writes.length) return plan;
+  const record = plan.writes[0]!;
+  const oldBlock = MDSE.extractSysml(original) as string | null;
+  const newBlock = MDSE.extractSysml(record.after) as string | null;
+  const oldSpot = oldBlock && edFindDef(oldBlock, source.def.keyword, source.def.name);
+  const newName = /part def\s+([A-Za-z_]\w*)\s*;/.exec(newBlock ?? "")?.[1] ?? "";
+  const newSpot = newBlock && edFindDef(newBlock, "part def", newName);
+  if (!oldBlock || !newBlock || !oldSpot || !newSpot) return bad("Could not safely locate both native part definitions. No copy was made.");
+  const oldStart = oldBlock.lastIndexOf("\n", oldSpot.nameEnd) + 1;
+  const oldEnd = oldSpot.open ? oldSpot.close + 1 : oldSpot.term + 1;
+  const oldDef = oldBlock.slice(oldStart, oldEnd);
+  const clone = oldDef.replace(/\bpart\s+def\s+[A-Za-z_]\w*/, "part def " + newName);
+  if (clone === oldDef && source.def.name !== newName) return bad("Could not rename the copied definition.");
+  const newStart = newBlock.lastIndexOf("\n", newSpot.nameEnd) + 1;
+  const newEnd = newSpot.open ? newSpot.close + 1 : newSpot.term + 1;
+  const dependency = "\n    dependency from " + record.after.match(/^primarySymbol:\s*(.+)$/m)![1] +
+    " to " + source.def.symbol + "; // supersedes\n";
+  let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
+    clone + dependency + newBlock.slice(newEnd));
+  after = replaceFm(after, "partLifecycle", "proposed");
+  after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
+  after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
+  record.after = after;
+  plan.summary = "Create proposed replacement " + record.path + " from " + sourcePath +
+    ". Definition copied with fresh ID/UID/symbol; the predecessor stays current and every BOM usage remains unchanged.";
+  return plan;
+}
+/** Lifecycle update does not rewrite model status, replace part usages, or delete history. */
+export function planPartLifecycle(ix: ModelIndex, files: Map<string, string>, path: string,
+  next: "current" | "obsolete", replacement?: string): { summary: string; writes: Array<{ path: string; before: string | null; after: string }>; problems: string[] } {
+  const bad = (why: string) => ({ summary: "", writes: [], problems: [why] });
+  const n = ix.notes.get(path), before = files.get(path);
+  if (!n || !isPartNote(n) || !before) return bad("Select a governed Object/part.");
+  if (replacement && (!ix.notes.has(replacement) || !isPartNote(ix.notes.get(replacement)!)))
+    return bad("The replacement must be an existing governed part.");
+  if (replacement === path) return bad("A part cannot replace itself.");
+  let after = replaceFm(before, "partLifecycle", next);
+  if (replacement && next === "obsolete") after = replaceFm(after, "replacedBy", yamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
+  if (after === before) return bad("The part already has the requested lifecycle.");
+  const whereUsed = ix.edges.filter((e) => e.to === path && e.kind === "hasPart" && !e.reverse);
+  return { summary: "Set part " + n.title + " to " + next +
+    (whereUsed.length ? ". ATTENTION: used by " + whereUsed.length + " modeled assemblies; their usage remains unchanged." : ".") +
+    " No BOM is rewritten.", writes: [{ path, before, after }], problems: [] };
+}
