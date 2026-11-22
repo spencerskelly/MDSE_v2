@@ -5,9 +5,13 @@
  * Pure version comparison; no mutations, tags or release approvals.
  */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-const root = new URL("../", import.meta.url);
+const root = process.env.MDSE_VERSION_TEST_ROOT
+  ? pathToFileURL(resolve(process.env.MDSE_VERSION_TEST_ROOT) + "/")
+  : new URL("../", import.meta.url);
 const read = (p) => JSON.parse(readFileSync(new URL(p, root), "utf8")).version;
 const semver = (s) => {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(s ?? "")) throw Error("Invalid semantic version: " + s);
