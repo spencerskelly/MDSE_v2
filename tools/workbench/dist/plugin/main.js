@@ -833,9 +833,9 @@ const FLAG = /^> \[!(flag\w+)\] (.*)\n((?:>.*(?:\n|$))*)/gm;
 const baseName = (path        )         => path.split("/").pop() .replace(/\.md$/i, "");
 const SYSML_TO_KIND                         = { part: "hasPart", port: "hasPort", action: "hasAction", state: "hasState", item: "hasFlow", requirement: "hasRequirement", verification: "hasVerification" };
 /** D-0108: relationships the importer repeats as YAML so people and AI can read them. On a note that has a SysML block the block is the authority and these YAML fields are never counted, so an edit made to the block cannot be undone by a stale copy. */
-const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "includes", "extendedBy"]);
+const MIRRORED = new Set(["specializes", "hasPart", "hasPort", "hasAction", "hasState", "hasFlow", "references", "satisfies", "verifies", "performs", "allocatedTo", "derivedFrom", "refines", "trace", "dependsOn", "uses", "supersedes", "replaces", "includes", "extendedBy"]);
 /** MOD-186 (D-0128): `implementedBy` is the stored inverse of `implements`. The forward link on the part is the relationship; counting the inverse too would double every implements edge. */
-const STORED_INVERSE = new Set(["implementedBy"]);
+const STORED_INVERSE = new Set(["implementedBy", "replacedBy"]);
 const DEP_KIND                         = { derivedFrom: "derivedFrom", refines: "refines", trace: "trace", dependsOn: "dependsOn", uses: "uses", supersedes: "supersedes" };
 
 function readNote(path        , text        , o              )              {
@@ -1560,8 +1560,19 @@ const lensHasTable = (l      )          => l !== "dashboard" && l !== "note" && 
                                                                                                                                                                                                                                                                                                                          
 const C = (ix            , path               , fallback = "")       => ({ text: path ? nm(ix, path, path) : fallback, path });
 const Cs = (ix            , paths          )         => paths.map((p) => C(ix, p));
-                                                                                                                                                                                                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                                                                                                                                                                                                                            
 
+/** Part lifecycle is independent of note review status. Legacy parts with no field remain
+ * current until specifically classified; proposed replacements are visible under All. */
+function viewPartLifecycle(n      )                                      {
+  const v = String(n.meta.partLifecycle ?? "").toLowerCase();
+  if (v === "obsolete" || n.status === "Retired" || n.meta.mergedInto) return "obsolete";
+  if (v === "proposed") return "proposed";
+  return "current";
+}
+function viewIsPart(n      )          {
+  return n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
+}
 function lensTables(ix            , lens      , sel        , o              = {})              {
   const scope = o.scope ?? (sel ? "selected" : "all"), has = !!sel && ix.notes.has(sel), n = has ? ix.notes.get(sel)  : null;
   const out              = [];
@@ -1569,7 +1580,7 @@ function lensTables(ix            , lens      , sel        , o              = {}
     if (!n) return [{ id: "structure", title: "Structure trace", columns: [], rows: [], empty: "Select a note in Obsidian to trace its structure." }];
     const st = structure(ix, sel, o.tree === "direct" ? 1 : LIMIT_LEVELS, LIMIT_PER_PARENT, ["hasPart"]), flat                                   = [];
     const walk = (t          , level        )       => {
-      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", note: t.path ? "" : t.detail });
+      flat.push({ level: String(level), name: { text: "\u00a0\u00a0".repeat(level) + t.label, path: t.path }, role: t.kind === "root" ? "this note" : t.kind.replace(/^has/, "").toLowerCase(), mult: t.detail && !t.path ? "" : t.detail, type: t.path ? (ix.notes.get(t.path)?.type ?? "") : "not in vault", id: t.path ? (ix.notes.get(t.path)?.id ?? "") : "", lifecycle: t.path && ix.notes.has(t.path) && viewIsPart(ix.notes.get(t.path) ) ? viewPartLifecycle(ix.notes.get(t.path) ) : "", note: t.path ? "" : t.detail });
       for (const c of t.children) walk(c, level + 1);
       /* D-0150: say so when parts are left out, instead of ending the list quietly */
       const cut = o.tree === "direct" ? 0 : t.cut ?? 0;                      // the direct view stops at one level on purpose
@@ -1577,14 +1588,25 @@ function lensTables(ix            , lens      , sel        , o              = {}
       if (why) flat.push({ level: String(level + 1), name: { text: "\u00a0\u00a0".repeat(level + 1) + why, cls: "gap" }, role: "", mult: "", type: "", id: "", note: "" });
     };
     walk(st.tree, 0);
-    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
+    out.push({ id: "structure", title: `Structure of ${n.title}`, columns: [{ key: "name", label: "Element" }, { key: "role", label: "Role" }, { key: "mult", label: "Qty" }, { key: "type", label: "Type" }, { key: "id", label: "Id", wide: true }, { key: "lifecycle", label: "Lifecycle" }, { key: "note", label: "Note", wide: true }], rows: flat, outline: true, empty: "This definition owns no parts. Ports are under Internal structure, actions under Function, states under States.",
       note: [st.supers.length ? "Specializes " + st.supers.map((p) => nm(ix, p, p)).join(" → ") : "", st.subs.length ? "Specialized by " + st.subs.map((p) => nm(ix, p, p)).join(", ") : "", st.untyped.length ? "Untyped: " + st.untyped.join(", ") : ""].filter(Boolean).join(" · ") });
     const direct = o.tree === "direct", b = bom(ix, sel, direct ? 1 : 12);
-    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
+    out.push({ id: "bom", title: direct ? "Parts list (direct parts only)" : "Parts list (rolled up)", columns: [{ key: "part", label: "Part" }, { key: "qty", label: "Quantity" }, { key: "unit", label: "Unit" }, { key: "depth", label: "Depth" }], rows: b.filter((x) => o.partScope === "all" || !ix.notes.has(x.path) || viewPartLifecycle(ix.notes.get(x.path) ) === "current").map((x) => ({ part: C(ix, x.path), qty: String(Math.round(x.qty * 1000) / 1000), unit: x.unit, depth: String(x.depth) })), empty: "No resolved parts under this note." });
     const w = whereUsed(ix, sel), up                                   = [];
     const walkUp = (t          , level        )       => { for (const c of t.children) { up.push({ assembly: { text: "\u00a0\u00a0".repeat(level) + c.label, path: c.path }, via: c.kind.replace(/^has/, "").toLowerCase(), qty: c.detail }); if (!direct) walkUp(c, level + 1); } };
     walkUp(w.tree, 0);
     out.push({ id: "where", title: `Where ${n.title} is used`, columns: [{ key: "assembly", label: "Assembly" }, { key: "via", label: "Relationship" }, { key: "qty", label: "Qty" }], rows: up, empty: "Nothing owns, specializes or performs this note.", note: w.references.length ? `${w.references.length} other reference(s): ` + w.references.map((r) => `${r.kind} from ${nm(ix, r.path, r.path)}`).join("; ") : "" });
+    const registry = [...ix.notes.values()].filter(viewIsPart)
+      .filter((p) => o.partScope === "all" || viewPartLifecycle(p) === "current")
+      .sort((a, b) => a.title.localeCompare(b.title));
+    out.push({ id: "part-registry", title: o.partScope === "all" ? "All parts in vault" : "Current parts in vault",
+      columns: [{ key: "part", label: "Part", wide: true }, { key: "pn", label: "Part number" },
+        { key: "lifecycle", label: "Lifecycle" }, { key: "replacement", label: "Replaced by / replaces" }],
+      rows: registry.map((p) => ({ part: C(ix, p.path), pn: String(p.meta.partNumber ?? ""),
+        lifecycle: viewPartLifecycle(p), replacement: [p.meta.replacedBy ? "→ " + String(p.meta.replacedBy) : "",
+          p.meta.replaces ? "← " + String(p.meta.replaces) : ""].filter(Boolean).join(" ") })),
+      empty: "No parts match this lifecycle filter.",
+      note: "Lifecycle is separate from note status. A part remains in historical structure and BOM references even after it is obsolete." });
   } else if (lens === "compare") {
     if (!n) return [{ id: "compare", title: "Compare notes", columns: [], rows: [], empty: "Select a note, then choose the note to compare it with." }];
     const o2 = o.other && ix.notes.has(o.other) ? ix.notes.get(o.other)  : null;
@@ -3216,7 +3238,7 @@ function bomReportCsv(r           )         {
 
 
 const ED = { edIdent, edUsageIdent, edAuthor, edUid, edNextId, edKeyword, edElementKinds, planAddElement, edCloseOf, edFindDef, edInsert, edWithBlock, ED_RELS, edRelsFor, edTargets, edUsageKinds, planAddRelationship, planSetRequirementText, edDiff };
-const V = { qtyOf, LIMIT_LEVELS, structure, measuredOf, bom, bomCategoryOfNote, bomByCategory, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, lensTables };
+const V = { qtyOf, LIMIT_LEVELS, structure, measuredOf, bom, bomCategoryOfNote, bomByCategory, whereUsed, requirementText, isRequirement, traceMatrix, behavior, designTypes, portsOfType, internalStructure, INHERIT_FROM, inheritedMembers, interfaces, TYPE_COLOR, SUBTYPE_COLOR, PORT_COLOR, typeColor, EDGE_COLOR, edgeName, edgeLook, muted, PROFILES, defaultSpec, specIsDefault, CLASSIFIERS, classOf, traverse, collapseGraph, layoutRadial, tableRows, relationshipRows, edgeKinds, folderTree, reviewQueue, objectsWithoutPort, dashboard, search, pickRows, statusChoices, functionalTrace, LENSES, LENS_GROUPS, TOOLBAR_GROUPS, LENS_PROFILE, lensHasCanvas, lensHasTable, viewPartLifecycle, viewIsPart, lensTables };
 
 const ECO_ACTIONS = [["alter-cl1", "Alter (CL1)"], ["alter-cl2", "Alter (CL2)"], ["adjust-usage", "Adjust usage"]]         ;
                                                  
@@ -5984,6 +6006,9 @@ const QUICK_TEMPLATES                           = [
   { id: "design", label: "Design", area: "define", kind: "governed", type: "Condition", subtype: "design" },
   { id: "state", label: "State", area: "define", kind: "governed", type: "Condition", subtype: "state" },
   { id: "part", label: "Part / assembly definition", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-replacement", label: "Replace selected part (copy definition)", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-obsolete", label: "Mark selected part obsolete", area: "structure", kind: "governed", type: "Object", subtype: "part" },
+  { id: "part-current", label: "Mark selected part current", area: "structure", kind: "governed", type: "Object", subtype: "part" },
   { id: "interface", label: "Interface definition", area: "structure", kind: "governed", type: "Object", subtype: "interface" },
   { id: "configuration-procedure", label: "Configuration procedure", area: "structure", kind: "governed", type: "Procedure", subtype: "configuration" },
   { id: "verify-requirement", label: "Requirement", area: "verify", kind: "governed", type: "Requirement", subtype: "functional" },
@@ -6062,6 +6087,93 @@ function previewContextLinks(ix            , files                     , origin 
     : "No native SysML relationship is currently eligible. You can create the note independently." };
 }
 
+
+/* Part replacement is engineering change, not a SysML generalization or an automatic BOM edit.
+ * Keeping the old and new part definitions distinct preserves as-built configuration history.
+ * partLifecycle is separate from note review status (Draft/Approved/Retired). */
+
+
+                                                         
+const partLifecycle = (n                                                                                  )                => {
+  if (String(n.meta.partLifecycle ?? "").toLowerCase() === "obsolete" || n.status === "Retired" || n.meta.mergedInto) return "obsolete";
+  if (String(n.meta.partLifecycle ?? "").toLowerCase() === "proposed") return "proposed";
+  return "current"; // legacy parts without an explicit lifecycle remain visible by default
+};
+const isPartNote = (n                                                                     )          =>
+  n.type === "Object" && (n.subtype === "part" || n.def?.keyword === "part def");
+const yamlScalar = (s        )         => JSON.stringify(s);
+const replaceFm = (text        , key        , value        )         => {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!fm) throw new Error("The governed note has no YAML frontmatter.");
+  const re = new RegExp("^" + key + ":[^\\r\\n]*$", "m");
+  const current = fm[1] ;
+  const next = re.test(current) ? current.replace(re, key + ": " + value) : current + "\n" + key + ": " + value;
+  return text.replace(fm[0], "---\n" + next + "\n---");
+};
+                                                                                                          
+/** Preview-first clone: new identity and SysML namespace, copied engineering definition,
+ * explicit native dependency tagged supersedes, unchanged predecessor. */
+function planReplacePart(ix            , files                     , classes           ,
+  sourcePath        , o                    )                                                                                                                 {
+  const bad = (why        ) => ({ summary: "", writes: [], problems: [why] });
+  const source = ix.notes.get(sourcePath), original = files.get(sourcePath);
+  if (!source || !isPartNote(source) || !original || source.def?.keyword !== "part def")
+    return bad("Select a governed Object/part containing a native SysML part definition.");
+  if (partLifecycle(source) === "obsolete") return bad("Select a current or proposed source part; obsolete parts require an explicit exception.");
+  if (!o.change.trim()) return bad("Document what is changing before previewing the replacement.");
+  const plan = planAddElement(ix, classes, { type: source.type, subtype: source.subtype, title: o.title,
+    folder: o.folder || source.folder, text: "", author: o.author, now: o.now });
+  if (plan.problems.length || !plan.writes.length) return plan;
+  const record = plan.writes[0] ;
+  const oldBlock = MDSE.extractSysml(original)                 ;
+  const newBlock = MDSE.extractSysml(record.after)                 ;
+  const oldSpot = oldBlock && edFindDef(oldBlock, source.def.keyword, source.def.name);
+  const newName = /part def\s+([A-Za-z_]\w*)\s*;/.exec(newBlock ?? "")?.[1] ?? "";
+  const newSpot = newBlock && edFindDef(newBlock, "part def", newName);
+  if (!oldBlock || !newBlock || !oldSpot || !newSpot) return bad("Could not safely locate both native part definitions. No copy was made.");
+  const oldStart = oldBlock.lastIndexOf("\n", oldSpot.nameEnd) + 1;
+  const oldEnd = oldSpot.open ? oldSpot.close + 1 : oldSpot.term + 1;
+  const oldDef = oldBlock.slice(oldStart, oldEnd);
+  const clone = oldDef.replace(/\bpart\s+def\s+[A-Za-z_]\w*/, "part def " + newName);
+  if (clone === oldDef && source.def.name !== newName) return bad("Could not rename the copied definition.");
+  const newStart = newBlock.lastIndexOf("\n", newSpot.nameEnd) + 1;
+  const newEnd = newSpot.open ? newSpot.close + 1 : newSpot.term + 1;
+  const dependency = "dependency from " + record.after.match(/^primarySymbol:\s*(.+)$/m) [1] +
+    " to " + source.def.symbol + "; // supersedes";
+  // Place dependency INSIDE the part definition: the current scanner associates statements
+  // with the containing definition, not with a package-level trailing statement.
+  const closeAt = clone.lastIndexOf("}");
+  const joined = oldSpot.open && closeAt >= 0
+    ? clone.slice(0, closeAt).replace(/[ \t]*$/, "") + "\n        " + dependency + "\n    " + clone.slice(closeAt)
+    : clone.replace(/;\s*$/, " {\n        " + dependency + "\n    }");
+  let after = MDSE.replaceSysmlBlock(record.after, newBlock.slice(0, newStart) +
+    joined + newBlock.slice(newEnd));
+  after = replaceFm(after, "partLifecycle", "proposed");
+  after = replaceFm(after, "replaces", yamlScalar("[[" + sourcePath.replace(/\.md$/i, "") + "]]"));
+  after = replaceFm(after, "changeSummary", yamlScalar(o.change.trim()));
+  record.after = after;
+  plan.summary = "Create proposed replacement " + record.path + " from " + sourcePath +
+    ". Definition copied with fresh ID/UID/symbol; the predecessor stays current and every BOM usage remains unchanged.";
+  return plan;
+}
+/** Lifecycle update does not rewrite model status, replace part usages, or delete history. */
+function planPartLifecycle(ix            , files                     , path        ,
+  next                        , replacement         )                                                                                                                 {
+  const bad = (why        ) => ({ summary: "", writes: [], problems: [why] });
+  const n = ix.notes.get(path), before = files.get(path);
+  if (!n || !isPartNote(n) || !before) return bad("Select a governed Object/part.");
+  if (replacement && (!ix.notes.has(replacement) || !isPartNote(ix.notes.get(replacement) )))
+    return bad("The replacement must be an existing governed part.");
+  if (replacement === path) return bad("A part cannot replace itself.");
+  let after = replaceFm(before, "partLifecycle", next);
+  if (replacement && next === "obsolete") after = replaceFm(after, "replacedBy", yamlScalar("[[" + replacement.replace(/\.md$/i, "") + "]]"));
+  if (after === before) return bad("The part already has the requested lifecycle.");
+  const whereUsed = ix.edges.filter((e) => e.to === path && e.kind === "hasPart" && !e.reverse);
+  return { summary: "Set part " + n.title + " to " + next +
+    (whereUsed.length ? ". ATTENTION: used by " + whereUsed.length + " modeled assemblies; their usage remains unchanged." : ".") +
+    " No BOM is rewritten.", writes: [{ path, before, after }], problems: [] };
+}
+
 /* panel.ts */
 /* The Obsidian interface: a right-sidebar panel that follows the selected note, and a main-window table view. Both read the
  * one shared index the plugin builds; neither has its own file list (Obsidian's file explorer is the browser). Plain DOM;
@@ -6072,7 +6184,7 @@ function previewContextLinks(ix            , files                     , origin 
 
 const OL = { buildOutline, visibleRows, collapseFromLevel, toggled, shownDepth };
 
-const QC = { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks };
+const QC = { QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks, partLifecycle, isPartNote, planReplacePart, planPartLifecycle };
 const MN = { memberDetails };
 const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTermCatalog, commonTerms, searchTermCatalog };
 
@@ -6236,7 +6348,7 @@ function mountPanel(root             , host           , opt                     
   };
   const cellText = (c                         )         => (c === undefined ? "" : typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => x.text).join("; ") : c.text);
   let memberOwner = "", memberFilter = "", memberLimit = 40; const expandedMembers = new Set        ();
-  let cmpOther = "", cmpText = "", tree                    = "full", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
+  let cmpOther = "", cmpText = "", tree                    = "full", partScope                    = "current", canvasSel           = [], tickKey = "", tickCount                     = null; const rowTicks = new Set        (); let  pickText = "", pickType = "", pickRel = true, pickGroup = true; const pickSel = new Set        ();
   let membershipLoading = false, membershipReady = false, membershipEpoch = 0;
   let membershipDirty = false, membershipApplying = false;
   let membershipContext = ""; let activeCanvasName                = null;
@@ -6421,6 +6533,12 @@ function mountPanel(root             , host           , opt                     
       : membershipLoading ? "Reading Canvas inclusion…" : "Canvas inclusion unavailable");
     const mk = (label        , title        , go                       )              => { const b = h("button", { class: "sm pri", title }, label); b.addEventListener("click", () => busy(b, "Creating…", go)); return b; };
     const fresh                = [];
+    if (lens === "structure" && root && V.viewIsPart(ix .notes.get(root) ) && host.quickCreate) {
+      const state = V.viewPartLifecycle(ix .notes.get(root) );
+      const action = (label        , id        )              => mk(label, "Preview and approve an engineering part lifecycle change; no existing BOM or modeled usage is rewritten.", () => host.quickCreate (id, root));
+      fresh.push(action("Replace part…", "part-replacement"),
+        action(state === "obsolete" ? "Mark current…" : "Mark obsolete…", state === "obsolete" ? "part-current" : "part-obsolete"));
+    }
     if (kidsOf.length && host.addChildren) { const cb = h("button", { class: "sm pri", title: "Put every direct part of this assembly on the open canvas as one row below its card, joined bottom to top" }, `Add all ${kidsOf.length} children to canvas`); cb.addEventListener("click", () => busy(cb, "Adding…", () => host.addChildren (root, kidsOf))); fresh.push(cb); }
     if (lens === "structure" && root && host.openStructureCanvas) fresh.push(
       mk("Canvas: direct parts", "A new canvas: this note, the assemblies it is directly in above it, and its direct parts in a row below, joined bottom of assembly to top of part", () => host.openStructureCanvas (root, "direct")),
@@ -6539,7 +6657,7 @@ function mountPanel(root             , host           , opt                     
   }
   const chip = (label        , on         , fn                      )              => h("label", {}, h("input", { type: "checkbox", checked: on, onchange: (e       ) => { fn((e.target                    ).checked); draw(); } }), " " + label);
   function scopeBar()                     {
-    if (lens === "structure") return h("div", { class: "chips" }, h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e       ) => { tree = (e.target                     ).value               ; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
+    if (lens === "structure") return h("div", { class: "chips" }, h("label", {}, "Vault parts: ", h("select", { "aria-label": "Part lifecycle filter", onchange: (e       ) => { partScope = (e.target                     ).value                    ; draw(); } }, h("option", { value: "current", selected: partScope === "current" }, "Current only"), h("option", { value: "all", selected: partScope === "all" }, "All, including proposed and obsolete"))), h("select", { "aria-label": "How much of the structure", title: "The whole tree of parts below this note, or only the parts it owns directly", onchange: (e       ) => { tree = (e.target                     ).value               ; draw(); } }, h("option", { value: "full", selected: tree === "full" }, "Full tree"), h("option", { value: "direct", selected: tree === "direct" }, "Direct parts only")));
     if (lens === "internal") return h("div", { class: "chips", style: "flex-wrap:wrap" }, h("span", { class: "mut" }, "Also show ports and parts inherited"), ...V.INHERIT_FROM.map(([k, group, label]) => h("label", { title: `${group}: ${label}` }, h("input", { type: "checkbox", "aria-label": `Inherit ${label}`, checked: inherit.includes(k), onchange: (e       ) => { inherit = (e.target                    ).checked ? [...inherit, k] : inherit.filter((x) => x !== k); draw(); } }), ` ${group === "Assembly" ? (k === "parent" ? "parent assembly" : "child parts") : k === "general" ? "general" : "specific"} `, h("span", { class: "mut" }, group === "Assembly" ? "(assembly)" : "(specialization)"))));
     if (lens !== "functional" && lens !== "requirements" && lens !== "tables") return null;
     return h("div", { class: "chips" }, h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "selected", onchange: () => { scope = "selected"; draw(); } }), " around the selected note"), h("label", {}, h("input", { type: "radio", name: "scope-" + opt.mode, checked: scope === "all", onchange: () => { scope = "all"; draw(); } }), " everything in the vault"),
@@ -6953,7 +7071,7 @@ function mountPanel(root             , host           , opt                     
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix , getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { tickKey = key; }
-        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
+        const ts = V.lensTables(ix, lens, sel, { scope, table, text, tree, partScope, other: cmpOther, inherit }), canAdd = ADDABLE.has(lens), ab = canAdd ? addBar(ts) : null;
         if (ab) body.append(ab); else tickCount = null;
         if (lens === "compare" && n) body.append(compareBar());
         for (const t of ts) body.append(tableView(t, canAdd));
@@ -6996,7 +7114,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, contextLinkChoices, previewContextLinks, planAddElement, memberConnectionCanvas, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, updateIncludedCanvas, cardNotePath, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
+return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, planReplacePart, planPartLifecycle, contextLinkChoices, previewContextLinks, planAddElement, memberConnectionCanvas, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, updateIncludedCanvas, cardNotePath, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
 })();
 /* Obsidian shell. Everything of substance is in panel.ts / views.ts / index.ts / canvas.ts; this file supplies the vault's
  * files, the one shared index, selection following, the main-window views and the few writes.
@@ -7014,6 +7132,8 @@ return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quick
                                                                                                                                                                   
                                                                                       
                                                                                                                                                       
+                                                                                                            
+                                                                                                                                       
                                                                                                                                                                                                         
                                                                                                                                                                                                                                                             
                                                                     
@@ -7213,6 +7333,52 @@ class ContextLinkModal extends obsidian.Modal {
   }
 }
 
+/** Part lifecycle is a separate, previewed model-metadata change. A superseded part may still
+ * be used in old or current assemblies; neither its SysML definition nor usages are edited. */
+class PartLifecycleModal extends obsidian.Modal {
+  plugin     ; source        ; next                        ;
+  constructor(plugin     , source        , next                        ) {
+    super(plugin.app); this.plugin = plugin; this.source = source; this.next = next;
+  }
+  onOpen() {
+    const p = this.plugin, el = this.contentEl, n = p.ix?.notes.get(this.source);
+    el.empty();
+    el.createEl("h3", { text: "Mark part " + this.next });
+    el.createEl("p", { text: (n?.title ?? this.source) + " — lifecycle only. Existing BOMs, usages, model relationships and record status are unchanged." });
+    const candidate = p.ix?.edges.filter((e     ) => e.kind === "supersedes" && e.to === this.source).map((e     ) => e.from) ?? [];
+    const candidatePath = candidate.length === 1 ? candidate[0] : "";
+    let replacement = this.next === "obsolete" ? candidatePath : "";
+    if (this.next === "obsolete") {
+      new obsidian.Setting(el).setName("Replacement note (optional)").setDesc("If the new part is recorded as superseding this part, it can be referenced here.")
+        .addText((x     ) => x.setValue(replacement).onChange((v        ) => { replacement = v.trim(); invalidate(); }));
+    }
+    const view = el.createEl("pre"); view.style.whiteSpace = "pre-wrap";
+    const msg = el.createEl("p"), row = el.createDiv({ cls: "modal-button-container" });
+    const see = row.createEl("button", { text: "Preview" });
+    const apply = row.createEl("button", { text: "Apply lifecycle", cls: "mod-cta" });
+    apply.disabled = true;
+    row.createEl("button", { text: "Cancel" }).onclick = () => this.close();
+    let plan      = null;
+    const invalidate = () => { plan = null; apply.disabled = true; view.setText(""); msg.setText("Preview required."); };
+    invalidate();
+    see.onclick = () => {
+      plan = WB.planPartLifecycle(p.ix, p.files, this.source, this.next, replacement || undefined);
+      if (plan.problems.length) { msg.setText(plan.problems.join("; ")); apply.disabled = true; return; }
+      view.setText(plan.writes.map((w     ) => w.path + "\n\n" + w.after).join("\n\n"));
+      msg.setText(plan.summary); apply.disabled = false;
+    };
+    apply.onclick = async () => {
+      if (!plan || plan.problems.length) return;
+      apply.disabled = true;
+      try {
+        const result = await p.applyPlan(plan);
+        new obsidian.Notice("MDSE: " + result.message, 8000);
+        this.close();
+      } catch (e     ) { msg.setText(String(e?.message ?? e)); see.disabled = false; }
+    };
+  }
+}
+
 /** A preview-first workflow creation dialog. New model notes reuse planAddElement/applyPlan.
  * Ordinary notes are plain Markdown and do not become SysML elements implicitly. */
 class QuickCreateModal extends obsidian.Modal {
@@ -7226,12 +7392,12 @@ class QuickCreateModal extends obsidian.Modal {
         "Governed model record: uses the existing identity and SysML creation plan, with preview and undo." });
     const originFolder = p.ix?.notes.get(this.origin)?.folder ?? "";
     const today = new Date(), dateLabel = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-    let title = t.id === "daily" ? dateLabel : "", folder = originFolder, detail = "";
+    let title = t.id === "daily" ? dateLabel : t.id === "part-replacement" ? (p.ix?.notes.get(this.origin)?.title ?? "") + " Replacement" : "", folder = originFolder, detail = "";
     new obsidian.Setting(el).setName("Name").addText((x     ) =>
       x.setPlaceholder("New note title").setValue(title).onChange((v        ) => { title = v; invalidate(); }));
     new obsidian.Setting(el).setName("Folder").setDesc("Vault-relative path; leave blank for the vault root.")
       .addText((x     ) => x.setValue(folder).onChange((v        ) => { folder = v; invalidate(); }));
-    if (t.kind === "governed") new obsidian.Setting(el).setName("Description / requirement text")
+    if (t.kind === "governed") new obsidian.Setting(el).setName(t.id === "part-replacement" ? "What is changing? (required)" : "Description / requirement text")
       .addTextArea((x     ) => x.setValue(detail).onChange((v        ) => { detail = v; invalidate(); }));
     const preview = el.createEl("pre"); preview.style.whiteSpace = "pre-wrap";
     preview.style.maxHeight = "260px"; preview.style.overflow = "auto";
@@ -7247,14 +7413,15 @@ class QuickCreateModal extends obsidian.Modal {
     invalidate();
     see.addEventListener("click", () => {
       const existing = new Set        ([...p.files.keys(), ...[...p.ix.notes.keys()]]);
-      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) :
-        WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
+      plan = t.kind === "plain" ? WB.planPlainNote(t, title, folder, existing) : t.id === "part-replacement"
+        ? WB.planReplacePart(p.ix, p.files, CLASSES, this.origin, { title, folder, change: detail, author: p.author })
+        : WB.planAddElement(p.ix, CLASSES, { type: t.type, subtype: t.subtype ?? "", title, folder, text: detail, author: p.author });
       relationshipPreview.empty();
       if (plan.problems.length) {
         status.setText(plan.problems.join("; ")); preview.setText(""); apply.disabled = true; return;
       }
       preview.setText(plan.writes[0]?.path + "\n\n" + plan.writes[0]?.after);
-      if (t.kind === "governed") {
+      if (t.kind === "governed" && t.id !== "part-replacement") {
         const proposals = WB.previewContextLinks(p.ix, p.files, this.origin, plan);
         relationshipPreview.createEl("h4", { text: "Potential relationships — preview only" });
         relationshipPreview.createEl("p", { cls: "setting-item-description", text: proposals.message });
@@ -7287,7 +7454,7 @@ class QuickCreateModal extends obsidian.Modal {
         new obsidian.Notice(notice, 15000);
         // Creating the note is complete. Link approval, if offered, is a separate operation.
         relationshipPreview.empty(); // Replace hypothetical candidates with the actual post-creation validation.
-        const linkOptions = t.kind === "governed" && p.ix?.notes.has(this.origin)
+        const linkOptions = t.kind === "governed" && t.id !== "part-replacement" && p.ix?.notes.has(this.origin)
           ? WB.contextLinkChoices(WB.buildIndex(p.files, { classes: CLASSES }), p.files, this.origin, createdPath) : [];
         if (!linkOptions.length) { this.close(); return; }
         preview.setText("Created: " + createdPath + "\n\nNo SysML relationship has been added.");
@@ -7688,7 +7855,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const template = WB.quickTemplate(templateId);
     if (!template) throw new Error("Unknown creation template: " + templateId);
     await this.ensureIndex();
-    new QuickCreateModal(this, template, selectedPath).open();
+    if (templateId === "part-obsolete" || templateId === "part-current")
+      new PartLifecycleModal(this, selectedPath, templateId === "part-obsolete" ? "obsolete" : "current").open();
+    else new QuickCreateModal(this, template, selectedPath).open();
     return "";
   }
   /** Workflow navigation stays in the one Workbench sidebar or optional pop-out. */
