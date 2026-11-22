@@ -19,8 +19,9 @@ const bundleTs = () => TS_ORDER.map((n) => {
 }).join("\n");
 const classes = JSON.parse(rd("../core/src/classes.json"));
 const RELEASE = JSON.parse(fs.readFileSync(path.join(here, "../../package.json"), "utf8")).version ?? "0.0.0-dev";
-const IMPORTER_VERSION = JSON.parse(rd("version.json")).version;
-const parts = { IMPORTER_VERSION: JSON.stringify(IMPORTER_VERSION), RELEASE: JSON.stringify(RELEASE), IMPORTER: bundleTs(), TAGS: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-tag-dispositions.json"), "utf8"))), MAPPING: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-family-mapping.json"), "utf8"))),
+const importerMeta = JSON.parse(rd("version.json"));
+const IMPORTER_VERSION = importerMeta.version;
+const parts = { IMPORTER_VERSION: JSON.stringify(IMPORTER_VERSION), IMPORTER_HISTORY: JSON.stringify(importerMeta.history), RELEASE: JSON.stringify(RELEASE), IMPORTER: bundleTs(), TAGS: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-tag-dispositions.json"), "utf8"))), MAPPING: JSON.stringify(JSON.parse(fs.readFileSync(path.join(here, "../../governance/schemas/ea-family-mapping.json"), "utf8"))),
   BASEVAULT: JSON.stringify(buildBaseVault({ root: path.join(here, "../.."), release: JSON.parse(fs.readFileSync(path.join(here, "../../package.json"), "utf8")).version ?? "0.0.0-dev", classes, plugins: allPayloads(path.join(here, "../..")) })),
    READER: strip(rd("src/qeax_reader.js")), XLSX: strip(rd("src/xlsx_reader.js")), CORE: strip(rd("../core/src/mdse_core.js")), CLASSES: JSON.stringify(JSON.parse(rd("../core/src/classes.json"))) };
 const version = crypto.createHash("sha256").update(Object.values(parts).join("\0") + rd("src/importer.template.html")).digest("hex").slice(0, 10);
