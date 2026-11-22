@@ -6,7 +6,7 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ### Candidate toolset 0.11.0 — explicit Importer version progression (not deployed)
 
-- **Importer 0.11.0**: first independently tracked Importer release number; previously the Importer displayed only the inherited toolset 0.10.0 plus a content hash. The offline header now displays **Importer**, **toolset**, and content build fingerprint separately.
+- **Importer 0.11.0**: first independently tracked Importer release number; previously the Importer displayed only the inherited toolset 0.10.0 plus a content hash. Its offline HTML also contains a bundled, expandable version-history panel showing explicit lineage from the legacy inherited version. The offline header now displays **Importer**, **toolset**, and content build fingerprint separately.
 - **Toolset 0.11.0**: coordinated packaging version for the new Importer and bundled Base Vault.
 - **Workbench 0.10.0 / Bootstrap 0.1.0**: unchanged component implementations and versions; do not claim they were updated or acceptance-tested by this metadata change.
 - Introduced [versioning policy](docs/VERSIONING.md), monotonic component version checking against changed source in CI, and explicit upgrade/downgrade interpretation. Staged runtime and parser acceptance remain separate from merging source.
