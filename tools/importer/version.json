@@ -1,6 +1,12 @@
 {
-  "version": "0.11.2",
+  "version": "0.11.3",
   "history": [
+    {
+      "version": "0.11.3",
+      "date": "2026-11-24",
+      "status": "candidate",
+      "summary": "Paired toolset/Workbench update: canvas rows keep shared parts between their parents and unique parts toward their own parent (D-0166)."
+    },
     {
       "version": "0.11.2",
       "date": "2026-11-22",

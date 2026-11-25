@@ -2188,7 +2188,7 @@ function addToCanvas(doc           , ix            , anchor               , path
   return { doc: out, added: fresh.length, present, lineIds };
 }
 
-/** Puts notes on a canvas as one row directly below a parent's card (D-0090), nearest the parent's centre first, each joined by a line from the bottom of the parent to its top. A card that is already on the canvas stays where it is and only gets its line. A slot that another card holds is skipped along the same row. The parent is added first when it is not there. */
+/** Puts notes on a canvas as one row directly below a parent's card (D-0090), in the order of D-0166 (toward any other parent on the canvas), each joined by a line from the bottom of the parent to its top. A card that is already on the canvas stays where it is and only gets its line. A slot that another card holds is skipped along the same row. The parent is added first when it is not there. */
 function addChildren(doc           , ix            , parent        , paths          , opts                          = {})                                                                        {
   let cur            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) }, extra = 0;
   const find = (d           , p        )                         => d.nodes.find((n) => n.type !== "group" && !isInternalId(n.id) && cardNotePath(n) === p);
@@ -2196,6 +2196,21 @@ function addChildren(doc           , ix            , parent        , paths      
   if (!find(cur, parent)) { const r = addToCanvas(cur, ix, null, [parent], { relations: false }); cur = r.doc; extra = r.added; }
   const pc = find(cur, parent) , kids = [...new Set(paths)].filter((p) => p !== parent && ix.notes.has(p)).sort((a, b) => ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b));
   const there = new Set(kids.filter((p) => find(cur, p))), fresh = kids.filter((p) => !there.has(p));
+  /* D-0166: the new row is in the order of each child's parents on the canvas. A child of this parent alone sits under it; a child that another
+     parent on the canvas also owns goes toward that parent, so shared children sit between their parents. Where the parents are stacked, the
+     higher parent counts as the left one. Children with the same parents stay together, in name order. */
+  const OWNS = new Set(["hasPart", "hasChild", "hasAction", "hasState", "hasRequirement"]), mid = (c            )         => c.x + c.width / 2;
+  const owners = new Map                     ();
+  for (const e of ix.edges) {
+    if (!e.to || e.reverse || e.from === e.to) continue;
+    const [kid, over] = OWNS.has(e.kind) ? [e.to, e.from] : e.kind === "specializes" ? [e.from, e.to] : [null, null];
+    if (kid && over && over !== parent && fresh.includes(kid) && find(cur, over)) (owners.get(kid) ?? owners.set(kid, new Set()).get(kid) ).add(over);
+  }
+  const placeKey = new Map(fresh.map((p) => {
+    const cs = [pc, ...[...(owners.get(p) ?? [])].map((q) => find(cur, q) )];
+    return [p, { at: Math.round(cs.reduce((s, c) => s + mid(c), 0) / cs.length), lean: cs.reduce((s, c) => s + c.y, 0) / cs.length, block: [...(owners.get(p) ?? [])].sort().join("\u0001") }]         ;
+  }));
+  fresh.sort((a, b) => { const ka = placeKey.get(a) , kb = placeKey.get(b) ; return ka.at - kb.at || ka.lean - kb.lean || ka.block.localeCompare(kb.block) || ix.notes.get(a) .title.localeCompare(ix.notes.get(b) .title) || a.localeCompare(b); });
   const taken = new Set(cur.nodes.map((n) => n.id)); let k = 0; const nid = (pre        )         => { while (taken.has(pre + k)) k++; taken.add(pre + k); return pre + k; };
   const CXU = W + GXU, CY = H + GY, solids = cur.nodes.filter((n) => n.type !== "group"), related = cvRelatedSet(ix), pathOfId = new Map(solids.map((n) => [n.id, cardNotePath(n)]         ));   // a row of parts is the unrelated gap apart (D-0096): parts of one assembly are not related to each other
   const free = (p        , x        , y        , w        , h        )          => solids.every((n) => { const q = pathOfId.get(n.id); return cvClear(x, y, w, h, n, !!q && related.has(`${p}|${q}`)); });
@@ -2453,10 +2468,16 @@ function layoutRows(ix            , paths          , hOf                       ,
     const keys = [...rows.keys()].sort((a, b) => a - b), px = new Map                ();
     const sweep = (list          , want                     )       => { let prev = -Infinity, before = ""; for (const p of list) { const step = before && rset.has(`${before}|${p}`) ? CX : CU, x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + step, want.get(p) ?? prev + step); px.set(p, x); prev = x; before = p; } };   // neighbours in a row: a related gap if the notes are related, else the unrelated gap (D-0096)
     const bary = (p        , side                          )                     => { const xs = [...(side.get(p) ?? [])].filter((q) => px.has(q)).map((q) => px.get(q) ); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined; };
-    for (const r of keys) {
-      const list = rows.get(r) , want = new Map                ();
-      for (const p of list) { const b = bary(p, up); if (b !== undefined) want.set(p, b); }
-      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)  - want.get(b)  : Number(want.has(b)) - Number(want.has(a))) || slot(a) - slot(b) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+    for (const r of keys) {                                                  // D-0166: children with the same parents are one block, the blocks in the order of their parents
+      const list = rows.get(r) , want = new Map                (), lean = new Map                (), block = new Map                ();
+      for (const p of list) {
+        const b = bary(p, up); if (b !== undefined) want.set(p, Math.round(b));
+        const ps = [...(up.get(p) ?? [])].filter((q) => px.has(q));
+        lean.set(p, ps.length ? ps.reduce((s, q) => s + row.get(q) , 0) / ps.length : 0);   // parents stacked over one another: the higher parent counts as the left one
+        block.set(p, ps.map((q) => `${title(q)}\u0000${q}`).sort().join("\u0001"));
+      }
+      const sharesUp = (p        )         => Number([...(down.get(p) ?? [])].some((c) => [...(up.get(c) ?? [])].some((q) => q !== p && up.get(p)?.has(q))));   // a subassembly that shares parts with its own parent goes right of the parent's other children, so those stay left (D-0166)
+      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)  - want.get(b)  : Number(want.has(b)) - Number(want.has(a))) || lean.get(a)  - lean.get(b)  || block.get(a) .localeCompare(block.get(b) ) || sharesUp(a) - sharesUp(b) || slot(a) - slot(b) || title(a).localeCompare(title(b)) || a.localeCompare(b));
       sweep(list, want);
     }
     for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
@@ -2480,7 +2501,7 @@ function layoutRows(ix            , paths          , hOf                       ,
   return pos;
 }
 
-/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. Lines between moved cards are re-attached bottom to top. */
+/** Auto-layout (D-0089): moves the cards that stand for notes into rows by the layout rules and leaves every other card (text notes, groups, images) where it is. Rules: an assembly is above its parts and a general element above the specialized one; a requirement and use case share a row with the use case to the left; a function and a test case are below the requirement they relate to; an object is below the function. Where rules would contradict each other, ownership and specialization win. Each assembly is centred over its parts; related notes are kept together and notes with no relationship are in a grid beneath. In a row, cards with the same parents are one block, blocks in the order of their parents, shared cards between them; stacked parents count the higher one as left (D-0166). Lines between moved cards are re-attached bottom to top. */
 function autoLayout(doc           , ix            )                                                  {
   const out            = { nodes: doc.nodes.map((n) => ({ ...n })), edges: doc.edges.map((e) => ({ ...e })) };
   const node = new Map                    ();

@@ -4,6 +4,11 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.11.3 — shared parts between their parents on canvases (2026-11-24)
+
+- **Workbench 0.10.3 / toolset and Importer 0.11.3:** Auto-layout and the row of children (Add all N children, Expand, ticked direct parts) group the cards of a row by their parents on the canvas. Parts of only the left parent go left, shared parts between the parents, parts of only the right parent right; where an assembly sits directly above its subassembly, the assembly's own parts go left, shared next, the subassembly's own parts right (D-0166, WKB-038, WKB-039). Adding cards still moves nothing; Auto-layout remains the only rearranging action.
+- **Release status:** internal candidate and test-vault only pending real Obsidian acceptance.
+
 ### Candidate toolset 0.11.2 — context-only Workbench workflows (2026-11-22)
 
 - **Workbench 0.10.2 / toolset and Importer 0.11.2:** Removed the vault-wide scope choice from Function, Requirements and Tables, the All notes table, and the unrelated vault-wide parts registry inside Structure. No-selection views now request a model note instead of enumerating the vault. The Structure part lifecycle filter continues to apply only to the selected element's related BOM entries.
