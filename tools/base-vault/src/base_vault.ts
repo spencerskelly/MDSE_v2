@@ -1,6 +1,6 @@
 /* Base Vault payload: the files a new vault starts with (ARCHITECTURE.md, "What ships into a vault").
  * Deterministic: same repository content and release give identical output. Text files only.
- * Bundled plugins: Bootstrap and the Workbench (built from this repository) and Templater, Advanced Canvas and Obsidian Git
+ * Bundled plugins: Bootstrap and the Workbench (built from this repository) and Templater, Advanced Canvas, Obsidian Git and Inkling
  * (pinned release files kept under tools/base-vault/vendor, hashed in plugin-lock.yaml). Governed settings come from GOVERNED
  * below: they are seeded into each plugin's data.json and written into plugin-lock.yaml, where Bootstrap re-applies them. */
 import { createHash } from "node:crypto";
@@ -45,6 +45,7 @@ export const GOVERNED: Record<string, { source: string; license: string; setting
   "obsidian-git": { source: "https://github.com/Vinzent03/obsidian-git/releases/tag/2.40.0", license: "MIT",
     settings: { commitMessage: "{{hostname}}: {{numFiles}} files, {{date}}", autoCommitMessage: "{{hostname}}: {{numFiles}} files, {{date}}", autoSaveInterval: 0, autoPushInterval: 0, autoPullInterval: 0, autoPullOnBoot: false, pullBeforePush: true, syncMethod: "merge", disablePush: false, disablePopupsForNoChanges: true, listChangedFilesInMessageBody: true, showStatusBar: true, showBranchStatusBar: true, changedFilesInStatusBar: true } },
   "advanced-canvas": { source: "https://github.com/Developer-Mike/obsidian-advanced-canvas/releases/tag/7.1.0", license: "GPL-3.0" },
+  "inkling": { source: "https://github.com/Bluewolf135/Inkling/releases/tag/1.0.1", license: "MIT" },   // drawing redlines (D-0167)
 };
 /** The pinned third-party plugins from tools/base-vault/vendor/<id>/{main.js,manifest.json,styles.css}. */
 export function vendoredPayloads(root: string): PluginPayload[] {

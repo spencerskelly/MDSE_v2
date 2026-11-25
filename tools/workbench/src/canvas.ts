@@ -3,6 +3,7 @@
  * regenerate it any time. Layout is layered left to right by distance from the start note. */
 import type { Edge, EdgeRef, ModelIndex } from "./index.ts";
 import { outgoing } from "./index.ts";
+import { d3dag } from "./dag_lib.ts";
 import type { Profile, ViewSpec, InheritFrom, InheritedMember } from "./views.ts";
 import { uniqueParts, type UniqueNode } from "./compare.ts";
 import { RETIRED_COLOR, MISSING_COLOR, PORT_COLOR, typeColor, muted, edgeLook, edgeName } from "./views.ts";
@@ -613,6 +614,40 @@ export function layoutTier(type: string, subtype = ""): number | undefined {
 }
 const TIER_SLOT: Record<string, number | undefined> = { Behavior: 0, "Functional Flow": 1, Condition: 2, Verification: 3, Procedure: 3, Result: 3, Setup: 3 };   // left to right inside the row of functions
 
+/** D-0168: the left-to-right order d3-dag gives the cards of one connected group, its rows fixed to ours, with its crossing reduction (layer sweeps).
+ * Used only where the placement rules leave a free choice: the order of cards with no parent on the canvas (usually the top row); everything
+ * below follows from it by D-0166, and inside a block the order stays by name. Notes go in by name so the same notes always give the same order. Any failure of the library falls back to name order. */
+function dagOrder(members: string[], row: Map<string, number>, down: Map<string, Set<string>>, title: (p: string) => string): Map<string, number> {
+  const out = new Map<string, number>(), inSet = new Set(members);
+  if (members.length < 3) return out;
+  try {
+    const g = d3dag.graph(), node = new Map<string, any>();
+    for (const p of [...members].sort((a, b) => title(a).localeCompare(title(b)) || a.localeCompare(b))) node.set(p, g.node(p));
+    let links = 0;
+    for (const p of members) for (const c of down.get(p) ?? []) if (inSet.has(c) && row.get(c)! > row.get(p)!) { g.link(node.get(p), node.get(c)); links++; }
+    if (!links) return out;
+    d3dag.sugiyama().layering(d3dag.layeringSimplex().rank((n: any) => row.get(n.data)).group((n: any) => String(row.get(n.data))))
+      .decross(d3dag.decrossTwoLayer()).coord(d3dag.coordGreedy()).nodeSize([1, 1])(g);
+    for (const p of members) out.set(p, node.get(p).x);
+  } catch { out.clear(); }
+  return out;
+}
+
+/** Lines that cross between the rows of one connected group, each line straight from the middle of the upper card to the middle of the lower one
+ * (D-0168). Used only to choose between two orders of the same cards; Obsidian draws curves, so it is a measure, not the picture. */
+function rowCrossings(members: string[], rel: Map<string, Set<string>>, row: Map<string, number>, px: Map<string, number>): number {
+  const seg: Array<[string, string, number, number, number, number]> = [];
+  for (const a of members) for (const b of rel.get(a) ?? []) { if (!px.has(b) || a >= b || row.get(a) === row.get(b)) continue; const [u, l] = row.get(a)! < row.get(b)! ? [a, b] : [b, a]; seg.push([u, l, px.get(u)!, row.get(u)! + 0.5, px.get(l)!, row.get(l)!]); }
+  const side = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number => Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+  let n = 0;
+  for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) {
+    const [a1, b1, x1, y1, x2, y2] = seg[i]!, [a2, b2, x3, y3, x4, y4] = seg[j]!;
+    if (a1 === a2 || a1 === b2 || b1 === a2 || b1 === b2) continue;
+    if (side(x3, y3, x4, y4, x1, y1) * side(x3, y3, x4, y4, x2, y2) < 0 && side(x1, y1, x2, y2, x3, y3) * side(x1, y1, x2, y2, x4, y4) < 0) n++;
+  }
+  return n;
+}
+
 /** The rows of D-0089 and D-0102 for these notes: where each goes, given its height, from the origin down and to the right. Nothing is drawn here. */
 export function layoutRows(ix: ModelIndex, paths: string[], hOf: (p: string) => number, ox: number, oy: number): Map<string, { x: number; y: number }> {
   const inSet = new Set(paths), CX = W + GX, CU = W + GXU, rset = cvRelatedSet(ix);
@@ -641,24 +676,34 @@ export function layoutRows(ix: ModelIndex, paths: string[], hOf: (p: string) => 
   for (const members of comps) {
     const rows = new Map<number, string[]>(); for (const p of members) (rows.get(row.get(p)!) ?? rows.set(row.get(p)!, []).get(row.get(p)!)!).push(p);
     const keys = [...rows.keys()].sort((a, b) => a - b), px = new Map<string, number>();
+    let dOrder = dagOrder(members, row, down, title);
     const sweep = (list: string[], want: Map<string, number>): void => { let prev = -Infinity, before = ""; for (const p of list) { const step = before && rset.has(`${before}|${p}`) ? CX : CU, x = prev === -Infinity ? (want.get(p) ?? 0) : Math.max(prev + step, want.get(p) ?? prev + step); px.set(p, x); prev = x; before = p; } };   // neighbours in a row: a related gap if the notes are related, else the unrelated gap (D-0096)
     const bary = (p: string, side: Map<string, Set<string>>): number | undefined => { const xs = [...(side.get(p) ?? [])].filter((q) => px.has(q)).map((q) => px.get(q)!); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : undefined; };
-    for (const r of keys) {                                                  // D-0166: children with the same parents are one block, the blocks in the order of their parents
-      const list = rows.get(r)!, want = new Map<string, number>(), lean = new Map<string, number>(), block = new Map<string, string>();
-      for (const p of list) {
-        const b = bary(p, up); if (b !== undefined) want.set(p, Math.round(b));
-        const ps = [...(up.get(p) ?? [])].filter((q) => px.has(q));
-        lean.set(p, ps.length ? ps.reduce((s, q) => s + row.get(q)!, 0) / ps.length : 0);   // parents stacked over one another: the higher parent counts as the left one
-        block.set(p, ps.map((q) => `${title(q)}\u0000${q}`).sort().join("\u0001"));
+    const arrange = (): void => {
+      px.clear();
+      for (const r of keys) {                                                  // D-0166: children with the same parents are one block, the blocks in the order of their parents
+        const list = rows.get(r)!, want = new Map<string, number>(), lean = new Map<string, number>(), block = new Map<string, string>();
+        for (const p of list) {
+          const b = bary(p, up); if (b !== undefined) want.set(p, Math.round(b));
+          const ps = [...(up.get(p) ?? [])].filter((q) => px.has(q));
+          lean.set(p, ps.length ? ps.reduce((s, q) => s + row.get(q)!, 0) / ps.length : 0);   // parents stacked over one another: the higher parent counts as the left one
+          block.set(p, ps.map((q) => `${title(q)}\u0000${q}`).sort().join("\u0001"));
+        }
+        const sharesUp = (p: string): number => Number([...(down.get(p) ?? [])].some((c) => [...(up.get(c) ?? [])].some((q) => q !== p && up.get(p)?.has(q))));   // a subassembly that shares parts with its own parent goes right of the parent's other children, so those stay left (D-0166)
+        list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)! - want.get(b)! : Number(want.has(b)) - Number(want.has(a))) || lean.get(a)! - lean.get(b)! || block.get(a)!.localeCompare(block.get(b)!) || sharesUp(a) - sharesUp(b) || slot(a) - slot(b) || (!want.has(a) && !want.has(b) ? (dOrder.get(a) ?? 0) - (dOrder.get(b) ?? 0) : 0) || title(a).localeCompare(title(b)) || a.localeCompare(b));
+        sweep(list, want);
       }
-      const sharesUp = (p: string): number => Number([...(down.get(p) ?? [])].some((c) => [...(up.get(c) ?? [])].some((q) => q !== p && up.get(p)?.has(q))));   // a subassembly that shares parts with its own parent goes right of the parent's other children, so those stay left (D-0166)
-      list.sort((a, b) => (want.has(a) && want.has(b) ? want.get(a)! - want.get(b)! : Number(want.has(b)) - Number(want.has(a))) || lean.get(a)! - lean.get(b)! || block.get(a)!.localeCompare(block.get(b)!) || sharesUp(a) - sharesUp(b) || slot(a) - slot(b) || title(a).localeCompare(title(b)) || a.localeCompare(b));
-      sweep(list, want);
-    }
-    for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
-      const list = rows.get(r)!, want = new Map<string, number>();
-      for (const p of list) { const b = bary(p, down); if (b !== undefined) want.set(p, b); }
-      sweep(list, new Map([...list].map((p) => [p, want.get(p) ?? px.get(p)!] as const)));
+      for (const r of [...keys].reverse()) {                                   // centre each assembly over its parts
+        const list = rows.get(r)!, want = new Map<string, number>();
+        for (const p of list) { const b = bary(p, down); if (b !== undefined) want.set(p, b); }
+        sweep(list, new Map([...list].map((p) => [p, want.get(p) ?? px.get(p)!] as const)));
+      }
+    };
+    arrange();
+    if (dOrder.size) {                                                       // D-0168: keep the d3-dag order of the top cards only where it gives fewer crossing lines than name order
+      const withDag = rowCrossings(members, rel, row, px), keep = new Map(px);
+      dOrder = new Map(); arrange();
+      if (withDag < rowCrossings(members, rel, row, px)) { px.clear(); for (const [q, x] of keep) px.set(q, x); }
     }
     const minX = Math.min(...members.map((p) => px.get(p)!)), maxX = Math.max(...members.map((p) => px.get(p)!));
     let y = oy;

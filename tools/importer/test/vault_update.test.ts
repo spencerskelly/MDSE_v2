@@ -19,7 +19,7 @@ test("an empty folder gets the whole base vault, including the Workbench plugin 
   assert.equal(r.summary.add, Object.keys(base).length);
   const get = (p: string): string => r.files.find((f) => f.path === p)!.content;
   assert.ok(r.files.some((f) => f.path === ".obsidian/plugins/mdse-workbench/main.js"));
-  assert.deepEqual(JSON.parse(get(".obsidian/community-plugins.json")), ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas"]);
+  assert.deepEqual(JSON.parse(get(".obsidian/community-plugins.json")), ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas", "inkling"]);
   const lock = get(".obsidian/plugin-lock.yaml"), main = get(".obsidian/plugins/mdse-workbench/main.js");
   assert.ok(lock.includes(`main.js: ${sha256Text(main)}`), "lock carries the real hash");
   assert.doesNotMatch(lock, /PARTIAL|not_bundled/);
@@ -68,7 +68,7 @@ test("updating an existing vault: controlled files replaced with a saved copy, y
   const occupied = new Map(v); occupied.set("99_System/11_Import/Update 2026-10-19 21.40/Replaced/.obsidian/plugins/mdse-workbench/main.js", "existing backup");
   assert.ok((await verifyVaultUpdatePlan(r, asRead(occupied))).some((x) => x.includes("Replaced/.obsidian/plugins/mdse-workbench")),
     "never overwrite existing recovery archives");
-  assert.deepEqual(JSON.parse(wrote.get(".obsidian/community-plugins.json")!), ["templater-obsidian", "mdse-bootstrap", "mdse-workbench", "obsidian-git", "advanced-canvas"]);
+  assert.deepEqual(JSON.parse(wrote.get(".obsidian/community-plugins.json")!), ["templater-obsidian", "mdse-bootstrap", "mdse-workbench", "obsidian-git", "advanced-canvas", "inkling"]);
   assert.deepEqual(JSON.parse(wrote.get(".obsidian/core-plugins.json")!).slice(0, 2), ["file-explorer", "daily-notes"]);
   const app = JSON.parse(wrote.get(".obsidian/app.json")!); assert.equal(app.newLinkFormat, "shortest"); assert.equal(app.vimMode, true);
   const ig = wrote.get(".gitignore")!; assert.ok(ig.startsWith("my-private/\n.DS_Store\n")); assert.match(ig, /99_System\/22_Views\/\*/);

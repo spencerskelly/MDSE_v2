@@ -1,6 +1,12 @@
 {
-  "version": "0.11.3",
+  "version": "0.11.4",
   "history": [
+    {
+      "version": "0.11.4",
+      "date": "2026-11-24",
+      "status": "candidate",
+      "summary": "Base vault adds Inkling 1.0.1 for drawing redlines (D-0167); Workbench 0.10.4 orders top canvas cards with the vendored d3-dag 2.0.0 when that gives fewer crossing lines (D-0168)."
+    },
     {
       "version": "0.11.3",
       "date": "2026-11-24",

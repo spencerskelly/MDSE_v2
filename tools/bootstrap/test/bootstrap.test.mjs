@@ -38,11 +38,13 @@ test("author code matches the importer's rule (MOD-002)", () => {
 
 test("the lock written by the base vault parses, and every shipped plugin verifies against it", async () => {
   const h = H(), lock = h.parseLock(base[".obsidian/plugin-lock.yaml"]);
-  assert.deepEqual(Object.keys(lock.plugins), ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas"]);
+  assert.deepEqual(Object.keys(lock.plugins), ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas", "inkling"]);
   assert.deepEqual(lock.requiredCorePlugins, ["bases", "canvas", "properties", "file-explorer", "command-palette"]);
   assert.deepEqual(lock.disabledCorePlugins, ["templates"]);
   assert.equal(lock.plugins["templater-obsidian"].settings.templates_folder, "99_System/05_Templates");
   assert.equal(lock.plugins["advanced-canvas"].settings, null);
+  assert.equal(lock.plugins["inkling"].settings, null);
+  assert.equal(lock.plugins["inkling"].version, "1.0.1");
   for (const [id, e] of Object.entries(lock.plugins)) {
     assert.equal(Object.keys(e.sha256).length, 3, id);
     assert.deepEqual(await h.verifyPlugin(async (p) => base[p] ?? null, id, e), [], id);
@@ -67,7 +69,7 @@ test("run: enables verified plugins, applies governed settings, fixes core plugi
   const { app, en, f, core } = fakeApp(files, ["mdse-bootstrap"]);
   const p = new Mdse(app, { id: "mdse-bootstrap" }); Notice.log = [];
   await p.run(true);
-  assert.ok(en.has("mdse-workbench") && en.has("templater-obsidian") && en.has("advanced-canvas"));
+  assert.ok(en.has("mdse-workbench") && en.has("templater-obsidian") && en.has("advanced-canvas") && en.has("inkling"));
   assert.ok(!en.has("obsidian-git"), "tampered plugin stays off");
   assert.match(Notice.log.join("\n"), /obsidian-git: not enabled, main\.js differs/);
   const t = JSON.parse(f.get(".obsidian/plugins/templater-obsidian/data.json"));
@@ -80,7 +82,7 @@ test("run: enables verified plugins, applies governed settings, fixes core plugi
 test("run: an author already in .vault.yaml is left alone", async () => {
   delete require.cache[require.resolve("../src/main.js")];
   const Mdse = require("../src/main.js"), files = { ...base, ".vault.yaml": "vault_uid: 1\nvault_name: A\nauthor: skellyspencer\n" };
-  const { app, f } = fakeApp(files, ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas"]);
+  const { app, f } = fakeApp(files, ["mdse-bootstrap", "mdse-workbench", "templater-obsidian", "obsidian-git", "advanced-canvas", "inkling"]);
   await new Mdse(app, { id: "mdse-bootstrap" }).ensureAuthor();
   assert.match(f.get(".vault.yaml"), /author: skellyspencer/);
 });

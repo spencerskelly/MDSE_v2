@@ -2,7 +2,7 @@
 
 Builds the Obsidian vault that users receive, and the release manifest that pins every tool, schema and plugin.
 
-**Rules:** RULESET.md section BAS. **State: ships Bootstrap, the Workbench, Templater 2.25.0, Advanced Canvas 7.1.0 and Obsidian Git 2.40.0, pinned and hashed in `plugin-lock.yaml` (D-0032). Third-party files live in `vendor/<id>/` and are refreshed by hand when a pin changes.** `src/base_vault.ts` produces `.vault.yaml`, minimal `.obsidian`, `99_System` AI/schema/template content and a README; the importer writes it when the output folder holds no vault. **Not yet built:** the third-party plugin payload (Bootstrap, Templater, Advanced Canvas, Obsidian Git; listed under `not_bundled` in `plugin-lock.yaml`), release manifest and release check.
+**Rules:** RULESET.md section BAS. **State: ships Bootstrap, the Workbench, Templater 2.25.0, Advanced Canvas 7.1.0, Obsidian Git 2.40.0 and Inkling 1.0.1 (D-0167), pinned and hashed in `plugin-lock.yaml` (D-0032). Third-party files live in `vendor/<id>/` and are refreshed by hand when a pin changes.** `src/base_vault.ts` produces `.vault.yaml`, minimal `.obsidian`, `99_System` AI/schema/template content and a README; the importer writes it when the output folder holds no vault. **Not yet built:** the third-party plugin payload (Bootstrap, Templater, Advanced Canvas, Obsidian Git; listed under `not_bundled` in `plugin-lock.yaml`), release manifest and release check.
 
 ## Owns
 
@@ -22,7 +22,7 @@ Model content, model semantics, author registration (Bootstrap).
 |---|---|
 | Deterministic build: same inputs give identical output | BAS |
 | Plugins ship inside the vault; opening needs only "Trust author" | BAS, BOO |
-| Plugin stack: Bootstrap, Workbench, Templater, Advanced Canvas, Obsidian Git essential; Fileclass, Breadcrumbs provisional; Dataview retired | BAS |
+| Plugin stack: Bootstrap, Workbench, Templater, Advanced Canvas, Obsidian Git, Inkling essential; Fileclass, Breadcrumbs provisional; Dataview retired | BAS |
 | OS metadata (`.DS_Store`, `Thumbs.db`) never enters a build | BAS |
 | Initialization scripts pass `sh -n` | BAS |
 | Each importer release is paired with one base release, checked before writing | BAS |

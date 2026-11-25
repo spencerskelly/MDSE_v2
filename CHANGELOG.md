@@ -4,6 +4,12 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.11.4 — Inkling in the base vault; d3-dag canvas ordering (2026-11-24)
+
+- **Base vault / Importer 0.11.4:** Inkling 1.0.1 (MIT) ships unmodified, pinned and hashed in `plugin-lock.yaml`, for marking up copies of drawing PDFs (D-0167, BAS-012, BOO-001). Its `main.js` adds about 2.4 MiB to the Importer page.
+- **Workbench 0.10.4:** d3-dag 2.0.0 is vendored inside the Workbench (`src/dag_lib.ts`, licences in `vendor/d3-dag/`). Auto-layout uses it for the order of cards with no parent on the canvas, kept only when it gives fewer crossing lines than name order; D-0166 blocks are unchanged (D-0168, WKB-038). ELK is reserved for exported views.
+- **Release status:** internal candidate and test-vault only pending real Obsidian acceptance.
+
 ### Candidate toolset 0.11.3 — shared parts between their parents on canvases (2026-11-24)
 
 - **Workbench 0.10.3 / toolset and Importer 0.11.3:** Auto-layout and the row of children (Add all N children, Expand, ticked direct parts) group the cards of a row by their parents on the canvas. Parts of only the left parent go left, shared parts between the parents, parts of only the right parent right; where an assembly sits directly above its subassembly, the assembly's own parts go left, shared next, the subassembly's own parts right (D-0166, WKB-038, WKB-039). Adding cards still moves nothing; Auto-layout remains the only rearranging action.
