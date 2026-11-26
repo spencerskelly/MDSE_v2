@@ -1,6 +1,12 @@
 {
-  "version": "0.11.4",
+  "version": "0.12.0",
   "history": [
+    {
+      "version": "0.12.0",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "Workbench 0.11.0 adds the Flow drop-down beside the work areas: eleven PLM flows (Change, New part, Redline, Issue, Review and approve, Options and alternates, Specify, Firmware, Document, Test plan, Test report) with Submitted sections, saved as records in _ops/Flows (D-0169, WKB-076, WKB-077)."
+    },
     {
       "version": "0.11.4",
       "date": "2026-11-24",

@@ -4,6 +4,14 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.12.0 — PLM flows in the Workbench (2026-11-26)
+
+- **Workbench 0.11.0 / toolset and Importer 0.12.0:** a **Flow** drop-down beside Document, Define, Structure and Verify starts one of eleven PLM flows on the selected note, or reopens a saved one: Change, New part, Redline, Issue, Review and approve, Options and alternates (Change); Specify, Firmware, Document (Define); Test plan, Test report (Verify). The flow opens in the same Workbench panel (D-0169, WKB-076).
+- Each flow is the prototype's form, section by section: Driving reason first, Files and evidence last, a **Submitted** box on every other section. Required fields block a submit; editing a submitted section marks it "edited since submitted". Fields are filled from the selected note and show their starting value when changed; where-used, BOM children, linked requirements, open issues and verifications are computed from the vault. The prototype's sample values and rows are gone (DAT-002).
+- Submitting a section saves the flow, unsubmitted edits included, to `_ops/Flows/<flow ID>.md` with an Undo. The record is not a model note (no `type` or `uid`) and the index skips it; its body is the evidence of the submitted sections (WKB-077, Proposed).
+- **Not yet:** flows write only their own record (part, ECO, ECN, deviation and test files are made with the Edit lens or by hand); approvals are fields, not enforced; no cancel or delete; no Test plan canvas file. Tests: 10 unit tests and one browser test against the fake Obsidian API.
+- **Release status:** internal candidate and test-vault only pending real Obsidian acceptance.
+
 ### Candidate toolset 0.11.4 — Inkling in the base vault; d3-dag canvas ordering (2026-11-24)
 
 - **Base vault / Importer 0.11.4:** Inkling 1.0.1 (MIT) ships unmodified, pinned and hashed in `plugin-lock.yaml`, for marking up copies of drawing PDFs (D-0167, BAS-012, BOO-001). Its `main.js` adds about 2.4 MiB to the Importer page.

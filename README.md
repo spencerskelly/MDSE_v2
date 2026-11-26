@@ -28,6 +28,7 @@ This repository holds the rules, schemas and every tool that builds and serves a
 | P2 | BOM import, merge and approval | BOM importer and partial update scan exist; real-data acceptance and full approval flow remain open. |
 | P3 | Workbench editing | Existing model editing and governed relationship actions are implemented, with synthetic tests; real Obsidian validation and release acceptance remain open. |
 | **Four-workflow Workbench** | Document / Define / Structure / Verify; Canvas discovery; independent note and canvas editor tabs | Source and paired build merged through PR #8. Staging/live runtime acceptance still open; see [toolset update and acceptance](docs/TOOLSET_UPDATE.md).
+| **PLM flows** | Flow drop-down beside the work areas; eleven flows with Submitted sections saved to `_ops/Flows` (D-0169) | Source, unit and fake-API browser tests on `main`; real Obsidian acceptance open. |
 
 Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 
