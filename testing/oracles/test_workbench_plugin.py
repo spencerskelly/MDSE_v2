@@ -137,7 +137,7 @@ class WorkbenchPlugin(unittest.TestCase):
 
             # D-0143: the functions are one grouped drop-down, not a column of buttons
             self.assertEqual(pg.locator("select.fn").count(), 1); self.assertEqual(pg.locator("nav.tbar").count(), 0)
-            self.assertEqual(pg.locator("select.fn option").count(), 19, "Find shared terms adds one workflow function")
+            self.assertEqual(pg.locator("select.fn option").count(), 20, "Find shared terms and the open Flow each add one workflow function")
             pg.select_option("select.fn", label="Find similar")
             pg.wait_for_selector("select[aria-label='Relationship kind']")
             self.assertEqual(pg.evaluate("document.querySelector(\"select.fn\").selectedOptions[0].textContent"), "Find similar")
@@ -479,6 +479,55 @@ class WorkbenchPlugin(unittest.TestCase):
             self.assertEqual(pg.evaluate("JSON.stringify(window.__notes)"), old)
             self.assertEqual(pg.evaluate("window.__leaves.right[0].view.app_.lens()"), "terms")
             browser.close()
+        self.assertEqual(errors, [])
+
+    def test_flow_menu_starts_a_change_flow_and_a_submitted_section_saves_its_record(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page(viewport={"width": 1300, "height": 900})
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("window.__files['.vault.yaml'] = 'author: skellyspencer'")
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__active = null; window.__plugin.openPanel()")
+            pg.wait_for_selector("text=No model note selected")
+            pg.evaluate("p => window.__ev['file-open']({ path: p, extension: 'md' })", "10_Model/Charger.md")
+            pg.wait_for_selector("header >> text=Charger")
+            menu = pg.locator("nav.workareas select[aria-label='Flow']")
+            self.assertEqual(menu.count(), 1, "the Flow drop-down sits beside the work-area buttons")
+            labels = pg.evaluate("() => [...document.querySelectorAll(\"nav.workareas select[aria-label='Flow'] option\")].map(o => o.textContent)")
+            for name in ("Change", "New part", "Redline", "Issue", "Review and approve", "Options and alternates", "Specify", "Firmware", "Test plan", "Test report", "Document"):
+                self.assertIn(name, labels)
+            menu.select_option("start:CHG")
+            pg.wait_for_selector(".mdfl >> text=Change flow")
+            self.assertEqual(pg.evaluate("window.__leaves.main.length"), 0, "a flow opens inside the Workbench, not in a tab")
+            self.assertIn("Works on: Charger", pg.locator(".mdfl .fhd").inner_text())
+            sec = pg.locator(".mdfl details.fs").first
+            sec.locator("select[aria-label='Reason type']").select_option("Issue or defect")
+            sec.locator("textarea[aria-label='Reason statement']").fill("Synthetic test reason")
+            sec.locator("textarea[aria-label='Reason statement']").dispatch_event("change")
+            before = set(pg.evaluate("Object.keys(window.__notes)"))
+            pg.locator(".mdfl details.fs").first.locator(".subrow input[type=checkbox]").check()
+            pg.wait_for_function("() => Object.keys(window.__notes).some(k => /^_ops\\/Flows\\/CHG-\\d{4}-0001\\.md$/.test(k))")
+            added = set(pg.evaluate("Object.keys(window.__notes)")) - before
+            self.assertEqual(len(added), 1, added)
+            rec = pg.evaluate("p => window.__notes[p]", next(iter(added)))
+            self.assertIn("mdseFlow: CHG", rec)
+            self.assertIn("## Driving reason", rec)
+            self.assertIn("Synthetic test reason", rec)
+            self.assertNotIn("\nuid:", rec.split("\n---")[0])
+            pg.wait_for_selector(".mdfl details.fs >> nth=0 >> .chip.ok")
+            for k, v in notes.items():
+                self.assertEqual(pg.evaluate("p => window.__notes[p]", k), v, "a flow never edits a model note")
+            labels = pg.evaluate("() => [...document.querySelectorAll(\"nav.workareas select[aria-label='Flow'] option\")].map(o => o.textContent)")
+            self.assertTrue(any(l.startswith("CHG-") and "Charger" in l for l in labels), labels)
+            b.close()
         self.assertEqual(errors, [])
 
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):

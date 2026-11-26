@@ -88,6 +88,8 @@ On the staging vault, verify **without changing any model semantics**:
 
 For live-vault index integrity, the existing `MDSE_v2_live/scripts/check-live-workbench.mjs` imports Workbench sources from a separately checked-out exact tool commit via `MDSE_TOOLS_ROOT`. Run it only where both repositories are available; it verifies model relationships and synthetic deduplication, **not** the Obsidian GUI or parser. The live vault also has separate independent SysML parser/lineage validation. Record their evidence independently.
 
+**Flows (Workbench 0.11.0, D-0169):** on the staging vault, with an author code registered, select a part note and choose **Flow → Change**. Confirm the form opens in the Workbench panel with no new tab; fields are filled from the part; the Where used and BOM lines tables match the Structure view. Fill Reason type and Reason statement, tick **Submitted** on Driving reason, and confirm one new file `_ops/Flows/CHG-yymm-0001.md`, no change to any model note, and the Workbench note count unchanged. Edit the statement and confirm "Edited since submitted"; use Undo once and confirm the file returns to its previous state. Close the flow, reopen it from **Open a saved flow**, and confirm the unsubmitted edits are back. Repeat the start for each of the other ten flows and record any section that fails to draw.
+
 ## Step 5 — Release and traceability gate
 
 Do **not** deploy solely because source tests passed and PRs #8/#9 merged. Before promoting a built toolset into a live vault, require:

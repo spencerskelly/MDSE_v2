@@ -15,6 +15,7 @@ import { findSimilar, similarKinds } from "./similar.ts";
 import { keywordGroups, previewWord, UNCATEGORIZED } from "./keywords.ts";
 import { DEFAULT_CATEGORY_RULES, parseCategoryRules } from "../../importer/src/bom_category.ts";
 import { editView, setEditRef, editRefresh, markEditStale, setEditMode, setMergeWith, EDIT_STYLE } from "./edit_ui.ts";
+import * as FU from "./flows_ui.ts";
 import type { EditHost } from "./edit_ui.ts";
 
 export type NoteChange = { kind: "status"; value: string } | { kind: "removeFlag"; type: string; title: string; nth: number };
@@ -139,7 +140,7 @@ const PANEL_STYLE = `
 
 export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "panel" | "main"; lens?: V.Lens; area?: "document" | "define" | "structure" | "verify"; selected?: string; fixedContext?: boolean } = { mode: "panel" }): PanelApp {
   const compact = opt.mode === "panel";
-  const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE;
+  const style = h("style"); style.textContent = STYLE + PANEL_STYLE + EDIT_STYLE + FU.FLOW_STYLE;
   const wrap = h("div", { class: "mdw obs " + (compact ? "mdp" : "mdm") });
   root.replaceChildren(style, wrap);
   let ix: ModelIndex | null = null, sel = opt.selected ?? "", lens: V.Lens = opt.lens ?? "dashboard", loading = "Reading notes…", msg = "", undo: (() => Promise<string>) | null = null;
@@ -262,6 +263,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     };
     setTimeout(next, 0);
   }
+  let flowEl: HTMLElement | null = null;                                                    // D-0169: the Flow view keeps its form between redraws
   let editEl: HTMLElement | null = null, editSel = "";                                     // the Edit lens keeps its form while the index refreshes
   function openEditor(ref: EdgeRef): void { if (!host.edit) return; pinned = true; editEl = null; setEditRef(ref); lens = "edit"; msg = ""; undo = null; draw(); }
   const CAP = compact ? 25 : Infinity;
@@ -782,7 +784,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const lensArea = (v: V.Lens): typeof workArea | null => {
       if (v === "review") return null;
       // Discovery and canvas utilities are cross-workflow; they must not reset an active work-area filter.
-      if (["common", "pick", "terms", "similar", "layout", "compare"].includes(v)) return workArea;
+      if (["common", "pick", "terms", "similar", "layout", "compare", "flow"].includes(v)) return workArea;
       // Requirements is shared: Define edits intent; Verify initially examines verification coverage.
       if (v === "requirements" && workArea === "verify") return "verify";
       if (["structure", "internal", "keywords", "compare", "merge", "layout"].includes(v)) return "structure";
@@ -812,6 +814,27 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           else { reviewReturn = lens; lens = "review"; }
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
+    if (host.edit) {                                                                            // D-0169, WKB-076
+      const fm = FU.flowMenu(host.edit.files()), cur = FU.currentFlow();
+      const flowSel = h("select", { "aria-label": "Flow", class: lens === "flow" ? "cur" : "",
+        title: "Start a flow on the selected note, or reopen a saved one. A flow is a guided form, section by section; submitting a section saves it in " + "_ops/Flows.",
+        onchange: (e: Event) => {
+          const pick = e.target as HTMLSelectElement, v = pick.value; pick.value = "";
+          if (!v) return;
+          let err = "";
+          if (v === "@current") err = "";
+          else if (v.startsWith("open:")) err = FU.openFlowRecord(v.slice(5), host.edit!);
+          else err = FU.beginFlow(v.slice(6), ix, sel, host.edit!);
+          if (err) { msg = err; draw(); return; }
+          flowEl = null; lens = "flow"; msg = ""; draw();
+        } },
+        h("option", { value: "", selected: true }, cur ? `Flow: ${cur.rec.flowId} ▾` : "Flow…"),
+        cur ? h("option", { value: "@current" }, `Back to ${cur.rec.flowId} ${cur.def.name}`) : null,
+        ...fm.start.map((g) => h("optgroup", { label: "Start: " + g.group }, ...g.items.map((it) => h("option", { value: "start:" + it.id }, it.label)))),
+        fm.open.length ? h("optgroup", { label: "Open a saved flow" }, ...fm.open.map((o) => h("option", { value: "open:" + o.path }, o.label))) : null);
+      const rv = workareas.querySelector("button.review");
+      if (rv) workareas.insertBefore(flowSel, rv); else workareas.append(flowSel);
+    }
     if (host.quickCreate) {
       const available = QC.quickTemplatesFor(workArea);
       const menu = h("select", { "aria-label": "New item from workflow template",
@@ -897,7 +920,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     }
     const toolbar = h("div", { class: "fnrow" }, fnSelect);
     const acts = h("div", { class: "acts" });
-    if (compact && ix) {
+    if (compact && ix && lens !== "flow") {                                    // a flow has its own controls
       // A direct, all-relationships canvas launcher on the Workbench home screen.
       // "tables" deliberately selects the Everything profile: all relationship kinds,
       // incoming and outgoing, rather than the current lens's restricted trace.
@@ -950,8 +973,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     if (!ix) body.append(empty(loading));
     else try {
       if (compact && V.lensHasCanvas(lens) && n) body.append(canvasSettings());
-      const bar = scopeBar(); if (bar) body.append(bar);
-      if (lens !== "dashboard" && lens !== "edit") body.append(h("div", { class: "secbar", style: "display:flex;gap:6px;justify-content:flex-end" }, h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = false; }) }, "Collapse all"), h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = true; }) }, "Expand all")));
+      const bar = lens === "flow" ? null : scopeBar(); if (bar) body.append(bar);
+      if (lens !== "dashboard" && lens !== "edit" && lens !== "flow") body.append(h("div", { class: "secbar", style: "display:flex;gap:6px;justify-content:flex-end" }, h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = false; }) }, "Collapse all"), h("button", { class: "sm", onclick: () => wrap.querySelectorAll("details.sec").forEach((d) => { (d as HTMLDetailsElement).open = true; }) }, "Expand all")));
       if (lens === "dashboard") body.append(dashboardView());
       else if (lens === "note") body.append(noteView());
       else if (lens === "review") body.append(reviewView());
@@ -961,6 +984,10 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       else if (lens === "common") body.append(commonView());
       else if (lens === "layout") body.append(layoutView());
       else if (lens === "similar") body.append(similarView());
+      else if (lens === "flow") {
+        if (!host.edit) body.append(h("div", { class: "mut" }, "Flows need a vault they can write to (the Obsidian plugin)."));
+        else { if (flowEl) (flowEl as HTMLElement & { refresh?: () => void }).refresh?.(); else flowEl = FU.flowView({ getIx: () => ix, host: host.edit, open: (p) => host.openNote(p), done: (m, u) => { msg = m; undo = u; if (!FU.currentFlow()) { flowEl = null; lens = WORKFLOW_ENTRY_LENS[workArea]; } draw(); } }); body.append(flowEl); }
+      }
       else if (lens === "edit" && host.edit) { if (!editEl || editSel !== sel) { editSel = sel; editEl = editView({ getIx: () => ix!, getSel: () => sel, host: host.edit, done: (m, u) => { msg = m; undo = u; editEl = null; draw(); }, open: (p) => host.openNote(p) }); } body.append(editEl); }
       else {
         const key = lens + "|" + sel; if (key !== tickKey) { tickKey = key; }
