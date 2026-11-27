@@ -25,9 +25,13 @@ export const WB_DB_SCHEMA: DbSchema = {
 
 export function openWorkbenchDb(SQL: SqlStatic, bytes?: Uint8Array | null): MdseDb { return new MdseDb(SQL, WB_DB_SCHEMA, bytes); }
 
-/** Rebuild every derived table from the flow records in the working tree. Returns the number of flows indexed. */
-export function rebuildFlowIndex(db: MdseDb, files: Map<string, string>): number {
-  const recs = F.listFlows(files);
+/** Rebuild every derived table from the flow records in the working tree. Returns the number of flows indexed.
+ * Skipped (nothing written, the file not marked for saving) when no record changed since this database's last rebuild. */
+const BUILT = new WeakMap<MdseDb, number>();
+export function rebuildFlowIndex(db: MdseDb, files: Map<string, string>, force = false): number {
+  const recs = F.listFlows(files), v = F.flowListVersion();
+  if (!force && BUILT.get(db) === v) return recs.length;
+  BUILT.set(db, v);
   db.tx(() => {
     db.clearDerived();
     for (const { path, rec } of recs) indexRecord(db, rec, path);
@@ -37,16 +41,16 @@ export function rebuildFlowIndex(db: MdseDb, files: Map<string, string>): number
 }
 function indexRecord(db: MdseDb, rec: FlowRecord, path: string): void {
   const def = F.flowDef(rec.flow); if (!def) return;
-  const secs = F.flowSections(def).filter(F.submittable);
+  const secs = F.flowSections(def).filter(F.submittable), states = secs.map((s) => F.sectionState(def, rec, s));   // each section hashed once
   const started = rec.events.find((e) => e.ev === "section_submitted")?.at ?? "";
   const completed = rec.status === "complete" ? ([...rec.events].reverse().find((e) => e.ev === "completed")?.at ?? "") : "";
   db.put("flows", { guid: rec.guid, flow_id: rec.flowId, flow: rec.flow, name: def.name, status: rec.status, pick: rec.pick, pick_title: rec.pickTitle, author: rec.author,
     created: rec.created, started, completed, eco: rec.vals["rs.econo"] ?? "", reason_type: rec.vals["rs.type"] ?? "", record_path: path,
-    sections_total: secs.length, sections_submitted: secs.filter((s) => F.sectionState(def, rec, s) === "submitted").length, schema_version: rec.schema });
-  for (const s of secs) {
+    sections_total: secs.length, sections_submitted: states.filter((x) => x === "submitted").length, schema_version: rec.schema });
+  secs.forEach((s, i) => {
     const sub = rec.sub[s.key];
-    db.put("sections", { guid: rec.guid, key: s.key, title: s.title, state: F.sectionState(def, rec, s), submitted_at: sub?.at ?? null, submitted_by: sub?.by ?? null, hash: sub?.hash ?? null });
-  }
+    db.put("sections", { guid: rec.guid, key: s.key, title: s.title, state: states[i]!, submitted_at: sub?.at ?? null, submitted_by: sub?.by ?? null, hash: sub?.hash ?? null });
+  });
   rec.events.forEach((e, i) => db.put("events", { guid: rec.guid, seq: i, at: e.at, by_user: e.by, ev: e.ev, section: e.section ?? null }));
   // Approver tables: Change (d: discipline, a: approver, n: needed) and Review and approve (fn, who, dec, note).
   let seq = 0;

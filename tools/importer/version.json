@@ -1,6 +1,12 @@
 {
-  "version": "0.13.3",
+  "version": "0.13.4",
   "history": [
+    {
+      "version": "0.13.4",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "Speed and stability: plain-note changes no longer rebuild the model index; flow and run records are parsed once and their databases rebuilt only when a record changes; prepared statements reused; Testbench no longer redraws (and drops typing) on every inbox poll, reads the inbox asynchronously, and the phone server drops stalled uploads."
+    },
     {
       "version": "0.13.3",
       "date": "2026-11-26",

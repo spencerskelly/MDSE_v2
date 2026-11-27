@@ -29,7 +29,7 @@ for (const n of ORDER) {
     .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
   parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
 }
-const api = "{ mountTestbench, buildIndexAsync, openTestbenchDb, indexRuns, saveRunDraft, base64Bytes, TB_DB_PATH, edAuthor, openPairSession, listRuns, parseReport, flowDefs, Sha256, renderGuide, guidePath, guideNeedsWrite }";
+const api = "{ mountTestbench, buildIndexAsync, openTestbenchDb, indexRuns, saveRunDraft, base64Bytes, TB_DB_PATH, edAuthor, openPairSession, listRuns, parseReport, flowDefs, Sha256, renderGuide, guidePath, guideNeedsWrite, isIndexedPath, isGovernedText }";
 const tb = `const TB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 const SQLJS = "/* sql.js 1.17.0, MIT, vendored unmodified from tools/core/vendor/sqljs (D-0170) */\nconst initSqlJs = (() => { var module = { exports: {} }; var exports = module.exports;\n"
   + rd("../core/vendor/sqljs/sql-wasm.js") + "\n;return module.exports; })();\nconst SQLJS_WASM_B64 = \"" + fs.readFileSync(path.join(here, "../core/vendor/sqljs/sql-wasm.wasm")).toString("base64") + "\";\n";

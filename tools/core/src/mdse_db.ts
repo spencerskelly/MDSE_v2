@@ -9,8 +9,10 @@
  * `export()` returns. Portable SQL only (TEXT, INTEGER, REAL), so the same tables can move to a server later. */
 
 /** The part of the sql.js API this module uses. */
+export interface SqlStatement { run(params?: SqlValue[]): unknown; free(): unknown }
 export interface SqlDatabase {
   run(sql: string, params?: SqlValue[]): unknown;
+  prepare?(sql: string): SqlStatement;
   exec(sql: string, params?: SqlValue[]): Array<{ columns: string[]; values: SqlValue[][] }>;
   export(): Uint8Array;
   close(): void;
@@ -27,6 +29,8 @@ export class MdseDb {
   private db: SqlDatabase;
   private SQL: SqlStatic;
   readonly schema: DbSchema;
+  /** prepared INSERT OR REPLACE statements, reused by put(); freed before export and close (sql.js frees them on export) */
+  private stmts = new Map<string, SqlStatement>();
   /** true when the contents changed since the last export */
   dirty = false;
   /** what happened when the file was opened: new, opened, migrated (kept rows carried over), or reset (unreadable file) */
@@ -85,7 +89,11 @@ export class MdseDb {
   /** Insert or replace one row from an object whose keys are column names. */
   put(table: string, row: Record<string, SqlValue | undefined>): void {
     const keys = Object.keys(row).filter((k) => row[k] !== undefined);
-    this.run(`INSERT OR REPLACE INTO ${table} (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`, keys.map((k) => row[k] as SqlValue));
+    const sql = `INSERT OR REPLACE INTO ${table} (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`, params = keys.map((k) => row[k] as SqlValue);
+    let st = this.stmts.get(sql);
+    if (!st && this.db.prepare) { st = this.db.prepare(sql); this.stmts.set(sql, st); }
+    if (st) st.run(params); else this.db.run(sql, params);
+    this.dirty = true;
   }
   /** All-or-nothing. */
   tx<T>(fn: () => T): T {
@@ -98,8 +106,9 @@ export class MdseDb {
   setMeta(key: string, value: string): void { this.put("meta", { key, value }); }
   meta(key: string): string | null { return MdseDb.metaOf(this.db, key); }
   /** The file's bytes, to be written by the host. Clears `dirty`. */
-  export(): Uint8Array { const b = this.db.export(); this.dirty = false; return b; }
-  close(): void { this.db.close(); }
+  export(): Uint8Array { this.freeStatements(); const b = this.db.export(); this.dirty = false; return b; }
+  close(): void { this.freeStatements(); this.db.close(); }
+  private freeStatements(): void { for (const s of this.stmts.values()) { try { s.free(); } catch { /* already freed */ } } this.stmts.clear(); }
 }
 
 /** Decode base64 (the WebAssembly binary is embedded in the plugin as text). */

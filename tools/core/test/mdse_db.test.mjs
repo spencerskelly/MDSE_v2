@@ -50,3 +50,15 @@ test("transactions roll back as a whole; clearDerived leaves kept tables alone",
   assert.equal(db.all("SELECT * FROM items").length, 0);
   assert.equal(db.all("SELECT * FROM drafts").length, 1);
 });
+
+test("rows written through reused statements survive an export, and writing continues after it", () => {
+  const db = new MdseDb(SQL, v1);
+  for (let i = 0; i < 50; i++) db.put("items", { id: "a" + i, label: "A" + i });
+  const bytes = db.export();
+  db.put("items", { id: "b", label: "after export" });
+  db.put("items", { id: "a1", label: "replaced" });
+  assert.equal(db.all("SELECT count(*) AS n FROM items")[0].n, 51);
+  assert.equal(db.one("SELECT label FROM items WHERE id = 'a1'").label, "replaced");
+  assert.equal(new MdseDb(SQL, v1, bytes).all("SELECT count(*) AS n FROM items")[0].n, 50);
+  db.close();
+});

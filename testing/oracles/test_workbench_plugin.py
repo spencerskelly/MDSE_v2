@@ -547,6 +547,38 @@ class WorkbenchPlugin(unittest.TestCase):
             b.close()
         self.assertEqual(errors, [])
 
+    def test_a_plain_note_change_keeps_the_index_and_a_model_note_change_rebuilds_it(self):
+        notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
+        notes["Notes/Meeting.md"] = "# Meeting\n\nPlain notes.\n"
+        errors = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
+            pg = b.new_page()
+            pg.on("pageerror", lambda e: errors.append(str(e)))
+            pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            pg.set_default_timeout(8000)
+            pg.set_content("<body></body>")
+            pg.evaluate("n => { window.__notes = n; }", notes)
+            pg.evaluate(FAKE)
+            pg.evaluate("code => window.__run(code)", MAIN.read_text())
+            pg.evaluate("window.__plugin.openPanel()")
+            pg.wait_for_function("() => window.__plugin.ix")
+            pg.evaluate("window.__ix0 = window.__plugin.ix; window.__skip0 = window.__plugin.ix.skipped")
+            fire = "([ev, p, t]) => { if (t !== null) window.__notes[p] = t; else delete window.__notes[p]; for (const fn of window.__evs['vault:' + ev] || []) fn({ path: p, extension: 'md' }); }"
+            pg.evaluate(fire, ["modify", "Notes/Meeting.md", "# Meeting\n\nMore plain notes.\n"])
+            pg.evaluate(fire, ["create", "Notes/Daily.md", "# Daily\n"])
+            pg.wait_for_timeout(1900)
+            self.assertTrue(pg.evaluate("window.__plugin.ix === window.__ix0"), "plain notes do not rebuild the model index")
+            self.assertEqual(pg.evaluate("window.__plugin.ix.skipped - window.__skip0"), 1, "the new plain note is counted")
+            pg.evaluate(fire, ["delete", "Notes/Daily.md", None])
+            self.assertEqual(pg.evaluate("window.__plugin.ix.skipped - window.__skip0"), 0)
+            charger = notes["10_Model/Charger.md"]
+            pg.evaluate(fire, ["modify", "10_Model/Charger.md", charger.replace("# Charger", "# Charger\n\nEdited.", 1)])
+            pg.wait_for_function("() => window.__plugin.ix !== window.__ix0", timeout=6000)
+            self.assertEqual(pg.evaluate("window.__plugin.ix.skipped - window.__skip0"), 0, "the full rebuild counts the same")
+            b.close()
+        self.assertEqual(errors, [])
+
     def test_edit_lens_adds_relationship_and_element_with_preview_and_undo(self):
         notes = {f"10_Model/{p.name}": p.read_text() for p in FIX.glob("*.md") if p.name != "README.md"}
         errors = []

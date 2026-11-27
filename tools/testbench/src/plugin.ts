@@ -52,7 +52,7 @@ class TestbenchSettingTab extends obsidian.PluginSettingTab {
 
 module.exports = class MdseTestbench extends obsidian.Plugin {
   settings: any = { ...DEFAULTS }; files: Map<string, string> = new Map(); ix: any = null; db: any = null; author = ""; selected = "";
-  views: Set<any> = new Set(); rebuildTimer: any = null; dbTimer: any = null; pairSession: any = null;
+  views: Set<any> = new Set(); rebuildTimer: any = null; dbTimer: any = null; pairSession: any = null; rebuilding = false;
 
   async onload() {
     this.settings = { ...DEFAULTS, ...((await this.loadData()) ?? {}) };
@@ -87,14 +87,26 @@ module.exports = class MdseTestbench extends obsidian.Plugin {
     await this.rebuild();
   }
   async rebuild() {
-    this.ix = await TB.buildIndexAsync(this.files, { classes: CLASSES, yieldEvery: 300, yieldFn: tick });
-    if (this.db) { try { TB.indexRuns(this.db, this.files); this.saveDbLater(); } catch (e) { console.error(e); } }
+    this.rebuilding = true;
+    try { this.ix = await TB.buildIndexAsync(this.files, { classes: CLASSES, yieldEvery: 300, yieldFn: tick }); }
+    finally { this.rebuilding = false; }
+    this.reindexRuns();
     this.views.forEach((v) => v.ui?.refresh());
   }
+  /** Rebuild the run index (a no-op when no report changed) and save the file only if it changed. */
+  reindexRuns() { if (!this.db) return; try { TB.indexRuns(this.db, this.files); if (this.db.dirty) this.saveDbLater(); } catch (e) { console.error(e); } }
   async track(path: string, file: any) {
     if (!/\.md$/i.test(path)) return;
+    const before = this.files.get(path);
     if (file) this.files.set(path, await this.app.vault.cachedRead(file)); else this.files.delete(path);
-    clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => this.rebuild(), 1200);
+    const after = this.files.get(path);
+    // Reports and other plain notes cannot change the model: re-read the runs, keep the index. Model notes rebuild.
+    if (this.ix && TB.isIndexedPath(path) && !TB.isGovernedText(before) && !TB.isGovernedText(after) && !this.rebuildTimer && !this.rebuilding) {
+      this.ix.skipped += (after !== undefined ? 1 : 0) - (before !== undefined ? 1 : 0);
+      this.reindexRuns(); this.views.forEach((v) => v.ui?.refresh());
+      return;
+    }
+    clearTimeout(this.rebuildTimer); this.rebuildTimer = setTimeout(() => { this.rebuildTimer = null; this.rebuild(); }, 1200);
   }
 
   /* ---- this computer's database ---- */
@@ -104,7 +116,7 @@ module.exports = class MdseTestbench extends obsidian.Plugin {
       const a = this.app.vault.adapter, p = TB.TB_DB_PATH;
       this.db = TB.openTestbenchDb(SQL, (await a.exists(p)) ? new Uint8Array(await a.readBinary(p)) : null);
       if (this.db.opened === "reset") new obsidian.Notice("MDSE Testbench: the local database could not be read and was started again. Reports in the vault are unaffected; runs that were never saved to the vault were lost.");
-      TB.indexRuns(this.db, this.files); this.saveDbLater();
+      this.reindexRuns();
       this.views.forEach((v) => v.ui?.refresh());
     } catch (e) { console.error("MDSE Testbench database unavailable", e); this.db = null; }
   }
@@ -146,8 +158,11 @@ module.exports = class MdseTestbench extends obsidian.Plugin {
     const dir = String(this.settings.inboxFolder || "").trim(); if (!dir) return null;
     const out: Array<{ name: string; path: string; size: number; mtime: number }> = [];
     if (isAbsolute(dir)) {
-      const fs = require("fs"), path = require("path");
-      for (const name of fs.readdirSync(dir)) { if (name.startsWith(".")) continue; const full = path.join(dir, name); const st = fs.statSync(full); if (st.isFile() && st.mtimeMs >= since) out.push({ name, path: full, size: st.size, mtime: st.mtimeMs }); }
+      // asynchronous, so a slow network share or USB stick never freezes Obsidian; a file that vanishes meanwhile is skipped
+      const fsp = require("fs").promises, path = require("path");
+      const names: string[] = (await fsp.readdir(dir)).filter((n: string) => !n.startsWith("."));
+      const stats = await Promise.all(names.map((name) => fsp.stat(path.join(dir, name)).then((st: any) => ({ name, st }), () => null)));
+      for (const x of stats) if (x && x.st.isFile() && x.st.mtimeMs >= since) out.push({ name: x.name, path: path.join(dir, x.name), size: x.st.size, mtime: x.st.mtimeMs });
     } else {
       const a = this.app.vault.adapter, list = await a.list(dir);
       for (const full of list.files) { const st = await a.stat(full); const name = full.slice(full.lastIndexOf("/") + 1); if (st && !name.startsWith(".") && st.mtime >= since) out.push({ name, path: full, size: st.size, mtime: st.mtime }); }
@@ -155,7 +170,7 @@ module.exports = class MdseTestbench extends obsidian.Plugin {
     return out.sort((x, y) => y.mtime - x.mtime).slice(0, 50);
   }
   async inboxRead(f: { path: string }): Promise<Uint8Array> {
-    if (isAbsolute(f.path)) return new Uint8Array(require("fs").readFileSync(f.path));
+    if (isAbsolute(f.path)) return new Uint8Array(await require("fs").promises.readFile(f.path));
     return new Uint8Array(await this.app.vault.adapter.readBinary(f.path));
   }
 

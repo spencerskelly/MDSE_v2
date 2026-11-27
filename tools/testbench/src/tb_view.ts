@@ -312,10 +312,17 @@ export function mountTestbench(root: HTMLElement, host: TbHost): { refresh(): vo
   }
 
   /* ---- capture inbox ---- */
+  // The inbox is polled every few seconds; the screen is redrawn only when its list changed, so a poll never
+  // rebuilds the form under the engineer's cursor. One poll at a time.
+  let inboxKey = "", polling = false;
   async function pollInbox(show = false): Promise<void> {
-    try { S.inbox = await host.inbox(S.inboxSince); } catch { S.inbox = null; }
+    if (polling && !show) return;
+    polling = true;
+    try { S.inbox = await host.inbox(S.inboxSince); } catch { S.inbox = null; } finally { polling = false; }
+    const key = S.inbox === null ? "none" : S.inbox.map((f) => `${f.path}|${f.mtime}|${f.size}`).join("\n");
     if (show && S.inbox === null) say("No capture inbox is set, or it cannot be read. Set the folder your scope or DAQ saves to in Settings → Testbench.");
-    else draw();
+    else if (show || key !== inboxKey) draw();
+    inboxKey = key;
   }
   function inboxList(step: number): HTMLElement | null {
     const files = (S.inbox ?? []).filter((f) => !S.ignored.has(f.path) && !(S.run?.attachments ?? []).some((a) => a.name === f.name && a.source === "inbox"));
