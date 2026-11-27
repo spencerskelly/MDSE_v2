@@ -4,6 +4,11 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.13.4 — Speed and stability (2026-11-26)
+
+- **Workbench 0.12.4 / Testbench 0.1.4 / Importer and toolset 0.13.4:** Speed and stability: plain-note changes no longer rebuild the model index; flow and run records are parsed once and their databases rebuilt only when a record changes; prepared statements reused; Testbench no longer redraws (and drops typing) on every inbox poll, reads the inbox asynchronously, and the phone server drops stalled uploads.
+- **Release status:** internal candidate; not deployed.
+
 ### Candidate toolset 0.13.3 — Type check in CI, one-command bump, names filled in (2026-11-26)
 
 - **Workbench 0.12.3 / Testbench 0.1.3 / Importer and toolset 0.13.3:** Type check in CI (GOV-002) with the errors it found fixed, including two display bugs (Keywords examples column, ECO add button) and a duplicate importer message; one-command version bump; Raised by and Tested by filled from the person note; handover refreshed.

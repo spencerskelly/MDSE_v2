@@ -100,6 +100,8 @@ export function openPairSession(deps: PairDeps, o: PairOptions): Promise<PairSes
   const timer = setTimeout(() => { void session.close(); }, Math.max(1000, expires - now()));
   return new Promise((resolve, reject) => {
     server = deps.http.createServer(handler);
+    // a phone that drops off Wi-Fi mid-upload must not hold a connection open for minutes
+    server.requestTimeout = 120_000; server.headersTimeout = 30_000; server.keepAliveTimeout = 5_000;
     server.on("error", (e: unknown) => { clearTimeout(timer); reject(e); });
     server.listen(o.port ?? 0, "0.0.0.0", () => {
       const port = server.address().port as number, ips = lanAddresses(deps.os);

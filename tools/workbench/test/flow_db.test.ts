@@ -74,3 +74,22 @@ test("reopening a record restores newer unsaved edits from this computer, and dr
   assert.equal(D.loadDraft(db, rec.guid), null, "a stale draft is removed");
   FU.closeFlow();
 });
+
+test("the flow index is rebuilt only when a record changed, and records are parsed once per text", () => {
+  const f = files(), ix = buildIndex(f, { classes }), db = D.openWorkbenchDb(SQL), d = def("ISS");
+  const r = submitted(d, F.startFlow(d, ix, "P/SCR-1.md", AUTHOR, NOW, [])); save(f, d, r);
+  D.rebuildFlowIndex(db, f); db.export();
+  const a = F.listFlows(f)[0]!.rec;
+  assert.equal(F.listFlows(f)[0]!.rec, a, "same text, same parsed record");
+  D.rebuildFlowIndex(db, f);
+  assert.equal(db.dirty, false, "nothing changed: nothing rewritten, nothing to save");
+  r.vals["d.title"] = "changed"; save(f, d, r);
+  D.rebuildFlowIndex(db, f);
+  assert.equal(db.dirty, true);
+  assert.notEqual(F.listFlows(f)[0]!.rec, a);
+  f.delete(F.flowPath(r.flowId)); db.export();
+  D.rebuildFlowIndex(db, f);
+  assert.equal(db.dirty, true, "a removed record rebuilds");
+  assert.deepEqual(db.all("SELECT * FROM flows"), []);
+  assert.equal(D.rebuildFlowIndex(D.openWorkbenchDb(SQL), f), 0, "a new database always builds");
+});

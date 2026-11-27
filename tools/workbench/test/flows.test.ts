@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildIndex } from "../src/index.ts";
+import { buildIndex, isIndexedPath, isGovernedText } from "../src/index.ts";
 import * as F from "../src/flows.ts";
 import * as FU from "../src/flows_ui.ts";
 import { classes } from "./harness.ts";
@@ -182,4 +182,14 @@ test("the Flow menu lists the flows by group and the saved records; a flow needs
   assert.equal(FU.currentFlow()!.rec.flowId, "CHG-2611-0001");
   FU.closeFlow();
   assert.equal(FU.currentFlow(), null);
+});
+
+test("what counts as a model note matches the index (the plugin skips a rebuild when neither version is one)", () => {
+  const f = files(), ix = idx(f);
+  for (const [p, t] of f) assert.equal(isGovernedText(t), ix.notes.has(p), p);
+  assert.equal(isGovernedText("# Meeting\n\nNotes.\n"), false);
+  assert.equal(isGovernedText("---\ntype: Object\n---\n# No uid\n"), false);
+  assert.equal(isGovernedText(undefined), false);
+  assert.equal(isIndexedPath("_ops/Flows/CHG-2611-0001.md"), true);
+  assert.equal(isIndexedPath("99_System/11_Import/Parser Check.md"), false, "99_System still rebuilds as before");
 });

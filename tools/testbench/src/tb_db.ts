@@ -23,8 +23,13 @@ export const TB_DB_SCHEMA: DbSchema = {
 };
 export function openTestbenchDb(SQL: SqlStatic, bytes?: Uint8Array | null): MdseDb { return new MdseDb(SQL, TB_DB_SCHEMA, bytes); }
 
-export function indexRuns(db: MdseDb, files: Map<string, string>): number {
-  const runs = R.listRuns(files);
+/** Rebuild the derived tables from the reports. Skipped (nothing written) when no report changed since this
+ * database's last rebuild. */
+const BUILT = new WeakMap<MdseDb, number>();
+export function indexRuns(db: MdseDb, files: Map<string, string>, force = false): number {
+  const runs = R.listRuns(files), v = R.runListVersion();
+  if (!force && BUILT.get(db) === v) return runs.length;
+  BUILT.set(db, v);
   db.tx(() => {
     db.clearDerived();
     for (const { path, run } of runs) indexRun(db, run, path);
@@ -57,12 +62,10 @@ export function draftRuns(db: MdseDb): Array<{ guid: string; run_id: string; cas
 /* ---- queries for the Plan view and for searching evidence ---- */
 export interface CaseStats { case_path: string; runs: number; last_result: string; last_date: string; last_run: string; last_report: string }
 export function caseStats(db: MdseDb): Map<string, CaseStats> {
-  const rows = db.all<CaseStats>(`SELECT case_path, count(*) AS runs,
-      (SELECT result FROM runs r2 WHERE r2.case_path = r.case_path ORDER BY created DESC LIMIT 1) AS last_result,
-      (SELECT test_date FROM runs r2 WHERE r2.case_path = r.case_path ORDER BY created DESC LIMIT 1) AS last_date,
-      (SELECT run_id FROM runs r2 WHERE r2.case_path = r.case_path ORDER BY created DESC LIMIT 1) AS last_run,
-      (SELECT report_path FROM runs r2 WHERE r2.case_path = r.case_path ORDER BY created DESC LIMIT 1) AS last_report
-    FROM runs r GROUP BY case_path`);
+  // one pass: the newest run of each case, with the case's run count (window functions, SQLite 3.25+)
+  const rows = db.all<CaseStats>(`SELECT case_path, runs, result AS last_result, test_date AS last_date, run_id AS last_run, report_path AS last_report
+    FROM (SELECT case_path, result, test_date, run_id, report_path, count(*) OVER (PARTITION BY case_path) AS runs,
+                 row_number() OVER (PARTITION BY case_path ORDER BY created DESC) AS n FROM runs) WHERE n = 1`);
   return new Map(rows.map((r) => [r.case_path, r]));
 }
 export function runsOfUnit(db: MdseDb, serial: string): Array<{ run_id: string; case_title: string; result: string; test_date: string; report_path: string }> {

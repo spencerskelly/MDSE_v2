@@ -518,7 +518,7 @@ class TableView extends obsidian.ItemView {
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
   preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
-  flowDb: any = null; flowDbTimer: any = null;
+  flowDb: any = null; flowDbTimer: any = null; rebuilding = false;
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -600,7 +600,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   }
   async rebuild() {
     const pr = this.files.get(PARSER_REPORT);
-    this.ix = await WB.buildIndexAsync(this.files, { classes: CLASSES, ...(pr ? { parserReport: pr } : {}), yieldEvery: 300, yieldFn: tick });
+    this.rebuilding = true;
+    try { this.ix = await WB.buildIndexAsync(this.files, { classes: CLASSES, ...(pr ? { parserReport: pr } : {}), yieldEvery: 300, yieldFn: tick }); }
+    finally { this.rebuilding = false; }
     this.reindexFlows();
     this.apps.forEach((a: any) => a.setIndex(this.ix));
     this.syncSelection();
@@ -616,7 +618,8 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       this.reindexFlows();
     } catch (e) { console.error("MDSE flow database unavailable", e); this.flowDb = null; }
   }
-  reindexFlows() { if (!this.flowDb) return; try { WB.rebuildFlowIndex(this.flowDb, this.files); this.saveFlowDbLater(); } catch (e) { console.error(e); } }
+  /** Rebuild the flow index from _ops/Flows (a no-op when no record changed) and save the file only if it changed. */
+  reindexFlows() { if (!this.flowDb || !this.ix) return; try { WB.rebuildFlowIndex(this.flowDb, this.files); if (this.flowDb.dirty) this.saveFlowDbLater(); } catch (e) { console.error(e); } }
   saveFlowDbLater(ms = 1500) { clearTimeout(this.flowDbTimer); this.flowDbTimer = setTimeout(() => { this.saveFlowDb().catch((e: unknown) => console.error(e)); }, ms); }
   async saveFlowDb() {
     const db = this.flowDb; if (!db || !db.dirty) return;
@@ -645,10 +648,21 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
       openOn: (el: string, except: string) => (db() ? WB.openFlowsOn(db(), el, except) : []),
     };
   }
-  laterRebuild(ms = 1500) { clearTimeout(this.rebuildTimer); if (this.ix) this.rebuildTimer = setTimeout(() => this.rebuild(), ms); }
+  laterRebuild(ms = 1500) { clearTimeout(this.rebuildTimer); if (this.ix) this.rebuildTimer = setTimeout(() => { this.rebuildTimer = null; this.rebuild(); }, ms); }
   async track(path: string, file: any) {
     if (!this.ix || !/\.md$/i.test(path) || path.startsWith("99_System/22_Views") ) return;
+    const before = this.files.get(path);
     if (file) this.files.set(path, await this.app.vault.cachedRead(file)); else this.files.delete(path);
+    const after = this.files.get(path);
+    // A plain note (meeting notes, flow records, documents) that was not and is not a model note cannot change the
+    // model: keep the index, adjust its count of skipped notes, and skip the full rebuild. Model notes and 99_System
+    // files (parser report, schemas) still rebuild as before.
+    if (WB.isIndexedPath(path) && !WB.isGovernedText(before) && !WB.isGovernedText(after) && !this.rebuildTimer && !this.rebuilding) {
+      this.ix.skipped += (after !== undefined ? 1 : 0) - (before !== undefined ? 1 : 0);
+      if (path.startsWith("_ops/Flows/")) this.reindexFlows();
+      this.apps.forEach((a: any) => a.refresh?.());
+      return;
+    }
     this.laterRebuild();
   }
 

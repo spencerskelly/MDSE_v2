@@ -66,8 +66,10 @@ const FILES_BLOCKS = (def: FlowDef): FlowBlock[] => [
     rows: def.files.map((f) => ({ f: f.f, a: f.a, fmt: f.fmt, loc: f.loc })) },
 ];
 
-/** The flow's sections in order: Driving reason, the flow's own sections, Files and evidence. */
+/** The flow's sections in order: Driving reason, the flow's own sections, Files and evidence. Built once per definition. */
+const SECTIONS_CACHE = new WeakMap<FlowDef, FlowSection[]>();
 export function flowSections(def: FlowDef): FlowSection[] {
+  const hit = SECTIONS_CACHE.get(def); if (hit) return hit;
   const all = [...REASON_BLOCKS, ...def.blocks, ...FILES_BLOCKS(def)];
   const out: FlowSection[] = [];
   for (const b of all) {
@@ -75,6 +77,7 @@ export function flowSections(def: FlowDef): FlowSection[] {
     if (!out.length) throw new Error(`Flow ${def.id} has a block before its first heading.`);
     out[out.length - 1]!.blocks.push(b);
   }
+  SECTIONS_CACHE.set(def, out);
   return out;
 }
 function flSlug(s: string, taken: string[]): string {
@@ -333,10 +336,23 @@ export function parseFlowNote(text: string): FlowRecord | null {
     return { ...r, vals: r.vals ?? {}, base: r.base ?? {}, rows: r.rows ?? {}, sub: r.sub ?? {}, events: r.events ?? [] };
   } catch { return null; }
 }
+/* Each record is parsed once per text: the panel lists flows on every redraw. Records handed out are shared; treat
+ * them as read-only (the flow being edited is always a fresh parse, see openFlowRecord). */
+const FLOW_CACHE = new Map<string, { text: string; rec: FlowRecord | null }>();
+let FLOW_CACHE_VERSION = 0;
+/** Changes whenever a flow record was added, changed or removed since the last listFlows. */
+export const flowListVersion = (): number => FLOW_CACHE_VERSION;
 /** Every flow record in the working tree, newest first. */
 export function listFlows(files: Map<string, string>): Array<{ path: string; rec: FlowRecord }> {
-  const out: Array<{ path: string; rec: FlowRecord }> = [];
-  for (const [p, t] of files) if (p.startsWith(FLOWS_DIR + "/") && /\.md$/i.test(p)) { const r = parseFlowNote(t); if (r) out.push({ path: p, rec: r }); }
+  const out: Array<{ path: string; rec: FlowRecord }> = [], seen = new Set<string>();
+  for (const [p, t] of files) {
+    if (!p.startsWith(FLOWS_DIR + "/") || !/\.md$/i.test(p)) continue;
+    seen.add(p);
+    let c = FLOW_CACHE.get(p);
+    if (!c || c.text !== t) { c = { text: t, rec: parseFlowNote(t) }; FLOW_CACHE.set(p, c); FLOW_CACHE_VERSION++; }
+    if (c.rec) out.push({ path: p, rec: c.rec });
+  }
+  for (const p of [...FLOW_CACHE.keys()]) if (!seen.has(p)) { FLOW_CACHE.delete(p); FLOW_CACHE_VERSION++; }
   return out.sort((a, b) => b.rec.created.localeCompare(a.rec.created));
 }
 

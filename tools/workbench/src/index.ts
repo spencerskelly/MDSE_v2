@@ -134,6 +134,13 @@ function finish(ix: ModelIndex, o: BuildOptions, t0: number): ModelIndex {
   return ix;
 }
 
+/** Whether a path is read by the index at all (Markdown outside 99_System and .obsidian). */
+export const isIndexedPath = (p: string): boolean => isNote(p);
+/** Whether a note's text makes it a model note (the same test readNote applies: it parses and has `type` and `uid`). */
+export function isGovernedText(text: string | undefined): boolean {
+  if (text === undefined) return false;
+  try { const m = MDSE.parse(text).meta as Record<string, string>; return !!m.type && !!m.uid; } catch { return false; }
+}
 const isNote = (p: string): boolean => /\.md$/i.test(p) && !/(^|\/)\.obsidian\//.test(p) && !/^99_System\//.test(p);
 
 export function buildIndex(files: Map<string, string>, o: BuildOptions = {}): ModelIndex {

@@ -65,7 +65,8 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
 EXTRA = r"""
 window.__app.vault.createBinary = async (p, b) => { if (p in window.__files) throw new Error('exists ' + p); window.__files[p] = new Uint8Array(b); return { path: p }; };
 window.__app.vault.adapter.list = async (d) => ({ files: Object.keys(window.__files).filter((f) => f.slice(0, f.lastIndexOf('/')) === d), folders: [] });
-window.__app.vault.adapter.stat = async (p) => ({ type: 'file', size: (window.__files[p] || '').length, mtime: Date.now(), ctime: Date.now() });
+window.__mtimes = {};
+window.__app.vault.adapter.stat = async (p) => { const t = (window.__mtimes[p] ||= Date.now()); return { type: 'file', size: (window.__files[p] || '').length, mtime: t, ctime: t }; };
 window.__app.vault.adapter.getResourcePath = (p) => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const rb = window.__app.vault.adapter.readBinary;
 window.__app.vault.adapter.readBinary = async (p) => { if (p in window.__files) { const v = window.__files[p]; return typeof v === 'string' ? new TextEncoder().encode(v).buffer : v.buffer; } return rb(p); };
@@ -111,6 +112,14 @@ class TestbenchPlugin(unittest.TestCase):
             self.assertIn("Power the unit at 48 V", pg.inner_text(".mdtb .step"))
             self.assertIn("green LED", pg.inner_text(".mdtb .step"))
             pg.locator(".mdtb .step .res button.Pass").click()
+            # the inbox is polled every 4 s; a poll with nothing new must not rebuild the form under the cursor
+            measured = pg.locator(".mdtb .step input[aria-label='Measured']")
+            measured.click(); measured.type("Green")
+            pg.evaluate("window.__measured = document.activeElement")
+            pg.wait_for_timeout(9000)
+            self.assertTrue(pg.evaluate("window.__measured.isConnected && document.activeElement === window.__measured"), "typing survives inbox polls")
+            measured.type(", steady")
+            self.assertEqual(measured.input_value(), "Green, steady")
             pg.get_by_role("button", name="📥 Inbox (1)").click()
             pg.get_by_role("button", name="Attach to step 1").click()
             pg.wait_for_function("() => Object.keys(window.__files).some(k => /step-01-scope-ch1\\.csv$/.test(k))")

@@ -131,3 +131,24 @@ test("the Testbench database indexes runs, evidence and units, and keeps drafts"
   const again = D.openTestbenchDb(SQL, db.export());
   assert.equal(D.loadRunDraft(again, draft.guid)!.run.runId, "TRP-2611-0002");
 });
+
+test("runs: parsed once per text, the index rebuilt only on change, and case stats take the newest run", () => {
+  const ix = buildIndex(files(), { classes }), db = D.openTestbenchDb(SQL), f = files();
+  const a = R.startRun(ix, "V/Fault timing.md", AUTHOR, NOW, []); a.overall = "Fail";
+  f.set(R.runReportPath(a), R.renderReport(a));
+  const b = R.startRun(ix, "V/Fault timing.md", AUTHOR, new Date(NOW.getTime() + 60_000), [a]); b.overall = "Pass";
+  f.set(R.runReportPath(b), R.renderReport(b));
+  D.indexRuns(db, f); db.export();
+  const first = R.listRuns(f)[0]!.run;
+  assert.equal(R.listRuns(f)[0]!.run, first, "same text, same parsed run");
+  D.indexRuns(db, f);
+  assert.equal(db.dirty, false, "no report changed: nothing rewritten");
+  const st = D.caseStats(db).get("V/Fault timing.md")!;
+  assert.deepEqual([st.runs, st.last_result, st.last_run], [2, "Pass", b.runId]);
+  f.set("Notes/meeting.md", "# Meeting\n\nNo report here.\n");
+  D.indexRuns(db, f);
+  assert.equal(db.dirty, false, "a plain note is not a report");
+  f.delete(R.runReportPath(b));
+  D.indexRuns(db, f);
+  assert.deepEqual([D.caseStats(db).get("V/Fault timing.md")!.runs, D.caseStats(db).get("V/Fault timing.md")!.last_result], [1, "Fail"]);
+});

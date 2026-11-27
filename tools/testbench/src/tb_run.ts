@@ -190,10 +190,26 @@ export function parseReport(text: string): RunRecord | null {
   const m = /```mdse-run\r?\n([\s\S]*?)\r?\n```/.exec(text); if (!m) return null;
   try { const r = JSON.parse(m[1]!) as RunRecord; return r.schema === 1 && r.runId && r.guid ? r : null; } catch { return null; }
 }
-/** Every run report under the report folder, newest first. */
+/* Each note is checked and parsed once per text (the vault is scanned on every index rebuild). Runs handed out are
+ * shared; treat them as read-only (an opened run is always a fresh parse, see openRun). */
+const RUN_CACHE = new Map<string, { text: string; run: RunRecord | null }>();
+let RUN_CACHE_VERSION = 0;
+/** Changes whenever a report was added, changed or removed since the last listRuns. */
+export const runListVersion = (): number => RUN_CACHE_VERSION;
+/** Every run report in the vault, newest first. */
 export function listRuns(files: Map<string, string>): Array<{ path: string; run: RunRecord }> {
   const out: Array<{ path: string; run: RunRecord }> = [];
-  for (const [p, t] of files) if (/\.md$/i.test(p) && t.includes("```mdse-run")) { const r = parseReport(t); if (r) out.push({ path: p, run: r }); }
+  for (const [p, t] of files) {
+    if (!/\.md$/i.test(p)) continue;
+    let c = RUN_CACHE.get(p);
+    if (!c || c.text !== t) {
+      const run = t.includes("```mdse-run") ? parseReport(t) : null;
+      if (run || c?.run) RUN_CACHE_VERSION++;
+      c = { text: t, run }; RUN_CACHE.set(p, c);
+    }
+    if (c.run) out.push({ path: p, run: c.run });
+  }
+  for (const [p, c] of [...RUN_CACHE]) if (!files.has(p)) { RUN_CACHE.delete(p); if (c.run) RUN_CACHE_VERSION++; }
   return out.sort((a, b) => b.run.created.localeCompare(a.run.created));
 }
 export function planSaveReport(run: RunRecord, files: Map<string, string>): EditPlan {
