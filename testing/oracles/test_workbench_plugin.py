@@ -529,6 +529,14 @@ class WorkbenchPlugin(unittest.TestCase):
                 self.assertEqual(pg.evaluate("p => window.__notes[p]", k), v, "a flow never edits a model note")
             labels = pg.evaluate("() => [...document.querySelectorAll(\"nav.workareas select[aria-label='Flow'] option\")].map(o => o.textContent)")
             self.assertTrue(any(l.startswith("CHG-") and "Charger" in l for l in labels), labels)
+            # D-0171: the ? button writes the flow's guide note and opens it at the first section not yet submitted
+            pg.evaluate("window.__app.workspace.openLinkText = async (p) => { window.__linked = p; }")
+            pg.locator(".mdfl .fhd button.fhelp").click()
+            pg.wait_for_function("() => window.__linked")
+            self.assertEqual(pg.evaluate("window.__linked"), "99_System/07_Guides/Flows/Change flow guide.md#2. Raise the request")
+            guide = pg.evaluate("p => window.__notes[p]", "99_System/07_Guides/Flows/Change flow guide.md")
+            self.assertIn("# Change flow — how to complete it", guide)
+            self.assertIn("## 2. Raise the request", guide)
             # D-0170: the flow database is written to .mdse/workbench.db and indexes the record
             pg.wait_for_function("() => window.__bin && window.__bin['.mdse/workbench.db'] && window.__plugin.flowDb && window.__plugin.flowDb.all('SELECT flow_id FROM flows').length === 1", timeout=15000)
             self.assertEqual(pg.evaluate("window.__plugin.flowDb.all('SELECT flow, status, sections_submitted FROM flows')"), [{"flow": "CHG", "status": "open", "sections_submitted": 1}])

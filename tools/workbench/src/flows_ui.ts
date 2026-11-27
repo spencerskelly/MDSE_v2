@@ -20,6 +20,8 @@ export interface FlowHost {
   /** registered 13-character author code, "" when none */
   author(): string;
   applyPlan(plan: EditPlan): Promise<{ message: string; undo: () => Promise<string> }>;
+  /** open the flow's guide note (written from flow_guide.ts if missing or out of date) at a section heading */
+  openGuide?(def: F.FlowDef, heading?: string): Promise<void>;
 }
 export interface FlowCtx {
   getIx(): ModelIndex | null;
@@ -70,7 +72,8 @@ export function flowMenu(files: Map<string, string> | null, store?: FlowStore): 
 }
 
 export const FLOW_STYLE = `
-.mdfl .fhd{border:1px solid var(--line);border-radius:8px;padding:8px;margin:0 0 8px;background:var(--bg2)}
+.mdfl .fhd{position:relative;border:1px solid var(--line);border-radius:8px;padding:8px 40px 8px 8px;margin:0 0 8px;background:var(--bg2)}
+.mdfl .fhelp{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;border:1px solid var(--acc,#2557d6);background:var(--background-primary,#fff);color:var(--acc,#2557d6);font-weight:700;font-size:14px;line-height:22px;padding:0;cursor:pointer}
 .mdfl .fhd .ids{font-size:11px;color:var(--mut);word-break:break-all}.mdfl .fhd .cnt{font-size:12px;margin-top:4px}
 .mdfl details.fs{border:1px solid var(--line);border-radius:8px;margin:0 0 8px;padding:0 8px 8px}
 .mdfl details.fs>summary{cursor:pointer;padding:6px 0;font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -106,7 +109,10 @@ export function flowView(ctx: FlowCtx): HTMLElement {
     const changed = Object.keys(rec.base).filter((k) => (rec.vals[k] ?? "") !== rec.base[k]).length;
     const missing = subs.reduce((a, s) => a + F.missingRequired(def, rec, s).length, 0);
     const saved = ctx.host.files().has(F.flowPath(rec.flowId));
-    const head = h("div", { class: "fhd" },
+    const help = ctx.host.openGuide ? h("button", { class: "fhelp", "aria-label": "How to complete this flow", title: "How to complete this flow: the guide for each section",
+      onclick: () => { const first = subs.find((s) => F.sectionState(def, rec, s) !== "submitted"), i = first ? secs.indexOf(first) : -1;
+        ctx.host.openGuide!(def, i >= 0 ? `${i + 1}. ${first!.title}` : undefined).catch((e) => { note = "Could not open the guide: " + String((e as Error)?.message ?? e); redraw(); }); } }, "?") : null;
+    const head = h("div", { class: "fhd" }, help,
       h("div", {}, h("b", {}, `${def.name} flow`), " ", h("span", { class: "chip" + (rec.status === "complete" ? " ok" : "") }, rec.status === "complete" ? "All sections submitted" : "Open")),
       h("div", { class: "ids" }, `Flow ID ${rec.flowId} · GUID ${rec.guid}`),
       h("div", { class: "cnt" }, "Works on: ", rec.pick ? h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); ctx.open(rec.pick); } }, rec.pickTitle || rec.pick) : h("i", {}, "nothing selected"), h("span", { class: "mut" }, ` (${def.pick})`)),

@@ -181,6 +181,11 @@ module.exports = class MdseTestbench extends obsidian.Plugin {
       pair: (label: string, onFile: any) => p.pair(label, onFile), qr: (t: string) => p.qr(t),
       resourceUrl: (path: string) => p.app.vault.adapter.getResourcePath?.(path) ?? "",
       selected: () => p.selected,
+      openGuide: async (def: any, heading?: string) => {
+        const path = TB.guidePath(def), wanted = TB.renderGuide(def), f = p.app.vault.getAbstractFileByPath(path), cur = f ? await p.app.vault.read(f) : undefined;
+        if (TB.guideNeedsWrite(cur, wanted)) { if (f) await p.app.vault.modify(f, wanted); else { await ensureFolder(p.app, path.slice(0, path.lastIndexOf("/"))); await p.app.vault.create(path, wanted); } }
+        await p.app.workspace.openLinkText(path + (heading ? "#" + heading : ""), "", "tab");
+      },
     };
   }
 };
