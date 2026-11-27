@@ -4,7 +4,7 @@
  * CI:    node scripts/check-versions.mjs --base <commit-ish>
  * Pure version comparison; no mutations, tags or release approvals.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -27,11 +27,14 @@ const components = [
   { label:"Importer", path:"tools/importer/version.json", triggers:["tools/importer/src/","tools/importer/build.mjs","tools/core/src/","governance/schemas/","tools/workbench/src/","tools/workbench/build.mjs","tools/workbench/manifest.json","tools/bootstrap/src/","tools/bootstrap/manifest.json","tools/base-vault/src/","tools/base-vault/vendor/"] },
   { label:"Workbench", path:"tools/workbench/manifest.json", triggers:["tools/workbench/src/","tools/workbench/build.mjs"] },
   { label:"Bootstrap", path:"tools/bootstrap/manifest.json", triggers:["tools/bootstrap/src/"] },
-  { label:"Toolset", path:"package.json", triggers:["tools/importer/src/","tools/importer/build.mjs","tools/importer/version.json","tools/workbench/src/","tools/workbench/build.mjs","tools/workbench/manifest.json","tools/bootstrap/src/","tools/bootstrap/manifest.json","tools/base-vault/src/","tools/base-vault/vendor/","tools/core/src/","governance/schemas/"] }
+  { label:"Testbench", optional:true, path:"tools/testbench/manifest.json", triggers:["tools/testbench/src/","tools/testbench/build.mjs","tools/core/src/mdse_db.ts","tools/core/vendor/"] },
+  { label:"Toolset", path:"package.json", triggers:["tools/importer/src/","tools/importer/build.mjs","tools/importer/version.json","tools/workbench/src/","tools/workbench/build.mjs","tools/workbench/manifest.json","tools/bootstrap/src/","tools/bootstrap/manifest.json","tools/base-vault/src/","tools/base-vault/vendor/","tools/core/src/","governance/schemas/","tools/testbench/src/","tools/testbench/build.mjs","tools/testbench/manifest.json","tools/core/vendor/"] }
 ];
 const run = (...args) => execFileSync("git",args,{cwd:new URL(".",root),encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
 let errors = 0;
-for (const c of components) { try { semver(read(c.path)); } catch (e) { console.error(c.label+": "+e.message);errors++; } }
+// An optional component (added later than the others) is checked only where its manifest exists.
+const present = (c) => !c.optional || existsSync(new URL(c.path, root));
+for (const c of components) { if (!present(c)) continue; try { semver(read(c.path)); } catch (e) { console.error(c.label+": "+e.message);errors++; } }
 try {
   const importer = JSON.parse(readFileSync(new URL("tools/importer/version.json",root),"utf8"));
   if (!Array.isArray(importer.history) || importer.history[0]?.version !== importer.version) throw Error("Importer history must begin with its current semantic version");
@@ -52,6 +55,7 @@ if (at >= 0) {
     changed = run("diff","--name-only",base,"HEAD").split("\n").filter(Boolean);
   } catch(e) { console.error("Cannot compare against base: "+e.message);process.exit(2); }
   for (const c of components) {
+    if (!present(c)) continue;
     const active = changed.filter(p => c.triggers.some(x => p === x || p.startsWith(x)));
     let old;
     try {
@@ -64,6 +68,7 @@ if (at >= 0) {
       }
     }
     const now = read(c.path);
+    if (!old && c.optional) { console.log(c.label+": new component at "+now); continue; }
     if (!old) { console.error(c.label+": no baseline version at "+base);errors++;continue; }
     if (cmp(now,old)<0) { console.error(c.label+": version decreased from "+old+" to "+now);errors++;continue; }
     if (active.length && cmp(now,old) <= 0) {

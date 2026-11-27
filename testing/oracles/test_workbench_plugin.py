@@ -514,7 +514,6 @@ class WorkbenchPlugin(unittest.TestCase):
             sec = pg.locator(".mdfl details.fs").first
             sec.locator("select[aria-label='Reason type']").select_option("Issue or defect")
             sec.locator("textarea[aria-label='Reason statement']").fill("Synthetic test reason")
-            sec.locator("textarea[aria-label='Reason statement']").dispatch_event("change")
             before = set(pg.evaluate("Object.keys(window.__notes)"))
             pg.locator(".mdfl details.fs").first.locator(".subrow input[type=checkbox]").check()
             pg.wait_for_function("() => Object.keys(window.__notes).some(k => /^_ops\\/Flows\\/CHG-\\d{4}-0001\\.md$/.test(k))")

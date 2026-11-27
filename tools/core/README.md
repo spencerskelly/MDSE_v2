@@ -12,6 +12,8 @@ The one implementation of the MDSE model contract. Every tool that reads or writ
 - Merging an incoming note onto an existing one (`mergeNote`). **Its current behaviour follows ADR-V2-07 and must change** to the approval-only merge rules (IMP section, "Merge, rerun and conflicts"): EA-owned keys and `## SysML v2` are no longer refreshed without approval, and same-UID/different-type becomes a `flagConflict`.
 - ZIP writing (stored, no compression) for the new-vault output.
 
+- The local operational database layer (`src/mdse_db.ts`, D-0170): open, migrate and export a SQLite file through the vendored sql.js; tables are rebuilt from vault files except those a tool marks kept. `src/sqljs_node.ts` loads the engine under Node for tests. Vendored libraries and their hashes: `vendor/README.md`.
+
 ## Does not own
 
 UI, file-system access, network, plugin APIs. Inputs and outputs are strings and bytes.

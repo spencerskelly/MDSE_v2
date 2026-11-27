@@ -4,6 +4,14 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.13.0 — local databases and the Testbench (2026-11-26)
+
+- **Core:** `mdse_db.ts`, a SQLite layer over vendored sql.js 1.17.0 (MIT): open, migrate (kept tables survive a schema change), export; derived tables are rebuilt from the vault (D-0170, TST-010). Vendored files and hashes in `tools/core/vendor/README.md`.
+- **Workbench 0.12.0:** flow tracking in `.mdse/workbench.db`: flows, sections, events, approvers and claims rebuilt from `_ops/Flows`; drafts keep edits between submits and restore them on reopen; never-submitted flows listed under **Drafts on this computer**; a flow shows other open flows on its element (WKB-078). Typing in a flow field no longer rebuilds the form, so tabbing to the next field or clicking Submitted right after typing works.
+- **Testbench 0.1.0 (new plugin, desktop):** Plan (test cases with last result, Test plan flow, runs in progress, evidence search) and Run (unit and setup, equipment with calibration dates, steps from the case with Pass/Fail/N/A, conclusion). Evidence by phone (QR code to a local capture page), capture inbox folder, or drop/paste/pick; stored as files beside the report with SHA-256, photos shrunk to 2000 px; CSV exports summarised. Reports in `Test Reports/<run ID>/` (TBN-001 to TBN-005). Not in the base vault yet.
+- **Base vault / Importer 0.13.0:** `.mdse/` added to the vault's `.gitignore`.
+- **Release status:** internal candidate; real Obsidian, phone capture on the company network and Git LFS for evidence are open.
+
 ### Candidate toolset 0.12.0 — PLM flows in the Workbench (2026-11-26)
 
 - **Workbench 0.11.0 / toolset and Importer 0.12.0:** a **Flow** drop-down beside Document, Define, Structure and Verify starts one of eleven PLM flows on the selected note, or reopens a saved one: Change, New part, Redline, Issue, Review and approve, Options and alternates (Change); Specify, Firmware, Document (Define); Test plan, Test report (Verify). The flow opens in the same Workbench panel (D-0169, WKB-076).

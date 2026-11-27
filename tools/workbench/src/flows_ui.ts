@@ -95,6 +95,9 @@ export function flowView(ctx: FlowCtx): HTMLElement {
   let note = "", busy = false;
   const scrollBox = (): HTMLElement | null => { let e: HTMLElement | null = root.parentElement; while (e && e.scrollHeight <= e.clientHeight) e = e.parentElement; return e; };
   const redraw = (): void => { const sb = scrollBox(), top = sb?.scrollTop ?? 0; root.replaceChildren(...draw().filter((c): c is Node | string => !!c)); if (sb) sb.scrollTop = top; };
+  // Typing never rebuilds the form: a rebuild while focus moves to the next field or a button would lose the focus
+  // or swallow the click. Text fields update their own "changed" mark; the rest of the form catches up on the next
+  // button or menu action, all of which redraw.
 
   function draw(): Child[] {
     if (!CUR) return [h("div", { class: "mut" }, "Choose a flow from the Flow menu beside the work areas. It starts on the note selected here.")];
@@ -178,9 +181,11 @@ export function flowView(ctx: FlowCtx): HTMLElement {
     else if (f.kind === "area") inp = h("textarea", { "aria-label": f.label, placeholder: f.ph ?? "" });
     else inp = h("input", { type: "text", "aria-label": f.label, placeholder: f.ph ?? "" });
     if (f.kind !== "select") (inp as HTMLInputElement).value = cur;
-    inp.addEventListener("input", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; touched(); });
-    inp.addEventListener("change", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; note = ""; touched(); redraw(); });
-    return h("div", { class: chg ? "chg" : "" }, lab, inp, chg ? h("div", { class: "was" }, `${def.wasLabel} ${base || "—"}`) : "", f.hint ? h("div", { class: "hint" }, f.hint) : "");
+    const was = h("div", { class: "was" }, `${def.wasLabel} ${base || "—"}`), box = h("div", { class: chg ? "chg" : "" }, lab, inp, chg ? was : "", f.hint ? h("div", { class: "hint" }, f.hint) : "");
+    const mark = (): void => { const c = base !== undefined && (rec.vals[f.id] ?? "") !== base; box.className = c ? "chg" : ""; if (c && !was.isConnected) inp.after(was); else if (!c) was.remove(); };
+    inp.addEventListener("input", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; touched(); if (f.kind !== "select") mark(); });
+    inp.addEventListener("change", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; note = ""; touched(); if (f.kind === "select") redraw(); else mark(); });
+    return box;
   }
 
   function table(rec: F.FlowRecord, b: F.FlowBlock): HTMLElement {
@@ -194,7 +199,7 @@ export function flowView(ctx: FlowCtx): HTMLElement {
         if (c.opts) inp = h("select", { "aria-label": c.label }, ...[...new Set([...(c.opts), r[c.k] ?? ""])].map((o) => h("option", { value: o, selected: o === (r[c.k] ?? "") || undefined }, o || "—")));
         else { inp = h("input", { type: "text", "aria-label": c.label }); (inp as HTMLInputElement).value = r[c.k] ?? ""; }
         inp.addEventListener("input", () => { r[c.k] = (inp as HTMLInputElement).value; touched(); });
-        inp.addEventListener("change", () => { r[c.k] = (inp as HTMLInputElement).value; touched(); redraw(); });
+        inp.addEventListener("change", () => { r[c.k] = (inp as HTMLInputElement).value; touched(); if (c.opts) redraw(); });
         return h("td", {}, inp);
       }), fixed ? null : h("td", {}, h("button", { class: "sm", title: "Remove this row", onclick: () => { rows.splice(ri, 1); touched(); redraw(); } }, "×"))));
     });
