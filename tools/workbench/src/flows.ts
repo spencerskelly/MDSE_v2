@@ -158,6 +158,17 @@ export function flowTableRows(src: string, ix: ModelIndex | null, n: Note | null
 }
 
 /* ---- identity --------------------------------------------------------------------------------------------- */
+/** The person's name from their person note (Bootstrap writes `name` and `authorCode`); the code itself when there is none. */
+export function authorName(files: Map<string, string>, code: string): string {
+  if (!code) return "";
+  const re = new RegExp(`^authorCode:\\s*${code.replace(/[^\w-]/g, "")}\\s*$`, "m");
+  for (const t of files.values()) {
+    if (!t.startsWith("---") || !re.test(t.slice(0, 600))) continue;
+    const m = /^name:\s*(.+)$/m.exec(t.slice(0, 600)); if (!m) continue;
+    const v = m[1]!.trim(); try { return v.startsWith('"') ? String(JSON.parse(v)) : v; } catch { return v; }
+  }
+  return code;
+}
 const flP2 = (x: number): string => String(x).padStart(2, "0");
 /** Next PREFIX-yymm-nnnn after the highest one in these records. */
 export function nextFlowId(prefix: string, now: Date, records: Array<{ flowId: string }>): string {

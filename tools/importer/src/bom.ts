@@ -53,9 +53,9 @@ export interface Usage {
   parent: string; parentRev: string; line: string; child: string; childRev: string; childName: string; childSource: string; childCategory: string; childState: string;
   amount: string; unit: string; refDes: string; from: string; to: string; ssc: string; notes: string; row: number; alternates: Src[]; /** D-0064: rows numbered 100 above this line that carry a part number of their own: alternates, not usages */ altParts: AltPart[]; ownSrc: Src | null; drawingLocation: string; prevChild: string;
   /** The CL1 and CL2 columns of the parent and the child as exported (BOM-047). `parentRev` and `childRev` are the two joined. */
-  parentCl1?: string; parentCl2?: string; childCl1?: string; childCl2?: string;
+  parentCl1?: string | undefined; parentCl2?: string | undefined; childCl1?: string | undefined; childCl2?: string | undefined;
 }
-export interface ParentObs { pn: string; rev: string; name: string; source: string; category: string; state: string; drawingLocation: string; cl1?: string; cl2?: string }
+export interface ParentObs { pn: string; rev: string; name: string; source: string; category: string; state: string; drawingLocation: string; cl1?: string | undefined; cl2?: string | undefined }
 /** D-0059: a row the reader could not turn into a line is kept as its cell text (never just a count), so its content stays available to the person. */
 export interface SkippedRow { row: number; code: string; cells: string }
 export interface Parsed { layout: "flat" | "redline"; usages: Usage[]; parents: ParentObs[]; findings: Finding[]; skipped: SkippedRow[] }
@@ -206,9 +206,9 @@ export function bomSplitRev(rev: string): { cl1: string; cl2: string } {
   return m ? { cl1: m[1]!, cl2: m[2]! } : { cl1: rev.trim(), cl2: "" };
 }
 export interface BomRevision { /** the CL1 value as exported (BOM-010) */ cl1: string; /** CL2 values seen under it, lowest first; none for a revision that has no CL2 */ cl2: string[]; /** every joined revision label seen, as exported, lowest first */ labels: string[]; /** each label with its CL2 value */ parts: Array<{ label: string; cl2: string }> }
-type RevSide = { pn: string; rev: string; cl1?: string; cl2?: string };
+type RevSide = { pn: string; rev: string; cl1?: string | undefined; cl2?: string | undefined };
 /** BOM-048, D-0129: the revisions each part number has as far as the BOM defines them: every CL1 value that appears as a parent's revision or as a pinned child revision, lowest first (BOM-018 order). CL1 and CL2 are the two columns as exported; when a caller gives only the joined label, `bomSplitRev` splits it. A revision no row names is not in the list, so a gap stays a gap. A blank revision is not a revision (BOM-053). */
-export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; parentRev: string; parentCl1?: string; parentCl2?: string; child: string; childRev: string; childCl1?: string; childCl2?: string }>; parents: Array<{ pn: string; rev: string; cl1?: string; cl2?: string }> }): Map<string, BomRevision[]> {
+export function bomRevisionInventory(parsed: { usages: Array<{ parent: string; parentRev: string; parentCl1?: string | undefined; parentCl2?: string | undefined; child: string; childRev: string; childCl1?: string | undefined; childCl2?: string | undefined }>; parents: Array<{ pn: string; rev: string; cl1?: string | undefined; cl2?: string | undefined }> }): Map<string, BomRevision[]> {
   const seen = new Map<string, Map<string, { cl1: string; cl2: string }>>();
   const add = (x: RevSide): void => {
     const label = x.rev.trim(); if (!x.pn || !label) return;
@@ -361,7 +361,7 @@ export function buildBom(grid: Grid, o: BomOptions): BomResult {
   // A part number a redline struck out and replaced is named by the BOM, so it gets a note too (BOM-022); without one the supersedes dependency would point at nothing.
   const stubs = new Map<string, string[]>();
   for (const u of parsed.usages) if (u.prevChild && u.prevChild !== u.child && !allPns.has(u.prevChild)) (stubs.get(u.prevChild) ?? stubs.set(u.prevChild, []).get(u.prevChild)!).push(u.child);
-  for (const pn of [...stubs.keys()].sort()) { allPns.add(pn); latest.set(pn, { rev: "", name: "", source: "", state: "", drawingLocation: "" }); }
+  for (const pn of [...stubs.keys()].sort()) { allPns.add(pn); latest.set(pn, { rev: "", name: "", source: "", category: "", state: "", drawingLocation: "" }); }
   const drawingPns = new Set(parsed.usages.filter(bomIsDrawing).map((u) => u.child));
   // existing notes by part number
   const existingBy = new Map<string, { id: string; base: string; text: string; path: string; uid: string }>();

@@ -1,0 +1,6 @@
+{
+  "$comment": "Type check of the workbench Obsidian plugin shell on its own: it is a script whose globals come from the generated bundle (npm run check:types).",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "declaration": false, "sourceMap": false, "lib": ["ES2022", "DOM", "DOM.Iterable"], "types": [] },
+  "files": ["tools/workbench/src/plugin.ts"]
+}

@@ -43,7 +43,9 @@ export function beginFlow(defId: string, ix: ModelIndex | null, sel: string, hos
   const author = host.author();
   if (!author) return "Register your author code first (Bootstrap, or 99_System vault settings): a flow is signed with it.";
   const records = F.listFlows(host.files()).map((x) => x.rec);
-  CUR = { def, rec: F.startFlow(def, ix, ix?.notes.has(sel) ? sel : "", author, now, records) };
+  const rec = F.startFlow(def, ix, ix?.notes.has(sel) ? sel : "", author, now, records), who = F.authorName(host.files(), author);
+  for (const k of ["rs.by", "u.by"]) if (k in rec.vals && !rec.vals[k]) rec.vals[k] = who;            // Raised by, Tested by
+  CUR = { def, rec };
   return "";
 }
 /** Reopen a saved flow record; unsaved edits kept on this computer since its last save are restored. Returns an error message, or "". */

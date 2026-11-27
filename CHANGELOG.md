@@ -4,6 +4,11 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.13.3 — Type check in CI, one-command bump, names filled in (2026-11-26)
+
+- **Workbench 0.12.3 / Testbench 0.1.3 / Importer and toolset 0.13.3:** Type check in CI (GOV-002) with the errors it found fixed, including two display bugs (Keywords examples column, ECO add button) and a duplicate importer message; one-command version bump; Raised by and Tested by filled from the person note; handover refreshed.
+- **Release status:** internal candidate; not deployed.
+
 ### Candidate toolset 0.13.2 — flow guide wording (2026-11-26)
 
 - **Workbench 0.12.2 / Testbench 0.1.2:** guide placeholders read as plain text; required fields that only apply sometimes are marked in the section table (for example Material, mechanical only).

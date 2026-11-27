@@ -1,6 +1,6 @@
 # MDSE toolchain handover
 
-**Current review-branch orientation — 2026-11-20.** This describes the as-built toolset in `MDSE_v2` and distinguishes source implementation, distributable output and live-vault runtime acceptance. It supersedes this file's older early-P1 task list; original decisions and milestones remain in governance.
+**Orientation — 2026-11-26 (toolset 0.13.x).** This describes the as-built toolset on `MDSE_v2/main` and distinguishes source implementation, distributable output and live-vault runtime acceptance. Everything below is merged source with automated tests; none of it has passed real-Obsidian or real-data acceptance yet. Original decisions and milestones remain in governance.
 
 ## Start here
 
@@ -27,7 +27,9 @@ SysML v2 text is authoritative for native model semantics. Markdown and YAML pro
 | Importer | Offline HTML; QEAX and BOM intake; merge/update flows; controlled vault-update Step 4 | Real-source/approval acceptance, parser and release synchronization |
 | Base Vault | Vault scaffold, governed templates, pinned vendor plugin payloads, Workbench/Bootstrap payload | Controlled release hash/lock and cross-platform first-open acceptance |
 | Bootstrap | Obsidian lock check, governed settings and plugin activation support | First-open real-Obsidian and release lock acceptance |
-| Workbench | Viewer, trace tables, Canvas, editing, review and exports; four-workflow **prototype on draft PR #4** | Obsidian new-tab/focus selection, scratch candidate, save, editing and pop-out regression acceptance |
+| Workbench | Viewer, trace tables, Canvas, editing, review and exports; Document / Define / Structure / Verify work areas; **Flow** drop-down with eleven PLM flows (D-0169), their guides (D-0171) and a local flow database (`.mdse/workbench.db`, D-0170) | Obsidian new-tab/focus selection, flows, save, editing and pop-out regression acceptance |
+| Testbench | Separate desktop plugin (D-0170): Plan and Run, evidence by phone (QR), capture inbox or file, run reports in `Test Reports/`, local index `.mdse/testbench.db` | Real Obsidian, phone capture on the company network, base vault and plugin lock |
+| Core | Note format, identity, SysML block; SQLite layer (`mdse_db.ts`, vendored sql.js) shared by both plugins | TypeScript port of `mdse_core.js` (GOV-002) |
 
 The older "Workbench not built" and "Phase 3 editing not started" descriptions are no longer valid as a description of source; they do **not** imply production release acceptance.
 
@@ -48,7 +50,8 @@ All of these statements concern review-branch **source**, not an installed or ru
 
 ```sh
 # Node 22; at the exact source commit selected for testing
-npm run build             # Workbench first, importer second
+npm ci                    # once: the pinned TypeScript compiler for the type check
+npm run build             # Workbench, Testbench, then importer
 npm run test:workbench
 npm run check:workbench
 npm run check:importer
@@ -64,9 +67,11 @@ The `MDSE_v2_live/scripts/check-live-workbench.mjs` test is an actual model-inde
 ## Working rules and next increments
 
 - Use [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md). Model-semantic or tool-contract changes require owner decisions and corresponding rules/schema updates; implementation-only UX refinements do not themselves imply a new SysML construct.
-- Do not merge draft [PR #4](https://github.com/spencerskelly/MDSE_v2/pull/4) without approval; the active work happens on `ux/pass08-workarea-prototype-20261119`.
-- Prioritize engineering usability improvements that preserve the original editor/workspace state. Next work: navigate directly from related-element results into a selected workflow, without changing the originating view or creating a model relationship.
-- After a coherent feature set, regenerate the paired distributions, validate on real Obsidian in a staging vault, collect release evidence and obtain the owner's promotion decision.
+- Work on a short-lived branch, open a pull request, merge to `main` when CI is green and the owner wants it tested. Delete the branch after the merge.
+- Bump versions with `npm run bump -- patch "summary"` (or `minor`): it raises only the components whose source changed, writes the Importer history and the CHANGELOG entry, and rebuilds the paired outputs. Then `npm test`.
+- `npm test` includes the TypeScript type check (`npm run check:types`, needs `npm ci` once).
+- Next increments, in the owner's order: a first real-Obsidian pass in a staging vault (both plugins, one flow, one Testbench run with a phone photo); Change flow writing the ECO note through the existing ECO planner; Testbench in the base vault and plugin lock; review of the Unreviewed P1 rules.
+- After a coherent feature set, validate on real Obsidian in a staging vault, collect release evidence and obtain the owner's promotion decision.
 
 ## Governing sources
 

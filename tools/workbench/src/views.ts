@@ -335,7 +335,7 @@ export const muted = (hex: string): string => { const m = /^#([0-9a-f]{2})([0-9a
 
 /* ---- Profiles and graph ---------------------------------------------------------------------------------------- */
 export interface Step { kind: string; dir: "out" | "in" }
-export interface Profile { name: string; description: string; steps: Step[]; depth: number }
+export interface Profile { name: string; description: string; steps: Step[]; depth: number; /** most cards on a canvas, when the profile sets one */ cap?: number }
 const both = (...kinds: string[]): Step[] => kinds.flatMap((kind) => [{ kind, dir: "out" as const }, { kind, dir: "in" as const }]);
 export const PROFILES: Profile[] = [
   { name: "Structure", description: "Parts, ports, actions and states a definition owns, and what it specializes.", steps: [{ kind: "hasPart", dir: "out" }, { kind: "hasPort", dir: "out" }, { kind: "hasAction", dir: "out" }, { kind: "hasState", dir: "out" }, { kind: "specializes", dir: "out" }], depth: 3 },
@@ -355,7 +355,7 @@ export const PROFILES: Profile[] = [
 
 /** What the person chose to see. Empty lists mean "no restriction". Presentation only: it never changes the model. */
 export type Classifier = "" | "type" | "subtype" | "status" | "folder" | "eaType";
-export interface ViewSpec { kinds: string[]; hideTypes: string[]; hideStatuses: string[]; folder: string; depth: number; collapse: Classifier; collapseOver: number; ghosts: boolean }
+export interface ViewSpec { kinds: string[]; hideTypes: string[]; hideStatuses: string[]; folder: string; depth: number; collapse: Classifier; collapseOver: number; ghosts: boolean; /** most cards on a canvas */ cap?: number }
 export const defaultSpec = (p?: Profile): ViewSpec => ({ kinds: [], hideTypes: [], hideStatuses: [], folder: "", depth: p?.depth ?? 2, collapse: "", collapseOver: 6, ghosts: true });
 export const specIsDefault = (s: Partial<ViewSpec> | undefined, p: Profile): boolean => !s || JSON.stringify({ ...defaultSpec(p), ...s }) === JSON.stringify(defaultSpec(p));
 export const CLASSIFIERS: Array<[Classifier, string]> = [["", "Don't group"], ["type", "Note type"], ["subtype", "Type and subtype"], ["status", "Status"], ["folder", "Folder"], ["eaType", "EA type"]];

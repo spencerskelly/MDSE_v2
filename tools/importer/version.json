@@ -1,6 +1,12 @@
 {
-  "version": "0.13.2",
+  "version": "0.13.3",
   "history": [
+    {
+      "version": "0.13.3",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "Type check in CI (GOV-002) with the errors it found fixed, including two display bugs (Keywords examples column, ECO add button) and a duplicate importer message; one-command version bump; Raised by and Tested by filled from the person note; handover refreshed."
+    },
     {
       "version": "0.13.2",
       "date": "2026-11-26",

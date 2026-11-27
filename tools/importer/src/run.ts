@@ -52,6 +52,8 @@ export interface ImportOptions {
   existing: ExistingVault | null;
   preApproved: string[];                           // fields whose change is approved for the whole run (IMP-081, IMP-082)
   emitNative: boolean;
+  /** root packages left out of the qualified name (set by the importer page) */
+  omitRootPackages?: string[];
 }
 
 export interface LedgerRow {
@@ -152,7 +154,7 @@ async function runImportInner(reader: ReaderLike, o: ImportOptions, track: { sta
     const hit = pathMemo.get(id); if (hit) return hit;
     const chain: string[] = [], seen = new Set<number>();
     for (let p = g.packages.get(id); p && !seen.has(p.id); p = g.packages.get(p.parentId)) { seen.add(p.id); chain.unshift(p.name); }
-    while (chain.length && o.omitRootPackages.includes(chain[0]!)) chain.shift();
+    while (chain.length && (o.omitRootPackages ?? []).includes(chain[0]!)) chain.shift();
     const out = chain.map((n) => safeName(n, "Package"));
     pathMemo.set(id, out); return out;
   };

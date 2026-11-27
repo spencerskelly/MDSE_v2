@@ -116,7 +116,7 @@ export function editView(c: EditCtx): HTMLElement {
     return b;
   };
   const field = (label: string, el: HTMLElement, topic: string | (() => string) = ""): HTMLElement => h("div", { class: "hq" }, h("label", { class: "f" }, label, topic ? helpBtn(topic) : null), el);
-  const opts = (vals: Array<[string, string]>, cur: string): Child[] => vals.map(([v, l]) => h("option", { value: v, selected: v === cur ? true : undefined }, l));
+  const opts = (vals: Array<[string, string]>, cur: string): HTMLElement[] => vals.map(([v, l]) => h("option", { value: v, selected: v === cur ? true : undefined }, l));
 
   /* ---- target browser: search, type filter, folder groups ---- */
   function picker(items: Note[], onPick: (n: Note) => void, initial: string): { el: HTMLElement; value(): string } {
@@ -161,7 +161,7 @@ export function editView(c: EditCtx): HTMLElement {
     const help = h("div", { class: "mut", style: "font-size:12px;margin:2px 0" }), pickBox = h("div", {}), extra = h("div", {}), kindSel = h("select", { "aria-label": "Relationship" }) as HTMLSelectElement;
     const compute = (): void => {
       if (!target) { showPlan({ summary: "", writes: [], problems: ["Pick a target first."] }); return; }
-      showPlan(ED.planAddRelationship(ix, host.files(), { rel: rel.id, from: from.path, to: target.path, name: name.value, mult: mult.value, usageKind, dir }));
+      showPlan(ED.planAddRelationship(ix, host.files(), { rel: rel.id, from: from!.path, to: target.path, name: name.value, mult: mult.value, usageKind, dir }));
     };
     const drawExtra = (): void => {
       extra.replaceChildren();
@@ -172,7 +172,7 @@ export function editView(c: EditCtx): HTMLElement {
     };
     const drawPicker = (): void => {
       target = null; showPlan(null); drawExtra();
-      const items = ED.edTargets(ix, rel, from);
+      const items = ED.edTargets(ix, rel, from!);
       pickBox.replaceChildren(items.length ? picker(items, (n) => { target = n; usageKind = ED.edUsageKinds(n)[0] ?? ""; drawExtra(); showPlan(null); }, "").el : h("div", { class: "empty", style: "padding:8px" }, "No eligible target in the vault."));
     };
     kindSel.append(...opts(rels.map((r) => [r.id, r.label]), rel.id));
@@ -391,7 +391,7 @@ export function editView(c: EditCtx): HTMLElement {
     const ta = h("textarea", { "aria-label": "Requirement text", style: "min-height:140px" }) as HTMLTextAreaElement;
     ta.value = from.def.doc ?? "";
     return h("div", {}, h("div", {}, h("b", {}, from.title), " ", h("span", { class: "mut" }, `${from.id} · ${from.subtype}`)), field("Text", ta),
-      h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => showPlan(ED.planSetRequirementText(ix, host.files(), from.path, ta.value)) }, "Preview")), previewBox, applyRow);
+      h("div", { class: "acts2" }, h("button", { class: "sm", onclick: () => showPlan(ED.planSetRequirementText(ix, host.files(), from!.path, ta.value)) }, "Preview")), previewBox, applyRow);
   }
 
   /* ---- relationships of the selected note: change, add properties, remove ---- */
@@ -545,7 +545,7 @@ export function editView(c: EditCtx): HTMLElement {
         res.append(h("div", { class: "it", onclick: () => { E.items.push({ path: t.path, action: "alter-cl1", person: host.author() }); search.value = ""; res.replaceChildren(); draw(); } }, t.title, " ", h("span", { class: "sn" }, `${t.meta.partNumber} ${t.meta.revision ?? ""}`)));
     });
     const addOpen = from && String(from.meta.partNumber ?? "").trim() && !E.items.some((x) => x.path === from!.path) ? h("button", { class: "sm", onclick: () => { E.items.push({ path: from!.path, action: "alter-cl1", person: host.author() }); draw(); } }, "Add the open note") : null;
-    v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Changed items (the ECO's parts; written as `drives`)"), itemsBox, addOpen, search, res, impactBox, checkBox,
+    v.append(h("div", { class: "mut", style: "font-size:12px;margin-top:10px" }, "Changed items (the ECO's parts; written as `drives`)"), itemsBox, addOpen || "", search, res, impactBox, checkBox,
       h("div", { class: "acts2" }, h("button", { class: "sm pri", onclick: () => showPlan(EC.planCreateEco(ix, host.classes(), { reason: E.reason, description: E.description, owner: E.owner, ecrDate: E.ecrDate, jiraUrl: E.jiraUrl, jiraKey: E.jiraKey, items: E.items, folder: E.folder, author: host.author() })) }, "Preview ECO note"), h("button", { class: "sm", onclick: () => { Object.assign(E, { reason: "", description: "", jiraUrl: "", jiraKey: "", items: [] }); render(); } }, "Clear")),
       h("div", { class: "mut", style: "font-size:12px" }, "You create the branch yourself (GOV-028). The ECO is approved in Jira, never here. Open ECOs on other branches are not visible to the check (OD-26)."), previewBox, applyRow);
     draw(); return v;

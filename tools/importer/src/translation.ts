@@ -83,7 +83,6 @@ export const CODES: Record<string, { meaning: string; action: string }> = {
   UNHANDLED_DISPOSITION: { meaning: "Mapping disposition the importer has no code for.", action: "Importer bug or new disposition; fix run.ts." },
   FORK_JOIN_CONTROL_FLOW_EVIDENCE: { meaning: "Fork/join nodes are not translated.", action: "Needs the flow evidence named in the mapping." },
   LEGAL_TRANSITION_CONTEXT: { meaning: "Trigger nodes are not translated.", action: "Needs a legal transition context." },
-  CONDITIONAL_REVIEW: { meaning: "Conditional family without a named evidence code.", action: "Review." },
   DIRECTION_EVIDENCE_MISSING: { meaning: "Flow item has no usable `direction` tag (in, out, inout).", action: "Set the direction in EA or in the note." },
   FLOW_OWNER_NOT_PORT_DEF: { meaning: "Flow item is not inside a port definition.", action: "Move it under the port definition in EA." },
   UNRESOLVED_FLOW_TYPE: { meaning: "Flow item has no Signal/item definition to type it.", action: "Set the EA Classifier. Item is written untyped." },

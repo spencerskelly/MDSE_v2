@@ -160,6 +160,17 @@ test("options: the selection offers the candidates entered in the table", () => 
   assert.deepEqual(F.fieldOptions(f, r), ["", "Screw, M4 x 12", "Keep the current part"]);
 });
 
+test("Raised by and Tested by are filled with the person's name from their person note", () => {
+  const f = files(); f.set("People/Spencer Skelly.md", `---\nname: "Spencer Skelly"\nauthorCode: ${AUTHOR}\ntags: [person]\n---\n# Spencer Skelly\n`);
+  const ix = idx(f), host = { files: () => f, author: () => AUTHOR, applyPlan: async () => ({ message: "", undo: async () => "" }) };
+  assert.equal(F.authorName(f, AUTHOR), "Spencer Skelly");
+  assert.equal(F.authorName(files(), AUTHOR), AUTHOR, "no person note: the code");
+  assert.equal(FU.beginFlow("TRP", ix, "P/SCR-1.md", host, NOW), "");
+  assert.equal(FU.currentFlow()!.rec.vals["rs.by"], "Spencer Skelly");
+  assert.equal(FU.currentFlow()!.rec.vals["u.by"], "Spencer Skelly");
+  FU.closeFlow();
+});
+
 test("the Flow menu lists the flows by group and the saved records; a flow needs a registered author", () => {
   const f = files(), ix = idx(f), host = { files: () => f, author: () => "", applyPlan: async () => ({ message: "", undo: async () => "" }) };
   const m = FU.flowMenu(f);

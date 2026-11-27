@@ -35,7 +35,7 @@ export interface UpdateScan {
 }
 
 /* ---- reading the SysML declaration of a part note (members come from bom.ts; only the importer's own are compared or changed) ---- */
-export type Decl = { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[] };
+export type Decl = { key: string; kind: "attr" | "usage" | "ref" | "dep" | "other"; owned: boolean; lines: string[]; /** BOM-owned area of the member (from bom_own) */ area?: string };
 export interface Parts { head: string[]; decl: Decl[]; tail: string[] }
 const ATTR = bomAttrOf;
 export function sysmlOf(note: string): string | null { return MDSE.extractSysml(note) as string | null; }

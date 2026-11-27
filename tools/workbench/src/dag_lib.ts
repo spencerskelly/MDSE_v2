@@ -1,3 +1,4 @@
+// @ts-nocheck  vendored library wrapper (D-0168); type-checked code calls it through dagOrder only
 /* d3-dag 2.0.0 (MIT, Erik Brinkman), file dist/d3-dag.iife.min.js unmodified, with the libraries it bundles: d3-array 3.2.5 (ISC),
  * javascript-lp-solver 1.0.3 (Unlicense), quadprog 2.0.0 (MIT), stringify-object 7.0.0 (BSD-2-Clause). Licences: tools/workbench/vendor/d3-dag/.
  * The Workbench uses it only to order cards in a canvas row (D-0168). The library writes `d3` (and the solver writes `solver`) onto the global

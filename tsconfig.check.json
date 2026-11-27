@@ -1,0 +1,7 @@
+{
+  "$comment": "Type check of every tool's source (GOV-002), run in CI by `npm run check:types`. Vendored code and the two Obsidian plugin shells are checked separately (tsconfig.check-shells.json): the shells are scripts that share globals.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "declaration": false, "sourceMap": false, "allowImportingTsExtensions": true, "lib": ["ES2022", "DOM", "DOM.Iterable"], "types": ["node"] },
+  "include": ["tools/*/src/**/*.ts"],
+  "exclude": ["tools/workbench/src/dag_lib.ts", "tools/workbench/src/plugin.ts", "tools/testbench/src/plugin.ts", "**/dist/**"]
+}
