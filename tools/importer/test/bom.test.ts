@@ -94,8 +94,8 @@ test("units are standard, ZST is dropped, dates are YYYY-MM-dd text, states are 
   const a = byTitle(buildBom(parseDelimited(flatText), baseOpts).files, "01141-002").content;
   assert.doesNotMatch(a, /lifecycleState|PRODUCTIONPREPARATION/);
   assert.match(a, /^description: CABLE ASSY THERMISTOR 10\.00IN PWRSTN$/m);
-  assert.doesNotMatch(a, /effectiveFrom|effectiveTo/, "D-0098: dates are not imported by default");
-  assert.match(byTitle(buildBom(parseDelimited(flatText), { ...baseOpts, dates: true }).files, "01141-002").content, /attribute effectiveFrom = "2019-01-02";/, "...but are when asked for");
+  assert.match(a, /attribute effectiveFrom = "2019-01-02";/, "D-0172 (BOM-045): dates are imported by default");
+  assert.doesNotMatch(byTitle(buildBom(parseDelimited(flatText), { ...baseOpts, dates: false }).files, "01141-002").content, /effectiveFrom|effectiveTo/, "...and left out when asked");
 });
 
 test("a line that appears twice in one assembly keeps the first and flags the other with flagValue (D-0047)", () => {
@@ -122,9 +122,9 @@ test("D-0098: an exact repeat of a line is dropped even when its dates differ; t
   assert.doesNotMatch(p, /\[!flag/, "no flag");
   assert.equal(p.match(/attribute childRevision = /g)!.length, 1); assert.match(p, /attribute childRevision = "-C99";/, "the property is the latest revision");
   assert.match(p, /called at revision "-B99"/); assert.match(p, /called at revision [^;]*"-A99"/);                    // older revisions in use are listed in the assembly's body
-  // quantity differing is still a real conflict, and the callout no longer shows dates
+  // quantity differing is still a real conflict, and the callout shows the dates (D-0172, BOM-024)
   const q = buildBom(parseDelimited([FLAT_HEAD, ...FLAT_ROWS, FLAT_ROWS[2]!.replace("\t0.559\t", "\t0.700\t")].join("\n")), baseOpts);
-  assert.match(byTitle(q.files, "01141-002").content, /\[!flagValue\]/); assert.doesNotMatch(byTitle(q.files, "01141-002").content, /, from /);
+  assert.match(byTitle(q.files, "01141-002").content, /\[!flagValue\]/); assert.match(byTitle(q.files, "01141-002").content, /, from 2019-01-02/);
 });
 
 test("blank part number + manufacturer part number is an alternate of the line above, not a part", () => {
@@ -229,7 +229,8 @@ test("redline xlsx: unstruck text is current, struck text is the previous value;
   const r = buildBom(g, baseOpts), top = byTitle(r.files, "5913538").content;
   assert.match(top, /: OBJ_\d{5}::P_6100148 \{\n\s+attribute line = 8;\n\s+attribute childRevision = "A02";\n\s+attribute quantity = 4\.318;\n\s+attribute unit = "m";/);
   assert.match(top, /\[2\]/); assert.match(top, /was 06991 before this release/);
-  assert.match(top, /Drawing location: ECO-0437\/Power Station/); assert.match(top, /attribute revision = "B03";/);
+  assert.doesNotMatch(top, /Drawing location:|attribute drawingLocation/, "D-0172 (BOM-072): an ECO number is not a drawing location");
+  assert.match(top, /^bomEco: \["ECO-0437"\]$/m); assert.match(top, /- Drawing Location \(row 2\): ECO-0437\/Power Station/); assert.match(top, /attribute revision = "B03";/);
   assert.match(byTitle(r.files, "6100148").content, /^manufacturer1: CIRCLE AW$/m);
   assert.match(byTitle(r.files, "6100148").content, /dependency from OBJ_\d{5}::P_6100148 to OBJ_\d{5}::P_06991; \/\/ supersedes/);   // the renumbered part says what it replaces, in SysML (BOM-023)
   assert.match(byTitle(r.files, "6100148").content, /^aliases: \["06991"\]$/m);   // D-0068: the replaced number is an alias, so the old number finds the new part
@@ -316,7 +317,7 @@ test("an assembly already in the vault is not re-read: no repeat flags, only a c
 });
 
 test("the findings note lists every row of a code, with no cap (BOM-027, D-0161)", () => {
-  const rows = Array.from({ length: 60 }, (_, i) => `ASM-${i}\tA\t01\tASM\tbuy\tP\t1\tP-${i}\tA\t01\tPART\tbuy\tP\t\t\t\t\t\t0\tea\tx`);
+  const rows = Array.from({ length: 60 }, (_, i) => `ASM-${i}\tA\t01\tASM\tbuy\tP\t1\tPT${i}\tA\t01\tPART\tbuy\tP\t\t\t\t\t\t0\tea\tx`);
   const r = buildBom(parseDelimited([FLAT_HEAD, ...rows].join("\n")), baseOpts);
   const note = r.files.find((f) => f.path.startsWith("99_System/11_Import/BOM Findings"))!.content;
   assert.equal((note.match(/\| QTY_ZERO \|/g) ?? []).length, 60);
@@ -449,7 +450,7 @@ test("a part is sorted into a folder by level and category, and carries bomCateg
   assert.equal(f("SCR-1").path, "BOM/Parts/Part/Screw/SCR-1.md");
   assert.equal(f("ODD-1").path, "BOM/Parts/Part/Uncategorized/ODD-1.md");
   const prop = (pn: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(f(pn).content)?.[1] ?? "";
-  assert.deepEqual([["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", "other"]].map(([pn]) => [pn, prop(pn!, "level"), prop(pn!, "makeBuy")]), [["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", "other"]], "BOM-061, BOM-042");
+  assert.deepEqual([["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", "other"]].map(([pn]) => [pn, prop(pn!, "level"), prop(pn!, "makeBuy")]), [["TOP-1", "product", "make"], ["CAB-1", "assembly", "make"], ["SCR-1", "part", "buy"], ["ODD-1", "part", ""]], "BOM-061 (D-0172: a blank source writes no makeBuy), BOM-042");
   assert.match(f("TOP-1").content, /^bomCategory: Uncategorized\nbomRole: final$/m);
   assert.match(f("CAB-1").content, /^bomRole: sub$/m); assert.match(f("SCR-1").content, /^bomRole: part$/m);
   assert.ok(r.findings.some((x) => x.code === "CATEGORIES" && /Uncategorized 2/.test(x.message)));
@@ -461,7 +462,8 @@ test("a category column, the BOM-063 keywords and the source column set the fold
   const g = parseDelimited([H, row("BRK-1", "BRKT 2MM", "Buy", ""), row("ENC-1", "ENCL TOP", "make", ""), row("SCH-1", "SCH MAIN", "buy", ""), row("FW-1", "FIRMWARE IMAGE", "buy", ""), row("CAT-1", "THINGAMAJIG", "buy", "screw"), row("CAT-2", "THINGAMAJIG", "Fab", "Nonsense")].join("\n"));
   const r = buildBom(g, baseOpts), f = (pn: string) => r.files.find((x) => x.path.endsWith(`/${pn}.md`))!;
   const prop = (pn: string, k: string): string => new RegExp(`^${k}: (.*)$`, "m").exec(f(pn).content)?.[1] ?? "";
-  assert.deepEqual(["BRK-1", "ENC-1", "SCH-1", "FW-1", "CAT-1", "CAT-2"].map((pn) => prop(pn, "bomCategory")), ["Bracket", "ME Part", "Schematic", "Firmware", "Screw", "Nonsense"]);
+  assert.deepEqual(["BRK-1", "ENC-1", "FW-1", "CAT-1", "CAT-2"].map((pn) => prop(pn, "bomCategory")), ["Bracket", "ME Part", "Firmware", "Screw", "Nonsense"]);
+  assert.equal(f("SCH-1").path, "BOM/Documents/SCH/SCH-1.md", "D-0172 (BOM-069): a schematic line is a document, not a part"); assert.match(f("SCH-1").content, /^type: Document$/m); assert.match(f("SCH-1").content, /^docType: SCH$/m);
   assert.equal(f("CAT-1").path, "BOM/Parts/Part/Screw/CAT-1.md", "a category column outranks the words and ignores case");
   assert.deepEqual(["BRK-1", "ENC-1", "CAT-2"].map((pn) => prop(pn, "makeBuy")), ["buy", "make", "other"], "BOM-061: Buy is read as buy; an unknown source is other");
   assert.equal(f("CAT-2").path, "BOM/Parts/Part/Nonsense/CAT-2.md", "D-0141: a category the BOM names is used as written");
@@ -549,7 +551,8 @@ test("revision notes (D-0127, D-0135): a part number note without structure, a n
   assert.match(c, /part def P_04766__C :> \w+::P_04766 \{/);
   assert.match(c, /^revision: "?-C99"?$/m);
   assert.match(c, /^description: ASSY MICROCONTROLLER SMARTGUARD$/m);
-  assert.match(c, /part \w+ : \w+::P_01191__0 \{/, "the child is typed by the pinned revision's note");
+  assert.match(c, /part \w+ : \w+::P_01191 \{/, "D-0172 (BOM-073): the child pins -0, which is not a revision, so it is typed by the part number's note");
+  assert.equal(by("01191 -0"), "", "no revision note for -0");
   assert.match(b, /part def P_04766__B :> /);
   assert.doesNotMatch(b, /^\s*part \w+ : /m, "-B is only pinned by 04270-001: it has a note and no lines");
   assert.match(by("04270-001"), /^bomRole: /m);
@@ -563,7 +566,7 @@ test("revision notes (D-0127, D-0135): a part number note without structure, a n
 });
 
 test("revision notes: several CL2 values under one CL1 each get a section; one CL2 is listed in the body", () => {
-  const row = (cl2: string, line: string, child: string): string => { const c = FLAT_ROWS[0]!.split("\t"); c[0] = "ASM"; c[1] = "B"; c[2] = cl2; c[3] = "ASSEMBLY"; c[6] = line; c[7] = child; c[8] = "-0"; c[9] = "99"; c[10] = "PART " + child; return c.join("\t"); };
+  const row = (cl2: string, line: string, child: string): string => { const c = FLAT_ROWS[0]!.split("\t"); c[0] = "ASM"; c[1] = "B"; c[2] = cl2; c[3] = "ASSEMBLY"; c[6] = line; c[7] = child; c[8] = "A"; c[9] = "01"; c[10] = "PART " + child; return c.join("\t"); };
   const head = FLAT_HEAD.split("\t").length;
   const t = [FLAT_HEAD, row("02", "1", "C1"), row("03", "1", "C1"), row("03", "2", "C2")].join("\n");
   const r = buildBom(parseDelimited(t), { ...baseOpts, revisionNotes: true });
@@ -573,7 +576,7 @@ test("revision notes: several CL2 values under one CL1 each get a section; one C
   assert.match(note, /^revision: "?B03"?$/m, "the latest CL2 value is the note's revision");
   const sysml = note.slice(note.indexOf("part def"));
   assert.equal((sysml.match(/^\s+part \w+ : /gm) ?? []).length, 2, "the structure is the latest CL2 value's lines");
-  const c1 = r.files.find((f) => f.path.endsWith("C1 -0.md"))?.content ?? "";
-  assert.match(c1, /^CL2 value 99: seen in/m, "one CL2 value: listed in the body, no section");
+  const c1 = r.files.find((f) => f.path.endsWith("C1 A.md"))?.content ?? "";
+  assert.match(c1, /^CL2 value 01: seen in/m, "one CL2 value: listed in the body, no section");
   assert.doesNotMatch(c1, /^### CL2/m);
 });

@@ -40,7 +40,7 @@ test("importer revision notes: usages and specializations resolve, the chain lis
 
 test("a revision note takes its category from its part number's note, and parts under an assembly can be listed by category (D-0141)", () => {
   const ix = buildIndex(built(), { classes });
-  const rev = [...ix.notes.values()].find((n) => n.name === "01191 -0")!, pn = [...ix.notes.values()].find((n) => n.name === "01191")!;
+  const rev = [...ix.notes.values()].find((n) => n.name === "04766 -C")!, pn = [...ix.notes.values()].find((n) => n.name === "04766")!;   // D-0172: CL1 -0 has no revision note, so a lettered revision is used
   assert.ok(String(pn.meta.bomCategory ?? "") !== "", "the part number note carries the category");
   assert.equal(V.bomCategoryOfNote(ix, rev.path), String(pn.meta.bomCategory));
   const top = [...ix.notes.values()].find((n) => n.name === "01141-002 -N")!, r = V.bomByCategory(ix, top.path);

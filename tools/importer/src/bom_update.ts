@@ -317,11 +317,20 @@ export function scanRevisionUpdate(grid: Grid, o: BomOptions): UpdateScan {
     // manufacturers: pairs the vault lacks are added, none is removed
     const have = new Set(mfrList(yo.mfr).map(pairKey)), miss = mfrList(yg.mfr).filter((x) => !have.has(pairKey(x)));
     if (miss.length) add("MANUFACTURER", f.path, pn, `${title}: ${miss.length} manufacturer / part number pair(s) added: ${miss.map((x) => [x.m, x.p].filter(Boolean).join(" ")).join("; ")}`, mfrText(yo.mfr), miss.map((x) => `${x.m}\t${x.p}`).join("\n"), "", "add");
+    {   // D-0172 (BOM-072): ECO numbers the note lacks are added; none is removed
+      const listOf = (t: string): string[] => { const v = /^---\n([\s\S]*?)\n---/.exec(t.replace(/\r\n?/g, "\n"))?.[1]?.split("\n").find((l) => l.startsWith("bomEco:"))?.slice(7).trim() ?? ""; try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } };
+      const lo = listOf(old), miss = listOf(gen).filter((x) => !lo.includes(x));
+      if (miss.length) add("PART_ATTRIBUTES", f.path, pn, `${title}: ECO ${miss.join(", ")} added`, lo.join(", "), JSON.stringify([...lo, ...miss]), "bomEco", "add");
+    }
     if (!rev) {   // the part number note: category, level and make/buy are added where the vault lacks them
       const prop = (t: string, k: string): string => /^---\n([\s\S]*?)\n---/.exec(t.replace(/\r\n?/g, "\n"))?.[1]?.split("\n").find((l) => l.startsWith(k + ":"))?.slice(k.length + 1).trim() ?? "";
       const cO = prop(old, "bomCategory"), cG = prop(gen, "bomCategory");
       if (cG && cG !== cO) { if (!cO || cO === "Uncategorized") add("CATEGORY", f.path, pn, `${pn}: category ${cG}${cO ? ` (the vault has ${cO})` : ""}`, cO, cG, "bomCategory", "add"); else add("CATEGORY", f.path, pn, `${pn}: category differs: vault ${cO}, file ${cG}`, cO, cG, "bomCategory", "change"); }
-      for (const k of ["level", "makeBuy"]) { const vO = prop(old, k), vG = prop(gen, k); if (vG && (!vO || (k === "makeBuy" && vO === "other" && vG !== "other"))) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}`, vO, vG, k, "add"); }
+      for (const k of ["level", "makeBuy"]) {
+        const vO = prop(old, k), vG = prop(gen, k);
+        if (vG && (!vO || (k === "makeBuy" && vO === "other" && vG !== "other"))) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}`, vO, vG, k, "add");
+        else if (k === "makeBuy" && vG && vO && vO !== vG && vO !== "other") add("PART_ATTRIBUTES", f.path, pn, `${pn}: makeBuy differs: vault ${vO}, file ${vG}`, vO, vG, k, "change");   // D-0172 (BOM-061): the value follows the first source unless this change is applied
+      }
       // NS-01: the sales ledger owns salesRole, avgSalePrice and annualVolume; a missing value is added and a different one is a change (the page leaves changes unticked, D-0057)
       if (o.sales) for (const k of SALES_KEYS) { const vO = prop(old, k), vG = prop(gen, k); if (vG && vG !== vO) add("PART_ATTRIBUTES", f.path, pn, `${pn}: ${k} ${vG}${vO ? ` (the vault has ${vO})` : ""}`, vO, vG, k, vO ? "change" : "add"); }
     }
@@ -371,8 +380,8 @@ export function applyRevisionUpdate(scan: UpdateScan, o: ApplyOptions): ApplyRes
       const all2 = [...mine, ...mfrList(yg.mfr).filter((x) => !have.has(pairKey(x))).map((x) => ({ k: next++, m: x.m, p: x.p }))];
       note = setYamlOwned(note, null, all2.flatMap((x) => [...(x.m ? [[`manufacturer${x.k}`, x.m] as [string, string]] : []), ...(x.p ? [[`mfgPn${x.k}`, x.p] as [string, string]] : [])]));
     }
-    for (const it of items) if (it.key && (it.category === "CATEGORY" || it.category === "PART_ATTRIBUTES") && /^(bomCategory|level|makeBuy|salesRole|avgSalePrice|annualVolume)$/.test(it.key)) {
-      const ls = note.split("\n"), close = ls.indexOf("---", 1), at = ls.findIndex((l, i) => i < close && l.startsWith(it.key + ":")), line = `${it.key}: ${yamlScalar(it.after)}`;
+    for (const it of items) if (it.key && (it.category === "CATEGORY" || it.category === "PART_ATTRIBUTES") && /^(bomCategory|level|makeBuy|salesRole|avgSalePrice|annualVolume|bomEco)$/.test(it.key)) {
+      const ls = note.split("\n"), close = ls.indexOf("---", 1), at = ls.findIndex((l, i) => i < close && l.startsWith(it.key + ":")), line = it.key === "bomEco" ? `bomEco: ${it.after}` : `${it.key}: ${yamlScalar(it.after)}`;
       if (at >= 0) ls[at] = line; else { const t = ls.findIndex((l, i) => i < close && /^(sourceRole|primarySymbol):/.test(l)); ls.splice(t >= 0 ? t : close, 0, line); }
       note = ls.join("\n");
     }

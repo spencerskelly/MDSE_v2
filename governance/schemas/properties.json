@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "1.6",
-  "date": "2026-11-14",
-  "decision": "D-0065, D-0124, D-0131, D-0136, D-0147, D-0163, D-0164",
+  "schemaVersion": "1.7",
+  "date": "2026-11-26",
+  "decision": "D-0065, D-0124, D-0131, D-0136, D-0147, D-0163, D-0164, D-0172",
   "meaning": "Every YAML property a tool may write to a note. A property not listed here is a contract failure (testing: tools/importer/test/contract.test.ts). Relationship fields (a list of wiki links, relationships.yaml) are allowed without a row. Owner says who may change the value: bom, ea, person, tool, sales. Owner values: bom, ea, person, tool, sales (the NetSuite sales ledger), and \"bom+person\" for a value the BOM fills at import and a person may change afterwards. A row with `values` is a governed list: the value is one of them, and adding a value is a rules edit.",
   "order": [
     "type",
@@ -206,8 +206,37 @@
         "buy",
         "other"
       ],
-      "meaning": "Make or buy. Filled from the BOM `source` column (any other value or none is `other`, BOM-061); not the same as `sourcing`.",
+      "meaning": "Make or buy. Filled from the BOM `source` column: `make` and `buy` as read, any other non-blank value except `null` is `other`; a file with no source column, or a blank or `null` value, writes none. The value follows the first source that gave it (BOM-061); not the same as `sourcing`.",
       "source": "BOM source column"
+    },
+    {
+      "name": "bomEco",
+      "owner": "bom",
+      "appliesTo": "BOM revision notes (part number notes when there is no revision note)",
+      "meaning": "ECO numbers a BOM gives for the part, as text in file order, each once (BOM-072). A text reference, not a link to an ECO note (BOM-051, BOM-068).",
+      "source": "BOM cell holding ECO- and digits (Drawing Location in the redline exports)"
+    },
+    {
+      "name": "docType",
+      "owner": "bom+person",
+      "appliesTo": "BOM Document notes",
+      "values": [
+        "DWG",
+        "SCH",
+        "WI",
+        "SPEC",
+        "TDWG",
+        "EXT",
+        "MAN",
+        "SRC",
+        "GBR",
+        "PRJ",
+        "BOM",
+        "WL",
+        "DOC"
+      ],
+      "meaning": "Document type code of MOD-179, from the line's name or part-number suffix (BOM-069).",
+      "source": "BOM name and part number"
     },
     {
       "name": "level",

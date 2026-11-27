@@ -1,6 +1,12 @@
 {
-  "version": "0.13.4",
+  "version": "0.14.0",
   "history": [
+    {
+      "version": "0.14.0",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "BOM import data handling (D-0172): dates imported and the revision in effect pinned; document lines by name, suffix and ZST; struck text never current; standard values; make/buy only from a source value; revision marks listed for review; ECO numbers per part; prototypes as CL1 #; -0 not a revision; Z revisions checked"
+    },
     {
       "version": "0.13.4",
       "date": "2026-11-26",

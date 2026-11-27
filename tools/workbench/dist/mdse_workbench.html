@@ -535,7 +535,8 @@ function bomCategoryOf(description        , rules                 = DEFAULT_CATE
 /** final: has child lines and no parent in the BOMs read; sub: has both; part: no child lines, used somewhere; unused: neither. */
 const bomRoleOf = (hasChildren         , hasParent         )          => (hasChildren ? (hasParent ? "sub" : "final") : hasParent ? "part" : "unused");
 /** BOM-061: `make` and `buy` as read from the source column (case and outer spaces ignored); anything else, or nothing, is `other`. */
-const bomMakeBuyOf = (source        )          => { const t = source.trim().toLowerCase(); return t === "buy" || t === "make" ? t : "other"; };
+/** BOM-061 (D-0172): `make` and `buy` as read; a blank or `null` value gives none (no `makeBuy` is written); any other value is `other`. */
+const bomMakeBuyOf = (source        )                 => { const t = source.trim().toLowerCase(); return t === "buy" || t === "make" ? t : !t || t === "null" ? null : "other"; };
 /** BOM-042: final is product, sub is assembly, part and unused are part. */
 const bomLevelOf = (role         )           => (role === "final" ? "product" : role === "sub" ? "assembly" : "part");
 const LEVEL_FOLDER                           = { product: "Product", assembly: "Assembly", part: "Part" };
