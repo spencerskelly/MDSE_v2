@@ -9,6 +9,8 @@
  *   `status`, or resolve (remove) one flag in the user zone (D-0025). */
 declare const require: (id: string) => any;
 declare const CLASSES: any;
+declare const initSqlJs: (o: { wasmBinary: Uint8Array }) => Promise<any>;
+declare const SQLJS_WASM_B64: string;
 declare const MDSE: any;
 declare const WB: {
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
@@ -472,6 +474,7 @@ function hostFor(plugin: any): any {
       author: () => plugin.author,
       folders: () => [...new Set<string>([...(plugin.ix?.notes?.values?.() ?? [])].map((n: any) => n.folder as string))].sort(),
       applyPlan: (plan: any) => plugin.applyPlan(plan),
+      get store() { return plugin.flowStore(); },
     },
   };
 }
@@ -511,6 +514,7 @@ class TableView extends obsidian.ItemView {
 module.exports = class MdseWorkbench extends obsidian.Plugin {
   files: Map<string, string> = new Map(); ix: any = null; building: Promise<void> | null = null; apps: Set<any> = new Set(); selected = ""; rebuildTimer: any = null;
   preview: { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } } | null = null; previews: Map<string, { path: string; fileName: string; edgeIds: Set<string>; saveFolder?: string; discovery?: { workflow: "document" | "define" | "structure" | "verify"; all: boolean } }> = new Map(); previewSeq = 0; settings: { defaultFolder: string; lastFolder: string; popout: boolean } = { defaultFolder: "", lastFolder: "", popout: false };
+  flowDb: any = null; flowDbTimer: any = null;
   author = ""; drawTimer: any = null; drawBusy: Set<string> = new Set(); drawQueue: Promise<void> = Promise.resolve();
 
   /* ---- draw a line, get a relationship (D-0043) ---- */
@@ -593,8 +597,39 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   async rebuild() {
     const pr = this.files.get(PARSER_REPORT);
     this.ix = await WB.buildIndexAsync(this.files, { classes: CLASSES, ...(pr ? { parserReport: pr } : {}), yieldEvery: 300, yieldFn: tick });
+    this.reindexFlows();
     this.apps.forEach((a: any) => a.setIndex(this.ix));
     this.syncSelection();
+  }
+  /* ---- D-0170: this computer's flow database, .mdse/workbench.db (never committed; rebuilt from _ops/Flows) ---- */
+  async loadFlowDb() {
+    try {
+      const SQL = await initSqlJs({ wasmBinary: WB.base64Bytes(SQLJS_WASM_B64) });
+      const a = this.app.vault.adapter, p = WB.WB_DB_PATH;
+      const bytes = (await a.exists(p)) ? new Uint8Array(await a.readBinary(p)) : null;
+      this.flowDb = WB.openWorkbenchDb(SQL, bytes);
+      if (this.flowDb.opened === "reset") new obsidian.Notice("MDSE: the flow database could not be read and was started again. Flow records in _ops/Flows are unaffected; unsaved drafts on this computer were lost.");
+      this.reindexFlows();
+    } catch (e) { console.error("MDSE flow database unavailable", e); this.flowDb = null; }
+  }
+  reindexFlows() { if (!this.flowDb) return; try { WB.rebuildFlowIndex(this.flowDb, this.files); this.saveFlowDbLater(); } catch (e) { console.error(e); } }
+  saveFlowDbLater(ms = 1500) { clearTimeout(this.flowDbTimer); this.flowDbTimer = setTimeout(() => { this.saveFlowDb().catch((e: unknown) => console.error(e)); }, ms); }
+  async saveFlowDb() {
+    const db = this.flowDb; if (!db || !db.dirty) return;
+    const a = this.app.vault.adapter, p = WB.WB_DB_PATH, dir = p.slice(0, p.lastIndexOf("/"));
+    if (!(await a.exists(dir))) await a.mkdir(dir);
+    const b = db.export(); await a.writeBinary(p, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  }
+  flowStore() {
+    const plugin = this, db = () => plugin.flowDb;
+    if (!db()) return undefined;
+    return {
+      saveDraft: (rec: any) => { const d = db(); if (d) { WB.saveDraft(d, rec); plugin.saveFlowDbLater(); } },
+      loadDraft: (guid: string) => (db() ? WB.loadDraft(db(), guid) : null),
+      removeDraft: (guid: string) => { const d = db(); if (d) { WB.removeDraft(d, guid); plugin.saveFlowDbLater(); } },
+      unsaved: () => (db() ? WB.unsavedDrafts(db()) : []),
+      openOn: (el: string, except: string) => (db() ? WB.openFlowsOn(db(), el, except) : []),
+    };
   }
   laterRebuild(ms = 1500) { clearTimeout(this.rebuildTimer); if (this.ix) this.rebuildTimer = setTimeout(() => this.rebuild(), ms); }
   async track(path: string, file: any) {
@@ -1151,6 +1186,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
   /* ---- lifecycle ---- */
   async onload() {
     const saved = (await this.loadData()) ?? {};
+    this.loadFlowDb();
     this.settings = { defaultFolder: String(saved.defaultFolder || WB.SAVED_DIR), lastFolder: String(saved.lastFolder || ""), popout: !!saved.popout };
     this.addSettingTab(new MdseSettingTab(this.app, this));
     this.registerView(PANEL, (leaf: any) => new PanelView(leaf, this));
@@ -1212,5 +1248,5 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
         this.registerEvent(this.app.vault.on(ev, fn));
     });
   }
-  onunload() { ++this.discoveryEpoch; clearTimeout(this.discoveryTimer); clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
+  onunload() { clearTimeout(this.flowDbTimer); this.saveFlowDb().catch(() => {}); ++this.discoveryEpoch; clearTimeout(this.discoveryTimer); clearTimeout(this.rebuildTimer); clearTimeout(this.drawTimer); removePreview(this.app).catch(() => {}); }
 };

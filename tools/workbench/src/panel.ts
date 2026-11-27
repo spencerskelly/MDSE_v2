@@ -815,7 +815,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
     if (host.edit) {                                                                            // D-0169, WKB-076
-      const fm = FU.flowMenu(host.edit.files()), cur = FU.currentFlow();
+      const fm = FU.flowMenu(host.edit.files(), host.edit.store), cur = FU.currentFlow();
       const flowSel = h("select", { "aria-label": "Flow", class: lens === "flow" ? "cur" : "",
         title: "Start a flow on the selected note, or reopen a saved one. A flow is a guided form, section by section; submitting a section saves it in " + "_ops/Flows.",
         onchange: (e: Event) => {
@@ -824,6 +824,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
           let err = "";
           if (v === "@current") err = "";
           else if (v.startsWith("open:")) err = FU.openFlowRecord(v.slice(5), host.edit!);
+          else if (v.startsWith("draft:")) err = FU.openDraft(v.slice(6), host.edit!);
           else err = FU.beginFlow(v.slice(6), ix, sel, host.edit!);
           if (err) { msg = err; draw(); return; }
           flowEl = null; lens = "flow"; msg = ""; draw();
@@ -831,7 +832,8 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
         h("option", { value: "", selected: true }, cur ? `Flow: ${cur.rec.flowId} ▾` : "Flow…"),
         cur ? h("option", { value: "@current" }, `Back to ${cur.rec.flowId} ${cur.def.name}`) : null,
         ...fm.start.map((g) => h("optgroup", { label: "Start: " + g.group }, ...g.items.map((it) => h("option", { value: "start:" + it.id }, it.label)))),
-        fm.open.length ? h("optgroup", { label: "Open a saved flow" }, ...fm.open.map((o) => h("option", { value: "open:" + o.path }, o.label))) : null);
+        fm.open.length ? h("optgroup", { label: "Open a saved flow" }, ...fm.open.map((o) => h("option", { value: "open:" + o.path }, o.label))) : null,
+        fm.drafts.length ? h("optgroup", { label: "Drafts on this computer" }, ...fm.drafts.map((o) => h("option", { value: "draft:" + o.guid }, o.label))) : null);
       const rv = workareas.querySelector("button.review");
       if (rv) workareas.insertBefore(flowSel, rv); else workareas.append(flowSel);
     }

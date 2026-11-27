@@ -5558,12 +5558,15 @@ const MG = { mgRead, mgAliasPairs, planAliasMark, planAliasClear, planAliasMarkM
 
 const EC = { ECO_ACTIONS, ecoImpact, ecoDrives, ecoChecks, planCreateEco };
 
+
                     
                                
                           
                    
                       
                                                                                           
+                                                                           
+                    
  
                                                                                                                                                                         
 /** The relationship the Edit lens is working on (chosen from a table, the canvas or the list). */
@@ -6296,6 +6299,118 @@ function planPartLifecycle(ix            , files                     , path     
   return { summary: "Set part " + n.title + " to " + next +
     (whereUsed.length ? ". ATTENTION: used by " + whereUsed.length + " modeled assemblies; their usage remains unchanged." : ".") +
     " No BOM is rewritten.", writes: [{ path, before, after }], problems: [] };
+}
+
+/* ../../core/src/mdse_db.ts */
+/* The local operational database shared by the MDSE tools (D-0170). SQLite compiled to WebAssembly (sql.js 1.17.0,
+ * vendored in tools/core/vendor/sqljs), one file per tool per user, never committed and never shared.
+ *
+ * The vault stays the record (D-0003, D-0169): every table a tool declares `derived` is rebuilt from vault files and can
+ * be thrown away; only the tables it declares `kept` (local drafts and similar) hold anything the vault does not. A
+ * changed schema version keeps the `kept` rows whose columns still exist and recreates everything else.
+ *
+ * No UI, no file access: the host gives this module the sql.js engine and the file's bytes, and writes back what
+ * `export()` returns. Portable SQL only (TEXT, INTEGER, REAL), so the same tables can move to a server later. */
+
+/** The part of the sql.js API this module uses. */
+                       
+                                                 
+                                                                                             
+                       
+                
+ 
+                                                    
+                                                                                                   
+
+                                                                                                                                                                       
+                                                                                           
+
+const colName = (c        )         => c.trim().split(/\s+/)[0] ;
+
+class MdseDb {
+          db             ;
+          SQL           ;
+           schema          ;
+  /** true when the contents changed since the last export */
+  dirty = false;
+  /** what happened when the file was opened: new, opened, migrated (kept rows carried over), or reset (unreadable file) */
+           opened                                         ;
+
+  constructor(SQL           , schema          , bytes                    ) {
+    this.SQL = SQL; this.schema = schema;
+    let db                     = null, opened                   = "new";
+    if (bytes && bytes.length) {
+      try { db = new SQL.Database(bytes); db.exec("SELECT count(*) FROM sqlite_master"); opened = "opened"; }
+      catch { db = null; opened = "reset"; }
+    }
+    if (db && opened === "opened") {
+      const v = MdseDb.metaOf(db, "schema_version"), n = MdseDb.metaOf(db, "schema_name");
+      if (n !== schema.name || Number(v) !== schema.version) { db = this.migrate(db); opened = "migrated"; }
+    }
+    if (!db) { db = new SQL.Database(); this.create(db); this.dirty = true; }
+    this.db = db;
+    this.opened = opened;
+  }
+
+          static metaOf(db             , key        )                {
+    try { const r = db.exec("SELECT value FROM meta WHERE key = ?", [key]); return (r[0]?.values[0]?.[0]                      ) ?? null; }
+    catch { return null; }
+  }
+          create(db             )       {
+    db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)");
+    for (const t of this.schema.tables) db.run(`CREATE TABLE IF NOT EXISTS ${t.name} (${[...t.columns, ...(t.constraints ?? [])].join(", ")})`);
+    for (const i of this.schema.indexes ?? []) db.run(i);
+    db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_name', ?), ('schema_version', ?)", [this.schema.name, String(this.schema.version)]);
+  }
+  /** New file with the current schema; rows of `kept` tables are copied for the columns both versions have. */
+          migrate(old             )              {
+    const fresh = new this.SQL.Database(); this.create(fresh);
+    for (const t of this.schema.tables.filter((x) => x.kept)) {
+      let r                                                    ;
+      try { r = old.exec(`SELECT * FROM ${t.name}`); } catch { continue; }
+      if (!r[0]) continue;
+      const want = t.columns.map(colName), cols = r[0].columns.filter((c) => want.includes(c));
+      if (!cols.length) continue;
+      const idx = cols.map((c) => r[0] .columns.indexOf(c));
+      for (const row of r[0].values) fresh.run(`INSERT OR REPLACE INTO ${t.name} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, idx.map((i) => row[i] ?? null));
+    }
+    old.close(); this.dirty = true;
+    return fresh;
+  }
+
+  /** Rows as objects. */
+  all                              (sql        , params             = [])      {
+    const r = this.db.exec(sql, params); if (!r[0]) return [];
+    const { columns, values } = r[0];
+    return values.map((v) => Object.fromEntries(columns.map((c, i) => [c, v[i] ?? null]))     );
+  }
+  one                              (sql        , params             = [])           { return this.all   (sql, params)[0] ?? null; }
+  run(sql        , params             = [])       { this.db.run(sql, params); this.dirty = true; }
+  /** Insert or replace one row from an object whose keys are column names. */
+  put(table        , row                                      )       {
+    const keys = Object.keys(row).filter((k) => row[k] !== undefined);
+    this.run(`INSERT OR REPLACE INTO ${table} (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`, keys.map((k) => row[k]            ));
+  }
+  /** All-or-nothing. */
+  tx   (fn         )    {
+    this.db.run("BEGIN");
+    try { const r = fn(); this.db.run("COMMIT"); this.dirty = true; return r; }
+    catch (e) { this.db.run("ROLLBACK"); throw e; }
+  }
+  /** Empty every derived table (before a rebuild from the vault). */
+  clearDerived()       { for (const t of this.schema.tables.filter((x) => !x.kept)) this.db.run(`DELETE FROM ${t.name}`); this.dirty = true; }
+  setMeta(key        , value        )       { this.put("meta", { key, value }); }
+  meta(key        )                { return MdseDb.metaOf(this.db, key); }
+  /** The file's bytes, to be written by the host. Clears `dirty`. */
+  export()             { const b = this.db.export(); this.dirty = false; return b; }
+  close()       { this.db.close(); }
+}
+
+/** Decode base64 (the WebAssembly binary is embedded in the plugin as text). */
+function base64Bytes(b64        )             {
+  const bin = atob(b64); const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /* flow_defs.ts */
@@ -11616,8 +11731,17 @@ function planSaveFlow(def         , rec            , files                     )
 
 
 const F = { FLOWS_DIR, FLOW_GROUPS, flowDefs, flowDef, flowSections, allFields, noteValue, dynValue, linkedRequirements, flowTableRows, nextFlowId, flowPath, startFlow, flowShown, submittable, fieldOptions, sectionContent, flowHash, sectionState, missingRequired, submitSection, firmwareYaml, planGroups, renderFlowNote, parseFlowNote, listFlows, planSaveFlow };
+/** This computer's flow database (D-0170), when the host has one. Drafts are unsaved edits between submits. */
+                     
+                                     
+                                                                         
+                                  
+                                                                     
+                                                                                                                                                 
+ 
                     
                                
+                    
                                                           
                    
                                                                                        
@@ -11637,6 +11761,7 @@ const closeFlow = ()       => { CUR = null; };
 
 /** Start a new flow on the selected note. Returns an error message, or "" when started. */
 function beginFlow(defId        , ix                   , sel        , host          , now = new Date())         {
+  RESTORED = "";
   const def = F.flowDef(defId); if (!def) return `Unknown flow ${defId}.`;
   const author = host.author();
   if (!author) return "Register your author code first (Bootstrap, or 99_System vault settings): a flow is signed with it.";
@@ -11644,18 +11769,29 @@ function beginFlow(defId        , ix                   , sel        , host      
   CUR = { def, rec: F.startFlow(def, ix, ix?.notes.has(sel) ? sel : "", author, now, records) };
   return "";
 }
-/** Reopen a saved flow record. Returns an error message, or "". */
+/** Reopen a saved flow record; unsaved edits kept on this computer since its last save are restored. Returns an error message, or "". */
 function openFlowRecord(path        , host          )         {
   const text = host.files().get(path); if (text === undefined) return `${path} is not in the vault.`;
   const rec = F.parseFlowNote(text), def = rec ? F.flowDef(rec.flow) : undefined;
   if (!rec || !def) return `${path} is not a flow record this Workbench can read.`;
-  CUR = { def, rec }; return "";
+  const last = rec.events[rec.events.length - 1]?.at ?? "", d = host.store?.loadDraft(rec.guid);
+  if (d && d.savedAt > last && d.rec.flowId === rec.flowId) { CUR = { def, rec: d.rec }; RESTORED = d.savedAt; }
+  else { CUR = { def, rec }; RESTORED = ""; if (d) host.store?.removeDraft(rec.guid); }
+  return "";
 }
+/** Reopen a flow that was never submitted, from this computer's drafts. */
+function openDraft(guid        , host          )         {
+  const d = host.store?.loadDraft(guid), def = d ? F.flowDef(d.rec.flow) : undefined;
+  if (!d || !def) return "That draft is no longer on this computer.";
+  CUR = { def, rec: d.rec }; RESTORED = d.savedAt; return "";
+}
+let RESTORED = "";
 /** The entries of the Flow drop-down: flows to start, by group, and saved flows to reopen. */
-function flowMenu(files                            )                                                                                                                                 {
+function flowMenu(files                            , store            )                                                                                                                                                                                 {
   const start = F.FLOW_GROUPS.map((g) => ({ group: g, items: F.flowDefs().filter((d) => d.group === g).map((d) => ({ id: d.id, label: d.name })) }));
   const open = files ? F.listFlows(files).slice(0, 25).map(({ path, rec }) => ({ path, label: `${rec.flowId} · ${F.flowDef(rec.flow)?.name ?? rec.flow}${rec.pickTitle ? " · " + rec.pickTitle : ""}${rec.status === "complete" ? " (complete)" : ""}` })) : [];
-  return { start, open };
+  const drafts = store ? store.unsaved().slice(0, 15).map((d) => ({ guid: d.guid, label: d.label })) : [];
+  return { start, open, drafts };
 }
 
 const FLOW_STYLE = `
@@ -11697,18 +11833,33 @@ function flowView(ctx         )              {
       h("div", { class: "ids" }, `Flow ID ${rec.flowId} · GUID ${rec.guid}`),
       h("div", { class: "cnt" }, "Works on: ", rec.pick ? h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); ctx.open(rec.pick); } }, rec.pickTitle || rec.pick) : h("i", {}, "nothing selected"), h("span", { class: "mut" }, ` (${def.pick})`)),
       h("div", { class: "cnt" }, `${done} of ${subs.length} sections submitted · ${changed} field${changed === 1 ? "" : "s"} changed · ${missing} required field${missing === 1 ? "" : "s"} empty`),
-      h("div", { class: "cnt mut" }, saved ? `Saved as ${F.flowPath(rec.flowId)}. Each submit saves it again.` : "Not saved yet. The first submitted section saves the flow."),
+      h("div", { class: "cnt mut" }, (saved ? `Saved as ${F.flowPath(rec.flowId)}. Each submit saves it again.` : "Not saved yet. The first submitted section saves the flow.") + (ctx.host.store ? " Edits in between are kept on this computer." : "")),
       h("div", { class: "acts2" },
         saved ? h("button", { class: "sm", onclick: () => ctx.open(F.flowPath(rec.flowId)) }, "Open the record note") : null,
         h("button", { class: "sm", onclick: () => { for (const s of secs) open.add(s.key); redraw(); } }, "Expand all"),
         h("button", { class: "sm", onclick: () => { open.clear(); redraw(); } }, "Collapse all"),
         h("button", { class: "sm", onclick: () => { closeFlow(); ctx.done("Flow closed. Saved sections stay in the record; reopen it from the Flow menu.", null); } }, "Close flow")),
+      RESTORED ? h("div", { class: "cnt" }, `Restored unsaved edits from this computer (${RESTORED.slice(0, 16).replace("T", " ")}).`) : null,
+      ...others(rec),
       note ? h("div", { class: "err" }, note) : null,
       !rec.pick && def.id !== "NEW" ? h("div", { class: "err" }, `No note was selected when this flow started. It expects: ${def.pick}.`) : null);
     if (!open.size) { const first = subs.find((s) => F.sectionState(def, rec, s) !== "submitted"); open.add((first ?? secs[0] ).key); }
     return [head, ...secs.map((s, i) => section(def, rec, s, i, ix))];
   }
 
+  function others(rec              )          {
+    const o = rec.pick && ctx.host.store ? ctx.host.store.openOn(rec.pick, rec.guid) : [];
+    if (!o.length) return [];
+    return [h("div", { class: "err" }, `Other open flows on this element: `, ...o.slice(0, 5).flatMap((x, i) => [i ? ", " : "",
+      h("a", { href: "#", onclick: (e       ) => { e.preventDefault(); ctx.open(x.record_path); } }, `${x.flow_id} ${x.name} (${x.author})`)]), ". Changes may collide at merge.")];
+  }
+  /** Keep unsaved edits on this computer (debounced), so nothing typed between submits is lost. */
+  let draftTimer                                       = null;
+  function touched()       {
+    const st = ctx.host.store; if (!st || !CUR) return;
+    if (draftTimer) clearTimeout(draftTimer);
+    const rec = CUR.rec; draftTimer = setTimeout(() => { draftTimer = null; try { st.saveDraft(rec); } catch (e) { console.error(e); } }, 800);
+  }
   function section(def           , rec              , s               , i        , ix                   )              {
     const st = F.sectionState(def, rec, s), can = F.submittable(s);
     const chip = !can ? null : st === "submitted" ? h("span", { class: "chip ok" }, "Submitted") : st === "stale" ? h("span", { class: "chip st" }, "Edited since submitted") : h("span", { class: "chip" }, "Not submitted");
@@ -11752,8 +11903,8 @@ function flowView(ctx         )              {
     else if (f.kind === "area") inp = h("textarea", { "aria-label": f.label, placeholder: f.ph ?? "" });
     else inp = h("input", { type: "text", "aria-label": f.label, placeholder: f.ph ?? "" });
     if (f.kind !== "select") (inp                    ).value = cur;
-    inp.addEventListener("input", () => { rec.vals[f.id] = (inp                    ).value; });
-    inp.addEventListener("change", () => { rec.vals[f.id] = (inp                    ).value; note = ""; redraw(); });
+    inp.addEventListener("input", () => { rec.vals[f.id] = (inp                    ).value; touched(); });
+    inp.addEventListener("change", () => { rec.vals[f.id] = (inp                    ).value; note = ""; touched(); redraw(); });
     return h("div", { class: chg ? "chg" : "" }, lab, inp, chg ? h("div", { class: "was" }, `${def.wasLabel} ${base || "—"}`) : "", f.hint ? h("div", { class: "hint" }, f.hint) : "");
   }
 
@@ -11767,15 +11918,15 @@ function flowView(ctx         )              {
         let inp             ;
         if (c.opts) inp = h("select", { "aria-label": c.label }, ...[...new Set([...(c.opts), r[c.k] ?? ""])].map((o) => h("option", { value: o, selected: o === (r[c.k] ?? "") || undefined }, o || "—")));
         else { inp = h("input", { type: "text", "aria-label": c.label }); (inp                    ).value = r[c.k] ?? ""; }
-        inp.addEventListener("input", () => { r[c.k] = (inp                    ).value; });
-        inp.addEventListener("change", () => { r[c.k] = (inp                    ).value; redraw(); });
+        inp.addEventListener("input", () => { r[c.k] = (inp                    ).value; touched(); });
+        inp.addEventListener("change", () => { r[c.k] = (inp                    ).value; touched(); redraw(); });
         return h("td", {}, inp);
-      }), fixed ? null : h("td", {}, h("button", { class: "sm", title: "Remove this row", onclick: () => { rows.splice(ri, 1); redraw(); } }, "×"))));
+      }), fixed ? null : h("td", {}, h("button", { class: "sm", title: "Remove this row", onclick: () => { rows.splice(ri, 1); touched(); redraw(); } }, "×"))));
     });
     if (!rows.length) tb.append(h("tr", {}, h("td", { colspan: String(cols.length + 1), class: "hint" }, b.src && b.src !== "files" ? "Nothing found in the vault for the selected note. Add rows by hand if needed." : "No rows yet.")));
     t.append(tb);
     return h("div", { class: "grp" }, h("b", {}, b.title ?? ""), b.note ? h("div", { class: "cap" }, b.note) : "", h("div", { class: "tbl" }, t),
-      fixed ? null : h("button", { class: "sm", onclick: () => { rows.push(Object.fromEntries(cols.map((c) => [c.k, c.opts ? c.opts[0] ?? "" : ""]))); redraw(); } }, "Add row"));
+      fixed ? null : h("button", { class: "sm", onclick: () => { rows.push(Object.fromEntries(cols.map((c) => [c.k, c.opts ? c.opts[0] ?? "" : ""]))); touched(); redraw(); } }, "Add row"));
   }
 
   async function submit(key        )                {
@@ -11788,7 +11939,9 @@ function flowView(ctx         )              {
     busy = true; redraw();
     try {
       const res = await ctx.host.applyPlan(plan);
-      CUR = { def, rec: r.rec }; note = "";
+      CUR = { def, rec: r.rec }; note = ""; RESTORED = "";
+      if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+      ctx.host.store?.removeDraft(r.rec.guid);                                // the record now holds everything
       const flowId = r.rec.flowId;
       ctx.done(`${res.message} Section submitted.`, async () => {
         const m = await res.undo();
@@ -11804,6 +11957,98 @@ function flowView(ctx         )              {
   redraw();
   (root                                          ).refresh = redraw;
   return root;
+}
+
+/* flow_db.ts */
+/* The Workbench database (D-0170): flow tracking for this user, in `.mdse/workbench.db` (never committed).
+ * Everything except `drafts` is rebuilt from the flow records in `_ops/Flows` (WKB-077); drafts are this computer's
+ * unsaved edits between submits. Dates are derived from the recorded events: started = first submit, completed = the
+ * flow's last `completed` event (decisions record of 2026-11-26). */
+
+
+
+
+const WB_DB_PATH = ".mdse/workbench.db";
+const WB_DB_SCHEMA           = {
+  name: "mdse-workbench", version: 1,
+  tables: [
+    { name: "flows", columns: ["guid TEXT PRIMARY KEY", "flow_id TEXT", "flow TEXT", "name TEXT", "status TEXT", "pick TEXT", "pick_title TEXT", "author TEXT",
+      "created TEXT", "started TEXT", "completed TEXT", "eco TEXT", "reason_type TEXT", "record_path TEXT", "sections_total INTEGER", "sections_submitted INTEGER", "schema_version INTEGER"] },
+    { name: "sections", columns: ["guid TEXT", "key TEXT", "title TEXT", "state TEXT", "submitted_at TEXT", "submitted_by TEXT", "hash TEXT"], constraints: ["PRIMARY KEY (guid, key)"] },
+    { name: "events", columns: ["guid TEXT", "seq INTEGER", "at TEXT", "by_user TEXT", "ev TEXT", "section TEXT"], constraints: ["PRIMARY KEY (guid, seq)"] },
+    { name: "approvals", columns: ["guid TEXT", "seq INTEGER", "role TEXT", "who TEXT", "needed TEXT", "decision TEXT", "note TEXT"], constraints: ["PRIMARY KEY (guid, seq)"] },
+    { name: "claims", columns: ["guid TEXT", "element TEXT", "why TEXT"], constraints: ["PRIMARY KEY (guid, element)"] },
+    { name: "drafts", kept: true, columns: ["guid TEXT PRIMARY KEY", "flow_id TEXT", "flow TEXT", "pick_title TEXT", "saved_at TEXT", "author TEXT", "json TEXT"] },
+  ],
+  indexes: ["CREATE INDEX IF NOT EXISTS claims_element ON claims (element)", "CREATE INDEX IF NOT EXISTS approvals_who ON approvals (who)"],
+};
+
+function openWorkbenchDb(SQL           , bytes                    )         { return new MdseDb(SQL, WB_DB_SCHEMA, bytes); }
+
+/** Rebuild every derived table from the flow records in the working tree. Returns the number of flows indexed. */
+function rebuildFlowIndex(db        , files                     )         {
+  const recs = F.listFlows(files);
+  db.tx(() => {
+    db.clearDerived();
+    for (const { path, rec } of recs) indexRecord(db, rec, path);
+  });
+  db.setMeta("rebuilt_at", new Date().toISOString());
+  return recs.length;
+}
+function indexRecord(db        , rec            , path        )       {
+  const def = F.flowDef(rec.flow); if (!def) return;
+  const secs = F.flowSections(def).filter(F.submittable);
+  const started = rec.events.find((e) => e.ev === "section_submitted")?.at ?? "";
+  const completed = rec.status === "complete" ? ([...rec.events].reverse().find((e) => e.ev === "completed")?.at ?? "") : "";
+  db.put("flows", { guid: rec.guid, flow_id: rec.flowId, flow: rec.flow, name: def.name, status: rec.status, pick: rec.pick, pick_title: rec.pickTitle, author: rec.author,
+    created: rec.created, started, completed, eco: rec.vals["rs.econo"] ?? "", reason_type: rec.vals["rs.type"] ?? "", record_path: path,
+    sections_total: secs.length, sections_submitted: secs.filter((s) => F.sectionState(def, rec, s) === "submitted").length, schema_version: rec.schema });
+  for (const s of secs) {
+    const sub = rec.sub[s.key];
+    db.put("sections", { guid: rec.guid, key: s.key, title: s.title, state: F.sectionState(def, rec, s), submitted_at: sub?.at ?? null, submitted_by: sub?.by ?? null, hash: sub?.hash ?? null });
+  }
+  rec.events.forEach((e, i) => db.put("events", { guid: rec.guid, seq: i, at: e.at, by_user: e.by, ev: e.ev, section: e.section ?? null }));
+  // Approver tables: Change (d: discipline, a: approver, n: needed) and Review and approve (fn, who, dec, note).
+  let seq = 0;
+  for (const r of rec.rows["appr"] ?? []) {
+    const role = r["d"] ?? r["fn"] ?? "", who = (r["a"] ?? r["who"] ?? "").trim();
+    if (!who) continue;
+    db.put("approvals", { guid: rec.guid, seq: seq++, role, who, needed: r["n"] ?? "Yes", decision: r["dec"] ?? (rec.vals["rel.dec"] || rec.vals["a.final"] || "Pending"), note: r["note"] ?? "" });
+  }
+  // Claims: the element the flow works on, and the parents a Change says it includes (advisory, decisions record §3).
+  if (rec.pick) db.put("claims", { guid: rec.guid, element: rec.pick, why: "works on" });
+}
+
+/* ---- drafts (kept: not in the vault) ---- */
+function saveDraft(db        , rec            , now = new Date())       {
+  db.put("drafts", { guid: rec.guid, flow_id: rec.flowId, flow: rec.flow, pick_title: rec.pickTitle, saved_at: now.toISOString(), author: rec.author, json: JSON.stringify(rec) });
+}
+function loadDraft(db        , guid        )                                              {
+  const r = db.one                                    ("SELECT json, saved_at FROM drafts WHERE guid = ?", [guid]);
+  if (!r) return null;
+  try { return { rec: JSON.parse(r.json)              , savedAt: r.saved_at }; } catch { return null; }
+}
+function removeDraft(db        , guid        )       { db.run("DELETE FROM drafts WHERE guid = ?", [guid]); }
+/** Drafts of flows that have no record yet (never submitted). */
+function unsavedDrafts(db        )                                                          {
+  return db.all                                                                                       (
+    "SELECT d.guid, d.flow_id, d.flow, d.pick_title, d.saved_at FROM drafts d LEFT JOIN flows f ON f.guid = d.guid WHERE f.guid IS NULL ORDER BY d.saved_at DESC")
+    .map((r) => ({ guid: r.guid, savedAt: r.saved_at, label: `${r.flow_id} · ${F.flowDef(r.flow)?.name ?? r.flow}${r.pick_title ? " · " + r.pick_title : ""} (draft, not submitted)` }));
+}
+
+/* ---- queries the folder of notes cannot answer quickly ---- */
+                                                                                                                                                                                                            
+function openFlowsOn(db        , element        , exceptGuid = "")            {
+  return db.all         ("SELECT f.* FROM flows f JOIN claims c ON c.guid = f.guid WHERE c.element = ? AND f.status <> 'complete' AND f.guid <> ? ORDER BY f.created DESC", [element, exceptGuid]);
+}
+function awaitingApproval(db        , who        )            {
+  return db.all         ("SELECT DISTINCT f.* FROM flows f JOIN approvals a ON a.guid = f.guid WHERE lower(a.who) = lower(?) AND a.decision = 'Pending' AND a.needed <> 'No' ORDER BY f.created", [who]);
+}
+function flowsInEco(db        , eco        )            { return db.all         ("SELECT * FROM flows WHERE eco = ? ORDER BY created", [eco]); }
+function recentFlows(db        , limit = 25)            { return db.all         ("SELECT * FROM flows ORDER BY created DESC LIMIT ?", [limit]); }
+/** Start and end of each flow, from its events (for later reporting; not shown per person by default). */
+function flowDates(db        , guid        )                                                {
+  return db.one                                        ("SELECT started, completed FROM flows WHERE guid = ?", [guid]);
 }
 
 /* panel.ts */
@@ -11823,7 +12068,7 @@ const TD = { TERM_FIELDS, tokenizeTerms, emptyTermCatalog, addTermNote, buildTer
 
 
 
-const FU = { currentFlow, closeFlow, beginFlow, openFlowRecord, flowMenu, FLOW_STYLE, flowView };
+const FU = { currentFlow, closeFlow, beginFlow, openFlowRecord, openDraft, flowMenu, FLOW_STYLE, flowView };
 
                                                                                                                        
                      
@@ -12622,7 +12867,7 @@ function mountPanel(root             , host           , opt                     
           draw();
         } }, lens === "review" ? "Back from Review" : "Review"));
     if (host.edit) {                                                                            // D-0169, WKB-076
-      const fm = FU.flowMenu(host.edit.files()), cur = FU.currentFlow();
+      const fm = FU.flowMenu(host.edit.files(), host.edit.store), cur = FU.currentFlow();
       const flowSel = h("select", { "aria-label": "Flow", class: lens === "flow" ? "cur" : "",
         title: "Start a flow on the selected note, or reopen a saved one. A flow is a guided form, section by section; submitting a section saves it in " + "_ops/Flows.",
         onchange: (e       ) => {
@@ -12631,6 +12876,7 @@ function mountPanel(root             , host           , opt                     
           let err = "";
           if (v === "@current") err = "";
           else if (v.startsWith("open:")) err = FU.openFlowRecord(v.slice(5), host.edit );
+          else if (v.startsWith("draft:")) err = FU.openDraft(v.slice(6), host.edit );
           else err = FU.beginFlow(v.slice(6), ix, sel, host.edit );
           if (err) { msg = err; draw(); return; }
           flowEl = null; lens = "flow"; msg = ""; draw();
@@ -12638,7 +12884,8 @@ function mountPanel(root             , host           , opt                     
         h("option", { value: "", selected: true }, cur ? `Flow: ${cur.rec.flowId} ▾` : "Flow…"),
         cur ? h("option", { value: "@current" }, `Back to ${cur.rec.flowId} ${cur.def.name}`) : null,
         ...fm.start.map((g) => h("optgroup", { label: "Start: " + g.group }, ...g.items.map((it) => h("option", { value: "start:" + it.id }, it.label)))),
-        fm.open.length ? h("optgroup", { label: "Open a saved flow" }, ...fm.open.map((o) => h("option", { value: "open:" + o.path }, o.label))) : null);
+        fm.open.length ? h("optgroup", { label: "Open a saved flow" }, ...fm.open.map((o) => h("option", { value: "open:" + o.path }, o.label))) : null,
+        fm.drafts.length ? h("optgroup", { label: "Drafts on this computer" }, ...fm.drafts.map((o) => h("option", { value: "draft:" + o.guid }, o.label))) : null);
       const rv = workareas.querySelector("button.review");
       if (rv) workareas.insertBefore(flowSel, rv); else workareas.append(flowSel);
     }
@@ -12841,7 +13088,7 @@ function mountPanel(root             , host           , opt                     
   };
 }
 
-return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, planReplacePart, planPartLifecycle, contextLinkChoices, previewContextLinks, planAddElement, memberConnectionCanvas, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, updateIncludedCanvas, cardNotePath, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules };
+return { mountWorkbench, mountPanel, WORKFLOW_ENTRY_LENS, QUICK_TEMPLATES, quickTemplatesFor, quickTemplate, planPlainNote, planReplacePart, planPartLifecycle, contextLinkChoices, previewContextLinks, planAddElement, memberConnectionCanvas, LENSES, LENS_PROFILE, lensHasCanvas, lensHasTable, defaultSpec, STYLE, readZip, readFileList, readDirHandle, buildIndex, buildIndexAsync, toCanvas, pickCanvas, buildWithLimit, canvasLimitMessage, canvasLimitDefault, parseCanvasLimit, CANVAS_WARN_AT, CANVAS_LIMIT_MAX, addToCanvas, updateIncludedCanvas, cardNotePath, discoveryBoundary, discoveryOverlay, clearDiscovery, keepDiscoveryCandidates, dismissDiscoveryCandidates, isDiscoveryNode, structureCanvas, addChildren, autoLayout, refreshCanvas, toggleCard, cardAction, internalCanvas, uniqueCanvas, inheritedMembers, INHERIT_FROM, PREVIEW_DIR, PREVIEW_PATH, SAVED_DIR, PROFILES, edAuthor, edgeRefOfId, cdEdgeIds, cdDrawnLines, cdChoices, cdWhyNot, cdOtherWay, cdDropLine, cdLabelLine, planAddRelationship, edDiff, DEFAULT_CATEGORY_RULES, CATEGORY_RULES_PATH, parseCategoryRules, renderCategoryRules, openWorkbenchDb, rebuildFlowIndex, saveDraft, loadDraft, removeDraft, unsavedDrafts, openFlowsOn, awaitingApproval, base64Bytes, WB_DB_PATH };
 })();
 </script>
 <script>

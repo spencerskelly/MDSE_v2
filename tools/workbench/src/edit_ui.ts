@@ -12,6 +12,7 @@ import * as MG from "./merge_ops.ts";
 import * as PL from "./edit_plm.ts";
 import * as EC from "./edit_eco.ts";
 import { ED_HELP } from "./edit_help.ts";
+import type { FlowStore } from "./flows_ui.ts";
 
 export interface EditHost {
   files(): Map<string, string>;
@@ -19,6 +20,8 @@ export interface EditHost {
   author(): string;
   folders(): string[];
   applyPlan(plan: ED.EditPlan): Promise<{ message: string; undo: () => Promise<string> }>;
+  /** this computer's flow database (D-0170); absent in the offline page */
+  store?: FlowStore;
 }
 export interface EditCtx { getIx(): ModelIndex; getSel(): string; host: EditHost; done(message: string, undo: (() => Promise<string>) | null): void; open(path: string): void }
 /** The relationship the Edit lens is working on (chosen from a table, the canvas or the list). */
