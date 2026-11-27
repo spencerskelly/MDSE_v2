@@ -54,6 +54,10 @@ jobs:
       - name: Verify Workbench can build from source
         if: always()
         run: npm run build:workbench
+      - name: Testbench unit tests
+        run: npm run test:testbench
+      - name: Check committed Testbench output
+        run: npm run check:testbench
 
   oracles-and-fixtures:
     name: Python oracles, fixtures, browser smoke

@@ -6,8 +6,17 @@ import type { ModelIndex } from "./index.ts";
 import type { EditPlan } from "./edit.ts";
 import * as F from "./flows.ts";
 
+/** This computer's flow database (D-0170), when the host has one. Drafts are unsaved edits between submits. */
+export interface FlowStore {
+  saveDraft(rec: F.FlowRecord): void;
+  loadDraft(guid: string): { rec: F.FlowRecord; savedAt: string } | null;
+  removeDraft(guid: string): void;
+  unsaved(): Array<{ guid: string; label: string; savedAt: string }>;
+  openOn(element: string, exceptGuid: string): Array<{ flow_id: string; name: string; pick_title: string; record_path: string; author: string }>;
+}
 export interface FlowHost {
   files(): Map<string, string>;
+  store?: FlowStore;
   /** registered 13-character author code, "" when none */
   author(): string;
   applyPlan(plan: EditPlan): Promise<{ message: string; undo: () => Promise<string> }>;
@@ -27,6 +36,7 @@ export const closeFlow = (): void => { CUR = null; };
 
 /** Start a new flow on the selected note. Returns an error message, or "" when started. */
 export function beginFlow(defId: string, ix: ModelIndex | null, sel: string, host: FlowHost, now = new Date()): string {
+  RESTORED = "";
   const def = F.flowDef(defId); if (!def) return `Unknown flow ${defId}.`;
   const author = host.author();
   if (!author) return "Register your author code first (Bootstrap, or 99_System vault settings): a flow is signed with it.";
@@ -34,18 +44,29 @@ export function beginFlow(defId: string, ix: ModelIndex | null, sel: string, hos
   CUR = { def, rec: F.startFlow(def, ix, ix?.notes.has(sel) ? sel : "", author, now, records) };
   return "";
 }
-/** Reopen a saved flow record. Returns an error message, or "". */
+/** Reopen a saved flow record; unsaved edits kept on this computer since its last save are restored. Returns an error message, or "". */
 export function openFlowRecord(path: string, host: FlowHost): string {
   const text = host.files().get(path); if (text === undefined) return `${path} is not in the vault.`;
   const rec = F.parseFlowNote(text), def = rec ? F.flowDef(rec.flow) : undefined;
   if (!rec || !def) return `${path} is not a flow record this Workbench can read.`;
-  CUR = { def, rec }; return "";
+  const last = rec.events[rec.events.length - 1]?.at ?? "", d = host.store?.loadDraft(rec.guid);
+  if (d && d.savedAt > last && d.rec.flowId === rec.flowId) { CUR = { def, rec: d.rec }; RESTORED = d.savedAt; }
+  else { CUR = { def, rec }; RESTORED = ""; if (d) host.store?.removeDraft(rec.guid); }
+  return "";
 }
+/** Reopen a flow that was never submitted, from this computer's drafts. */
+export function openDraft(guid: string, host: FlowHost): string {
+  const d = host.store?.loadDraft(guid), def = d ? F.flowDef(d.rec.flow) : undefined;
+  if (!d || !def) return "That draft is no longer on this computer.";
+  CUR = { def, rec: d.rec }; RESTORED = d.savedAt; return "";
+}
+let RESTORED = "";
 /** The entries of the Flow drop-down: flows to start, by group, and saved flows to reopen. */
-export function flowMenu(files: Map<string, string> | null): { start: Array<{ group: string; items: Array<{ id: string; label: string }> }>; open: Array<{ path: string; label: string }> } {
+export function flowMenu(files: Map<string, string> | null, store?: FlowStore): { start: Array<{ group: string; items: Array<{ id: string; label: string }> }>; open: Array<{ path: string; label: string }>; drafts: Array<{ guid: string; label: string }> } {
   const start = F.FLOW_GROUPS.map((g) => ({ group: g, items: F.flowDefs().filter((d) => d.group === g).map((d) => ({ id: d.id, label: d.name })) }));
   const open = files ? F.listFlows(files).slice(0, 25).map(({ path, rec }) => ({ path, label: `${rec.flowId} · ${F.flowDef(rec.flow)?.name ?? rec.flow}${rec.pickTitle ? " · " + rec.pickTitle : ""}${rec.status === "complete" ? " (complete)" : ""}` })) : [];
-  return { start, open };
+  const drafts = store ? store.unsaved().slice(0, 15).map((d) => ({ guid: d.guid, label: d.label })) : [];
+  return { start, open, drafts };
 }
 
 export const FLOW_STYLE = `
@@ -74,6 +95,9 @@ export function flowView(ctx: FlowCtx): HTMLElement {
   let note = "", busy = false;
   const scrollBox = (): HTMLElement | null => { let e: HTMLElement | null = root.parentElement; while (e && e.scrollHeight <= e.clientHeight) e = e.parentElement; return e; };
   const redraw = (): void => { const sb = scrollBox(), top = sb?.scrollTop ?? 0; root.replaceChildren(...draw().filter((c): c is Node | string => !!c)); if (sb) sb.scrollTop = top; };
+  // Typing never rebuilds the form: a rebuild while focus moves to the next field or a button would lose the focus
+  // or swallow the click. Text fields update their own "changed" mark; the rest of the form catches up on the next
+  // button or menu action, all of which redraw.
 
   function draw(): Child[] {
     if (!CUR) return [h("div", { class: "mut" }, "Choose a flow from the Flow menu beside the work areas. It starts on the note selected here.")];
@@ -87,18 +111,33 @@ export function flowView(ctx: FlowCtx): HTMLElement {
       h("div", { class: "ids" }, `Flow ID ${rec.flowId} · GUID ${rec.guid}`),
       h("div", { class: "cnt" }, "Works on: ", rec.pick ? h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); ctx.open(rec.pick); } }, rec.pickTitle || rec.pick) : h("i", {}, "nothing selected"), h("span", { class: "mut" }, ` (${def.pick})`)),
       h("div", { class: "cnt" }, `${done} of ${subs.length} sections submitted · ${changed} field${changed === 1 ? "" : "s"} changed · ${missing} required field${missing === 1 ? "" : "s"} empty`),
-      h("div", { class: "cnt mut" }, saved ? `Saved as ${F.flowPath(rec.flowId)}. Each submit saves it again.` : "Not saved yet. The first submitted section saves the flow."),
+      h("div", { class: "cnt mut" }, (saved ? `Saved as ${F.flowPath(rec.flowId)}. Each submit saves it again.` : "Not saved yet. The first submitted section saves the flow.") + (ctx.host.store ? " Edits in between are kept on this computer." : "")),
       h("div", { class: "acts2" },
         saved ? h("button", { class: "sm", onclick: () => ctx.open(F.flowPath(rec.flowId)) }, "Open the record note") : null,
         h("button", { class: "sm", onclick: () => { for (const s of secs) open.add(s.key); redraw(); } }, "Expand all"),
         h("button", { class: "sm", onclick: () => { open.clear(); redraw(); } }, "Collapse all"),
         h("button", { class: "sm", onclick: () => { closeFlow(); ctx.done("Flow closed. Saved sections stay in the record; reopen it from the Flow menu.", null); } }, "Close flow")),
+      RESTORED ? h("div", { class: "cnt" }, `Restored unsaved edits from this computer (${RESTORED.slice(0, 16).replace("T", " ")}).`) : null,
+      ...others(rec),
       note ? h("div", { class: "err" }, note) : null,
       !rec.pick && def.id !== "NEW" ? h("div", { class: "err" }, `No note was selected when this flow started. It expects: ${def.pick}.`) : null);
     if (!open.size) { const first = subs.find((s) => F.sectionState(def, rec, s) !== "submitted"); open.add((first ?? secs[0]!).key); }
     return [head, ...secs.map((s, i) => section(def, rec, s, i, ix))];
   }
 
+  function others(rec: F.FlowRecord): Child[] {
+    const o = rec.pick && ctx.host.store ? ctx.host.store.openOn(rec.pick, rec.guid) : [];
+    if (!o.length) return [];
+    return [h("div", { class: "err" }, `Other open flows on this element: `, ...o.slice(0, 5).flatMap((x, i) => [i ? ", " : "",
+      h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); ctx.open(x.record_path); } }, `${x.flow_id} ${x.name} (${x.author})`)]), ". Changes may collide at merge.")];
+  }
+  /** Keep unsaved edits on this computer (debounced), so nothing typed between submits is lost. */
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  function touched(): void {
+    const st = ctx.host.store; if (!st || !CUR) return;
+    if (draftTimer) clearTimeout(draftTimer);
+    const rec = CUR.rec; draftTimer = setTimeout(() => { draftTimer = null; try { st.saveDraft(rec); } catch (e) { console.error(e); } }, 800);
+  }
   function section(def: F.FlowDef, rec: F.FlowRecord, s: F.FlowSection, i: number, ix: ModelIndex | null): HTMLElement {
     const st = F.sectionState(def, rec, s), can = F.submittable(s);
     const chip = !can ? null : st === "submitted" ? h("span", { class: "chip ok" }, "Submitted") : st === "stale" ? h("span", { class: "chip st" }, "Edited since submitted") : h("span", { class: "chip" }, "Not submitted");
@@ -142,9 +181,11 @@ export function flowView(ctx: FlowCtx): HTMLElement {
     else if (f.kind === "area") inp = h("textarea", { "aria-label": f.label, placeholder: f.ph ?? "" });
     else inp = h("input", { type: "text", "aria-label": f.label, placeholder: f.ph ?? "" });
     if (f.kind !== "select") (inp as HTMLInputElement).value = cur;
-    inp.addEventListener("input", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; });
-    inp.addEventListener("change", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; note = ""; redraw(); });
-    return h("div", { class: chg ? "chg" : "" }, lab, inp, chg ? h("div", { class: "was" }, `${def.wasLabel} ${base || "—"}`) : "", f.hint ? h("div", { class: "hint" }, f.hint) : "");
+    const was = h("div", { class: "was" }, `${def.wasLabel} ${base || "—"}`), box = h("div", { class: chg ? "chg" : "" }, lab, inp, chg ? was : "", f.hint ? h("div", { class: "hint" }, f.hint) : "");
+    const mark = (): void => { const c = base !== undefined && (rec.vals[f.id] ?? "") !== base; box.className = c ? "chg" : ""; if (c && !was.isConnected) inp.after(was); else if (!c) was.remove(); };
+    inp.addEventListener("input", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; touched(); if (f.kind !== "select") mark(); });
+    inp.addEventListener("change", () => { rec.vals[f.id] = (inp as HTMLInputElement).value; note = ""; touched(); if (f.kind === "select") redraw(); else mark(); });
+    return box;
   }
 
   function table(rec: F.FlowRecord, b: F.FlowBlock): HTMLElement {
@@ -157,15 +198,15 @@ export function flowView(ctx: FlowCtx): HTMLElement {
         let inp: HTMLElement;
         if (c.opts) inp = h("select", { "aria-label": c.label }, ...[...new Set([...(c.opts), r[c.k] ?? ""])].map((o) => h("option", { value: o, selected: o === (r[c.k] ?? "") || undefined }, o || "—")));
         else { inp = h("input", { type: "text", "aria-label": c.label }); (inp as HTMLInputElement).value = r[c.k] ?? ""; }
-        inp.addEventListener("input", () => { r[c.k] = (inp as HTMLInputElement).value; });
-        inp.addEventListener("change", () => { r[c.k] = (inp as HTMLInputElement).value; redraw(); });
+        inp.addEventListener("input", () => { r[c.k] = (inp as HTMLInputElement).value; touched(); });
+        inp.addEventListener("change", () => { r[c.k] = (inp as HTMLInputElement).value; touched(); if (c.opts) redraw(); });
         return h("td", {}, inp);
-      }), fixed ? null : h("td", {}, h("button", { class: "sm", title: "Remove this row", onclick: () => { rows.splice(ri, 1); redraw(); } }, "×"))));
+      }), fixed ? null : h("td", {}, h("button", { class: "sm", title: "Remove this row", onclick: () => { rows.splice(ri, 1); touched(); redraw(); } }, "×"))));
     });
     if (!rows.length) tb.append(h("tr", {}, h("td", { colspan: String(cols.length + 1), class: "hint" }, b.src && b.src !== "files" ? "Nothing found in the vault for the selected note. Add rows by hand if needed." : "No rows yet.")));
     t.append(tb);
     return h("div", { class: "grp" }, h("b", {}, b.title ?? ""), b.note ? h("div", { class: "cap" }, b.note) : "", h("div", { class: "tbl" }, t),
-      fixed ? null : h("button", { class: "sm", onclick: () => { rows.push(Object.fromEntries(cols.map((c) => [c.k, c.opts ? c.opts[0] ?? "" : ""]))); redraw(); } }, "Add row"));
+      fixed ? null : h("button", { class: "sm", onclick: () => { rows.push(Object.fromEntries(cols.map((c) => [c.k, c.opts ? c.opts[0] ?? "" : ""]))); touched(); redraw(); } }, "Add row"));
   }
 
   async function submit(key: string): Promise<void> {
@@ -178,7 +219,9 @@ export function flowView(ctx: FlowCtx): HTMLElement {
     busy = true; redraw();
     try {
       const res = await ctx.host.applyPlan(plan);
-      CUR = { def, rec: r.rec }; note = "";
+      CUR = { def, rec: r.rec }; note = ""; RESTORED = "";
+      if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+      ctx.host.store?.removeDraft(r.rec.guid);                                // the record now holds everything
       const flowId = r.rec.flowId;
       ctx.done(`${res.message} Section submitted.`, async () => {
         const m = await res.undo();

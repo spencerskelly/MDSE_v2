@@ -16,6 +16,7 @@ This repository holds the rules, schemas and every tool that builds and serves a
 | [`tools/base-vault/`](tools/base-vault/README.md) | Builds the released Obsidian vault and its release manifest | What users receive |
 | [`tools/bootstrap/`](tools/bootstrap/README.md) | Obsidian plugin: release check, plugin activation, author registration | Getting a person ready to work |
 | [`tools/workbench/`](tools/workbench/README.md) | Obsidian plugin: navigate and (Phase 3) edit the model | The engineer's interface |
+| [`tools/testbench/`](tools/testbench/README.md) | Obsidian plugin: test plans, step-by-step runs, evidence capture, test reports | The validation engineer's interface |
 | [`testing/`](testing/README.md) | Oracles, synthetic fixtures, real-data test log | Proof that the tools follow the rules |
 | [`docs/`](docs/) | Handover, history | Orientation |
 | [`scripts/`](scripts/) | Repository checks | Keeping governance consistent |
@@ -28,6 +29,7 @@ This repository holds the rules, schemas and every tool that builds and serves a
 | P2 | BOM import, merge and approval | BOM importer and partial update scan exist; real-data acceptance and full approval flow remain open. |
 | P3 | Workbench editing | Existing model editing and governed relationship actions are implemented, with synthetic tests; real Obsidian validation and release acceptance remain open. |
 | **Four-workflow Workbench** | Document / Define / Structure / Verify; Canvas discovery; independent note and canvas editor tabs | Source and paired build merged through PR #8. Staging/live runtime acceptance still open; see [toolset update and acceptance](docs/TOOLSET_UPDATE.md).
+| **Testbench and local databases** | Testbench plugin (Plan, Run, phone / inbox / file evidence, reports); SQLite per tool per user in `.mdse/` (D-0170) | Source, unit and fake-API browser tests; real Obsidian and company-network acceptance open. |
 | **PLM flows** | Flow drop-down beside the work areas; eleven flows with Submitted sections saved to `_ops/Flows` (D-0169) | Source, unit and fake-API browser tests on `main`; real Obsidian acceptance open. |
 
 Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).

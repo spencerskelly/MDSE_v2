@@ -42,7 +42,10 @@ window.__app = {
     getAllLoadedFiles: () => [{ path: '/', children: [] }, ...Object.keys(window.__dirs).map((p) => ({ path: p, children: [] })), ...Object.keys(window.__files).map((p) => ({ path: p }))],
     createFolder: async (p) => { window.__dirs[p] = 1; },
     create: async (p, t) => { if (p in window.__files || p in window.__notes) throw new Error('exists ' + p); if (p.endsWith('.md')) window.__notes[p] = t; else window.__files[p] = t; return fileOf(p); },
-    adapter: { read: async (p) => { if (p in window.__files) return window.__files[p]; throw new Error('missing ' + p); } },
+    adapter: { read: async (p) => { if (p in window.__files) return window.__files[p]; throw new Error('missing ' + p); },
+      exists: async (p) => p in (window.__bin ||= {}) || exists(p), mkdir: async (p) => { window.__dirs[p] = 1; },
+      readBinary: async (p) => { if (p in (window.__bin ||= {})) return window.__bin[p]; throw new Error('missing ' + p); },
+      writeBinary: async (p, b) => { (window.__bin ||= {})[p] = b; } },
     modify: async (f, t) => { window.__files[f.path] = t; },
     process: async (f, fn) => { const cur = read(f); const next = fn(cur); if (f.path in window.__notes) window.__notes[f.path] = next; else window.__files[f.path] = next; return next; },
     delete: async (f) => { delete window.__files[f.path]; delete window.__notes[f.path]; },
@@ -511,7 +514,6 @@ class WorkbenchPlugin(unittest.TestCase):
             sec = pg.locator(".mdfl details.fs").first
             sec.locator("select[aria-label='Reason type']").select_option("Issue or defect")
             sec.locator("textarea[aria-label='Reason statement']").fill("Synthetic test reason")
-            sec.locator("textarea[aria-label='Reason statement']").dispatch_event("change")
             before = set(pg.evaluate("Object.keys(window.__notes)"))
             pg.locator(".mdfl details.fs").first.locator(".subrow input[type=checkbox]").check()
             pg.wait_for_function("() => Object.keys(window.__notes).some(k => /^_ops\\/Flows\\/CHG-\\d{4}-0001\\.md$/.test(k))")
@@ -527,6 +529,13 @@ class WorkbenchPlugin(unittest.TestCase):
                 self.assertEqual(pg.evaluate("p => window.__notes[p]", k), v, "a flow never edits a model note")
             labels = pg.evaluate("() => [...document.querySelectorAll(\"nav.workareas select[aria-label='Flow'] option\")].map(o => o.textContent)")
             self.assertTrue(any(l.startswith("CHG-") and "Charger" in l for l in labels), labels)
+            # D-0170: the flow database is written to .mdse/workbench.db and indexes the record
+            pg.wait_for_function("() => window.__bin && window.__bin['.mdse/workbench.db'] && window.__plugin.flowDb && window.__plugin.flowDb.all('SELECT flow_id FROM flows').length === 1", timeout=15000)
+            self.assertEqual(pg.evaluate("window.__plugin.flowDb.all('SELECT flow, status, sections_submitted FROM flows')"), [{"flow": "CHG", "status": "open", "sections_submitted": 1}])
+            # an unsubmitted edit is kept as a draft on this computer
+            pg.locator(".mdfl details.fs").nth(1).locator("summary").click()
+            pg.locator(".mdfl textarea[aria-label='Problem statement']").fill("Draft text kept between submits")
+            pg.wait_for_function("() => window.__plugin.flowDb.all('SELECT json FROM drafts').some(r => r.json.includes('Draft text kept'))", timeout=5000)
             b.close()
         self.assertEqual(errors, [])
 

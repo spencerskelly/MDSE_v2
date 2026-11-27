@@ -119,6 +119,8 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
 .obsidian/cache
 # Per-user plugin settings and caches. Controlled settings live in plugin-lock.yaml, never in data.json.
 .obsidian/plugins/*/data.json
+# Each user's local MDSE databases (D-0170): rebuilt from the vault, never shared.
+.mdse/
 # Temporary Workbench views (one scratch canvas). Saved views in 99_System/23_Saved_Views ARE committed.
 99_System/22_Views/*
 !99_System/22_Views/README.md
