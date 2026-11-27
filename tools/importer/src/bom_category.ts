@@ -64,7 +64,8 @@ export function bomCategoryOf(description: string, rules: CategoryRule[] = DEFAU
 /** final: has child lines and no parent in the BOMs read; sub: has both; part: no child lines, used somewhere; unused: neither. */
 export const bomRoleOf = (hasChildren: boolean, hasParent: boolean): BomRole => (hasChildren ? (hasParent ? "sub" : "final") : hasParent ? "part" : "unused");
 /** BOM-061: `make` and `buy` as read from the source column (case and outer spaces ignored); anything else, or nothing, is `other`. */
-export const bomMakeBuyOf = (source: string): MakeBuy => { const t = source.trim().toLowerCase(); return t === "buy" || t === "make" ? t : "other"; };
+/** BOM-061 (D-0172): `make` and `buy` as read; a blank or `null` value gives none (no `makeBuy` is written); any other value is `other`. */
+export const bomMakeBuyOf = (source: string): MakeBuy | null => { const t = source.trim().toLowerCase(); return t === "buy" || t === "make" ? t : !t || t === "null" ? null : "other"; };
 /** BOM-042: final is product, sub is assembly, part and unused are part. */
 export const bomLevelOf = (role: BomRole): BomLevel => (role === "final" ? "product" : role === "sub" ? "assembly" : "part");
 const LEVEL_FOLDER: Record<BomLevel, string> = { product: "Product", assembly: "Assembly", part: "Part" };

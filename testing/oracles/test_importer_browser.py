@@ -244,9 +244,10 @@ class VaultUpdateBrowser(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+# D-0172: the children carry a lettered CL1, because CL1 -0 is not a revision and makes no note (BOM-073)
 BOM_TSV = "\n".join(["Parent Part Number\tParent CL1\tParent CL2\tParent Part Name\tParent Source\tParent State\tLinenumber\tChild Part Number\tChild CL1\tChild CL2\tChild Name\tChild Source\tChild State\tSSC\tReference Designator\tCild Notes\tFrom\tTO\tAmount\tUnit\tParentCL1CL2",
-    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t1\t01191\t-0\t99\tCONNECTOR HOUSING\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t2\tea\t01141-002-N99",
-    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t4\t01798-006-M\t-0\t01\tWIRE 22AWG\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t0.559\tM\t01141-002-N99"]) + "\n"
+    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t1\t01191\tA\t01\tCONNECTOR HOUSING\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t2\tea\t01141-002-N99",
+    "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t4\t01798-006-M\tA\t01\tWIRE 22AWG\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t0.559\tM\t01141-002-N99"]) + "\n"
 
 
 @unittest.skipIf(sync_playwright is None or not HTML.exists(), "playwright or built importer unavailable")
@@ -405,7 +406,7 @@ class BomUpdateBrowser(unittest.TestCase):
         errors = []
         with tempfile.TemporaryDirectory() as d, sync_playwright() as pw:
             v1 = pathlib.Path(d) / "bom1.tsv"; v1.write_text(BOM_TSV)
-            extra = "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t5\t09999\t-0\t99\tNEW GROMMET\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t1\tea\t01141-002-N99\n"
+            extra = "01141-002\t-N\t99\tCABLE ASSY\tbuy\tPRODUCTIONPREPARATION\t5\t09999\tA\t01\tNEW GROMMET\tbuy\tPRODUCTIONPREPARATION\t\t\t\t2/Jan/19\t\t1\tea\t01141-002-N99\n"
             v2 = pathlib.Path(d) / "bom2.tsv"; v2.write_text(BOM_TSV.replace("\t2\tea\t", "\t3\tea\t") + extra)
             b = pw.chromium.launch(executable_path="/opt/pw-browsers/chromium" if pathlib.Path("/opt/pw-browsers/chromium").is_file() else None)
             pg = b.new_page()

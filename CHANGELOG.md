@@ -4,6 +4,11 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.14.0 — BOM import data handling (D-0172) (2026-11-26)
+
+- **Importer and toolset 0.14.0:** BOM import data handling (D-0172): dates imported and the revision in effect pinned; document lines by name, suffix and ZST; struck text never current; standard values; make/buy only from a source value; revision marks listed for review; ECO numbers per part; prototypes as CL1 #; -0 not a revision; Z revisions checked
+- **Release status:** internal candidate; not deployed.
+
 ### Candidate toolset 0.13.4 — Speed and stability (2026-11-26)
 
 - **Workbench 0.12.4 / Testbench 0.1.4 / Importer and toolset 0.13.4:** Speed and stability: plain-note changes no longer rebuild the model index; flow and run records are parsed once and their databases rebuilt only when a record changes; prepared statements reused; Testbench no longer redraws (and drops typing) on every inbox poll, reads the inbox asynchronously, and the phone server drops stalled uploads.

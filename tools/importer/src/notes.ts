@@ -21,6 +21,8 @@ export interface NoteModel {
   description?: string;
   /** Further YAML properties written after the description, in order (BOM: manufacturer1, mfgPn1, manufacturer2 ...). */
   extraFields?: Array<[string, string]>;
+  /** D-0172: list-valued properties of plain text (not links), written after the extra fields, e.g. `bomEco: ["ECO-0001"]`. */
+  extraLists?: Array<[string, string[]]>;
   flags: string[];               // already rendered callouts
   sourceLines: string[];         // lines of `## Source: EA`
   sysml: string | null;
@@ -52,6 +54,7 @@ export function renderNote(n: NoteModel): string {
   if (n.partNumber) fm.push(`partNumber: ${JSON.stringify(n.partNumber)}`);
   if (n.description) fm.push(`description: ${yamlScalar(n.description)}`);
   for (const [k, v] of n.extraFields ?? []) fm.push(`${k}: ${yamlScalar(v)}`);
+  for (const [k, v] of n.extraLists ?? []) if (v.length) fm.push(`${k}: [${v.map((x) => JSON.stringify(x)).join(", ")}]`);
   if (n.sourceRole) fm.push(`sourceRole: ${n.sourceRole}`);
   if (n.primarySymbol) fm.push(`primarySymbol: ${yamlScalar(n.primarySymbol)}`);
   for (const [k, v] of n.relFields) if (v.length) fm.push(`${k}: [${v.map((x) => JSON.stringify(`[[${x}]]`)).join(", ")}]`);
