@@ -4,6 +4,10 @@ Notable changes to the toolchain and its governance. Newest first. Tool releases
 
 ## Unreleased
 
+### Candidate toolset 0.13.2 — flow guide wording (2026-11-26)
+
+- **Workbench 0.12.2 / Testbench 0.1.2:** guide placeholders read as plain text; required fields that only apply sometimes are marked in the section table (for example Material, mechanical only).
+
 ### Candidate toolset 0.13.1 — flow guides (2026-11-26)
 
 - **Workbench 0.12.1 / Testbench 0.1.1 / Importer and toolset 0.13.1:** a **?** button at the top right of an open flow opens that flow's guide, a Markdown note in `99_System/07_Guides/Flows/`, at the first section not yet submitted. Each guide covers the flow's purpose, where to start, when it is finished, how flows work, a table of sections, and for each section its goal, questions, fields (required, what to enter, options), tables and when it is done. Fields and tables are read from the flow definitions, so the guide matches the form; goals and questions are in `tools/workbench/src/flow_guide.ts`. The Base Vault ships all eleven guides (D-0171, WKB-079).

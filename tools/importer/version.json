@@ -1,6 +1,12 @@
 {
-  "version": "0.13.1",
+  "version": "0.13.2",
   "history": [
+    {
+      "version": "0.13.2",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "Flow guide wording: placeholders read as plain text, conditional required fields are marked (for example Material, mechanical only) (Workbench 0.12.2, Testbench 0.1.2)."
+    },
     {
       "version": "0.13.1",
       "date": "2026-11-26",
