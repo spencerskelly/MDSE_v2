@@ -12142,11 +12142,12 @@ function whatToEnter(f             )         {
   if (f.from) parts.push("Filled from the selected note; a change shows the old value.");
   if (f.kind === "select") { const o = (f.opts ?? []).filter(Boolean); parts.push(o.length && o.length <= 9 ? "Choose: " + o.join(", ") + "." : "Choose from the list."); if (f.optsFrom) parts.push("The list also offers the rows you enter in the table above."); }
   if (f.hint) parts.push(f.hint);
-  else if (f.ph && f.kind !== "select") parts.push(/^\[.*\]$/.test(f.ph) ? `For example ${f.ph.slice(1, -1)}.` : f.ph.replace(/\s*$/, "") + (/[.?!…]$/.test(f.ph) ? "" : "."));
+  else if (f.ph && f.kind !== "select") { const t = /^\[.*\]$/.test(f.ph) ? f.ph.slice(1, -1) : f.ph.trim(); parts.push(t.charAt(0).toUpperCase() + t.slice(1) + (/[.?!…]$/.test(t) ? "" : ".")); }
   if (f.v && f.kind !== "select" && !f.from) parts.push(`Starts as ${f.v}.`);
   return parts.join(" ") || "Free text.";
 }
 const G_SHOW                         = { mech: "Shown only when the element type is mechanical.", fw: "Shown only for electrical, circuit, firmware and software element types.", asm: "Shown only when the part type is Assembly.", copy: "Shown only when starting from an existing part." };
+const G_WHEN                         = { mech: "mechanical only", fw: "firmware fields only", asm: "assemblies only", copy: "when copying" };
 const G_SRC                         = { whereUsed: "Filled from the model: the parents that use the selected element.", children: "Filled from the model: the selected assembly's direct children.",
   requirements: "Filled from the model: the requirements linked to the selected element.", issues: "Filled from the vault: open Issue notes that link the selected element.",
   ecoFlows: "Filled from the flow records that name this ECO in Driving reason.", verifications: "Filled from the model: verification cases that verify the selected element.", files: "Listed by the flow; read only." };
@@ -12170,7 +12171,7 @@ function renderGuide(def           )         {
     "- **Other open flows:** if another open flow works on the same element, the flow lists it. Talk to its owner; the two may collide at merge.",
     "- **Close flow** leaves the record as saved. **?** opens this guide.", "");
   out.push("## Sections at a glance", "", "| # | Section | Who | Required before you can submit |", "| --- | --- | --- | --- |",
-    ...secs.map((s, i) => { const req = s.blocks.flatMap((b) => b.fields ?? []).filter((f) => f.req && f.kind !== "read").map((f) => f.label); return `| ${i + 1} | [[#${i + 1}. ${s.title}\\|${gEsc(s.title)}]] | ${gEsc(s.head.who ?? "")} | ${F.submittable(s) ? gEsc(req.join(", ") || "Nothing required") : "No Submitted box"} |`; }), "");
+    ...secs.map((s, i) => { const req = s.blocks.flatMap((b) => (b.fields ?? []).filter((f) => f.req && f.kind !== "read").map((f) => f.label + (b.show ? ` (${G_WHEN[b.show]})` : ""))); return `| ${i + 1} | [[#${i + 1}. ${s.title}\\|${gEsc(s.title)}]] | ${gEsc(s.head.who ?? "")} | ${F.submittable(s) ? gEsc(req.join(", ") || "Nothing required") : "No Submitted box"} |`; }), "");
   secs.forEach((s, i) => {
     const sg = sec(s.key);
     out.push(`## ${i + 1}. ${s.title}`, "");
@@ -12181,7 +12182,7 @@ function renderGuide(def           )         {
     if (sg?.ask.length) out.push("**Questions to answer**", "", ...sg.ask.map((q) => `- ${q}`), "");
     for (const b of s.blocks) {
       if (b.t === "group" && b.fields?.length) {
-        out.push(`**${b.label ?? "Fields"}**${b.crit ? " (critical)" : ""}${b.show ? " — " + G_SHOW[b.show] : ""}`, "");
+        out.push(`**${b.label ?? "Fields"}**${b.crit && !/critical/i.test(b.label ?? "") ? " (critical)" : ""}${b.show ? " — " + G_SHOW[b.show] : ""}`, "");
         if (b.caption) out.push(b.caption, "");
         out.push("| Field | Required | What to enter |", "| --- | --- | --- |", ...b.fields.map((f) => `| ${gEsc(f.label)} | ${f.req && f.kind !== "read" ? "Yes" : ""} | ${gEsc(whatToEnter(f))} |`), "");
       } else if (b.t === "table") {

@@ -1,7 +1,7 @@
 {
   "id": "mdse-testbench",
   "name": "MDSE Testbench",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.5.0",
   "description": "Plan and run verification: test plans, step-by-step runs, evidence from phone, capture inbox and files, test reports.",
   "author": "MDSE",
