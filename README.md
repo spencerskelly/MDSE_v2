@@ -36,10 +36,12 @@ Details and milestones: [governance/ROADMAP.md](governance/ROADMAP.md).
 
 ## Run the checks
 
-Requirements: Node 22 (`.nvmrc`), Python 3.12+ with `pip install -r testing/requirements.txt`, and Chromium for the browser smoke test (`python -m playwright install chromium`).
+Requirements: Node 22 (`.nvmrc`) and `npm ci` once (the pinned TypeScript compiler), Python 3.12+ with `pip install -r testing/requirements.txt`, and Chromium for the browser smoke test (`python -m playwright install chromium`).
 
 ```bash
 npm test                 # everything CI runs, except the parser gate (Java; CI runs it on every push to main)
+npm run check:types      # TypeScript type check of every tool (GOV-002)
+npm run bump -- patch "summary"   # raise the changed components' versions, history, changelog; rebuild
 npm run check:rules      # ruleset format and generated register
 npm run build            # rebuild Workbench, then importer (the importer bundles the generated Workbench)
 npm run check:workbench  # verify committed Workbench HTML and Obsidian plugin match source

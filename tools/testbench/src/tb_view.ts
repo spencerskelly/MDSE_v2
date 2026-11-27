@@ -11,6 +11,7 @@ import * as R from "./tb_run.ts";
 import * as D from "./tb_db.ts";
 import { summarizeCsv } from "./tb_csv.ts";
 import * as FU from "../../workbench/src/flows_ui.ts";
+import { authorName } from "../../workbench/src/flows.ts";
 
 export interface TbSettings { reportFolder: string; inboxFolder: string; keepOriginals: boolean; port: number; minutes: number; testedBy: string }
 export interface InboxFile { name: string; path: string; size: number; mtime: number }
@@ -138,7 +139,8 @@ export function mountTestbench(root: HTMLElement, host: TbHost): { refresh(): vo
     const author = host.author(); if (!author) { say("Register your author code first: a run is signed with it."); return; }
     const runs = R.listRuns(host.files()).map((x) => x.run), db = host.db();
     const inDb = db ? D.draftRuns(db).map((d) => ({ runId: d.run_id })) : [];
-    const run = R.startRun(host.ix(), c.path, author, new Date(), [...runs, ...inDb as R.RunRecord[]], host.settings().reportFolder, host.settings().testedBy);
+    const testedBy = host.settings().testedBy || authorName(host.files(), author);
+    const run = R.startRun(host.ix(), c.path, author, new Date(), [...runs, ...inDb as R.RunRecord[]], host.settings().reportFolder, testedBy);
     setRun(run); touched();
   }
   function setRun(run: R.RunRecord): void { S.run = run; S.mode = "run"; S.step = 1; S.inboxSince = Date.now() - 10 * 60_000; S.ignored.clear(); void closePair(); draw(); pollInbox(); }

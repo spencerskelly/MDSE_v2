@@ -2,6 +2,7 @@
  * the vault's notes, the model index, this computer's database (.mdse/testbench.db), file writes with compare-before-write
  * and Undo, the capture inbox (a folder in or outside the vault) and the phone capture server. Desktop only. */
 declare const require: (id: string) => any;
+declare const module: { exports: unknown };
 declare const TB: any;
 declare const CLASSES: any;
 declare const initSqlJs: (o: { wasmBinary: Uint8Array }) => Promise<any>;

@@ -540,7 +540,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       const sel = h("select", { "aria-label": `Category for ${g.key}` }, h("option", { value: "" }, "— category —"), ...cats.map((c) => h("option", { value: c, selected: (kwPick.get(g.key) ?? "") === c }, c)), h("option", { value: "\u0000new" }, "New category…")) as HTMLSelectElement;
       sel.addEventListener("change", () => { let c = sel.value; if (c === "\u0000new") { c = (typeof prompt === "function" ? prompt(`New category for ${g.key}`) ?? "" : "").trim(); } if (c) kwPick.set(g.key, c); else kwPick.delete(g.key); kwOpen = c ? g.key : ""; draw(); });
       const word = g.key.split(" ")[0]!, why = g.evidence.slice(0, 2).map((e) => `${e.category} ${e.count}`).join(", ");
-      const tr = [h("tr", {}, h("td", {}, h("b", {}, g.key)), h("td", {}, String(g.parts.length)), h("td", {}, g.examples.map((e) => { const p = ix!.byName.get(e.toLowerCase()); return p ? link(p) : e; }).flatMap((x, i) => i ? [", ", x] : [x])), h("td", { class: "mut" }, why || "—"), h("td", {}, sel))];
+      const tr = [h("tr", {}, h("td", {}, h("b", {}, g.key)), h("td", {}, String(g.parts.length)), h("td", {}, ...g.examples.map((e) => { const p = ix!.byName.get(e.toLowerCase()); return p ? link(p) : e; }).flatMap((x, i) => i ? [", ", x] : [x])), h("td", { class: "mut" }, why || "—"), h("td", {}, sel))];
       const c = kwPick.get(g.key);
       if (c && kwOpen === g.key) {
         const pv = previewWord(ix!, rules, word, c);
@@ -721,7 +721,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
     const types = new Map<string, number>(); for (const n of ix!.notes.values()) types.set(n.type, (types.get(n.type) ?? 0) + 1);
     const kinds = V.edgeKinds(ix!), flip = (l: string[], v: string, on: boolean): string[] => (on ? l.filter((x) => x !== v) : l.includes(v) ? l : [...l, v]);
     return h("details", { class: "vsbox" }, h("summary", {}, "Canvas settings"),
-      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: sp.depth, style: "width:48px", onchange: (e: Event) => set({ depth: Math.max(1, +(e.target as HTMLInputElement).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e: Event) => set({ cap: Math.max(5, +(e.target as HTMLInputElement).value || prof.cap) }) })),
+      h("div", { class: "chips" }, h("label", {}, "connections away ", h("input", { type: "number", min: 1, value: sp.depth, style: "width:48px", onchange: (e: Event) => set({ depth: Math.max(1, +(e.target as HTMLInputElement).value || prof.depth) }) })), h("label", {}, "max notes ", h("input", { type: "number", min: 5, max: 500, value: sp.cap, style: "width:56px", onchange: (e: Event) => set({ cap: Math.max(5, +(e.target as HTMLInputElement).value || (prof.cap ?? 5)) }) })),
         h("button", { class: "sm", onclick: () => { spec = {}; draw(); } }, "Reset")),
       h("div", { class: "mut" }, "Note types shown"), h("div", { class: "chips" }, ...[...types].sort().map(([k, n]) => chip(`${k} ${n}`, !sp.hideTypes.includes(k), (on) => { spec = { ...spec, hideTypes: flip(sp.hideTypes, k, on) }; }))),
       h("div", { class: "mut" }, `Relationships followed (none ticked = the ${prof.name} profile's own)`), h("div", { class: "chips" }, ...kinds.map(([k, n]) => chip(`${k} ${n}`, sp.kinds.includes(k), (on) => { spec = { ...spec, kinds: on ? [...sp.kinds, k] : sp.kinds.filter((x) => x !== k) }; }))),
@@ -1013,7 +1013,7 @@ export function mountPanel(root: HTMLElement, host: PanelHost, opt: { mode: "pan
       const same = paths.length === canvasSel.length && paths.every((p, i) => p === canvasSel[i]); canvasSel = paths; if (same) return;
       if (paths.length === 1) { if (lens === "common") lens = "note"; sel = followSelection(ix, sel, paths[0]!, pinned, false); }
       else if (paths.length >= 2) lens = "common";
-      editEl = lens === "edit" ? editEl : null; draw();
+      editEl = null; draw();                                                               // not editing here (returned above)
     },
     setLens(l) { lens = l; if (l === "edit") pinned = true; editEl = null; draw(); },
     setWorkflow(area, nextLens, selected) {

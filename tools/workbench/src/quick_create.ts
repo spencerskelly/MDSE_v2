@@ -59,7 +59,7 @@ export interface ContextLinkChoice { rel: string; label: string; from: string; t
 export function contextLinkChoices(ix: ModelIndex, files: Map<string, string>, origin: string, created: string): ContextLinkChoice[] {
   if (!origin || !created || origin === created || !ix.notes.has(origin) || !ix.notes.has(created)) return [];
   const out: ContextLinkChoice[] = [];
-  for (const [from, to] of [[origin, created], [created, origin]]) {
+  for (const [from, to] of [[origin, created], [created, origin]] as Array<[string, string]>) {
     for (const choice of cdChoices(ix, files, from, to)) {
       if (!choice.ok) continue;
       out.push({ rel: choice.rel.id, label: choice.rel.label, from, to,

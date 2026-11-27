@@ -16,10 +16,10 @@ export function edgeRefOfId(id: string): EdgeRef | null {
   if (i < 0) return null;
   try { const r = JSON.parse(decodeURIComponent(id.slice(i + EDGE_REF_SEP.length))); return r && typeof r.owner === "string" && typeof r.key === "string" && typeof r.kind === "string" ? r as EdgeRef : null; } catch { return null; }
 }
-export interface CanvasNode { id: string; type: "file" | "text" | "group"; x: number; y: number; width: number; height: number; color?: string; file?: string; text?: string; label?: string }
+export interface CanvasNode { id: string; type: "file" | "text" | "group"; x: number; y: number; width: number; height: number; color?: string | undefined; file?: string | undefined; text?: string | undefined; label?: string | undefined }
 export interface CanvasEdge { id: string; fromNode: string; toNode: string; fromSide: "left" | "right" | "top" | "bottom"; toSide: "left" | "right" | "top" | "bottom"; toEnd: "arrow" | "none"; label?: string; color?: string }
 export interface CanvasDoc { nodes: CanvasNode[]; edges: CanvasEdge[] }
-export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number; /** the folder a Save offers first: the folder of the note the canvas is about (D-0097) */ saveFolder?: string; /** ports drawn only because the definition has none (D-0097) */ placeholders?: number }
+export interface CanvasResult { doc: CanvasDoc; notes: number; unresolved: number; capped: boolean; fileName: string; groups: number; hidden: number; /** the folder a Save offers first: the folder of the note the canvas is about (D-0097) */ saveFolder?: string | undefined; /** ports drawn only because the definition has none (D-0097) */ placeholders?: number }
 
 /** Temporary views: one scratch file, overwritten by every preview and deleted when the plugin loads or unloads. Git-ignored. */
 export const PREVIEW_DIR = "99_System/22_Views";

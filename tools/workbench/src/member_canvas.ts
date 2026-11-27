@@ -60,6 +60,6 @@ export function memberConnectionCanvas(ix: ModelIndex, owner: string, key: strin
     edges.push(edge);
   }
   const title = [n.title, member.name].join(" - ").replace(/[\\/:*?"<>|#^\[\]]/g, " ").slice(0, 90);
-  return { doc: { nodes, edges }, notes: 1, unresolved, capped, groups: 0,
+  return { doc: { nodes, edges }, notes: 1, unresolved, capped, groups: 0, hidden: 0,
     fileName: `Member Connections - ${title}.canvas`, saveFolder: n.folder };
 }

@@ -55,7 +55,7 @@ export function vendoredPayloads(root: string): PluginPayload[] {
     for (const n of ["main.js", "manifest.json", "styles.css"]) { try { files[n] = readFileSync(join(d, n), "utf8"); } catch { throw new Error(`Missing vendored plugin file ${d}/${n}`); } }
     const m = JSON.parse(files["manifest.json"]!), g = GOVERNED[id]!;
     if (m.id !== id) throw new Error(`${d}/manifest.json has id ${m.id}, expected ${id}`);
-    return { id, version: m.version, files, source: g.source, license: g.license, settings: g.settings };
+    return { id, version: m.version, files, source: g.source, license: g.license, ...(g.settings ? { settings: g.settings } : {}) };
   });
 }
 /** Every plugin the base vault ships, in activation order: Bootstrap first. */

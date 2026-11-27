@@ -208,7 +208,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
         if (!pickSel.size) { canvasMsg = "Tick at least one note first."; draw(); return; }
         place.setAttribute("disabled", ""); place.textContent = "Creating…";
         const ask = async (count: number): Promise<number | null> => { for (let t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count))); t !== null; t = prompt(canvasLimitMessage(count), String(canvasLimitDefault(count)))) { const n = parseCanvasLimit(t); if (n !== null) return n; } return null; };   // D-0161
-        buildWithLimit(() => pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText, group: pickGroup }), ask).then((r) => r ? host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only part of the ${pickSel.size} ticked notes were placed (the limit you chose).` : m; hasPreview = true; }) : (canvasMsg = "Canvas cancelled."), (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
+        buildWithLimit(() => pickCanvas(ix!, [...pickSel], { relations: pickRel, label: pickText, group: pickGroup }), ask).then((r) => r ? host.makeCanvas!(r).then((m) => { canvasMsg = r.capped ? `${m} Only part of the ${pickSel.size} ticked notes were placed (the limit you chose).` : m; hasPreview = true; }) : void (canvasMsg = "Canvas cancelled."), (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw());
       });
       bar.append(place);
       if (hasPreview && host.saveCanvas) { const save = h("button", { title: "Copy the preview canvas into a folder of your choice" }, "Save canvas…"); save.addEventListener("click", () => { host.saveCanvas!().then((m) => { canvasMsg = m; }, (e) => { canvasMsg = "Canvas failed: " + String((e as Error)?.message ?? e); }).finally(() => draw()); }); bar.append(save); }
@@ -425,7 +425,7 @@ export function mountWorkbench(root: HTMLElement, host: Host = {}): App {
     const n = note(sel)!, pane = h("div", { class: "pane" }, h("h2", {}, "Internal structure of " + n.title), h("div", { class: "mut" }, "Parts and the ports they offer, this definition's own boundary ports, and how they are wired. A wire to a part or port that does not exist is marked (not found)."), secBar());
     pane.append(...dataSections(V.lensTables(ix!, "internal", sel, {})));
     const r = V.interfaces(ix!, sel);
-    const typeCell = (path: string | null, type: string): HTMLElement | string => (path ? lnk(path) : h("span", { class: "gap" }, type || "untyped"));
+    const typeCell = (path: string | null, type: string): Node | string => (path ? lnk(path) : h("span", { class: "gap" }, type || "untyped"));
     const rich: HTMLElement[] = [];
     if (r.ports.some((p) => p.features.length)) rich.push(section("pfeat", "Directed features of each port", [tableOf([["n", "Port"], ["t", "Type"], ["f", "Seen from this port"]], r.ports.filter((p) => p.features.length).map((p) => [(p.ref ? "ref " : "") + p.name, typeCell(p.path, p.type), p.features.map((f) => `${f.dir ? f.dir + " " : ""}${f.name}`).join(", ")]))], { count: r.ports.filter((p) => p.features.length).length, open: false }));
     if (r.features.length) rich.push(section("features", "Features of this definition", [tableOf([["d", "Direction"], ["k", "Kind"], ["n", "Name"], ["t", "Type"], ["m", "Quantity"]], r.features.map((f) => [f.dir, f.kind, f.name, typeCell(f.path, f.type), f.mult]))], { count: r.features.length }));

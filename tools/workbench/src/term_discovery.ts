@@ -100,7 +100,7 @@ export function searchTermCatalog(c: TermCatalog, query: string, perType = 25, t
     if (typeFilter && n.type !== typeFilter) continue;
     totals.set(n.type, (totals.get(n.type) ?? 0) + 1);
     if (!cap) continue;
-    const score = masks.reduce((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m! & BIT[f]).map((f) => WEIGHT[f])), 0);
+    const score = masks.reduce<number>((sum, m) => sum + Math.max(...TERM_FIELDS.filter((f) => m! & BIT[f]).map((f) => WEIGHT[f])), 0);
     const hits = ranked.get(n.type) ?? [];
     const hit = { path, score, fields: TERM_FIELDS.filter((field) => masks.some((m) => m! & BIT[field])) };
     // Bound the retained candidates per type: broad legacy searches must not

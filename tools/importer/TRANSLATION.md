@@ -151,7 +151,6 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `UNHANDLED_DISPOSITION` | Mapping disposition the importer has no code for. | Importer bug or new disposition; fix run.ts. |
 | `FORK_JOIN_CONTROL_FLOW_EVIDENCE` | Fork/join nodes are not translated. | Needs the flow evidence named in the mapping. |
 | `LEGAL_TRANSITION_CONTEXT` | Trigger nodes are not translated. | Needs a legal transition context. |
-| `CONDITIONAL_REVIEW` | The family is conditional and its evidence is not named. | Review the EA link. |
 | `DIRECTION_EVIDENCE_MISSING` | Flow item has no usable `direction` tag (in, out, inout). | Set the direction in EA or in the note. |
 | `FLOW_OWNER_NOT_PORT_DEF` | Flow item is not inside a port definition. | Move it under the port definition in EA. |
 | `UNRESOLVED_FLOW_TYPE` | Flow item has no Signal/item definition to type it. | Set the EA Classifier. Item is written untyped. |
@@ -172,6 +171,7 @@ Statements marked `UNVERIFIED_SYNTAX` in the ledger (satisfy, verify, allocate, 
 | `ACTIVITY_PARTITION_REVIEW` | A swimlane groups actions; grouping is not ownership. | Decide whether the lane means a performer or only a layout. |
 | `ACTION_PIN_REVIEW` | Action pins and activity parameters have no approved rule. | Decide how pins are modelled. |
 | `ASIL_DECOMPOSE_REVIEW` | ASIL decomposition has no approved rule. | Decide the construct. |
+| `CONDITIONAL_REVIEW` | The family is conditional and its evidence is not named. | Review the EA link. |
 | `BINDING_ENDPOINT_NOT_PORT` | A binding connector end is not a port usage. | Review the EA link. |
 | `BINDING_FEATURES_NOT_COMPATIBLE` | The two ports are not the same type, so they are not provably equal. | Review; bind them by hand if they are equal. |
 | `FLOW_ENDPOINT_NOT_PORT` | An information flow end is not a port usage. | Review the EA link. |

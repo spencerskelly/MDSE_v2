@@ -62,7 +62,7 @@ export function edElementKinds(classes: EdClasses): Array<{ type: string; subtyp
 }
 
 const yamlName = (t: string): string => (/^[A-Za-z0-9][A-Za-z0-9 ._()\/-]*$/.test(t) && !/^(true|false|null|yes|no|on|off)$/i.test(t) && !/^[\d.]+$/.test(t) ? t : JSON.stringify(t));
-export interface AddElement { type: string; subtype: string; title: string; folder: string; /** requirement wording or a short description */ text?: string; author: string; now?: Date }
+export interface AddElement { type: string; subtype: string; title: string; folder: string; /** requirement wording or a short description */ text?: string; author: string; now?: Date | undefined }
 export function planAddElement(ix: ModelIndex, classes: EdClasses, o: AddElement): EditPlan {
   const cls = classes[o.type];
   if (!cls) return bad(`Unknown class "${o.type}".`);

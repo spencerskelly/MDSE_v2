@@ -8,11 +8,14 @@
  * - The only edits to model notes are the two Review actions, each a click by the person, each undoable: set an Issue's
  *   `status`, or resolve (remove) one flag in the user zone (D-0025). */
 declare const require: (id: string) => any;
+declare const module: { exports: unknown };
 declare const CLASSES: any;
 declare const initSqlJs: (o: { wasmBinary: Uint8Array }) => Promise<any>;
 declare const SQLJS_WASM_B64: string;
 declare const MDSE: any;
 declare const WB: {
+  /** the rest of the generated API (build.mjs `api`), untyped here */
+  [name: string]: any;
   mountPanel: (root: HTMLElement, host: unknown, opt: { mode: "panel" | "main"; lens?: string; area?: string; selected?: string; fixedContext?: boolean }) => any;
   WORKFLOW_ENTRY_LENS: Record<"document" | "define" | "structure" | "verify", string>;
   quickTemplate: (id: string) => { id: string; label: string; area: string; kind: "plain" | "governed"; type?: string; subtype?: string } | undefined;
@@ -983,9 +986,9 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const file = this.app.vault.getAbstractFileByPath(target.path);
     if (!file) return { canvas: null, included: [] };
     const doc = parseDoc(await this.app.vault.read(file));
-    return { canvas: target.path, included: [...new Set(doc.nodes
+    return { canvas: target.path, included: [...new Set<string>(doc.nodes
       .filter((n: any) => n.type !== "group" && !String(n.id).startsWith("mdse-discovery:"))
-      .map((n: any) => WB.cardNotePath(n)).filter((p: any) => typeof p === "string" && this.ix?.notes.has(p)))] };
+      .map((n: any) => WB.cardNotePath(n)).filter((p: any): p is string => typeof p === "string" && this.ix?.notes.has(p)))] };
   }
   /** Apply one list's checked/unchecked membership atomically to the open Canvas.
    * Only cards from that list are eligible for removal; no SysML note or relationship is edited. */
@@ -1059,7 +1062,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     await this.editTarget(t, (text) => {
       const original = parseDoc(text);
       const r = action === "keep" ? WB.keepDiscoveryCandidates(original, this.ix, paths) : WB.dismissDiscoveryCandidates(original, paths);
-      changed = action === "keep" ? r.kept : r.dismissed;
+      changed = "kept" in r ? r.kept : r.dismissed;
       if (!changed) return null;
       return JSON.stringify({ ...original, nodes: r.doc.nodes, edges: r.doc.edges }, null, 2);
     });
@@ -1091,7 +1094,7 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const done: Array<{ path: string; before: string | null; after: string }> = [];
     const table = this.files.get(WB.CATEGORY_RULES_PATH) ?? null;
     let next: string;
-    if (table === null) { const r = WB.DEFAULT_CATEGORY_RULES.map((x) => ({ ...x, words: [...x.words] })); const t = r.find((x) => x.category === cat); if (t) { if (!t.words.includes(w)) t.words.push(w); } else r.push({ category: cat, words: [w] }); next = WB.renderCategoryRules(r); }
+    if (table === null) { const r = WB.DEFAULT_CATEGORY_RULES.map((x: { category: string; words: string[] }) => ({ ...x, words: [...x.words] })); const t = r.find((x: { category: string }) => x.category === cat); if (t) { if (!t.words.includes(w)) t.words.push(w); } else r.push({ category: cat, words: [w] }); next = WB.renderCategoryRules(r); }
     else {
       const lines = table.split("\n"), at = lines.findIndex((l) => { const m = /^- (.+?): (.*)$/.exec(l); return !!m && m[1]!.trim() === cat; });
       if (at >= 0) { if (!lines[at]!.split(/\s+/).includes(w)) lines[at] = lines[at]!.replace(/\s*$/, "") + " " + w; }

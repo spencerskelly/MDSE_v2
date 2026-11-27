@@ -50,11 +50,11 @@ const SNAME = "[A-Za-z_]\\w*", SPATH = "[A-Za-z_][\\w:.]*";
 const USAGE = new RegExp(`^(?:(end)\\s+)?(?:(in|out|inout)\\s+)?(?:(ref)\\s+)?(part|port|action|state|item|attribute|requirement|verification|fork|join)\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)((?:\\s+(?:ordered|nonunique))*)$`);
 /** `end supplier : P;` with no kind keyword, as an interface or connection definition writes its ends. */
 const END_USAGE = new RegExp(`^end\\s+(${SNAME})((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)\\s*(\\[[^\\]]*\\])?((?:\\s*(?:::>>|:>>|:>|::>|:)\\s*~?${SPATH}(?:\\s*,\\s*${SPATH})*)*)$`);
-function relationsOf(txt: string): { type?: string; conj?: boolean; subsets?: string[]; redefines?: string[] } {
+function relationsOf(txt: string): { type?: string | undefined; conj?: boolean; subsets?: string[]; redefines?: string[] } {
   const out: { type?: string; conj?: boolean; subsets?: string[]; redefines?: string[] } = {};
   for (const m of txt.matchAll(new RegExp(`(::>>|:>>|:>|::>|:)\\s*(~?)(${SPATH}(?:\\s*,\\s*${SPATH})*)`, "g"))) {
     const names = m[3]!.split(",").map((x) => x.trim());
-    if (m[1] === ":") { out.type = names[0]; if (m[2]) out.conj = true; }
+    if (m[1] === ":") { out.type = names[0]!; if (m[2]) out.conj = true; }
     else if (m[1] === ":>") out.subsets = [...(out.subsets ?? []), ...names];
     else if (m[1] === ":>>") out.redefines = [...(out.redefines ?? []), ...names];
   }
