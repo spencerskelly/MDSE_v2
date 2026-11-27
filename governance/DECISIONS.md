@@ -1971,3 +1971,13 @@ Rules: +WKB-076 +WKB-077.
 6. **Not decided.** Git LFS for evidence files (photos make the vault repository grow); shipping Testbench in the base vault and the plugin lock (it is a separate plugin for now); the team register merge; how far Testbench should write governed Result notes in the model.
 
 Rules: +WKB-078 +TBN-001 +TBN-002 +TBN-003 +TBN-004 +TBN-005 +TST-010.
+
+## D-0171 — A guide for every flow, opened from a ? button on the open flow
+
+2026-11-26 · Spencer · Accepted (owner, chat 2026-11-26: "an instructions file that describes what the user does to proceed through each flow ... accessed via a question mark icon at the top right of the panel when a flow is open ... a markdown file that walks through the fields, questions, and goals of each section of each flow ... a new user [can] open a flow and know how to get to completion")
+
+1. **One guide note per flow** in `99_System/07_Guides/Flows/<flow name> flow guide.md`: what the flow is for, which note to start it on, when it is finished, how every flow works (sections, required fields, Submitted, saving, drafts), a table of sections with who does each and what must be filled before it can be submitted, then each section in order with its goal, the questions to answer, every field (required or not, what to enter, options, whether it is filled from the note), every table (filled from the model or by hand, columns) and when it is done.
+2. **Generated, so it matches the form.** Goals and questions are written in `tools/workbench/src/flow_guide.ts`; fields, required marks, options and tables are read from the flow definitions. A test fails when a section has no guide or a guide names a section the form does not have.
+3. **Opening.** A ? button at the top right of an open flow (Workbench and Testbench) writes the guide if it is missing or is an out-of-date generated copy, and opens it in its own tab at the first section not yet submitted. A guide whose `generatedBy` line was removed is the team's own copy and is never overwritten. New vaults receive all guides from the Base Vault.
+
+Rules: +WKB-079.

@@ -13,7 +13,7 @@ const CORE = strip(rd("../core/src/mdse_core.js"));
 const CLASSES = JSON.stringify(JSON.parse(rd("../core/src/classes.json")));
 // paths relative to tools/testbench; order matters only for top-level code
 const ORDER = ["../importer/src/sha256", "../core/src/mdse_db", "../workbench/src/sysml_lang", "../workbench/src/sysml_scan", "../workbench/src/index", "../workbench/src/views", "../workbench/src/edit",
-  "../workbench/src/flow_defs", "../workbench/src/flows", "src/dom", "../workbench/src/flows_ui", "src/tb_csv", "src/tb_run", "src/tb_db", "src/tb_pair", "src/tb_view"];
+  "../workbench/src/flow_defs", "../workbench/src/flows", "src/dom", "../workbench/src/flows_ui", "../workbench/src/flow_guide", "src/tb_csv", "src/tb_run", "src/tb_db", "src/tb_pair", "src/tb_view"];
 const base = (p) => p.slice(p.lastIndexOf("/") + 1);
 const exportsOf = (code) => [...code.matchAll(/^export (?:async )?(?:function|const|class|interface|type)\s+(\w+)/gm)].map((m) => m[1]);
 const names = new Map(), parts = [], declared = new Set();
@@ -29,7 +29,7 @@ for (const n of ORDER) {
     .replace(/^export (?=(async |function|const|class|interface|type))/gm, "");
   parts.push(`/* ${n}.ts */\n` + stripTypeScriptTypes(code, { mode: "strip" }));
 }
-const api = "{ mountTestbench, buildIndexAsync, openTestbenchDb, indexRuns, saveRunDraft, base64Bytes, TB_DB_PATH, edAuthor, openPairSession, listRuns, parseReport, flowDefs, Sha256 }";
+const api = "{ mountTestbench, buildIndexAsync, openTestbenchDb, indexRuns, saveRunDraft, base64Bytes, TB_DB_PATH, edAuthor, openPairSession, listRuns, parseReport, flowDefs, Sha256, renderGuide, guidePath, guideNeedsWrite }";
 const tb = `const TB = (() => {\n${parts.join("\n")}\nreturn ${api};\n})();`;
 const SQLJS = "/* sql.js 1.17.0, MIT, vendored unmodified from tools/core/vendor/sqljs (D-0170) */\nconst initSqlJs = (() => { var module = { exports: {} }; var exports = module.exports;\n"
   + rd("../core/vendor/sqljs/sql-wasm.js") + "\n;return module.exports; })();\nconst SQLJS_WASM_B64 = \"" + fs.readFileSync(path.join(here, "../core/vendor/sqljs/sql-wasm.wasm")).toString("base64") + "\";\n";

@@ -475,6 +475,7 @@ function hostFor(plugin: any): any {
       folders: () => [...new Set<string>([...(plugin.ix?.notes?.values?.() ?? [])].map((n: any) => n.folder as string))].sort(),
       applyPlan: (plan: any) => plugin.applyPlan(plan),
       get store() { return plugin.flowStore(); },
+      openGuide: (def: any, heading?: string) => plugin.openFlowGuide(def, heading),
     },
   };
 }
@@ -619,6 +620,16 @@ module.exports = class MdseWorkbench extends obsidian.Plugin {
     const a = this.app.vault.adapter, p = WB.WB_DB_PATH, dir = p.slice(0, p.lastIndexOf("/"));
     if (!(await a.exists(dir))) await a.mkdir(dir);
     const b = db.export(); await a.writeBinary(p, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  }
+  /** D-0171: write the flow's guide note if it is missing or an out-of-date generated copy, then open it in its own tab. */
+  async openFlowGuide(def: any, heading?: string) {
+    const path = WB.guidePath(def), wanted = WB.renderGuide(def), f = this.app.vault.getAbstractFileByPath(path);
+    const cur = f ? await this.app.vault.read(f) : undefined;
+    if (WB.guideNeedsWrite(cur, wanted)) {
+      if (f) await this.app.vault.modify(f, wanted);
+      else { await ensureFolder(this.app, path.slice(0, path.lastIndexOf("/"))); await this.app.vault.create(path, wanted); }
+    }
+    await this.app.workspace.openLinkText(path + (heading ? "#" + heading : ""), "", "tab");
   }
   flowStore() {
     const plugin = this, db = () => plugin.flowDb;

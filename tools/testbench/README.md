@@ -16,6 +16,7 @@ Build (`npm run build:testbench`), then copy `tools/testbench/dist/plugin/` (thr
   - **Setup:** unit serial, hardware rev, firmware version, date, tester, test plan flow ID, setup description, equipment with calibration due dates, setup photos.
   - **Step:** the action and expected result from the case, Measured and Unit, large Pass / Fail / N/A buttons, a note, and the evidence box.
   - **Evidence:** **📱 Phone** shows a QR code; scan it with the phone camera and tap **Take photo**. Photos are shrunk on the phone and appear under the step within seconds. **📥 Inbox** lists new files in the capture inbox (set in Settings → Testbench to the folder the scope or DAQ saves to) with **Attach to step n**. **＋ File**, drag and drop, or paste a screenshot.
+  - **New test plan** opens the Test plan flow; its **?** button opens the Test plan guide.
   - **Conclusion:** overall result, deviations, issue flow ID, reviewer. Submit lists anything still missing.
 - **Settings:** report folder (default `Test Reports`), capture inbox, tested-by default, keep original photos, phone capture port (0 = any free port) and time limit.
 

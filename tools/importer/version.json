@@ -1,6 +1,12 @@
 {
-  "version": "0.13.0",
+  "version": "0.13.1",
   "history": [
+    {
+      "version": "0.13.1",
+      "date": "2026-11-26",
+      "status": "candidate",
+      "summary": "Flow guides: one Markdown guide per flow in 99_System/07_Guides/Flows, generated from the flow definitions and opened from the ? button on an open flow (Workbench 0.12.1, Testbench 0.1.1, D-0171)."
+    },
     {
       "version": "0.13.0",
       "date": "2026-11-26",

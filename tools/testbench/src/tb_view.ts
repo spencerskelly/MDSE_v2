@@ -32,6 +32,8 @@ export interface TbHost {
   resourceUrl?(path: string): string;
   /** the model note last opened in Obsidian, for starting a test plan from it */
   selected(): string;
+  /** open a flow's guide note (D-0171) */
+  openGuide?(def: import("../../workbench/src/flows.ts").FlowDef, heading?: string): Promise<void>;
 }
 
 export const TB_STYLE = `
@@ -131,7 +133,7 @@ export function mountTestbench(root: HTMLElement, host: TbHost): { refresh(): vo
     }
     return out;
   }
-  function flowHost(): FU.FlowHost { return { files: () => host.files(), author: () => host.author(), applyPlan: (p) => host.applyPlan(p) }; }
+  function flowHost(): FU.FlowHost { const fh: FU.FlowHost = { files: () => host.files(), author: () => host.author(), applyPlan: (p) => host.applyPlan(p) }; if (host.openGuide) fh.openGuide = host.openGuide; return fh; }
   function startRun(c: Note): void {
     const author = host.author(); if (!author) { say("Register your author code first: a run is signed with it."); return; }
     const runs = R.listRuns(host.files()).map((x) => x.run), db = host.db();

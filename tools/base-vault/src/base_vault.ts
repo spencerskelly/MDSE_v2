@@ -8,6 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { CATEGORY_RULES_PATH, renderCategoryRules } from "../../importer/src/bom_category.ts";
 import { QUICK_TEMPLATES } from "../../workbench/src/quick_create.ts";
+import { allGuides } from "../../workbench/src/flow_guide.ts";
 
 const TEXT = /\.(md|yaml|yml|json|txt)$/i;
 const JUNK = /(^|\/)(\.DS_Store|Thumbs\.db)$/;
@@ -106,6 +107,7 @@ export function buildBaseVault(o: BaseVaultOptions): Record<string, string> {
     put(`99_System/05_Templates/Template - ${t.label}.md`,
       "# <% tp.file.title %>\n\n" + (t.sections ?? []).map((x) => "## " + x + "\n\n").join(""));
   const ecoOrder = (JSON.parse(readFileSync(join(o.root, "governance/schemas/properties.json"), "utf8")) as { order: string[] }).order;
+  for (const [p, text] of allGuides()) put(p, text);                       // D-0171: one guide per flow
   put("99_System/05_Templates/Template - ECO.md", ecoTemplate(ecoOrder));   // MOD-190, D-0164
   put("ECO/ECO-00001.md", ecoExample(ecoOrder));                              // MOD-189, MOD-191, D-0165
   put(".gitignore", `# MDSE vault: files that stay on each user's machine and are not committed.
